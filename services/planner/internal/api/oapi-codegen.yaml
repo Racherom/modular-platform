@@ -1,0 +1,11 @@
+# Strict server on net/http. Models live in libs/contract, dot imported so the generated code finds them.
+package: api
+generate:
+  std-http-server: true
+  strict-server: true
+output-options:
+  prefer-skip-optional-pointer: true
+additional-imports:
+  - package: github.com/racherom/modular-platform/libs/contract
+    alias: .
+output: api.gen.go

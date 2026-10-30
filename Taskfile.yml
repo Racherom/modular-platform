@@ -1,0 +1,107 @@
+# Cross language tasks. Install Task (https://taskfile.dev), Go 1.26 or newer (go.work pins the
+# toolchain it fetches), Node 26 with pnpm 12, and Docker with the Compose plugin.
+version: "3"
+
+vars:
+  GO_PACKAGES: ./catalog/... ./libs/... ./services/planner/...
+  IMAGE_PREFIX: ghcr.io/racherom/modular-platform
+  IMAGE_TAG: dev
+  ONLINE: >-
+    docker compose --project-directory deploy/online
+    --env-file deploy/online/versions.env --env-file deploy/online/.env
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  web:install:
+    internal: true
+    dir: web
+    cmds:
+      - pnpm install --frozen-lockfile
+    sources:
+      - package.json
+      - pnpm-lock.yaml
+    status:
+      - test -d node_modules
+
+  generate:
+    desc: Generate Go and TypeScript code from contracts/openapi (the output is committed)
+    deps: [web:install]
+    cmds:
+      - go generate ./libs/contract ./services/planner/internal/api
+      - pnpm --dir web run generate
+
+  build:
+    desc: Build the Go code, the editor, and the web and planner images
+    cmds:
+      - task: build:go
+      - task: build:web
+      - task: images
+
+  build:go:
+    cmds:
+      - go build {{.GO_PACKAGES}}
+
+  build:web:
+    deps: [web:install]
+    cmds:
+      - pnpm --dir web run build
+
+  images:
+    desc: Build the web and planner images, tagged {{.IMAGE_TAG}}
+    cmds:
+      - docker build -f services/planner/Dockerfile -t {{.IMAGE_PREFIX}}/planner:{{.IMAGE_TAG}} .
+      - docker build -f web/Dockerfile -t {{.IMAGE_PREFIX}}/web:{{.IMAGE_TAG}} .
+
+  test:
+    desc: Run the Go and editor tests
+    deps: [web:install]
+    cmds:
+      - go test -race {{.GO_PACKAGES}}
+      - pnpm --dir web test
+
+  lint:
+    desc: Check formatting, go vet and the editor's types (feature #2 adds linters)
+    deps: [web:install]
+    cmds:
+      - test -z "$(gofmt -l catalog libs services)" || { gofmt -l catalog libs services; echo "run gofmt -w"; exit 1; }
+      - go vet {{.GO_PACKAGES}}
+      - pnpm --dir web run typecheck
+
+  online:env:
+    internal: true
+    cmds:
+      - cp deploy/online/.env.example deploy/online/.env
+    status:
+      - test -f deploy/online/.env
+
+  online:up:
+    desc: Run the online tool from the images in versions.env
+    deps: [online:env]
+    cmds:
+      - "{{.ONLINE}} -f deploy/online/compose.yaml up -d --wait --wait-timeout 120"
+
+  online:down:
+    desc: Stop the online tool
+    cmds:
+      - "{{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.dev.yaml down"
+
+  dev:
+    desc: Run the online tool graph with the editor served by the Vite dev server, on https://platform.localhost
+    deps: [online:env, web:install]
+    env:
+      MP_VERSION: dev
+      MP_DEV_PROXY: "1"
+    cmds:
+      - defer: "{{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.dev.yaml down"
+      - "{{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.dev.yaml up -d --build --wait --wait-timeout 120"
+      - pnpm --dir web dev
+
+  smoke:
+    desc: Run the smoke job against freshly built images (needs Chromium for Playwright)
+    deps: [web:install]
+    cmds:
+      - task: images
+      - sh scripts/smoke.sh

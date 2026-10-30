@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+.git
+.claude
+.agents
+docs
+deploy
+web/smoke/results
+web/test-results
+web/playwright-report
+**/secrets

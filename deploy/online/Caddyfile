@@ -1,0 +1,37 @@
+# The online tool's ingress: one origin. <base>/planner/* goes to the planner with that prefix
+# stripped (the planner builds no URLs); everything else under <base>/ goes to the web module
+# with the path unchanged.
+{
+	email "{$PLATFORM_ACME_EMAIL}"
+	servers {
+		# only TCP 80 and 443 are published
+		protocols h1 h2
+	}
+}
+
+(tls-acme) {
+}
+
+(tls-internal) {
+	tls internal
+}
+
+{$PLATFORM_DOMAIN} {
+	import tls-{$PLATFORM_TLS}
+
+	@planner path {$MP_BASE_PATH}/planner/*
+	handle @planner {
+		uri strip_prefix {$MP_BASE_PATH}/planner
+		reverse_proxy planner:8080
+	}
+
+	@app path {$MP_BASE_PATH} {$MP_BASE_PATH}/*
+	handle @app {
+		# task dev points this at the Vite dev server on the host
+		reverse_proxy {$MP_WEB_UPSTREAM:web:8080}
+	}
+
+	handle {
+		respond 404
+	}
+}

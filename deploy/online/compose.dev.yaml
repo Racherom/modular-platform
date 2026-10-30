@@ -1,0 +1,20 @@
+# task dev: the ingress serves the Vite dev server on the host instead of the web image, so hot
+# reload runs on the same origin as production. The planner is built from this checkout.
+services:
+  ingress:
+    environment:
+      MP_WEB_UPSTREAM: host.docker.internal:5173
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on: !override
+      planner:
+        condition: service_healthy
+
+  web:
+    # not started in dev; the Vite dev server takes its place
+    profiles: [web-image]
+
+  planner:
+    build:
+      context: ../..
+      dockerfile: services/planner/Dockerfile

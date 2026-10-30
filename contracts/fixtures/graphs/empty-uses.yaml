@@ -1,0 +1,7 @@
+apiVersion: modular-platform/v0alpha1
+kind: Graph
+modules:
+  db:
+    module: db
+    uses: {}
+name: empty-uses

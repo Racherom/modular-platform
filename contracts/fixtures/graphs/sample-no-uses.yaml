@@ -1,0 +1,8 @@
+apiVersion: modular-platform/v0alpha1
+kind: Graph
+modules:
+  postgres:
+    module: postgres
+  whoami:
+    module: whoami
+name: whoami-postgres

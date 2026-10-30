@@ -1,0 +1,7 @@
+# Types only; the planner service generates its server against these types.
+package: contract
+generate:
+  models: true
+output-options:
+  prefer-skip-optional-pointer: true
+output: planner.gen.go

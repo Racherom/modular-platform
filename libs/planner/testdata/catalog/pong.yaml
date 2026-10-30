@@ -1,0 +1,10 @@
+apiVersion: modular-platform/v0alpha1
+kind: Module
+name: pong
+description: Test module pong.
+image: example.test/pong:1.0.0
+provides:
+  pong:
+    port: 2
+uses:
+  ping: {}

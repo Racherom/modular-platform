@@ -1,0 +1,346 @@
+openapi: 3.1.0
+info:
+  title: Modular Platform planner
+  version: 0.1.0
+  summary: Plans a graph of modules against the built in catalog and renders it as a runnable zip.
+  description: |
+    The planner is stateless. Every request carries the whole graph; nothing is stored.
+    Formats are the provisional `modular-platform/v0alpha1` shapes (spec 0002), replaced by `v1` later.
+
+    Request bodies are decoded strictly: unknown keys and duplicate keys are rejected with 400.
+
+    In public mode no credential is needed. In internal mode every call needs the bearer token.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: /
+security:
+  - {}
+  - bearerAuth: []
+paths:
+  /v1/catalog:
+    get:
+      operationId: getCatalog
+      summary: List the built in catalog
+      responses:
+        "200":
+          description: Every catalog entry, sorted by name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Catalog"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/plan:
+    post:
+      operationId: plan
+      summary: Check a graph and fill in its automatic bindings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Graph"
+      responses:
+        "200":
+          description: The plan. `ok` is false when a problem has severity `error`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanResult"
+        "400":
+          $ref: "#/components/responses/BadGraph"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/render:
+    post:
+      operationId: render
+      summary: Render a graph as a zip you run with Docker Compose
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Graph"
+      responses:
+        "200":
+          description: The zip. It never contains a secret value.
+          headers:
+            Content-Disposition:
+              description: '`attachment; filename="<graph name>.zip"`'
+              schema:
+                type: string
+          content:
+            application/zip:
+              schema:
+                type: string
+                contentMediaType: application/zip
+        "400":
+          $ref: "#/components/responses/BadGraph"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The plan has an error, so nothing was rendered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanResult"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Internal mode only. The token is read from `MP_PLANNER_TOKEN_FILE`.
+  responses:
+    BadGraph:
+      description: |
+        The body does not decode strictly (`invalid_graph`), or names another `apiVersion`
+        (`unsupported_version`) or `kind` (`wrong_kind`). Exactly one problem.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemList"
+    Unauthorized:
+      description: Internal mode, and the bearer token is missing or wrong (`unauthorized`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemList"
+    TooLarge:
+      description: The body is over 1 MB (`request_too_large`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemList"
+    RateLimited:
+      description: Public mode, and this client IP is over its request rate (`rate_limited`).
+      headers:
+        Retry-After:
+          description: Seconds until the next request is allowed.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ProblemList"
+  schemas:
+    Graph:
+      type: object
+      description: A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
+      additionalProperties: false
+      required: [apiVersion, kind, name, modules]
+      properties:
+        apiVersion:
+          type: string
+          description: Exactly `modular-platform/v0alpha1`.
+        kind:
+          type: string
+          description: Exactly `Graph`.
+        name:
+          type: string
+          description: The stack's name and the Compose project name. A DNS label, not a reserved word.
+        modules:
+          type: object
+          description: One entry per placed module, keyed by instance name (also the Compose service name).
+          additionalProperties:
+            $ref: "#/components/schemas/GraphModule"
+    GraphModule:
+      type: object
+      additionalProperties: false
+      required: [module]
+      properties:
+        module:
+          type: string
+          description: The catalog entry this instance runs.
+        uses:
+          $ref: "#/components/schemas/Uses"
+          # keep the pointer: `uses: {}` and no `uses` must write back differently
+          x-go-type-skip-optional-pointer: false
+    Uses:
+      type: object
+      description: |
+        Capability to provider instance name. `null` leaves an optional need unbound on purpose.
+        A missing key means not decided: the planner may bind a required need or warn about an optional one.
+      additionalProperties:
+        type: [string, "null"]
+    Catalog:
+      type: object
+      additionalProperties: false
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogEntry"
+    CatalogEntry:
+      type: object
+      description: One module of the built in catalog (`catalog/<name>.yaml`).
+      additionalProperties: false
+      required: [apiVersion, kind, name, description, image]
+      properties:
+        apiVersion:
+          type: string
+          description: Exactly `modular-platform/v0alpha1`.
+        kind:
+          type: string
+          description: Exactly `Module`.
+        name:
+          type: string
+          description: Equal to the file name without `.yaml`; unique in the catalog.
+        description:
+          type: string
+        image:
+          type: string
+          description: An image reference with a tag other than `latest`, optionally followed by a digest.
+        provides:
+          type: object
+          description: Capability to where a consumer reaches it.
+          additionalProperties:
+            $ref: "#/components/schemas/Provide"
+        uses:
+          type: object
+          description: Capability to how this module consumes it.
+          additionalProperties:
+            $ref: "#/components/schemas/Use"
+        secrets:
+          type: array
+          items:
+            $ref: "#/components/schemas/Secret"
+        healthcheck:
+          $ref: "#/components/schemas/Healthcheck"
+          # keep the pointer: render tells a missing healthcheck from an empty one
+          x-go-type-skip-optional-pointer: false
+    Provide:
+      type: object
+      additionalProperties: false
+      required: [port]
+      properties:
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: The port on the service's host name.
+    Use:
+      type: object
+      additionalProperties: false
+      properties:
+        optional:
+          type: boolean
+          default: false
+        env:
+          $ref: "#/components/schemas/UseEnv"
+    UseEnv:
+      type: object
+      description: Env var names the consumer reads the provider's address from. An omitted key delivers nothing.
+      additionalProperties: false
+      properties:
+        host:
+          type: string
+        port:
+          type: string
+    Secret:
+      type: object
+      description: Created by `setup.sh` as `secrets/<instance>/<name>`, mounted as the Compose secret `<instance>-<name>`.
+      additionalProperties: false
+      required: [name, env]
+      properties:
+        name:
+          type: string
+        env:
+          type: string
+          description: Env var set to the secret file's path inside the container.
+    Healthcheck:
+      type: object
+      description: A Compose healthcheck, copied as is into the service.
+      additionalProperties: false
+      required: [test]
+      properties:
+        test:
+          type: array
+          items:
+            type: string
+          description: First item is `CMD` or `CMD-SHELL`.
+        interval:
+          type: string
+        timeout:
+          type: string
+        retries:
+          type: integer
+          minimum: 1
+          # keep the pointer: a written `retries: 0` must be rejected, not read as absent
+          x-go-type-skip-optional-pointer: false
+        start_period:
+          type: string
+    Binding:
+      type: object
+      additionalProperties: false
+      required: [consumer, capability, provider, auto]
+      properties:
+        consumer:
+          type: string
+        capability:
+          type: string
+        provider:
+          type: string
+        auto:
+          type: boolean
+          description: True when the planner made this binding, not the graph.
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [severity, code, path, message]
+      properties:
+        severity:
+          type: string
+          enum: [error, warning]
+        code:
+          type: string
+        path:
+          type: string
+          description: Dotted from the graph root, like `modules.whoami.uses.postgresql`; empty for the whole request.
+        message:
+          type: string
+          description: One English sentence, shown as is.
+        candidates:
+          type: array
+          items:
+            type: string
+    ProblemList:
+      type: object
+      additionalProperties: false
+      required: [problems]
+      properties:
+        problems:
+          type: array
+          items:
+            $ref: "#/components/schemas/Problem"
+    PlanResult:
+      type: object
+      additionalProperties: false
+      required: [ok, graph, bindings, problems]
+      properties:
+        ok:
+          type: boolean
+        graph:
+          $ref: "#/components/schemas/Graph"
+        bindings:
+          type: array
+          description: Explicit and automatic bindings, sorted by consumer then capability.
+          items:
+            $ref: "#/components/schemas/Binding"
+        problems:
+          type: array
+          description: Sorted by path, then code.
+          items:
+            $ref: "#/components/schemas/Problem"

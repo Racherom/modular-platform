@@ -1,0 +1,157 @@
+package render_test
+
+import (
+	"archive/zip"
+	"bytes"
+	"errors"
+	"flag"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/racherom/modular-platform/libs/contract"
+	"github.com/racherom/modular-platform/libs/planner"
+	"github.com/racherom/modular-platform/libs/render"
+)
+
+var update = flag.Bool("update", false, "rewrite the golden files in testdata/")
+
+func samplePlan(t *testing.T) (contract.PlanResult, []contract.CatalogEntry) {
+	t.Helper()
+	catalog, problems := contract.LoadCatalog(os.DirFS("../../catalog"))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	data, err := os.ReadFile("../../samples/whoami-postgres/graph.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, p := contract.DecodeGraph(data)
+	if p != nil {
+		t.Fatal(p.Message)
+	}
+	return planner.Plan(g, catalog), catalog
+}
+
+// TestRenderSampleGolden pins every rendered file of the sample (AC-10 for docker-compose.yml).
+// Run with -update after an intended change.
+func TestRenderSampleGolden(t *testing.T) {
+	plan, catalog := samplePlan(t)
+	out, err := render.Render(plan, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range out.Files {
+		golden := filepath.Join("testdata", "whoami-postgres", f.Path)
+		if *update {
+			if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(golden, f.Data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		want, err := os.ReadFile(golden)
+		if err != nil {
+			t.Fatalf("%s: %v (run go test -update)", f.Path, err)
+		}
+		if !bytes.Equal(f.Data, want) {
+			t.Errorf("%s differs from %s\n--- got\n%s", f.Path, golden, f.Data)
+		}
+	}
+}
+
+func TestRenderSampleRules(t *testing.T) {
+	t.Parallel()
+	plan, catalog := samplePlan(t)
+	out, err := render.Render(plan, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]render.File{}
+	for _, f := range out.Files {
+		files[f.Path] = f
+	}
+	compose := string(files["docker-compose.yml"].Data)
+	for _, want := range []string{
+		"name: whoami-postgres\n",
+		"    depends_on:\n      postgres:\n        condition: service_healthy\n",
+		"      DEMO_POSTGRESQL_HOST: postgres\n",
+		"      DEMO_POSTGRESQL_PORT: \"5432\"\n",
+		"      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password\n",
+		"  postgres-password:\n    file: ./secrets/postgres/password\n",
+	} {
+		if !strings.Contains(compose, want) {
+			t.Errorf("docker-compose.yml lacks %q\n%s", want, compose)
+		}
+	}
+	whoami := compose[strings.Index(compose, "  whoami:\n"):]
+	if strings.Contains(whoami, "secrets:") {
+		t.Error("whoami must get no secret")
+	}
+	if strings.Contains(compose, "null") || strings.Contains(compose, "ports:") {
+		t.Error("docker-compose.yml must hold no null and publish no port")
+	}
+	if got := files["setup.sh"].Mode; got != 0o755 {
+		t.Errorf("setup.sh mode = %v", got)
+	}
+	if !strings.Contains(string(files["setup.sh"].Data), "new_secret secrets/postgres/password\n") {
+		t.Error("setup.sh does not create the postgres password")
+	}
+	want, _ := os.ReadFile("../../samples/whoami-postgres/graph.yaml")
+	if !bytes.Equal(files["graph.yaml"].Data, want) {
+		t.Errorf("graph.yaml in the zip is not the resolved canonical graph:\n%s", files["graph.yaml"].Data)
+	}
+}
+
+// TestZipDeterministic renders the sample twice and checks the zips are byte identical and hold
+// exactly the AC-3 files, with modes.
+func TestZipDeterministic(t *testing.T) {
+	t.Parallel()
+	plan, catalog := samplePlan(t)
+	var zips [2]bytes.Buffer
+	for i := range zips {
+		out, err := render.Render(plan, catalog)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := out.WriteZip(&zips[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !bytes.Equal(zips[0].Bytes(), zips[1].Bytes()) {
+		t.Fatal("two renders of the same graph give different zips")
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(zips[0].Bytes()), int64(zips[0].Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range zr.File {
+		names = append(names, f.Name)
+		if f.Name == "setup.sh" && f.Mode() != 0o755 {
+			t.Errorf("setup.sh mode in zip = %v", f.Mode())
+		}
+		rc, _ := f.Open()
+		body, _ := io.ReadAll(rc)
+		_ = rc.Close()
+		if bytes.Contains(body, []byte("POSTGRES_PASSWORD=")) {
+			t.Errorf("%s holds a password value", f.Name)
+		}
+	}
+	if got := strings.Join(names, " "); got != ".env README.md docker-compose.yml graph.yaml setup.sh" {
+		t.Errorf("zip entries = %s", got)
+	}
+}
+
+func TestRenderRefusesErrors(t *testing.T) {
+	t.Parallel()
+	_, err := render.Render(contract.PlanResult{Ok: false}, nil)
+	if !errors.Is(err, render.ErrPlanHasErrors) {
+		t.Errorf("err = %v, want ErrPlanHasErrors", err)
+	}
+}

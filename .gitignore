@@ -1,0 +1,18 @@
+# dependencies and build output
+node_modules/
+web/dist/
+web/smoke/results/
+web/test-results/
+web/playwright-report/
+*.test
+*.out
+/bin/
+
+# per host settings of the online tool (copied from .env.example)
+deploy/online/.env
+
+# never commit generated secrets
+secrets/
+
+# Task checksums
+.task/

@@ -1,0 +1,9 @@
+# The same web image under a sub path (AC-7); the ingress then serves only /platform/...
+services:
+  ingress:
+    environment:
+      MP_BASE_PATH: /platform
+  web:
+    environment:
+      MP_BASE_PATH: /platform
+      MP_API_ROOT: /platform/planner

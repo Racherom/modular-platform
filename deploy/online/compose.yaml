@@ -1,0 +1,76 @@
+# The online tool graph: ingress, web and planner on one origin. Run it through the Taskfile
+# (task online:up), which passes versions.env and .env:
+#   docker compose --env-file versions.env --env-file .env up -d
+name: modular-platform-online
+
+services:
+  ingress:
+    image: ${CADDY_IMAGE:?set in versions.env}
+    restart: unless-stopped
+    ports:
+      - "${PLATFORM_HTTPS_PORT:-443}:443"
+      - "${PLATFORM_HTTP_PORT:-80}:80"
+    environment:
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:?set in .env}
+      PLATFORM_TLS: ${PLATFORM_TLS:-acme}
+      PLATFORM_ACME_EMAIL: ${PLATFORM_ACME_EMAIL:-}
+      MP_BASE_PATH: ${MP_BASE_PATH:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      web:
+        condition: service_healthy
+      planner:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+      start_interval: 1s
+
+  web:
+    image: ghcr.io/racherom/modular-platform/web:${MP_VERSION:?set in versions.env}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    environment:
+      MP_BASE_PATH: ${MP_BASE_PATH:-}
+      MP_API_ROOT: ${MP_BASE_PATH:-}/planner
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+      start_interval: 1s
+
+  planner:
+    image: ghcr.io/racherom/modular-platform/planner:${MP_VERSION:?set in versions.env}
+    restart: unless-stopped
+    read_only: true
+    environment:
+      MP_PLANNER_MODE: public
+      MP_PLANNER_RATE: ${MP_PLANNER_RATE:-60}
+      # the ingress is the one proxy hop; set 2 when you add flood protection in front of it
+      MP_PROXY_HOPS: "1"
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "/planner", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+      start_interval: 1s
+
+networks:
+  edge: {}
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}

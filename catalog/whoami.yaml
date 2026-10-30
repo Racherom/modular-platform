@@ -1,0 +1,15 @@
+apiVersion: modular-platform/v0alpha1
+kind: Module
+name: whoami
+description: Tiny HTTP service that echoes each request. Demo consumer, it declares an optional postgresql need to show wiring and ignores the values it receives.
+image: traefik/whoami:v1.12.0
+# no healthcheck: the image is FROM scratch, nothing can probe it from inside
+provides:
+  http:
+    port: 80
+uses:
+  postgresql:
+    optional: true
+    env:
+      host: DEMO_POSTGRESQL_HOST
+      port: DEMO_POSTGRESQL_PORT

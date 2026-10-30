@@ -1,0 +1,240 @@
+/* Placeholder styles until the design system (feature #5). */
+:root {
+  --bg: #ffffff;
+  --fg: #1d1f24;
+  --muted: #5d6470;
+  --line: #d5d9e0;
+  --panel: #f5f6f8;
+  --accent: #2557d6;
+  --error: #b42318;
+  --warning: #9a6700;
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171b;
+    --fg: #e7e9ee;
+    --muted: #a0a7b4;
+    --line: #353a44;
+    --panel: #1e2127;
+    --accent: #7ea2ff;
+    --error: #ff8a80;
+    --warning: #f5c451;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.app__header {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.app__name {
+  font-weight: 700;
+}
+
+.app__header nav {
+  display: flex;
+  gap: 1rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+main {
+  padding: 1rem;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.toolbar h1 {
+  margin: 0 1rem 0 0;
+  font-size: 1.25rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 1fr 18rem;
+  gap: 1rem;
+}
+
+@media (max-width: 800px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+.graph-view {
+  height: 28rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.catalog {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 0.75rem;
+  background: var(--panel);
+}
+
+.catalog h2 {
+  font-size: 1rem;
+}
+
+.catalog ul {
+  list-style: none;
+  padding: 0;
+}
+
+.catalog li {
+  margin-bottom: 0.75rem;
+}
+
+.catalog code {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.catalog p {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+}
+
+.module-node {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: 0.8rem;
+}
+
+.module-node.has-error {
+  border: 2px solid var(--error);
+}
+
+.module-node__head {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.module-node__head span {
+  color: var(--muted);
+}
+
+.port {
+  position: absolute;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+}
+
+.port--provides {
+  left: 0.75rem;
+}
+
+.port--uses {
+  right: 0.75rem;
+}
+
+.port .react-flow__handle {
+  position: absolute;
+}
+
+.port--provides .react-flow__handle {
+  left: -0.75rem;
+}
+
+.port--uses .react-flow__handle {
+  right: -0.75rem;
+  left: auto;
+}
+
+.handle--optional {
+  background: var(--panel);
+  border: 1px dashed var(--fg);
+}
+
+.problems {
+  list-style: none;
+  padding: 0;
+  margin-top: 1rem;
+}
+
+.problem {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.problem__severity {
+  min-width: 4.5rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.problem--error .problem__severity {
+  color: var(--error);
+}
+
+.problem--warning .problem__severity {
+  color: var(--warning);
+}
+
+.problem__instance {
+  font-family: ui-monospace, monospace;
+}
+
+.problems--none {
+  color: var(--muted);
+}
+
+.failure {
+  border: 1px solid var(--error);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  margin-bottom: 1rem;
+}
