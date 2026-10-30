@@ -11,7 +11,8 @@ export const Route = createFileRoute('/samples/$name')({ component: Sample })
 
 function Sample() {
   const { name } = Route.useParams()
-  const text = samples[name]
+  // own keys only, so a path like /samples/constructor is just an unknown sample
+  const text = Object.hasOwn(samples, name) ? samples[name] : undefined
   if (text === undefined) {
     return (
       <div className="screen empty">

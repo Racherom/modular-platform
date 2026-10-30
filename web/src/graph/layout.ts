@@ -10,33 +10,35 @@ export const ROW_GAP = 160
  */
 export function layout(graph: Graph): Record<string, { x: number; y: number }> {
   const names = Object.keys(graph.modules).sort()
-  const consumers: Record<string, string[]> = Object.fromEntries(names.map((n) => [n, []]))
+  // Maps, not plain objects: a broken file may name an instance or provider like constructor
+  const consumers = new Map<string, string[]>(names.map((n) => [n, []]))
   for (const name of names) {
     for (const provider of Object.values(graph.modules[name]?.uses ?? {})) {
-      if (provider !== null && provider !== name && provider in consumers) consumers[provider]?.push(name)
+      if (provider !== null && provider !== name) consumers.get(provider)?.push(name)
     }
   }
 
-  const column: Record<string, number> = {}
+  const column = new Map<string, number>()
   const depth = (name: string, visiting: Set<string>): number => {
-    const known = column[name]
+    const known = column.get(name)
     if (known !== undefined) return known
     if (visiting.has(name)) return 0
     visiting.add(name)
     let deepest = 0
-    for (const consumer of consumers[name] ?? []) deepest = Math.max(deepest, depth(consumer, visiting) + 1)
+    for (const consumer of consumers.get(name) ?? []) deepest = Math.max(deepest, depth(consumer, visiting) + 1)
     visiting.delete(name)
-    column[name] = deepest
+    column.set(name, deepest)
     return deepest
   }
 
-  const rows: Record<number, number> = {}
-  const positions: Record<string, { x: number; y: number }> = {}
-  for (const name of names) {
-    const col = depth(name, new Set())
-    const row = rows[col] ?? 0
-    rows[col] = row + 1
-    positions[name] = { x: col * COLUMN_GAP, y: row * ROW_GAP }
-  }
-  return positions
+  const rows = new Map<number, number>()
+  // fromEntries defines own keys, so even __proto__ lands as a plain entry
+  return Object.fromEntries(
+    names.map((name) => {
+      const col = depth(name, new Set())
+      const row = rows.get(col) ?? 0
+      rows.set(col, row + 1)
+      return [name, { x: col * COLUMN_GAP, y: row * ROW_GAP }]
+    }),
+  )
 }

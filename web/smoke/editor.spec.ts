@@ -10,6 +10,16 @@ function recordRequests(page: Page): string[] {
   return paths
 }
 
+// the web module's content policy must never block the editor's own scripts, styles or calls
+let blocked: string[] = []
+test.beforeEach(({ page }) => {
+  blocked = []
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' && /Content Security Policy/i.test(msg.text())) blocked.push(msg.text())
+  })
+})
+test.afterEach(() => expect(blocked, 'blocked by the content policy').toEqual([]))
+
 async function expectSampleGraph(page: Page) {
   await expect(page.getByTestId('node-whoami')).toBeVisible()
   await expect(page.getByTestId('node-postgres')).toBeVisible()
@@ -24,7 +34,9 @@ async function expectSampleGraph(page: Page) {
 
 test('the editor shows the built in catalog (AC-2)', async ({ page }) => {
   const catalog = page.waitForResponse((r) => new URL(r.url()).pathname === `${base}/planner/v1/catalog`)
-  await page.goto(`${base}/samples/whoami-postgres`)
+  const shell = await page.goto(`${base}/samples/whoami-postgres`)
+  expect(shell?.headers()['content-security-policy']).toContain("default-src 'self'")
+  expect(shell?.headers()['x-content-type-options']).toBe('nosniff')
   expect((await catalog).status()).toBe(200)
   await expect(page.getByRole('region', { name: 'Catalog' }).getByText('whoami', { exact: true })).toBeVisible()
 })

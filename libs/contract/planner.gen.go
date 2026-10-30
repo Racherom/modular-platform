@@ -137,7 +137,7 @@ type Provide struct {
 	Port int `json:"port"`
 }
 
-// Secret Created by `setup.sh` as `secrets/<instance>/<name>`, mounted as the Compose secret `<instance>-<name>`.
+// Secret Created by `setup.sh` as `secrets/<instance>/<name>`, mounted as the Compose secret `<instance>_<name>`.
 type Secret struct {
 	// Env Env var set to the secret file's path inside the container.
 	Env  string `json:"env"`
@@ -166,6 +166,9 @@ type BadGraph = ProblemList
 
 // RateLimited defines model for RateLimited.
 type RateLimited = ProblemList
+
+// TimedOut defines model for TimedOut.
+type TimedOut = ProblemList
 
 // TooLarge defines model for TooLarge.
 type TooLarge = ProblemList

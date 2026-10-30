@@ -7,6 +7,12 @@ services:
   ingress:
     image: ${CADDY_IMAGE:?set in versions.env}
     restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    # the caddy binary carries the bind capability as a file capability, so it must stay in the set
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
     ports:
       - "${PLATFORM_HTTPS_PORT:-443}:443"
       - "${PLATFORM_HTTP_PORT:-80}:80"
@@ -38,6 +44,10 @@ services:
     restart: unless-stopped
     read_only: true
     tmpfs: [/tmp]
+    # the caddy binary carries the bind capability as a file capability, so it must stay in the set
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
     environment:
       MP_BASE_PATH: ${MP_BASE_PATH:-}
       MP_API_ROOT: ${MP_BASE_PATH:-}/planner
@@ -54,6 +64,8 @@ services:
     image: ghcr.io/racherom/modular-platform/planner:${MP_VERSION:?set in versions.env}
     restart: unless-stopped
     read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     environment:
       MP_PLANNER_MODE: public
       MP_PLANNER_RATE: ${MP_PLANNER_RATE:-60}

@@ -78,7 +78,7 @@ tasks:
       - test -f deploy/online/.env
 
   online:up:
-    desc: Run the online tool from the images in versions.env
+    desc: Run the online tool from the images in versions.env (MP_VERSION=dev for your own task images)
     deps: [online:env]
     cmds:
       - "{{.ONLINE}} -f deploy/online/compose.yaml up -d --wait --wait-timeout 120"

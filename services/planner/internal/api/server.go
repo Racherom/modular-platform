@@ -24,6 +24,7 @@ const (
 	requestTimeout = 10 * time.Second
 	burst          = 10
 	idleBucket     = 10 * time.Minute
+	maxClients     = 10_000 // rate limit buckets held at most (spec 0003)
 )
 
 var _ StrictServerInterface = (*Server)(nil)
@@ -49,8 +50,15 @@ func (s *Server) Render(ctx context.Context, req RenderRequestObject) (RenderRes
 	if !plan.Ok {
 		return Render422JSONResponse(plan), nil
 	}
+	// past the deadline the client already has its 503; stop between phases
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	out, err := render.Render(plan, s.catalog)
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	var buf bytes.Buffer
@@ -83,11 +91,11 @@ func NewHandler(ctx context.Context, cfg config.Config, catalog []contract.Catal
 	})
 	platform.Health(mux, func() bool { return true })
 
-	h := http.TimeoutHandler(mux, requestTimeout, `{"problems":[{"severity":"error","code":"timeout","path":"","message":"The planner took too long; try again."}]}`)
+	h := jsonTimeout(http.TimeoutHandler(mux, requestTimeout, `{"problems":[{"severity":"error","code":"timeout","path":"","message":"The planner took too long; try again."}]}`))
 	switch cfg.Mode {
 	case config.ModePublic:
-		limiter := platform.NewRateLimiter(cfg.Rate, burst, idleBucket)
-		go limiter.SweepEvery(ctx, time.Minute)
+		limiter := platform.NewRateLimiter(cfg.Rate, burst, idleBucket, maxClients)
+		go limiter.SweepEvery(ctx, time.Minute, log)
 		h = limiter.Middleware(cfg.ProxyHops, platform.HealthPaths, h)
 	case config.ModeInternal:
 		h = platform.BearerAuth(cfg.Token, platform.HealthPaths, h)
@@ -127,4 +135,20 @@ func strictGraphBody(next http.Handler) http.Handler {
 		r.ContentLength = int64(len(clean))
 		next.ServeHTTP(w, r)
 	})
+}
+
+// jsonTimeout marks the 503 that http.TimeoutHandler writes as JSON; it sets no Content-Type itself.
+func jsonTimeout(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(timeoutWriter{w}, r)
+	})
+}
+
+type timeoutWriter struct{ http.ResponseWriter }
+
+func (w timeoutWriter) WriteHeader(status int) {
+	if status == http.StatusServiceUnavailable && w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	w.ResponseWriter.WriteHeader(status)
 }

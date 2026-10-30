@@ -8,6 +8,13 @@
 :8080 {
 	root * /srv
 
+	# the bundle loads only its own files and calls only its own origin
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
 	# route keeps these rules in the order written
 	route {
 		# <base> without the trailing slash redirects to <base>/

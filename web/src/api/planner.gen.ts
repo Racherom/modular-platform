@@ -123,7 +123,7 @@ export interface components {
             host?: string;
             port?: string;
         };
-        /** @description Created by `setup.sh` as `secrets/<instance>/<name>`, mounted as the Compose secret `<instance>-<name>`. */
+        /** @description Created by `setup.sh` as `secrets/<instance>/<name>`, mounted as the Compose secret `<instance>_<name>`. */
         Secret: {
             name: string;
             /** @description Env var set to the secret file's path inside the container. */
@@ -198,6 +198,15 @@ export interface components {
                 "application/json": components["schemas"]["ProblemList"];
             };
         };
+        /** @description The request took longer than 10 seconds (`timeout`); nothing was kept. */
+        TimedOut: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ProblemList"];
+            };
+        };
         /** @description Public mode, and this client IP is over its request rate (`rate_limited`). */
         RateLimited: {
             headers: {
@@ -237,6 +246,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             429: components["responses"]["RateLimited"];
+            503: components["responses"]["TimedOut"];
         };
     };
     plan: {
@@ -265,6 +275,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             413: components["responses"]["TooLarge"];
             429: components["responses"]["RateLimited"];
+            503: components["responses"]["TimedOut"];
         };
     };
     render: {
@@ -304,6 +315,7 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
+            503: components["responses"]["TimedOut"];
         };
     };
 }

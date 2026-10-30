@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 
-const repoRoot = fileURLToPath(new URL('..', import.meta.url))
+// the dev server may read only the editor itself and the bundled samples, never the rest of the checkout
+const devFiles = [fileURLToPath(new URL('.', import.meta.url)), fileURLToPath(new URL('../samples', import.meta.url))]
 const behindProxy = process.env.MP_DEV_PROXY === '1'
 
 /**
@@ -38,7 +39,7 @@ export default defineConfig({
   plugins: [tanstackRouter({ target: 'react' }), react(), placement()],
   build: { assetsDir: 'assets' },
   server: {
-    fs: { allow: [repoRoot] },
+    fs: { allow: devFiles },
     // task dev: the ingress container reaches this server on the docker host and serves it on
     // the online tool's own origin, so hot reload runs where production runs
     ...(behindProxy && {

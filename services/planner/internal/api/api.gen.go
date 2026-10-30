@@ -219,6 +219,8 @@ type RateLimitedJSONResponse struct {
 	Headers RateLimitedResponseHeaders
 }
 
+type TimedOutJSONResponse ProblemList
+
 type TooLargeJSONResponse ProblemList
 
 type UnauthorizedJSONResponse ProblemList
@@ -269,6 +271,20 @@ func (response GetCatalog429JSONResponse) VisitGetCatalogResponse(w http.Respons
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCatalog503JSONResponse struct{ TimedOutJSONResponse }
+
+func (response GetCatalog503JSONResponse) VisitGetCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -348,6 +364,20 @@ func (response Plan429JSONResponse) VisitPlanResponse(w http.ResponseWriter) err
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Plan503JSONResponse struct{ TimedOutJSONResponse }
+
+func (response Plan503JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -453,6 +483,20 @@ func (response Render429JSONResponse) VisitRenderResponse(w http.ResponseWriter)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Render503JSONResponse struct{ TimedOutJSONResponse }
+
+func (response Render503JSONResponse) VisitRenderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }

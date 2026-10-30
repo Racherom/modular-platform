@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { planGraph } from '../api/client'
 import { Failure } from '../components/Failure'
 import { GraphScreen, useCatalog } from '../components/GraphScreen'
@@ -14,12 +14,18 @@ function Editor() {
   const { working, setWorking } = useEditor()
   const catalog = useCatalog()
   const input = useRef<HTMLInputElement>(null)
+  // counts opens, so reopening a file with the same names still starts a fresh screen
+  const [opens, setOpens] = useState(0)
 
   useEffect(() => {
     if (working !== undefined) return
+    // never let a slow read replace a graph that is already set
+    const settle = (w: WorkingGraph | null) => {
+      if (useEditor.getState().working === undefined) setWorking(w)
+    }
     loadWorking()
-      .then((w) => setWorking(w ?? null))
-      .catch(() => setWorking(null))
+      .then((w) => settle(w ?? null))
+      .catch(() => settle(null))
   }, [working, setWorking])
 
   // one plan per open: it validates the file and writes the automatic bindings into the graph
@@ -30,6 +36,7 @@ function Editor() {
       return { fileName: file.name, graph: plan.graph, plan }
     },
     onSuccess: (w) => {
+      setOpens((n) => n + 1)
       setWorking(w)
       saveWorking(w).catch(() => undefined) // a private window may refuse storage; the graph still shows
     },
@@ -60,7 +67,7 @@ function Editor() {
       {open.isError && <Failure error={open.error} onRetry={() => input.current?.click()} />}
       {working ? (
         <GraphScreen
-          key={`${working.fileName}|${working.plan.graph.name}`}
+          key={opens}
           graph={working.graph}
           plan={working.plan}
           fileName={working.fileName}

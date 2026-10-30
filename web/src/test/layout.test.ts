@@ -20,6 +20,17 @@ describe('layout', () => {
     expect(pos.db).toEqual({ x: 2 * COLUMN_GAP, y: 0 })
   })
 
+  it('treats prototype names as plain names', () => {
+    const pos = layout(
+      graph({
+        constructor: { module: 'm', uses: { x: '__proto__' } },
+        ['__proto__']: { module: 'm', uses: { y: 'toString' } }, // computed, so an own key like parsed JSON
+      }),
+    )
+    expect(pos.constructor).toEqual({ x: 0, y: 0 })
+    expect(Object.getOwnPropertyDescriptor(pos, '__proto__')?.value).toEqual({ x: COLUMN_GAP, y: 0 })
+  })
+
   it('does not loop on a cycle', () => {
     const pos = layout(graph({ a: { module: 'm', uses: { x: 'b' } }, b: { module: 'm', uses: { x: 'a' } } }))
     expect(Object.keys(pos)).toEqual(['a', 'b'])

@@ -47,7 +47,7 @@ export function toFlow(graph: Graph, catalog: CatalogEntry[], problems: Problem[
     const provides = Object.keys(entry?.provides ?? {}).sort()
     const uses = Object.entries(entry?.uses ?? {})
       .map(([capability, u]) => ({ capability, optional: u.optional ?? false }))
-      .sort((a, b) => (a.capability < b.capability ? -1 : 1))
+      .sort((a, b) => (a.capability < b.capability ? -1 : a.capability > b.capability ? 1 : 0))
     const height = HEADER + Math.max(provides.length, uses.length, 1) * PORT + 8
     const handles: NodeHandle[] = [
       ...provides.map((c, i) => handle(`provides:${c}`, 'target', Position.Left, -HANDLE / 2, portY(i))),

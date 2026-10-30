@@ -22,13 +22,14 @@ interface Props {
 /** A planned graph on the canvas, its problems, and save and download. */
 export function GraphScreen({ graph, plan, fileName, toolbar }: Props) {
   const catalog = useCatalog()
-  // a render that finds an error returns a newer plan to show
-  const [shownPlan, setShownPlan] = useState(plan)
+  // a render that finds an error returns a newer plan to show, but only for the plan it came from
+  const [rendered, setRendered] = useState<{ from: PlanResult; plan: PlanResult }>()
+  const shownPlan = rendered?.from === plan ? rendered.plan : plan
   const zip = useMutation({
     mutationFn: () => renderGraph(graph),
     onSuccess: (result) => {
       if ('zip' in result) download(result.zip, `${graph.name}.zip`)
-      else setShownPlan(result.plan)
+      else setRendered({ from: plan, plan: result.plan })
     },
   })
 

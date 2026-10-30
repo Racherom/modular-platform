@@ -51,7 +51,7 @@ type Output struct {
 type secret struct {
 	Instance, Name, Env string
 	Path                string // secrets/<instance>/<name>
-	Compose             string // <instance>-<name>
+	Compose             string // <instance>_<name>
 }
 
 type templateData struct {
@@ -90,10 +90,7 @@ func Render(plan contract.PlanResult, catalog []contract.CatalogEntry) (Output, 
 		svc.Image = entry.Image
 		svc.HealthCheck = healthcheck(entry.Healthcheck)
 		for _, s := range entry.Secrets {
-			sec := secret{Instance: i, Name: s.Name, Env: s.Env, Path: "secrets/" + i + "/" + s.Name, Compose: i + "-" + s.Name}
-			if _, taken := project.Secrets[sec.Compose]; taken {
-				return Output{}, fmt.Errorf("render: two secrets would share the Compose name %s", sec.Compose)
-			}
+			sec := secret{Instance: i, Name: s.Name, Env: s.Env, Path: "secrets/" + i + "/" + s.Name, Compose: i + "_" + s.Name}
 			if project.Secrets == nil {
 				project.Secrets = types.Secrets{}
 			}

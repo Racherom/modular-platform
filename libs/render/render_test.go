@@ -81,8 +81,8 @@ func TestRenderSampleRules(t *testing.T) {
 		"    depends_on:\n      postgres:\n        condition: service_healthy\n",
 		"      DEMO_POSTGRESQL_HOST: postgres\n",
 		"      DEMO_POSTGRESQL_PORT: \"5432\"\n",
-		"      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password\n",
-		"  postgres-password:\n    file: ./secrets/postgres/password\n",
+		"      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password\n",
+		"  postgres_password:\n    file: ./secrets/postgres/password\n",
 	} {
 		if !strings.Contains(compose, want) {
 			t.Errorf("docker-compose.yml lacks %q\n%s", want, compose)
@@ -145,6 +145,46 @@ func TestZipDeterministic(t *testing.T) {
 	}
 	if got := strings.Join(names, " "); got != ".env README.md docker-compose.yml graph.yaml setup.sh" {
 		t.Errorf("zip entries = %s", got)
+	}
+}
+
+// TestSecretComposeNamesNeverCollide renders two pairs that a `-` join would merge into `a-b-c`
+// (spec 0002, Secrets in Compose).
+func TestSecretComposeNamesNeverCollide(t *testing.T) {
+	t.Parallel()
+	catalog := []contract.CatalogEntry{
+		{Name: "one", Image: "example.test/one:1.0.0", Secrets: []contract.Secret{{Name: "c", Env: "C_FILE"}}},
+		{Name: "two", Image: "example.test/two:1.0.0", Secrets: []contract.Secret{{Name: "b-c", Env: "BC_FILE"}}},
+	}
+	plan := contract.PlanResult{Ok: true, Graph: contract.Graph{
+		Name:    "collide",
+		Modules: map[string]contract.GraphModule{"a-b": {Module: "one"}, "a": {Module: "two"}},
+	}}
+	out, err := render.Render(plan, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var compose string
+	for _, f := range out.Files {
+		if f.Path == "docker-compose.yml" {
+			compose = string(f.Data)
+		}
+	}
+	top := compose[strings.Index(compose, "secrets:\n"):strings.Index(compose, "services:\n")]
+	if want := "secrets:\n  a-b_c:\n    file: ./secrets/a-b/c\n  a_b-c:\n    file: ./secrets/a/b-c\n"; top != want {
+		t.Errorf("top level secrets =\n%s\nwant\n%s", top, want)
+	}
+	services := compose[strings.Index(compose, "services:\n"):]
+	a, ab := services[strings.Index(services, "  a:\n"):strings.Index(services, "  a-b:\n")], services[strings.Index(services, "  a-b:\n"):]
+	for _, c := range []struct{ svc, want, not string }{
+		{a, "      BC_FILE: /run/secrets/a_b-c\n", "a-b_c"},
+		{a, "    - source: a_b-c\n", "a-b_c"},
+		{ab, "      C_FILE: /run/secrets/a-b_c\n", "a_b-c"},
+		{ab, "    - source: a-b_c\n", "a_b-c"},
+	} {
+		if !strings.Contains(c.svc, c.want) || strings.Contains(c.svc, c.not) {
+			t.Errorf("service lacks %q or holds %q:\n%s", c.want, c.not, c.svc)
+		}
 	}
 }
 

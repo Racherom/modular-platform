@@ -191,6 +191,47 @@ func TestPublicLimits(t *testing.T) {
 	}
 }
 
+// TestPublicClientCap pins the cap at exactly 10,000 clients (spec 0003 AC-1, AC-7). Every request
+// renews its client, so a probe of the oldest one cannot then show its eviction: a and b both
+// spend their burst, a is probed while the map is full, and b is the one the next client evicts.
+func TestPublicClientCap(t *testing.T) {
+	t.Parallel()
+	p := start(t, config.Config{Mode: config.ModePublic, Rate: 1, ProxyHops: 1})
+	from := func(addr string) int {
+		resp, _ := p.do(t, http.MethodGet, "/v1/catalog", "", http.Header{"X-Forwarded-For": {addr}})
+		return resp.StatusCode
+	}
+	a, b := "203.0.113.1", "203.0.113.2"
+	for _, addr := range []string{a, b} {
+		for range 10 {
+			from(addr)
+		}
+		if got := from(addr); got != http.StatusTooManyRequests {
+			t.Fatalf("%s past its burst: status %d, want 429", addr, got)
+		}
+	}
+	for i := range 10_000 - 2 {
+		if got := from(fmt.Sprintf("10.0.%d.%d", i/256, i%256)); got != http.StatusOK {
+			t.Fatalf("new client %d: status %d, want 200", i+1, got)
+		}
+	}
+	if got := from(a); got != http.StatusTooManyRequests {
+		t.Fatalf("a with 10,000 clients held: status %d, want 429 (still held)", got)
+	}
+	if got := from("10.1.0.0"); got != http.StatusOK {
+		t.Fatalf("client 10,001: status %d, want 200", got)
+	}
+	if got := from(b); got != http.StatusOK {
+		t.Errorf("b after client 10,001: status %d, want 200 (evicted, fresh burst)", got)
+	}
+	if got := from(a); got != http.StatusTooManyRequests {
+		t.Errorf("a after client 10,001: status %d, want 429 (still held)", got)
+	}
+	if strings.Contains(p.log.String(), "203.0.113") || strings.Contains(p.log.String(), "10.0.") {
+		t.Error("a client address reached the log")
+	}
+}
+
 // TestInternalAuth covers AC-5 in internal mode.
 func TestInternalAuth(t *testing.T) {
 	t.Parallel()

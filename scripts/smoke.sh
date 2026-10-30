@@ -8,6 +8,8 @@ repo=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
 online="$repo/deploy/online"
 export MP_VERSION=dev
+# the smoke stack uses Caddy's internal certificate authority; Playwright skips certificate checks only then
+export SMOKE_TLS=internal
 
 online() {
 	docker compose --project-directory "$online" --env-file "$online/versions.env" --env-file "$online/.env" "$@"
@@ -24,6 +26,11 @@ trap cleanup EXIT
 
 [ -f "$online/.env" ] || cp "$online/.env.example" "$online/.env"
 
+echo "== the ingress config with a real certificate (acme), as in production"
+docker run --rm -v "$online/Caddyfile:/etc/caddy/Caddyfile:ro" \
+	-e PLATFORM_DOMAIN=example.com -e PLATFORM_TLS=acme -e PLATFORM_ACME_EMAIL= -e MP_BASE_PATH= \
+	"$(sed -n 's/^CADDY_IMAGE=//p' "$online/versions.env")" caddy validate --config /etc/caddy/Caddyfile >/dev/null
+
 echo "== online tool at the site root"
 online -f "$online/compose.yaml" up -d --wait --wait-timeout 120
 SMOKE_BASE='' SMOKE_ZIP="$work/sample.zip" pnpm --dir "$repo/web" run smoke:browser
@@ -32,11 +39,15 @@ echo "== the downloaded zip (AC-3, AC-4)"
 mkdir "$work/stack"
 cd "$work/stack"
 unzip -q "$work/sample.zip"
-for f in docker-compose.yml setup.sh .env graph.yaml README.md; do
-	[ -f "$f" ] || { echo "smoke: the zip has no $f" >&2; exit 1; }
-done
-if grep -rq "POSTGRES_PASSWORD=" .; then
-	echo "smoke: the zip holds a password" >&2
+# exactly these files and nothing else, so no secrets/ folder or stray file can slip in
+files=$(unzip -Z1 "$work/sample.zip" | LC_ALL=C sort | tr '\n' ' ')
+[ "$files" = ".env README.md docker-compose.yml graph.yaml setup.sh " ] || {
+	echo "smoke: unexpected zip contents: $files" >&2
+	exit 1
+}
+# no secret value: no password setting and nothing shaped like a generated secret (64 hex characters)
+if grep -rqE "POSTGRES_PASSWORD=|[0-9a-f]{64}" .; then
+	echo "smoke: the zip holds a secret value" >&2
 	exit 1
 fi
 

@@ -36,6 +36,21 @@ task smoke      # the CI smoke job: sample zip end to end, and the editor under 
 `task dev` and `task smoke` bind ports 80 and 443 and use Caddy's internal certificate
 authority, so your browser warns about the certificate on first visit.
 
+`task online:up` pulls the release images named by `MP_VERSION` in `deploy/online/versions.env`.
+Until the first release exists (it reads `0.0.0`), run the images you built yourself instead:
+
+```sh
+task images
+MP_VERSION=dev task online:up
+```
+
+## Releases
+
+release-please opens the release pull request. A pull request opened with the default
+`GITHUB_TOKEN` starts no other workflow, so CI would not check it. Add a repository secret
+`RELEASE_PLEASE_TOKEN` (a fine grained token, or a GitHub App token, with contents and pull
+request write access) and the release workflow uses it, so CI runs on the release pull request too.
+
 ## License
 
 [Apache 2.0](LICENSE)
