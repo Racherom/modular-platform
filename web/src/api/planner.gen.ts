@@ -98,6 +98,16 @@ export interface components {
             description: string;
             /** @description An image reference with a tag other than `latest`, optionally followed by a digest. */
             image: string;
+            /**
+             * @description `sdk` when the image is built on the module SDK (spec 0005): the render gives it the
+             *     bootstrap env and its env file, and it listens on 8080 (plain) or 8443 (TLS).
+             * @enum {string}
+             */
+            runtime?: "sdk";
+            /** @description Value name to one declared config value, read by the SDK (spec 0005). */
+            config?: {
+                [key: string]: components["schemas"]["ConfigValue"];
+            };
             /** @description Capability to where a consumer reaches it. */
             provides?: {
                 [key: string]: components["schemas"]["Provide"];
@@ -110,19 +120,76 @@ export interface components {
             healthcheck?: components["schemas"]["Healthcheck"];
         };
         Provide: {
-            /** @description The port on the service's host name. */
-            port: number;
+            /** @description The port on the service's host name. Required, except on a `runtime: sdk` entry, which must not set it. */
+            port?: number;
+            /**
+             * @description `binding-token`: every consumer calls with its own per binding token.
+             * @enum {string}
+             */
+            auth?: "binding-token";
+            env?: components["schemas"]["ProvideEnv"];
+        };
+        ProvideEnv: {
+            /** @description Env var set to the directory holding one token file per consumer; required with `auth`. */
+            clients_dir?: string;
         };
         Use: {
             /** @default false */
             optional: boolean;
+            /**
+             * @description The client the SDK builds for this binding; only on a `runtime: sdk` entry.
+             * @enum {string}
+             */
+            client?: "http" | "postgresql" | "s3";
             env?: components["schemas"]["UseEnv"];
         };
-        /** @description Env var names the consumer reads the provider's address from. An omitted key delivers nothing. */
+        /**
+         * @description Env var names the consumer reads the binding from. An omitted key delivers nothing. Every
+         *     binding takes host, port, url, token_file and ca_file; a postgresql client also database,
+         *     user, password_file and sslmode; an s3 client also bucket, region, access_key_id and
+         *     secret_access_key_file.
+         */
         UseEnv: {
             host?: string;
             port?: string;
+            url?: string;
+            token_file?: string;
+            ca_file?: string;
+            database?: string;
+            user?: string;
+            password_file?: string;
+            sslmode?: string;
+            bucket?: string;
+            region?: string;
+            access_key_id?: string;
+            secret_access_key_file?: string;
         };
+        /** @description One value a module built on the SDK reads at start (spec 0005). */
+        ConfigValue: {
+            /** @description Env var name, `^[A-Z][A-Z0-9_]*$`; `<env>_FILE` names a file holding the value. */
+            env: string;
+            /** @enum {string} */
+            type: "string" | "int" | "bool" | "duration" | "url" | "enum" | "secret";
+            /** @description One sentence; the Go doc comment and the env file comment. */
+            description: string;
+            /** @description Parsed by type and checked by the rules; not allowed on a secret. */
+            default?: string;
+            /** @default false */
+            optional: boolean;
+            min?: components["schemas"]["ConfigBound"];
+            max?: components["schemas"]["ConfigBound"];
+            /** @description RE2, matched against the whole value; string only. */
+            pattern?: string;
+            /** @description The allowed values; enum only, required there. */
+            values?: string[];
+            /**
+             * @description The render creates the secret as 32 random bytes in hex; secret only.
+             * @default false
+             */
+            generate: boolean;
+        };
+        /** @description A whole number for an `int`, a duration like `10s` for a `duration`. */
+        ConfigBound: number | string;
         /** @description Created by `setup.sh` as `secrets/<instance>/<name>`, mounted as the Compose secret `<instance>_<name>`. */
         Secret: {
             name: string;

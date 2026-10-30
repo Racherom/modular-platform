@@ -5,17 +5,23 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/racherom/modular-platform/catalog"
 	"github.com/racherom/modular-platform/libs/contract"
+	"github.com/racherom/modular-platform/sdk"
 	"github.com/racherom/modular-platform/services/planner/internal/api"
 	"github.com/racherom/modular-platform/services/planner/internal/config"
 )
@@ -28,18 +34,59 @@ type planner struct {
 	log *bytes.Buffer
 }
 
-func start(t *testing.T, cfg config.Config) planner {
+// start builds the planner the way sdk.Run does, with env as its whole process env.
+func start(t *testing.T, env map[string]string) planner {
 	t.Helper()
-	entries, problems := contract.LoadCatalog(catalog.FS)
-	if len(problems) > 0 {
-		t.Fatal(problems)
+	h, logs, err := build(t, env, catalog.FS)
+	if err != nil {
+		t.Fatalf("start refused: %v\n%s", err, logs)
 	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return planner{srv: srv, log: logs}
+}
+
+func build(t *testing.T, env map[string]string, catalogFS fs.FS) (http.Handler, *bytes.Buffer, error) {
+	t.Helper()
 	var logs bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	srv := httptest.NewServer(api.NewHandler(ctx, cfg, entries, slog.New(slog.NewJSONHandler(&logs, nil))))
-	t.Cleanup(srv.Close)
-	return planner{srv: srv, log: &logs}
+	h, err := sdk.Build(ctx, config.Module, api.Setup(catalogFS),
+		sdk.WithEnv(env), sdk.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))))
+	return h, &logs, err
+}
+
+// publicEnv runs the planner in public mode with rate requests per minute.
+func publicEnv(rate string) map[string]string {
+	return map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "public", "MP_PLANNER_RATE": rate}
+}
+
+// clientsDir writes one token file per consumer and returns the directory.
+func clientsDir(t *testing.T, tokens map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, token := range tokens {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(token+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// errorLines returns the msg of every error line in logs.
+func errorLines(t *testing.T, logs *bytes.Buffer) []string {
+	t.Helper()
+	var lines []string
+	for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+		var entry struct{ Level, Msg string }
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatal(err)
+		}
+		if entry.Level == "ERROR" {
+			lines = append(lines, entry.Msg)
+		}
+	}
+	return lines
 }
 
 func (p planner) do(t *testing.T, method, path, body string, header http.Header) (*http.Response, []byte) {
@@ -65,7 +112,7 @@ func (p planner) do(t *testing.T, method, path, body string, header http.Header)
 	return resp, data
 }
 
-var public = config.Config{Mode: config.ModePublic, Rate: 60, ProxyHops: 1}
+var public = publicEnv("60")
 
 func TestCatalogSorted(t *testing.T) {
 	t.Parallel()
@@ -78,8 +125,12 @@ func TestCatalogSorted(t *testing.T) {
 	if err := json.Unmarshal(body, &cat); err != nil {
 		t.Fatal(err)
 	}
-	if len(cat.Entries) != 2 || cat.Entries[0].Name != "postgres" || cat.Entries[1].Name != "whoami" {
-		t.Errorf("entries = %+v", cat.Entries)
+	var names []string
+	for _, e := range cat.Entries {
+		names = append(names, e.Name)
+	}
+	if !slices.Equal(names, []string{"planner", "postgres", "whoami"}) {
+		t.Errorf("entries = %q", names)
 	}
 }
 
@@ -150,7 +201,7 @@ func TestRender(t *testing.T) {
 // TestPublicLimits covers AC-5 in public mode.
 func TestPublicLimits(t *testing.T) {
 	t.Parallel()
-	p := start(t, config.Config{Mode: config.ModePublic, Rate: 1, ProxyHops: 1})
+	p := start(t, publicEnv("1"))
 
 	huge := strings.Replace(sampleJSON, `"name":"whoami-postgres"`, `"name":"`+strings.Repeat("a", 1<<20)+`"`, 1)
 	if resp, _ := p.do(t, http.MethodPost, "/v1/plan", huge, nil); resp.StatusCode != http.StatusRequestEntityTooLarge {
@@ -196,7 +247,7 @@ func TestPublicLimits(t *testing.T) {
 // spend their burst, a is probed while the map is full, and b is the one the next client evicts.
 func TestPublicClientCap(t *testing.T) {
 	t.Parallel()
-	p := start(t, config.Config{Mode: config.ModePublic, Rate: 1, ProxyHops: 1})
+	p := start(t, publicEnv("1"))
 	from := func(addr string) int {
 		resp, _ := p.do(t, http.MethodGet, "/v1/catalog", "", http.Header{"X-Forwarded-For": {addr}})
 		return resp.StatusCode
@@ -232,43 +283,104 @@ func TestPublicClientCap(t *testing.T) {
 	}
 }
 
-// TestInternalAuth covers AC-5 in internal mode.
+// TestInternalAuth covers AC-5 in internal mode: a call needs a consumer's binding token.
 func TestInternalAuth(t *testing.T) {
 	t.Parallel()
-	p := start(t, config.Config{Mode: config.ModeInternal, Token: "s3cret", ProxyHops: 1})
+	token := strings.Repeat("a1", 16)
+	p := start(t, map[string]string{
+		"MP_INSTANCE":            "planner",
+		"MP_PLANNER_MODE":        "internal",
+		"MP_PLANNER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
+	})
 	if resp, _ := p.do(t, http.MethodGet, "/v1/catalog", "", nil); resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("no token: status %d, want 401", resp.StatusCode)
 	}
-	wrong := http.Header{"Authorization": {"Bearer nope"}}
+	wrong := http.Header{"Authorization": {"Bearer " + strings.Repeat("b2", 16)}}
 	if resp, _ := p.do(t, http.MethodPost, "/v1/plan", sampleJSON, wrong); resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("wrong token: status %d, want 401", resp.StatusCode)
 	}
-	right := http.Header{"Authorization": {"Bearer s3cret"}}
+	right := http.Header{"Authorization": {"Bearer " + token}}
 	if resp, _ := p.do(t, http.MethodPost, "/v1/plan", sampleJSON, right); resp.StatusCode != http.StatusOK {
 		t.Errorf("right token: status %d, want 200", resp.StatusCode)
 	}
 	if resp, _ := p.do(t, http.MethodGet, "/readyz", "", nil); resp.StatusCode != http.StatusOK {
 		t.Errorf("/readyz needs a token: status %d", resp.StatusCode)
 	}
+	if strings.Contains(p.log.String(), token) {
+		t.Error("a token reached the log")
+	}
 }
 
-func TestInternalModeNeedsToken(t *testing.T) {
-	t.Setenv("MP_PLANNER_MODE", "internal")
-	t.Setenv("MP_PLANNER_TOKEN_FILE", "")
-	if _, err := config.FromEnv(); err == nil {
-		t.Error("internal mode started without MP_PLANNER_TOKEN_FILE")
+// TestStartRefused covers spec 0005 AC-13: internal mode refuses to start without a consumer
+// token in MP_PLANNER_CLIENTS_DIR, and no mode is no start.
+func TestStartRefused(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		env  map[string]string
+		want string
+	}{
+		"internal without clients dir": {
+			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal"},
+			want: "config: provides.planner.clients_dir (MP_PLANNER_CLIENTS_DIR): missing: ",
+		},
+		"internal with an empty clients dir": {
+			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal", "MP_PLANNER_CLIENTS_DIR": clientsDir(t, nil)},
+			want: "config: provides.planner.clients_dir (MP_PLANNER_CLIENTS_DIR): missing: ",
+		},
+		"no mode": {
+			env:  map[string]string{"MP_INSTANCE": "planner"},
+			want: "config: planner-mode (MP_PLANNER_MODE): missing: ",
+		},
+		"a mode not in values": {
+			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "open"},
+			want: "config: planner-mode (MP_PLANNER_MODE): not_allowed: ",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, logs, err := build(t, tc.env, catalog.FS)
+			if !errors.Is(err, sdk.ErrStart) {
+				t.Fatalf("err = %v, want sdk.ErrStart", err)
+			}
+			lines := errorLines(t, logs)
+			if len(lines) != 1 || !strings.HasPrefix(lines[0], tc.want) {
+				t.Errorf("error lines = %q, want one starting %q", lines, tc.want)
+			}
+		})
 	}
-	file := t.TempDir() + "/token"
-	if err := os.WriteFile(file, []byte("s3cret\n"), 0o600); err != nil {
-		t.Fatal(err)
+}
+
+// TestBadCatalogStopsStart covers AC-11 of spec 0002: a refused start and one log line per
+// problem, and nothing else at error level.
+func TestBadCatalogStopsStart(t *testing.T) {
+	t.Parallel()
+	bad := fstest.MapFS{
+		"whoami.yaml": {Data: []byte(`apiVersion: modular-platform/v0alpha1
+kind: Module
+name: whoami
+description: Demo.
+image: traefik/whoami:latest
+uses:
+  postgresql:
+    env:
+      host: DEMO-HOST
+`)},
 	}
-	t.Setenv("MP_PLANNER_TOKEN_FILE", file)
-	cfg, err := config.FromEnv()
-	if err != nil || cfg.Token != "s3cret" {
-		t.Errorf("FromEnv = %+v, %v", cfg, err)
+	_, logs, err := build(t, publicEnv("60"), bad)
+	if !errors.Is(err, sdk.ErrStart) {
+		t.Fatalf("err = %v, want sdk.ErrStart", err)
 	}
-	t.Setenv("MP_PLANNER_MODE", "")
-	if _, err := config.FromEnv(); err == nil {
-		t.Error("started without a mode")
+	lines := errorLines(t, logs)
+	want := []string{
+		"catalog/whoami.yaml: image: image_latest: ",
+		"catalog/whoami.yaml: uses.postgresql.env.host: invalid_env_name: ",
+	}
+	if len(lines) != len(want) {
+		t.Fatalf("error lines = %q, want %d", lines, len(want))
+	}
+	for i := range want {
+		if !strings.HasPrefix(lines[i], want[i]) {
+			t.Errorf("line %d = %q, want prefix %q", i, lines[i], want[i])
+		}
 	}
 }

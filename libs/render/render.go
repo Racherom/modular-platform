@@ -119,7 +119,7 @@ func Render(plan contract.PlanResult, catalog []contract.CatalogEntry) (Output, 
 			setEnv(&consumer, env.Host, b.Provider)
 		}
 		if env.Port != "" {
-			setEnv(&consumer, env.Port, strconv.Itoa(providerEntry.Provides[b.Capability].Port))
+			setEnv(&consumer, env.Port, strconv.Itoa(providePort(providerEntry, b.Capability)))
 		}
 		project.Services[b.Consumer] = consumer
 	}
@@ -180,6 +180,18 @@ func setEnv(svc *types.ServiceConfig, name, value string) {
 		svc.Environment = types.MappingWithEquals{}
 	}
 	svc.Environment[name] = &value
+}
+
+// sdkPort is where a runtime: sdk module listens in plain mode (spec 0005).
+const sdkPort = 8080
+
+// providePort is the port a consumer reaches capability on: the entry's own, or 8080 for a module
+// built on the sdk, which declares none.
+func providePort(e contract.CatalogEntry, capability string) int {
+	if e.Runtime == contract.Sdk {
+		return sdkPort
+	}
+	return e.Provides[capability].Port
 }
 
 // healthcheck copies a catalog healthcheck; the catalog rules already checked its durations.

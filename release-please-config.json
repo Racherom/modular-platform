@@ -8,6 +8,7 @@
       "package-name": "modular-platform",
       "extra-files": [
         "deploy/online/versions.env",
+        "catalog/planner.yaml",
         {
           "type": "json",
           "path": "web/package.json",

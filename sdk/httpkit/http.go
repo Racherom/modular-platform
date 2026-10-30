@@ -1,19 +1,15 @@
-package platform
+package httpkit
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
-
-	"github.com/racherom/modular-platform/libs/contract"
 )
 
 // NewLogger returns the JSON logger every service writes to stdout.
@@ -21,10 +17,24 @@ func NewLogger() *slog.Logger {
 	return slog.New(slog.NewJSONHandler(os.Stdout, nil))
 }
 
+// Problem is one entry of a problem list, the error shape of every platform API (the contract's
+// Problem schema; the sdk keeps its own copy because it never imports libs).
+type Problem struct {
+	Severity string `json:"severity"`
+	Code     string `json:"code"`
+	Path     string `json:"path"`
+	Message  string `json:"message"`
+}
+
+// ProblemList is the body of every error answer.
+type ProblemList struct {
+	Problems []Problem `json:"problems"`
+}
+
 // WriteProblem answers with one request level problem, the error shape of every platform API.
 func WriteProblem(w http.ResponseWriter, status int, code, message string) {
-	WriteJSON(w, status, contract.ProblemList{Problems: []contract.Problem{
-		{Severity: contract.Error, Code: code, Path: "", Message: message},
+	WriteJSON(w, status, ProblemList{Problems: []Problem{
+		{Severity: "error", Code: code, Path: "", Message: message},
 	}})
 }
 
@@ -67,29 +77,6 @@ func Healthcheck(url string) int {
 		return 1
 	}
 	return 0
-}
-
-// BearerAuth admits a request only with Authorization: Bearer <token>, compared in constant
-// time, and answers 401 otherwise. Paths in exempt pass untouched.
-func BearerAuth(token string, exempt []string, next http.Handler) http.Handler {
-	skip := map[string]bool{}
-	for _, p := range exempt {
-		skip[p] = true
-	}
-	want := []byte(token)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if skip[r.URL.Path] {
-			next.ServeHTTP(w, r)
-			return
-		}
-		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || subtle.ConstantTimeCompare([]byte(got), want) != 1 {
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			WriteProblem(w, http.StatusUnauthorized, "unauthorized", "This planner needs a valid bearer token.")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 // AccessLog logs method, path, status and duration of each request, except the health probes.
@@ -156,37 +143,6 @@ func Serve(ctx context.Context, log *slog.Logger, addr string, handler http.Hand
 		return fmt.Errorf("serve: %w", err)
 	}
 	return nil
-}
-
-// EnvInt reads a whole number setting of at least min, or def when it is unset.
-func EnvInt(name string, def, min int) (int, error) {
-	v, ok := os.LookupEnv(name)
-	if !ok || v == "" {
-		return def, nil
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < min {
-		return 0, fmt.Errorf("%s must be a whole number of at least %d, got %q", name, min, v)
-	}
-	return n, nil
-}
-
-// ReadSecretFile reads a secret from the file a *_FILE setting names. A missing setting, a
-// missing file or an empty secret is an error, so a service never starts without its secret.
-func ReadSecretFile(setting string) (string, error) {
-	path := os.Getenv(setting)
-	if path == "" {
-		return "", fmt.Errorf("%s is not set", setting)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", setting, err)
-	}
-	secret := strings.TrimSpace(string(data))
-	if secret == "" {
-		return "", fmt.Errorf("%s: %s is empty", setting, path)
-	}
-	return secret, nil
 }
 
 // BasePath checks a base path setting: empty for the site root, else like /platform (starts with

@@ -1,4 +1,4 @@
-package platform
+package httpkit
 
 import (
 	"bytes"
@@ -230,21 +230,28 @@ func TestRateLimiterWarnsOncePerInterval(t *testing.T) {
 	l, _ := testLimiter(2)
 	var logs bytes.Buffer
 	ticks := make(chan time.Time)
+	swept := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		l.sweepTicks(ctx, ticks, slog.New(slog.NewJSONHandler(&logs, nil)))
+		l.sweepTicks(ctx, ticks, slog.New(slog.NewJSONHandler(&logs, nil)), func() { swept <- struct{}{} })
 	}()
+	// tick hands one tick over and waits until its sweep has finished, so no Allow below races
+	// with a sweep
+	tick := func() {
+		ticks <- time.Time{}
+		<-swept
+	}
 
 	keys := []string{"client-a", "client-b", "client-c", "client-d", "client-e", "client-f"}
 	for _, k := range keys[:4] {
 		l.Allow(k) // two evictions
 	}
-	ticks <- time.Time{}
-	ticks <- time.Time{} // quiet
-	l.Allow(keys[4])     // one eviction
-	ticks <- time.Time{}
+	tick()
+	tick()           // quiet
+	l.Allow(keys[4]) // one eviction
+	tick()
 	l.Allow(keys[5]) // after the last tick: not logged
 	cancel()
 	<-done
@@ -279,7 +286,7 @@ func TestRateLimiterWarnsOncePerInterval(t *testing.T) {
 func TestNewRateLimiterNeedsMaxKeys(t *testing.T) {
 	t.Parallel()
 	defer func() {
-		if got := recover(); got != "platform: NewRateLimiter maxKeys must be at least 1" {
+		if got := recover(); got != "httpkit: NewRateLimiter maxKeys must be at least 1" {
 			t.Errorf("panic %v", got)
 		}
 	}()

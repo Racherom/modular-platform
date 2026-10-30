@@ -20,6 +20,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-shellwords v1.0.12 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/racherom/modular-platform/sdk v0.0.0
 	github.com/sirupsen/logrus v1.10.1 // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
@@ -33,3 +34,7 @@ require (
 replace github.com/racherom/modular-platform/libs => ../../libs
 
 replace github.com/racherom/modular-platform/catalog => ../../catalog
+
+replace github.com/racherom/modular-platform/sdk => ../../sdk
+
+tool github.com/racherom/modular-platform/sdk/cmd/sdkgen

@@ -1,0 +1,469 @@
+# Catalog entry fixtures for the sdk fields of spec 0005. sdk/manifest and libs/contract both run
+# every case and must report exactly `want` (dotted path, then code); an empty list means the
+# entry is accepted. Each entry is `header` followed by the case's `body`.
+header: |
+  apiVersion: modular-platform/v0alpha1
+  kind: Module
+  name: svc
+  description: A service.
+  image: example.test/svc:1.0.0
+cases:
+  - name: accepted sdk entry
+    want: []
+    body: |
+      runtime: sdk
+      provides:
+        api:
+          auth: binding-token
+          env:
+            clients_dir: SVC_CLIENTS_DIR
+      uses:
+        db:
+          client: postgresql
+          env:
+            url: DB_URL
+            database: DB_NAME
+            user: DB_USER
+            password_file: DB_PASSWORD_FILE
+            sslmode: DB_SSLMODE
+        files:
+          optional: true
+          client: s3
+          env:
+            url: FILES_URL
+            bucket: FILES_BUCKET
+            region: FILES_REGION
+            access_key_id: FILES_KEY_ID
+            secret_access_key_file: FILES_SECRET_KEY_FILE
+        search:
+          client: http
+          env:
+            url: SEARCH_URL
+            token_file: SEARCH_TOKEN_FILE
+            ca_file: SEARCH_CA_FILE
+      config:
+        mode:
+          env: SVC_MODE
+          type: enum
+          values: [public, internal]
+          default: public
+          description: Where the service runs.
+        rate:
+          env: SVC_RATE
+          type: int
+          default: "60"
+          min: 1
+          max: 1000
+          description: Requests per minute.
+        timeout:
+          env: SVC_TIMEOUT
+          type: duration
+          default: 10s
+          min: 1s
+          max: 1m
+          description: How long a call may take.
+        verbose:
+          env: SVC_VERBOSE
+          type: bool
+          default: "false"
+          description: Log more.
+        home:
+          env: SVC_HOME
+          type: url
+          optional: true
+          description: The public address.
+        label:
+          env: SVC_LABEL
+          type: string
+          pattern: "[a-z]+"
+          default: main
+          description: A short label.
+        api-key:
+          env: SVC_API_KEY
+          type: secret
+          generate: true
+          description: The key callers send.
+  - name: accepted plain entry with the common binding keys
+    want: []
+    body: |
+      provides:
+        http:
+          port: 80
+      uses:
+        db:
+          env:
+            host: DB_HOST
+            port: DB_PORT
+            url: DB_URL
+            token_file: DB_TOKEN_FILE
+  - name: runtime other than sdk
+    want: [runtime invalid_runtime]
+    body: |
+      runtime: java
+  - name: config on a value with a lower case env
+    want: [config.mode.env invalid_env_name]
+    body: |
+      runtime: sdk
+      config:
+        mode:
+          env: svc_mode
+          type: string
+          description: A mode.
+  - name: env ending in _FILE
+    want: [config.mode.env invalid_env_name]
+    body: |
+      runtime: sdk
+      config:
+        mode:
+          env: SVC_MODE_FILE
+          type: string
+          description: A mode.
+  - name: env that is a bootstrap name
+    want: [config.mode.env invalid_env_name]
+    body: |
+      runtime: sdk
+      config:
+        mode:
+          env: MP_INSTANCE
+          type: string
+          description: A mode.
+  - name: value name that breaks the naming rule
+    want: [config.Mode invalid_name]
+    body: |
+      runtime: sdk
+      config:
+        Mode:
+          env: SVC_MODE
+          type: string
+          description: A mode.
+  - name: value named like a secret
+    want: [config.token duplicate_name]
+    body: |
+      secrets:
+        - name: token
+          env: TOKEN_FILE
+      config:
+        token:
+          env: SVC_TOKEN
+          type: string
+          description: A token.
+  - name: value env used twice
+    want: [config.b.env duplicate_env]
+    body: |
+      config:
+        a:
+          env: SVC_X
+          type: string
+          description: First.
+        b:
+          env: SVC_X
+          type: string
+          description: Second.
+  - name: value env whose _FILE form is a secret env
+    want: [config.token.env duplicate_env]
+    body: |
+      secrets:
+        - name: password
+          env: SVC_TOKEN_FILE
+      config:
+        token:
+          env: SVC_TOKEN
+          type: secret
+          description: A token.
+  - name: binding env reused by a value
+    want: [config.host.env duplicate_env]
+    body: |
+      uses:
+        db:
+          env:
+            host: DB_HOST
+      config:
+        host:
+          env: DB_HOST
+          type: string
+          description: A host.
+  - name: unknown type
+    want: [config.mode.type invalid_type]
+    body: |
+      config:
+        mode:
+          env: SVC_MODE
+          type: float
+          description: A mode.
+  - name: no type
+    want: [config.mode.type missing_field]
+    body: |
+      config:
+        mode:
+          env: SVC_MODE
+          description: A mode.
+  - name: no description
+    want: [config.mode.description missing_field]
+    body: |
+      config:
+        mode:
+          env: SVC_MODE
+          type: string
+          description: ""
+  - name: description over two lines
+    want: [config.mode.description invalid_rule]
+    body: |
+      config:
+        mode:
+          env: SVC_MODE
+          type: string
+          description: "A mode.\nAnd more."
+  - name: description that starts with a hash
+    want: [config.mode.description invalid_rule]
+    body: |
+      config:
+        mode:
+          env: SVC_MODE
+          type: string
+          description: "# A mode."
+  - name: enum without values
+    want: [config.mode.values missing_field]
+    body: |
+      config:
+        mode:
+          env: SVC_MODE
+          type: enum
+          description: A mode.
+  - name: enum value twice
+    want: [config.mode.values.1 invalid_rule]
+    body: |
+      config:
+        mode:
+          env: SVC_MODE
+          type: enum
+          values: [a, a]
+          description: A mode.
+  - name: empty enum value
+    want: [config.mode.values.0 invalid_rule]
+    body: |
+      config:
+        mode:
+          env: SVC_MODE
+          type: enum
+          values: [""]
+          description: A mode.
+  - name: enum default not in values
+    want: [config.mode.default invalid_default]
+    body: |
+      config:
+        mode:
+          env: SVC_MODE
+          type: enum
+          values: [a, b]
+          default: c
+          description: A mode.
+  - name: int default below min
+    want: [config.rate.default invalid_default]
+    body: |
+      config:
+        rate:
+          env: SVC_RATE
+          type: int
+          min: 1
+          default: "0"
+          description: A rate.
+  - name: int default not a number
+    want: [config.rate.default invalid_default]
+    body: |
+      config:
+        rate:
+          env: SVC_RATE
+          type: int
+          default: many
+          description: A rate.
+  - name: empty default
+    want: [config.label.default invalid_default]
+    body: |
+      config:
+        label:
+          env: SVC_LABEL
+          type: string
+          default: ""
+          description: A label.
+  - name: string default that misses the pattern
+    want: [config.label.default invalid_default]
+    body: |
+      config:
+        label:
+          env: SVC_LABEL
+          type: string
+          pattern: "[a-z]+"
+          default: Main
+          description: A label.
+  - name: min on a string
+    want: [config.label.min rule_not_allowed]
+    body: |
+      config:
+        label:
+          env: SVC_LABEL
+          type: string
+          min: 1
+          description: A label.
+  - name: pattern on an int
+    want: [config.rate.pattern rule_not_allowed]
+    body: |
+      config:
+        rate:
+          env: SVC_RATE
+          type: int
+          pattern: "[0-9]+"
+          description: A rate.
+  - name: values on a string
+    want: [config.label.values rule_not_allowed]
+    body: |
+      config:
+        label:
+          env: SVC_LABEL
+          type: string
+          values: [a]
+          description: A label.
+  - name: generate on a string
+    want: [config.label.generate rule_not_allowed]
+    body: |
+      config:
+        label:
+          env: SVC_LABEL
+          type: string
+          generate: true
+          description: A label.
+  - name: default on a secret
+    want: [config.key.default rule_not_allowed]
+    body: |
+      config:
+        key:
+          env: SVC_KEY
+          type: secret
+          default: hunter2
+          description: A key.
+  - name: min above max
+    want: [config.rate.max invalid_rule]
+    body: |
+      config:
+        rate:
+          env: SVC_RATE
+          type: int
+          min: 10
+          max: 5
+          description: A rate.
+  - name: duration bound that is not a duration
+    want: [config.timeout.min invalid_rule]
+    body: |
+      config:
+        timeout:
+          env: SVC_TIMEOUT
+          type: duration
+          min: soon
+          description: A timeout.
+  - name: pattern that does not compile
+    want: [config.label.pattern invalid_rule]
+    body: |
+      config:
+        label:
+          env: SVC_LABEL
+          type: string
+          pattern: "[a-"
+          description: A label.
+  - name: unknown key in a value
+    want: [. invalid_entry]
+    body: |
+      config:
+        label:
+          env: SVC_LABEL
+          type: string
+          description: A label.
+          secret: true
+  - name: client on an entry without runtime sdk
+    want: [uses.search.client client_not_allowed]
+    body: |
+      uses:
+        search:
+          client: http
+          env:
+            url: SEARCH_URL
+  - name: unknown client
+    want: [uses.search.client invalid_rule]
+    body: |
+      runtime: sdk
+      uses:
+        search:
+          client: grpc
+  - name: postgresql key on an http client
+    want: [uses.search.env.bucket unknown_binding_key]
+    body: |
+      runtime: sdk
+      uses:
+        search:
+          client: http
+          env:
+            url: SEARCH_URL
+            bucket: SEARCH_BUCKET
+  - name: postgresql client missing its keys
+    want: [uses.db.env.database missing_field, uses.db.env.password_file missing_field, uses.db.env.user missing_field]
+    body: |
+      runtime: sdk
+      uses:
+        db:
+          client: postgresql
+          env:
+            url: DB_URL
+  - name: http client without url
+    want: [uses.search.env.url missing_field]
+    body: |
+      runtime: sdk
+      uses:
+        search:
+          client: http
+  - name: unknown binding key
+    want: [. invalid_entry]
+    body: |
+      uses:
+        db:
+          env:
+            schema: DB_SCHEMA
+  - name: port on a runtime sdk provide
+    want: [provides.api.port port_not_allowed]
+    body: |
+      runtime: sdk
+      provides:
+        api:
+          port: 8080
+  - name: runtime sdk providing two capabilities
+    want: [provides too_many_provides]
+    body: |
+      runtime: sdk
+      provides:
+        api: {}
+        admin: {}
+  - name: auth without clients_dir
+    want: [provides.api.env.clients_dir missing_field]
+    body: |
+      runtime: sdk
+      provides:
+        api:
+          auth: binding-token
+  - name: clients_dir without auth
+    want: [provides.api.env.clients_dir rule_not_allowed]
+    body: |
+      runtime: sdk
+      provides:
+        api:
+          env:
+            clients_dir: SVC_CLIENTS_DIR
+  - name: unknown auth
+    want: [provides.api.auth invalid_rule]
+    body: |
+      runtime: sdk
+      provides:
+        api:
+          auth: mtls
+  - name: plain provide without port
+    want: [provides.http.port invalid_port]
+    planner_only: true
+    body: |
+      provides:
+        http: {}

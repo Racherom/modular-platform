@@ -1,4 +1,4 @@
-package platform
+package httpkit
 
 import (
 	"container/list"
@@ -38,7 +38,7 @@ type bucket struct {
 // NewRateLimiter refills perMinute tokens per minute per key, up to burst, for at most maxKeys keys.
 func NewRateLimiter(perMinute, burst int, idle time.Duration, maxKeys int) *RateLimiter {
 	if maxKeys < 1 {
-		panic("platform: NewRateLimiter maxKeys must be at least 1")
+		panic("httpkit: NewRateLimiter maxKeys must be at least 1")
 	}
 	return &RateLimiter{
 		perMinute: perMinute,
@@ -112,12 +112,12 @@ func (l *RateLimiter) Len() int {
 func (l *RateLimiter) SweepEvery(ctx context.Context, every time.Duration, log *slog.Logger) {
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
-	l.sweepTicks(ctx, ticker.C, log)
+	l.sweepTicks(ctx, ticker.C, log, nil)
 }
 
-// sweepTicks is SweepEvery with the ticks supplied, so tests can drive it. Evictions after the
-// last tick are not logged.
-func (l *RateLimiter) sweepTicks(ctx context.Context, ticks <-chan time.Time, log *slog.Logger) {
+// sweepTicks is SweepEvery with the ticks supplied, so tests can drive it; swept, when not nil,
+// runs after each sweep. Evictions after the last tick are not logged.
+func (l *RateLimiter) sweepTicks(ctx context.Context, ticks <-chan time.Time, log *slog.Logger, swept func()) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -131,6 +131,9 @@ func (l *RateLimiter) sweepTicks(ctx context.Context, ticks <-chan time.Time, lo
 					slog.Int("buckets", buckets),
 					slog.Int("max", l.maxKeys),
 				)
+			}
+			if swept != nil {
+				swept()
 			}
 		}
 	}

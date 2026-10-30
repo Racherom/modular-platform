@@ -7,6 +7,7 @@ ENV CGO_ENABLED=0 GOFLAGS=-trimpath
 COPY go.work go.work.sum* ./
 COPY catalog/ catalog/
 COPY libs/ libs/
+COPY sdk/ sdk/
 COPY services/planner/ services/planner/
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     go build -ldflags="-s -w" -o /out/planner ./services/planner/cmd/planner

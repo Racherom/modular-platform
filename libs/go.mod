@@ -9,8 +9,13 @@ tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 require (
 	github.com/compose-spec/compose-go/v2 v2.16.2
 	github.com/distribution/reference v0.6.0
-	golang.org/x/time v0.16.0
+	github.com/oapi-codegen/runtime v1.8.0
 	sigs.k8s.io/yaml v1.6.0
+)
+
+require (
+	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 )
 
 require (
@@ -26,6 +31,7 @@ require (
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/racherom/modular-platform/sdk v0.0.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/sirupsen/logrus v1.10.1 // indirect
 	github.com/speakeasy-api/jsonpath v0.6.3 // indirect
@@ -42,3 +48,5 @@ require (
 	golang.org/x/tools v0.48.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/racherom/modular-platform/sdk => ../sdk

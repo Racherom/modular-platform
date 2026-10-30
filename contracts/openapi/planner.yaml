@@ -107,7 +107,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: Internal mode only. The token is read from `MP_PLANNER_TOKEN_FILE`.
+      description: Internal mode only. Each consumer sends its binding token; the planner accepts the tokens in the files of `MP_PLANNER_CLIENTS_DIR`, one per consumer (spec 0005).
   responses:
     BadGraph:
       description: |
@@ -215,6 +215,17 @@ components:
         image:
           type: string
           description: An image reference with a tag other than `latest`, optionally followed by a digest.
+        runtime:
+          type: string
+          enum: [sdk]
+          description: |
+            `sdk` when the image is built on the module SDK (spec 0005): the render gives it the
+            bootstrap env and its env file, and it listens on 8080 (plain) or 8443 (TLS).
+        config:
+          type: object
+          description: Value name to one declared config value, read by the SDK (spec 0005).
+          additionalProperties:
+            $ref: "#/components/schemas/ConfigValue"
         provides:
           type: object
           description: Capability to where a consumer reaches it.
@@ -236,13 +247,27 @@ components:
     Provide:
       type: object
       additionalProperties: false
-      required: [port]
       properties:
         port:
           type: integer
           minimum: 1
           maximum: 65535
-          description: The port on the service's host name.
+          description: "The port on the service's host name. Required, except on a `runtime: sdk` entry, which must not set it."
+        auth:
+          type: string
+          enum: [binding-token]
+          description: "`binding-token`: every consumer calls with its own per binding token."
+        env:
+          $ref: "#/components/schemas/ProvideEnv"
+          # keep the pointer: a provide without env stays without it in the catalog answer
+          x-go-type-skip-optional-pointer: false
+    ProvideEnv:
+      type: object
+      additionalProperties: false
+      properties:
+        clients_dir:
+          type: string
+          description: Env var set to the directory holding one token file per consumer; required with `auth`.
     Use:
       type: object
       additionalProperties: false
@@ -250,17 +275,93 @@ components:
         optional:
           type: boolean
           default: false
+        client:
+          type: string
+          enum: [http, postgresql, s3]
+          description: "The client the SDK builds for this binding; only on a `runtime: sdk` entry."
         env:
           $ref: "#/components/schemas/UseEnv"
     UseEnv:
       type: object
-      description: Env var names the consumer reads the provider's address from. An omitted key delivers nothing.
+      description: |
+        Env var names the consumer reads the binding from. An omitted key delivers nothing. Every
+        binding takes host, port, url, token_file and ca_file; a postgresql client also database,
+        user, password_file and sslmode; an s3 client also bucket, region, access_key_id and
+        secret_access_key_file.
       additionalProperties: false
       properties:
         host:
           type: string
         port:
           type: string
+        url:
+          type: string
+        token_file:
+          type: string
+        ca_file:
+          type: string
+        database:
+          type: string
+        user:
+          type: string
+        password_file:
+          type: string
+        sslmode:
+          type: string
+        bucket:
+          type: string
+        region:
+          type: string
+        access_key_id:
+          type: string
+        secret_access_key_file:
+          type: string
+    ConfigValue:
+      type: object
+      description: One value a module built on the SDK reads at start (spec 0005).
+      additionalProperties: false
+      required: [env, type, description]
+      properties:
+        env:
+          type: string
+          description: Env var name, `^[A-Z][A-Z0-9_]*$`; `<env>_FILE` names a file holding the value.
+        type:
+          type: string
+          enum: [string, int, bool, duration, url, enum, secret]
+        description:
+          type: string
+          description: One sentence; the Go doc comment and the env file comment.
+        default:
+          type: string
+          description: Parsed by type and checked by the rules; not allowed on a secret.
+        optional:
+          type: boolean
+          default: false
+        min:
+          $ref: "#/components/schemas/ConfigBound"
+          # keep the pointer: an unset union has nothing to marshal
+          x-go-type-skip-optional-pointer: false
+        max:
+          $ref: "#/components/schemas/ConfigBound"
+          # keep the pointer: an unset union has nothing to marshal
+          x-go-type-skip-optional-pointer: false
+        pattern:
+          type: string
+          description: RE2, matched against the whole value; string only.
+        values:
+          type: array
+          items:
+            type: string
+          description: The allowed values; enum only, required there.
+        generate:
+          type: boolean
+          default: false
+          description: The render creates the secret as 32 random bytes in hex; secret only.
+    ConfigBound:
+      description: A whole number for an `int`, a duration like `10s` for a `duration`.
+      oneOf:
+        - type: integer
+        - type: string
     Secret:
       type: object
       description: Created by `setup.sh` as `secrets/<instance>/<name>`, mounted as the Compose secret `<instance>_<name>`.

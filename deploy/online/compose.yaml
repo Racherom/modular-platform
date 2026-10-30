@@ -67,6 +67,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     environment:
+      MP_INSTANCE: planner
       MP_PLANNER_MODE: public
       MP_PLANNER_RATE: ${MP_PLANNER_RATE:-60}
       # the ingress is the one proxy hop; set 2 when you add flood protection in front of it

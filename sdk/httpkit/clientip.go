@@ -1,7 +1,7 @@
-// Package platform is the service kit every Go service of the platform shares: JSON logs, health
-// endpoints, env config, bearer auth, rate limits, the client IP by proxy hop count, the base path
-// and an HTTP server with graceful shutdown.
-package platform
+// Package httpkit is the HTTP kit every module built on the sdk shares: JSON logs, problem
+// answers, health endpoints, the access log, rate limits, the client IP by proxy hop count, the
+// base path and an HTTP server with graceful shutdown.
+package httpkit
 
 import (
 	"net"

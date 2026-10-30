@@ -10,24 +10,35 @@ import (
 
 	"github.com/distribution/reference"
 	"sigs.k8s.io/yaml"
+
+	"github.com/racherom/modular-platform/sdk/manifest"
 )
 
-// Catalog rule codes (AC-11).
+// Catalog rule codes (AC-11 of spec 0001; the sdk fields of spec 0005 come from sdk/manifest).
 const (
 	CodeInvalidEntry       = "invalid_entry"
-	CodeMissingField       = "missing_field"
-	CodeInvalidName        = "invalid_name"
+	CodeMissingField       = manifest.CodeMissingField
+	CodeInvalidName        = manifest.CodeInvalidName
 	CodeNameMismatch       = "name_mismatch"
-	CodeDuplicateName      = "duplicate_name"
+	CodeDuplicateName      = manifest.CodeDuplicateName
 	CodeInvalidImage       = "invalid_image"
 	CodeImageUntagged      = "image_untagged"
 	CodeImageLatest        = "image_latest"
 	CodeInvalidPort        = "invalid_port"
-	CodeInvalidEnvName     = "invalid_env_name"
-	CodeDuplicateEnv       = "duplicate_env"
+	CodeInvalidEnvName     = manifest.CodeInvalidEnvName
+	CodeDuplicateEnv       = manifest.CodeDuplicateEnv
 	CodeInvalidHealthcheck = "invalid_healthcheck"
 	CodeInvalidDuration    = "invalid_duration"
 	CodeInvalidRetries     = "invalid_retries"
+	CodeInvalidRuntime     = manifest.CodeInvalidRuntime
+	CodeInvalidType        = manifest.CodeInvalidType
+	CodeInvalidDefault     = manifest.CodeInvalidDefault
+	CodeRuleNotAllowed     = manifest.CodeRuleNotAllowed
+	CodeInvalidRule        = manifest.CodeInvalidRule
+	CodeClientNotAllowed   = manifest.CodeClientNotAllowed
+	CodeUnknownBindingKey  = manifest.CodeUnknownBindingKey
+	CodePortNotAllowed     = manifest.CodePortNotAllowed
+	CodeTooManyProvides    = manifest.CodeTooManyProvides
 )
 
 // CatalogProblem is one broken catalog rule in one file.
@@ -82,11 +93,18 @@ func LoadCatalog(fsys fs.FS) ([]CatalogEntry, []CatalogProblem) {
 	return entries, problems
 }
 
-// CheckEntry decodes one catalog file strictly and checks every rule that concerns it alone.
+// CheckEntry decodes one catalog file strictly and checks every rule that concerns it alone. The
+// sdk fields and every env name are checked by sdk/manifest, so sdkgen refuses the same entries.
 func CheckEntry(file string, data []byte) (CatalogEntry, []CatalogProblem) {
 	c := entryChecker{file: file}
 	var e CatalogEntry
 	if err := yaml.UnmarshalStrict(data, &e); err != nil {
+		c.add(".", CodeInvalidEntry, "the entry could not be read: %s", oneLine(err))
+		return e, c.problems
+	}
+	m, err := manifest.Parse(data)
+	if err != nil {
+		// the schema and sdk/manifest disagree about a field; manifest_test.go guards against it
 		c.add(".", CodeInvalidEntry, "the entry could not be read: %s", oneLine(err))
 		return e, c.problems
 	}
@@ -108,22 +126,15 @@ func CheckEntry(file string, data []byte) (CatalogEntry, []CatalogProblem) {
 
 	for _, capability := range sortedKeys(e.Provides) {
 		c.name("provides."+capability, capability)
+		if e.Runtime == Sdk {
+			continue // a runtime: sdk provide has no port (manifest checks it)
+		}
 		if port := e.Provides[capability].Port; port < 1 || port > 65535 {
 			c.add("provides."+capability+".port", CodeInvalidPort, "port %d is not between 1 and 65535", port)
 		}
 	}
-
-	envs := map[string]string{}
-	c.env = envs
 	for _, capability := range sortedKeys(e.Uses) {
 		c.name("uses."+capability, capability)
-		env := e.Uses[capability].Env
-		if env.Host != "" {
-			c.envName("uses."+capability+".env.host", env.Host)
-		}
-		if env.Port != "" {
-			c.envName("uses."+capability+".env.port", env.Port)
-		}
 	}
 
 	secretNames := map[string]bool{}
@@ -134,11 +145,13 @@ func CheckEntry(file string, data []byte) (CatalogEntry, []CatalogProblem) {
 			c.add(p+".name", CodeDuplicateName, "secret %q is declared twice", s.Name)
 		}
 		secretNames[s.Name] = true
-		c.envName(p+".env", s.Env)
 	}
 
 	if e.Healthcheck != nil {
 		c.healthcheck(*e.Healthcheck)
+	}
+	for _, p := range manifest.Check(m) {
+		c.add(p.Path, p.Code, "%s", p.Message)
 	}
 	return e, c.problems
 }
@@ -146,7 +159,6 @@ func CheckEntry(file string, data []byte) (CatalogEntry, []CatalogProblem) {
 type entryChecker struct {
 	file     string
 	problems []CatalogProblem
-	env      map[string]string // env var name to the path that declared it first
 }
 
 func (c *entryChecker) add(path, code, format string, args ...any) {
@@ -159,21 +171,6 @@ func (c *entryChecker) name(path, name string) {
 		c.add(path, CodeMissingField, "a name is required")
 	case !ValidName(name):
 		c.add(path, CodeInvalidName, "%q must be a lowercase DNS label and not a YAML reserved word", name)
-	}
-}
-
-func (c *entryChecker) envName(path, name string) {
-	switch {
-	case name == "":
-		c.add(path, CodeMissingField, "an env var name is required")
-	case !ValidEnvName(name):
-		c.add(path, CodeInvalidEnvName, "%q is not a valid env var name", name)
-	default:
-		if first, ok := c.env[name]; ok {
-			c.add(path, CodeDuplicateEnv, "env var %s is already used by %s", name, first)
-			return
-		}
-		c.env[name] = path
 	}
 }
 

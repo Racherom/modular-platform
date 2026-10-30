@@ -78,7 +78,7 @@ A kit for building a new module container, so a module only describes what it ne
 spec [0005](../specs/0005-module-sdk/index.md) · code in `sdk/`, `catalog/planner.yaml`, `libs/contract/`, `libs/render/`, `services/planner/`
 - [x] Design it (spec): `/architect module SDK`
 - [ ] Build it: `/develop module SDK`
-   - [ ] Planner on a thin SDK: the `sdk` module absorbs `libs/platform`, the new catalog fields and rules, `sdkgen`, the config loader with env files, `sdk.Run`, `catalog/planner.yaml` (AC-1, AC-2, AC-3, AC-4, AC-5, AC-13)
+   - [x] Planner on a thin SDK: the `sdk` module absorbs `libs/platform`, the new catalog fields and rules, `sdkgen`, the config loader with env files, `sdk.Run`, `catalog/planner.yaml` (AC-1, AC-2, AC-3, AC-4, AC-5, AC-13)
    - [ ] Bindings and protection: per consumer tokens, the HTTP client, readiness, the render additions and the rendered end to end test (AC-6, AC-7, AC-9, AC-12)
    - [ ] TLS and the data clients: ACME TLS tested against `pebble`, the PostgreSQL and S3 clients (AC-6, AC-8, AC-9)
    - [ ] Caller token and pluggable sources: `MP-Caller` mint and check, push, per caller and binding resolver sources (AC-10, AC-11)

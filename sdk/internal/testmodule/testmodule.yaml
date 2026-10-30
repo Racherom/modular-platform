@@ -1,0 +1,55 @@
+apiVersion: modular-platform/v0alpha1
+kind: Module
+name: testmodule
+description: Declares one value of every type, for the sdk's own tests.
+image: example.test/testmodule:1.0.0
+runtime: sdk
+uses:
+  echo:
+    env:
+      url: TM_ECHO_URL
+config:
+  api-key:
+    env: TM_API_KEY
+    type: secret
+    description: The key the module signs with.
+  count:
+    env: TM_COUNT
+    type: int
+    default: "5"
+    min: 1
+    max: 100
+    description: The number of items to keep.
+  greeting:
+    env: TM_GREETING
+    type: string
+    default: hello
+    pattern: "[a-z]+"
+    description: The word the module answers with.
+  level:
+    env: TM_LEVEL
+    type: enum
+    values: [low, high]
+    default: low
+    description: The amount the module logs.
+  note:
+    env: TM_NOTE
+    type: string
+    optional: true
+    description: Free text, unset by default.
+  timeout:
+    env: TM_TIMEOUT
+    type: duration
+    default: 10s
+    min: 1s
+    description: The longest wait for one call.
+  upstream:
+    env: TM_UPSTREAM
+    type: url
+    default: http://upstream.test:8080
+    description: The address the module forwards to.
+  verbose:
+    env: TM_VERBOSE
+    type: bool
+    default: "false"
+    description: Whether each call is logged.

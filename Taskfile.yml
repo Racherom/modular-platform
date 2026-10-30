@@ -3,7 +3,7 @@
 version: "3"
 
 vars:
-  GO_PACKAGES: ./catalog/... ./libs/... ./services/planner/...
+  GO_PACKAGES: ./catalog/... ./libs/... ./sdk/... ./services/planner/...
   IMAGE_PREFIX: ghcr.io/racherom/modular-platform
   IMAGE_TAG: dev
   ONLINE: >-
@@ -27,10 +27,10 @@ tasks:
       - test -d node_modules
 
   generate:
-    desc: Generate Go and TypeScript code from contracts/openapi (the output is committed)
+    desc: Generate Go and TypeScript code from contracts/openapi and the sdk getters from catalog entries (the output is committed)
     deps: [web:install]
     cmds:
-      - go generate ./libs/contract ./services/planner/internal/api
+      - go generate ./libs/contract ./sdk/... ./services/planner/...
       - pnpm --dir web run generate
 
   build:
@@ -66,7 +66,7 @@ tasks:
     desc: Check formatting, go vet and the editor's types (feature #2 adds linters)
     deps: [web:install]
     cmds:
-      - test -z "$(gofmt -l catalog libs services)" || { gofmt -l catalog libs services; echo "run gofmt -w"; exit 1; }
+      - test -z "$(gofmt -l catalog libs sdk services)" || { gofmt -l catalog libs sdk services; echo "run gofmt -w"; exit 1; }
       - go vet {{.GO_PACKAGES}}
       - pnpm --dir web run typecheck
 
