@@ -6,10 +6,12 @@
 ## Structure
 
 - [0002. Provisional graph file, catalog entry and planner matching rules](0002-provisional-graph-format.md): the `v0alpha1` `graph.yaml` and catalog entry shapes, the planner's `uses` to `provides` rules, and the sample's one edge; supports the catalog, graph files and sample rows below and AC-2, AC-3, AC-4, AC-7 (adds AC-8 to AC-12).
+- [0003. Rate limiter bucket cap and eviction](0003-rate-limiter-bucket-cap.md): caps the public planner's rate limit buckets at 10,000 and evicts the least recently seen client when full; supports the "Planner modes" row below (its own AC-1 to AC-7).
+- [0004. Managed mode first build order](0004-managed-mode-first.md): managed mode (#16) becomes slice 1, public hosting of the online tool (#22) is deferred and its smoke job leaves CI, and the first managed thread runs without NATS; supports the Summary, AC-6, AC-7 and the "Managed mode wiring" section below.
 
 ## Summary
 
-The platform comes in two forms built from the same Go services. In static mode, users design their stack in an online tool you host on your own network (the editor plus a stateless planner service that stores nothing), download a zip with a Compose file and config files, run a setup script and `docker compose up`. In managed mode, users download a ready made zip of the platform itself (the same planner plus an API and a deployer, with Postgres, NATS, Authelia and Caddy), start it on their host, and plan and deploy their apps in their own planner. Because both forms run the same `planner` service behind the same contract, a stack planned online and one deployed by the platform come out the same; slice 1 is the static path, the rest of the managed services are scaffolded with feature #16. Every module the platform ships is only a default: platform services learn everything about a provider through its binding, and a provider's setup steps travel with its module, so you can swap any of them (#23). The website also works under a path of a site you already have (one base path setting, #24).
+The platform comes in two forms built from the same Go services. In static mode, users design their stack in an online tool you host on your own network (the editor plus a stateless planner service that stores nothing), download a zip with a Compose file and config files, run a setup script and `docker compose up`. In managed mode, users download a ready made zip of the platform itself (the same planner plus an API and a deployer, with Postgres, Authelia and Caddy, plus NATS once a later feature needs events that survive restarts), start it on their host, and plan and deploy their apps in their own planner. Because both forms run the same `planner` service behind the same contract, a stack planned online and one deployed by the platform come out the same. The scaffold built the static path first; managed mode (#16) is now the first slice, and public hosting of the online tool is deferred (child spec [0004](0004-managed-mode-first.md)). Every module the platform ships is only a default: platform services learn everything about a provider through its binding, and a provider's setup steps travel with its module, so you can swap any of them (#23). The website also works under a path of a site you already have (one base path setting, #24).
 
 ## Decision
 
@@ -44,7 +46,7 @@ These hold for every later spec. Detailed formats belong to the specs named in b
 
 ## Proposed stack
 
-### Shared core and planner service (slice 1)
+### Shared core and planner service (built by the scaffold)
 
 | Layer | Choice | Reason |
 |---|---|---|
@@ -53,7 +55,7 @@ These hold for every later spec. Detailed formats belong to the specs named in b
 | Renderer | `libs/render`: `compose-spec/compose-go` v2 types for the Compose file, `text/template` for config files and `setup.sh`, `archive/zip` for the zip | Zip export and managed deploy share one render path by construction |
 | Deploy target interface | `libs/target` with implementations `zip` (now) and `deployer-docker` (from #16) | The swappable target the scope asks for |
 | Planner service | `services/planner`: `GET /v1/catalog`, `POST /v1/plan`, `POST /v1/render` (returns the zip), `/healthz`, `/readyz`; contract `contracts/openapi/planner.yaml` | One contract for the online tool and the managed API |
-| Planner modes | `MP_PLANNER_MODE=public`: no auth, per client IP rate limit (`golang.org/x/time/rate` token bucket refilling `MP_PLANNER_RATE` tokens per minute, burst 10; keyed by the full IPv4 address or the IPv6 /64 network, client IP per principle 11; idle entries dropped after 10 minutes, in memory only; `/healthz` and `/readyz` exempt), request body limit 1 MB (413), 10 second deadline per request, no body logging. `MP_PLANNER_MODE=internal`: requires `MP_PLANNER_TOKEN_FILE` and refuses to start without it | Safe on the internet and safe inside the platform, with no silent open mode |
+| Planner modes | `MP_PLANNER_MODE=public`: no auth, per client IP rate limit (`golang.org/x/time/rate` token bucket refilling `MP_PLANNER_RATE` tokens per minute, burst 10; keyed by the full IPv4 address or the IPv6 /64 network, client IP per principle 11; idle entries dropped after 10 minutes, at most 10,000 entries with the least recently seen evicted when full (child spec [0003](0003-rate-limiter-bucket-cap.md)), in memory only; `/healthz` and `/readyz` exempt), request body limit 1 MB (413), 10 second deadline per request, no body logging. `MP_PLANNER_MODE=internal`: requires `MP_PLANNER_CLIENTS_DIR` holding at least one per consumer token and refuses to start without it (replaces `MP_PLANNER_TOKEN_FILE`, spec [0005](../0005-module-sdk/index.md)) | Safe on the internet and safe inside the platform, with no silent open mode |
 | Built in catalog | `catalog/` source compiled at build time into the planner (embedded) and served by `GET /v1/catalog`; managed requests may add shared catalog entries (#13). Until spec #3 exists, the scaffold uses the provisional `v0alpha1` entry format pinned in child spec [0002](0002-provisional-graph-format.md), replaced by #3 | The catalog is versioned with the release |
 | Graph files | `graph.yaml` text files saved and opened by the editor, included in every zip; provisional `v0alpha1` format and planner matching rules in child spec [0002](0002-provisional-graph-format.md), replaced by #3, #4 and #6 | Reopen and change a stack later; ready for version control (#12) |
 | HTTP | `net/http` ServeMux (method and path patterns), no framework | Standard library is enough for generated handlers |
@@ -63,7 +65,7 @@ These hold for every later spec. Detailed formats belong to the specs named in b
 | Images | Go services on `gcr.io/distroless/static-debian12:nonroot`, multi stage builds from the repo root so `go.work` applies | Small, nonroot |
 | License | Apache 2.0 | Permissive with a patent grant; the container ecosystem norm |
 
-### Online tool (static mode, slice 1)
+### Online tool (static mode, built by the scaffold; public hosting deferred)
 
 | Layer | Choice | Reason |
 |---|---|---|
@@ -95,7 +97,7 @@ These hold for every later spec. Detailed formats belong to the specs named in b
 | Platform database | PostgreSQL protocol as a `postgresql` capability; default provider the official `postgres` image | Relational integrity for identity, roles, audit, history; JSONB for graph documents |
 | DB access | `pgx` v5 plus `sqlc` generated queries | Plain reviewable SQL with compile time checked Go types |
 | Migrations | `goose` v3, SQL embedded in `api`, run at startup through goose's Provider API with the Postgres session locker (the default provider does not lock) | sqlc reads the same files; concurrent starts are safe |
-| Event bus | NATS with JetStream as a `nats` capability; official `nats` image; client `nats.go` | Exchangeable; progress survives restarts; reused by #17 to #19 |
+| Event bus | NATS with JetStream as a `nats` capability; official `nats` image; client `nats.go` | Exchangeable; progress survives restarts; reused by #17 to #19. Left out of the first managed thread, where `api` polls the deployer (child spec [0004](0004-managed-mode-first.md)) |
 | Events to browser | Server Sent Events from `api` | One way push over plain HTTP through the ingress |
 | Sign in | OIDC Authorization Code with PKCE; `api` is a confidential client (`coreos/go-oidc/v3`, `golang.org/x/oauth2`) | The platform never stores passwords |
 | Identity provider | Authelia as an `oidc` capability, users in its file backend, storage in a provisioned Postgres database | Light, full OIDC provider; the bundled default is the fallback for #14 and #18 |
@@ -115,8 +117,8 @@ These hold for every later spec. Detailed formats belong to the specs named in b
 |---|---|---|
 | Repository | One monorepo `github.com/racherom/modular-platform`; Go workspace (`go.work`); `web/` as a pnpm workspace; Taskfile for cross language tasks | One place for core, contracts and codegen |
 | Codegen output | Generated Go and TypeScript is committed; CI runs `task generate` and fails on a diff | Reviewable diffs, builds without generator tools |
-| CI | GitHub Actions on every pull request: generate diff, lint, test, build, and a `smoke` job (start `deploy/online/`, render the sample zip through the planner, `sh setup.sh`, `docker compose up -d`, wait for healthy) | A broken planner or zip is caught before merge |
-| Releases | SemVer with release-please (manifest mode, one shared version); the tag builds multi arch images (`linux/amd64`, `linux/arm64`) to `ghcr.io/racherom/modular-platform/<service>` (`web` and `planner` from slice 1, the rest from #16) and, from #16, attaches the managed zip | One version pins core, images and zips together |
+| CI | GitHub Actions on every pull request: generate diff, lint, test, build, and, from #16, a managed smoke job. The online `smoke` job (start `deploy/online/`, render the sample zip through the planner, `sh setup.sh`, `docker compose up -d`, wait for healthy) is out of CI while the online tool is deferred and runs by hand as `task smoke` (child spec [0004](0004-managed-mode-first.md)) | A broken planner or zip is caught before merge |
+| Releases | SemVer with release-please (manifest mode, one shared version); the tag builds multi arch images (`linux/amd64`, `linux/arm64`) to `ghcr.io/racherom/modular-platform/<service>` (`web` and `planner` from the scaffold, the rest from #16) and, from #16, attaches the managed zip | One version pins core, images and zips together |
 | Command line | None for now; feature #12 decides whether a CLI is worth it | Neither install path needs one |
 
 ### Repository layout
@@ -133,7 +135,7 @@ modular-platform/
     planner/                     pure planning library, no I/O
     render/                      plan to Compose project, config files, setup.sh, zip
     target/                      Target interface; zip implementation
-    platform/                    service kit: slog setup, health endpoints, env config, bearer auth, rate limit, client IP by hop count, base path
+    platform/                    service kit: slog setup, health endpoints, env config, bearer auth, rate limit, client IP by hop count, base path (moves into the `sdk/` module, spec [0005](../0005-module-sdk/index.md))
   services/
     planner/                     Go module, cmd/planner, internal/...
   web/                           pnpm workspace: the editor app
@@ -149,22 +151,24 @@ modular-platform/
 
 Added with #16: `contracts/openapi/api.yaml` and `deploy-target.yaml`, `services/api/`, `services/deployer-docker/` (each its own Go module), and `deploy/managed/` (the platform graph and its config templates). The root `package.json`, `package-lock.json` and `node_modules/` (a placeholder `nodejs` dependency) are replaced by the pnpm workspace in `web/`.
 
-### Online tool wiring (slice 1, pinned)
+### Online tool wiring (built by the scaffold, pinned)
 
 - `deploy/online/compose.yaml`: project name `modular-platform-online`; services `ingress`, `web`, `planner`; one network `edge`; only `ingress` publishes ports; volumes `caddy_data`, `caddy_config`. Image versions pinned to exact tags in `versions.env`; never `latest`.
 - Caddy routes `<base>/planner/*` to `planner:8080` with `<base>/planner` stripped, everything else under `<base>/` to `web:8080` with the path unchanged. The editor's API root is `<base>/planner`.
 - Settings in `deploy/online/.env`: `PLATFORM_DOMAIN` (your public host name; `platform.localhost` for local runs), `PLATFORM_TLS` (`acme` in production, `internal` locally), `PLATFORM_ACME_EMAIL` (optional contact for the certificate authority), `PLATFORM_HTTPS_PORT` (443), `PLATFORM_HTTP_PORT` (80), `MP_PLANNER_RATE` (requests per minute per client IP, default 60), `MP_BASE_PATH` (empty).
 - Container settings: `planner` gets `MP_PLANNER_MODE=public`, `MP_PLANNER_RATE`, `MP_PROXY_HOPS`; `web` gets `MP_BASE_PATH` and `MP_API_ROOT=${MP_BASE_PATH}/planner`.
 - The planner takes the client IP per principle 11 with `MP_PROXY_HOPS=1`; set it to 2 when you add flood protection in front of the ingress (#22). The planner is reachable only through the ingress, so the counted hop is always yours.
-- The online tool runs at the site root (`MP_BASE_PATH` empty); the `web` image's base path support is still exercised by the smoke job (AC-7) so #24 reuses it unchanged. For that, `deploy/online/compose.subpath.yaml` overrides `MP_BASE_PATH=/platform`, and the ingress then serves only `/platform/...` (the editor at `/platform/`, the catalog at `/platform/planner/v1/catalog`).
+- The online tool runs at the site root (`MP_BASE_PATH` empty); the `web` image's base path support is still exercised by `task smoke` (AC-7) so #24 reuses it unchanged. For that, `deploy/online/compose.subpath.yaml` overrides `MP_BASE_PATH=/platform`, and the ingress then serves only `/platform/...` (the editor at `/platform/`, the catalog at `/platform/planner/v1/catalog`).
 - Healthchecks: `ingress` and `web` with `wget -q -O /dev/null http://127.0.0.1:2019/config/` (the Caddy admin endpoint, left on its default loopback address and never published; Alpine variants); `planner` with its `healthcheck` subcommand against `/readyz`.
-- The CI `smoke` job runs with `PLATFORM_TLS=internal` and calls the ingress with `curl -k`, in CI only; documentation never tells you to skip certificate checks.
+- `task smoke` runs with `PLATFORM_TLS=internal` and calls the ingress with `curl -k`, for that check only; documentation never tells you to skip certificate checks.
 - `task dev` runs this stack with `compose.dev.yaml`, where Caddy routes `/` to the Vite dev server on the host, so hot reload runs on the same origin as production.
 
 ### Managed mode wiring (pinned now, built with #16)
 
+The first managed thread leaves out `nats` (module, fragment, bindings, `nats_data` volume): `api` polls `deployer-docker` over `deploy-target` and relays state over SSE until a later feature needs events that survive restarts (child spec [0004](0004-managed-mode-first.md)). Everything else below holds for that thread.
+
 **Install**
-- The user unzips the managed zip and runs `sh setup.sh`. The platform part asks for domain, base path and admin email; then it asks the questions each module's fragment declares and runs the fragments (principle 9), which create their own items, never printing a secret, one file per secret in `secrets/<module>/` (mode 0600). Platform level: bearer tokens for `planner` and `deployer-docker`, the `api` OIDC client secret. Bundled module fragments: `postgres` (admin and per role passwords), `nats` (one user password per binding), `authelia` (asks admin user name and password; writes session secret, storage encryption key, OIDC signing key, the pbkdf2 digest of the `api` client secret, and `users.yml` with the admin's argon2id hash and the admin email). Non secret settings go to `.env`. Existing files are never overwritten.
+- The user unzips the managed zip and runs `sh setup.sh`. The platform part asks for domain, base path and admin email; then it asks the questions each module's fragment declares and runs the fragments (principle 9), which create their own items, never printing a secret, one file per secret in `secrets/<module>/` (mode 0600). Platform level: bearer tokens for `planner` and `deployer-docker`, the `api` OIDC client secret. Bundled module fragments: `postgres` (admin and per role passwords), `nats` (one user password per binding, once NATS returns), `authelia` (asks admin user name and password; writes session secret, storage encryption key, OIDC signing key, the pbkdf2 digest of the `api` client secret, and `users.yml` with the admin's argon2id hash and the admin email). Non secret settings go to `.env`. Existing files are never overwritten.
 - Then `docker compose up -d`. The one shot `db-init` service (contributed by the `postgres` module as `postgresql-provisioner`) provisions databases before `api` and `authelia` start. With an existing database instead, you give each consumer a ready `postgresql` binding and no init service runs (#10, #23).
 - Settings in `.env`: `PLATFORM_DOMAIN` (default `platform.localhost`; must contain a dot, which Authelia requires), `PLATFORM_BASE_PATH` (default empty for the site root; otherwise starts with `/`, no trailing slash, like `/platform`), `PLATFORM_ADMIN_EMAIL`, `PLATFORM_TLS` (`internal` or `acme`, default `internal`), `PLATFORM_HTTPS_PORT` (443), `PLATFORM_HTTP_PORT` (80). `PLATFORM_ACME_EMAIL` (optional). `PLATFORM_ORIGIN` (scheme, host and port the browser sees) defaults to `https://${PLATFORM_DOMAIN}` plus the port when not 443; set it explicitly when your own proxy's public port differs from the bundled ingress port (#24).
 
@@ -174,11 +178,11 @@ Added with #16: `contracts/openapi/api.yaml` and `deploy-target.yaml`, `services
 |---|---|---|---|
 | `ingress` | `caddy` (Alpine variant) | `http-ingress` | `http` from `web`, `platform-api` from `api`, `oidc` from `authelia` |
 | `web` | `ghcr.io/racherom/modular-platform/web` | `http` (editor) | none |
-| `api` | `ghcr.io/racherom/modular-platform/api` | `platform-api` | `postgresql`, `nats`, `oidc`, `planner`, `deploy-target` |
+| `api` | `ghcr.io/racherom/modular-platform/api` | `platform-api` | `postgresql`, `nats` (later), `oidc`, `planner`, `deploy-target` |
 | `planner` | `ghcr.io/racherom/modular-platform/planner` (internal mode) | `planner` | none (stateless) |
-| `deployer-docker` | `ghcr.io/racherom/modular-platform/deployer-docker` | `deploy-target` | `nats`, host Docker socket |
+| `deployer-docker` | `ghcr.io/racherom/modular-platform/deployer-docker` | `deploy-target` | `nats` (later), host Docker socket |
 | `postgres` | `postgres` (official) | `postgresql-provisioner` | none |
-| `nats` | `nats` (Alpine variant, JetStream on) | `nats` | none |
+| `nats` (later, not in the first thread) | `nats` (Alpine variant, JetStream on) | `nats` | none |
 | `authelia` | `authelia/authelia` | `oidc` | `postgresql` (provisioned) |
 
 Provisioned at start: databases `platform_api` and `authelia`, each with its own role, by `db-init` (the `postgres` image running a versioned, idempotent psql script that creates each role and database only if missing; runs on every `up`).
@@ -191,8 +195,9 @@ Provisioned at start: databases `platform_api` and `authelia`, each with its own
 | Browser | `api` (via ingress) | REST JSON under `/api/v1/`, SSE at `/api/v1/events` | Editor reads and writes; live progress and state |
 | Browser, `api` | `authelia` (via ingress, `/auth`) | OIDC Authorization Code with PKCE | Sign in |
 | `api` | `planner`, `deployer-docker` | REST JSON, bearer credential | Plan and render; apply and read state |
-| `deployer-docker` | `nats` | NATS (JetStream for progress) | Publish deploy progress and container state |
-| `api` | `nats` | NATS | Subscribe, persist history, relay to SSE |
+| `api` | `deployer-docker` | REST JSON, bearer credential, polled | First thread: read operation status and container state, relay to SSE (child spec [0004](0004-managed-mode-first.md)) |
+| `deployer-docker` | `nats` (later) | NATS (JetStream for progress) | Publish deploy progress and container state |
+| `api` | `nats` (later) | NATS | Subscribe, persist history, relay to SSE |
 | `api`, `authelia` | `postgres` | PostgreSQL wire | Own provisioned database each |
 | `deployer-docker` | Docker Engine | Unix socket via `docker compose` and the moby client | Run and inspect containers |
 
@@ -206,11 +211,11 @@ Provisioned at start: databases `platform_api` and `authelia`, each with its own
 - All `api` cookies, including the state and PKCE cookie before sign in, follow the Sessions row: `__Host-mp_*` with `Path=/` at the site root, `__Secure-mp_*` with `Path=<base>/` under a sub path, never a `Domain` attribute.
 
 **Health and layout**
-- Healthchecks: `postgres` `pg_isready`; `authelia` `authelia healthcheck`; `nats` `wget` on monitoring port 8222 `/healthz`; `ingress` and `web` `wget` on the Caddy admin endpoint; Go services their `healthcheck` subcommand against `/readyz`.
-- Compose project `modular-platform`. Networks `edge` (`ingress`, `web`, `api`, `authelia`) and `internal` (`api`, `planner`, `deployer-docker`, `postgres`, `nats`, `authelia`, `db-init`); only `ingress` publishes ports. Volumes `pg_data`, `nats_data`, `caddy_data`, `caddy_config`, `authelia_data`.
+- Healthchecks: `postgres` `pg_isready`; `authelia` `authelia healthcheck`; `nats` `wget` on monitoring port 8222 `/healthz` (once NATS returns); `ingress` and `web` `wget` on the Caddy admin endpoint; Go services their `healthcheck` subcommand against `/readyz`.
+- Compose project `modular-platform`. Networks `edge` (`ingress`, `web`, `api`, `authelia`) and `internal` (`api`, `planner`, `deployer-docker`, `postgres`, `nats`, `authelia`, `db-init`); only `ingress` publishes ports. Volumes `pg_data`, `nats_data` (once NATS returns), `caddy_data`, `caddy_config`, `authelia_data`.
 - Secrets reach containers only as Compose secrets read through `*_FILE` variables; each service lists only its own; no shared `env_file`. Image versions pinned to exact tags; never `latest`.
-- NATS: one user per binding (`api`, `deployer`); permissions start wide (`>`) and #16 narrows them per subject; no streams at boot.
-- Bearer credentials: `Authorization: Bearer`, read from `MP_PLANNER_TOKEN_FILE` and `MP_DEPLOYER_TOKEN_FILE`; `/healthz` and `/readyz` exempt.
+- NATS (once it returns): one user per binding (`api`, `deployer`); permissions narrowed per subject by the feature that brings it back; no streams at boot.
+- Bearer credentials: `Authorization: Bearer`, one token per binding, mounted on the consumer and in the provider's clients directory as spec [0005](../0005-module-sdk/index.md) defines (replacing `MP_PLANNER_TOKEN_FILE` and `MP_DEPLOYER_TOKEN_FILE`); `/healthz` and `/readyz` exempt.
 - Container labels under the prefix `io.github.racherom.modular-platform.` name graph, module and deployment (exact keys in #16).
 
 **Security baseline**
@@ -231,20 +236,20 @@ The scope's done line for this feature, made concrete for the scaffold (`/develo
 - **AC-2**: `task dev` runs the online tool graph (`ingress`, `web`, `planner`) on one origin; the editor loads and shows the built in catalog fetched from `GET /planner/v1/catalog`.
 - **AC-3**: Loading the fixed sample graph (`samples/`: `traefik/whoami` plus `postgres` with one generated password) and choosing download calls `POST /planner/v1/render` and saves a zip containing `docker-compose.yml`, `setup.sh`, `.env`, the graph file and `README.md`, and no secret value.
 - **AC-4**: On a clean Linux host with Docker, `sh setup.sh && docker compose up -d` in the unzipped folder brings the sample stack to healthy. Running `setup.sh` again changes no existing secret file, and `docker compose up -d` without running `setup.sh` first fails with a missing secret file error.
-- **AC-5**: In public mode the planner answers 429 once a client IP exceeds `MP_PLANNER_RATE` (after the burst of 10), 413 for a body over 1 MB, and never writes a request body to its logs; a client that varies a forged leftmost `X-Forwarded-For` entry is still limited as one client; in internal mode it refuses to start without `MP_PLANNER_TOKEN_FILE` and answers 401 to a call without the token.
-- **AC-6**: The CI `smoke` job runs AC-3 and AC-4 headlessly on every pull request, and a release tag pushes multi arch `web` and `planner` images to GHCR.
-- **AC-7**: With `deploy/online/compose.subpath.yaml` (`MP_BASE_PATH=/platform`, same `web` image), the editor loads at `/platform/`, fetches every asset and the catalog (`/platform/planner/v1/catalog`) from under `/platform/`, reloads a nested deep link under `/platform/` to the right screen with edge markers drawn on the sample graph, and requests nothing outside `/platform/`; `/platform` redirects to `/platform/`; the `smoke` job checks this.
+- **AC-5**: In public mode the planner answers 429 once a client IP exceeds `MP_PLANNER_RATE` (after the burst of 10), 413 for a body over 1 MB, and never writes a request body to its logs; a client that varies a forged leftmost `X-Forwarded-For` entry is still limited as one client; in internal mode it refuses to start without at least one token in `MP_PLANNER_CLIENTS_DIR` and answers 401 to a call without a valid token (spec [0005](../0005-module-sdk/index.md), AC-13).
+- **AC-6**: A release tag pushes multi arch `web` and `planner` images to GHCR. `task smoke` runs AC-3 and AC-4 headlessly; it is not part of CI while the online tool is deferred (child spec [0004](0004-managed-mode-first.md)), and #16 adds a managed smoke job to CI.
+- **AC-7**: With `deploy/online/compose.subpath.yaml` (`MP_BASE_PATH=/platform`, same `web` image), the editor loads at `/platform/`, fetches every asset and the catalog (`/platform/planner/v1/catalog`) from under `/platform/`, reloads a nested deep link under `/platform/` to the right screen with edge markers drawn on the sample graph, and requests nothing outside `/platform/`; `/platform` redirects to `/platform/`; `task smoke` checks this (run by hand while the online tool is deferred; #24 checks the sub path again for managed mode).
 - **AC-8 to AC-12**: planner rules, YAML round trip, the sample's rendered binding, catalog checks and the sample route; see child spec [0002](0002-provisional-graph-format.md#requirements). "Healthy" in AC-4 follows 0002's ready rule (a service without a healthcheck counts once running), and the nested deep link in AC-7 is the sample route `/platform/samples/whoami-postgres`.
 
 ## Consequences
 
 **Positive**:
-- Slice 1 is thin: no sign in, database, event bus or deployer is needed to go from design to a running stack.
-- The managed `planner` service runs in production from slice 1, behind the same contract the managed API will call.
+- The scaffold is thin: no sign in, database, event bus or deployer was needed to go from design to a running stack. The first slice is now managed mode (child spec [0004](0004-managed-mode-first.md)).
+- The managed `planner` service runs from the scaffold on, behind the same contract the managed API will call.
 - `libs/` has no WebAssembly limits, so network features later (#8 conformance checks, #10 external health checks, #13 shared catalogs) can run in the planner.
 - Zip export and managed deploy share `libs/render`, so they cannot drift; the online tool and the managed platform are themselves rendered graphs.
 - Because platform services learn providers only through bindings and setup travels with modules, #23 needs no change to `web`, `planner` or `api`, only other module manifests.
-- The base path lives in the `web` image and the service kit from slice 1, so #24 is configuration, not a rework.
+- The base path lives in the `web` image and the service kit from the scaffold, so #24 is configuration, not a rework.
 
 **Negative / tradeoffs**:
 - You operate a public service on your own network: uptime, patching, TLS renewal, abuse and denial of service exposure. Rate limits help; a determined flood needs protection in front of your network.
@@ -252,7 +257,7 @@ The scope's done line for this feature, made concrete for the scaffold (`/develo
 - The online tool works only while your service is up, and not offline.
 - No accounts: graphs live in one browser or in files the user keeps; there is no cross device sync or sharing.
 - `setup.sh` is POSIX only; Windows users need WSL or Git Bash, and some users will skip it (Compose then fails loudly rather than starting insecurely).
-- Managed mode still carries eight containers, three versioned contracts, distributed failure modes and OIDC on the critical path; that cost moves to #16 rather than disappearing.
+- Managed mode still carries seven long running containers plus `db-init` in its first thread (eight once NATS returns, (child spec [0004](0004-managed-mode-first.md))), three versioned contracts, distributed failure modes and OIDC on the critical path; that cost moves to #16 rather than disappearing.
 - `deployer-docker` runs as root with the Docker socket in managed mode; any flaw in it is host root.
 - sqlc's release pace has slowed (last release April 2026); generated code keeps working if it stalls.
 - Under a sub path the platform shares a browser origin with the rest of your site: a script flaw anywhere on that site can act as a signed in platform admin, and cookie paths do not stop it. Your own domain (or subdomain) is the safer placement; the README for #24 must say so.
@@ -271,7 +276,7 @@ The scope's done line for this feature, made concrete for the scaffold (`/develo
 - [x] Hosting the online tool on your network: enrolled as scope #22.
 - [ ] Spec #3 (contract) must cover: provisioning capabilities and their one shot init services, per binding credentials, how secrets are declared so `setup.sh` can create them, the capability names used here, the platform's own services as catalog modules, setup fragments (principle 9: inputs they ask for, the command run in the module's image, the secrets folder they own), and the binding fields that carry an issuer URL, a CA bundle and a public origin.
 - [ ] Spec #4 (data model): the graph text file format, and in managed mode whether files or the database are the source of truth.
-- [ ] Spec #16: endpoint details of `api.yaml` and `deploy-target.yaml`, NATS subject names and streams, label keys, Compose project naming per deployment, the stored admin binding (`iss` plus `sub`) and how you reset it; the deployer must never stop itself mid apply when the platform graph is redeployed; bind mount paths are resolved by the host daemon, so the deployer's render directory must sit at the same path on host and container (for example `/var/lib/modular-platform`).
+- [ ] Spec #16: endpoint details of `api.yaml` and `deploy-target.yaml` (with the polling endpoints of child spec 0004), label keys, Compose project naming per deployment, the stored admin binding (`iss` plus `sub`) and how you reset it; the deployer must never stop itself mid apply when the platform graph is redeployed; bind mount paths are resolved by the host daemon, so the deployer's render directory must sit at the same path on host and container (for example `/var/lib/modular-platform`).
 - [ ] Specs #23 and #24: how your own reverse proxy fronts the bundled ingress (one upstream) versus replaces it (routes to `web`, `api` and the identity provider, which the render then publishes on loopback ports named in the zip's README), and the `MP_PROXY_HOPS` value for each. With your own proxy, `api` must still reach the public issuer URL from inside Docker: through normal DNS, or an `extra_hosts` entry pointing at your proxy, plus `MP_OIDC_CA_FILE` if your proxy uses a private CA; the README says which. Your proxy must pass SSE unbuffered with long read timeouts and must not rewrite the path under `<base>/`.
 - [ ] Specs #8 and #13: catalog trust and plan validation must flag or refuse modules asking for privileged mode, host mounts or host networking, in both the online tool and managed mode (already in the scope rows).
 - [ ] Verify at scaffold time: current stable React, Vite and Node LTS majors; Caddy's `templates` directive rendering an environment value into `index.html` only; React Flow edge markers drawing under a sub path. Verify at #16: Authelia under `<base>/auth` with a nested base path and `platform.localhost` as cookie domain, Authelia's `session.name` setting and its `email_verified` claim for file backend users, the `docker:<version>-cli` image including the compose plugin, Caddy passing SSE unbuffered.

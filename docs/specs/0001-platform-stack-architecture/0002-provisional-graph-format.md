@@ -1,7 +1,9 @@
 # 0002. Provisional graph file, catalog entry and planner matching rules
 
-**Date**: 2026-10-29
+**Date**: 2026-10-29 (updated 2026-10-30: collision free Compose secret names)
 **Parent**: [0001. Platform stack and architecture](index.md)
+
+> Extended by [0005. Module SDK](../0005-module-sdk/index.md): the catalog entry gains `runtime`, `config`, `uses.<cap>.client` with more `env` keys, and `provides.<cap>.auth` with `env.clients_dir`; the planner gains the rule `missing_token_mapping`; the render gains per instance env files, per binding token secrets and credential file secrets. Those definitions live in 0005, not here.
 
 ## Summary
 
@@ -15,6 +17,8 @@ AC-7 needs edge markers drawn on the sample graph, so the sample needs exactly o
 
 Engineer's choices in this session: `apiVersion` plus `kind` header; modules as a map keyed by instance name; bindings inline on the consumer; no stored positions (the editor lays out the graph); exact name matching; a required need with one candidate binds automatically and is written back; ambiguity and cycles are problems; the sample's edge comes from an optional need; optional needs bind only when written explicitly, an unbound optional need with candidates gives a warning, `null` opts out; a binding renders `depends_on` plus address env vars whose names the consumer's catalog entry maps; YAML read and written on both sides from one schema with `sigs.k8s.io/yaml` and the `yaml` npm package; one catalog file per entry; a small layered auto layout; the sample bundled into the editor with its own route.
 
+Update of 2026-10-30: the first rule named a Compose secret `<instance>-<name>`. Both parts may contain hyphens, so two different pairs could give the same name (instance `a-b` with secret `c`, instance `a` with secret `b-c`: both `a-b-c`). The plan said `ok`, then the render failed with a plain error that the service answers as a 500 (review [2026-10-30-main](../../reviews/2026-10-30-main.md)). The built in catalog cannot hit it yet (one secret, `password`), but the next module with a hyphen in a secret name can. Engineer's choice: join the two parts with `_` instead, and keep the in container path equal to the Compose secret name.
+
 ## Requirements
 
 These add to the acceptance criteria of [0001](index.md#requirements) and are built in the same scaffold. AC-2, AC-3, AC-4 and AC-7 there rely on the formats below.
@@ -25,7 +29,7 @@ These add to the acceptance criteria of [0001](index.md#requirements) and are bu
 **Acceptance criteria**:
 - **AC-8**: `POST /v1/plan` returns exactly the problems and automatic bindings listed in *Critical test scenarios* for each case there, with problems sorted by `path` then `code`, and the same request always gets a byte identical response.
 - **AC-9**: For the sample graph and every planner test fixture, the editor's YAML writer and the Go writer produce byte identical canonical text, and parsing that text on either side gives back the same graph. The `graph.yaml` inside a rendered zip is the resolved graph (automatic bindings written in) in that canonical text.
-- **AC-10**: The rendered sample `docker-compose.yml` gives `whoami` `depends_on: {postgres: {condition: service_healthy}}` and the environment `DEMO_POSTGRESQL_HOST=postgres` and `DEMO_POSTGRESQL_PORT=5432`, gives `postgres` its password only as the Compose secret `postgres-password` (`POSTGRES_PASSWORD_FILE=/run/secrets/postgres-password`), and gives `whoami` no secret.
+- **AC-10**: The rendered sample `docker-compose.yml` gives `whoami` `depends_on: {postgres: {condition: service_healthy}}` and the environment `DEMO_POSTGRESQL_HOST=postgres` and `DEMO_POSTGRESQL_PORT=5432`, gives `postgres` its password only as the Compose secret `postgres_password` (`POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password`), and gives `whoami` no secret.
 - **AC-11**: The planner refuses to start (exit code 1, one log line per problem as `catalog/<file>: <dotted.path>: <code>: <message>`) when a built in catalog entry breaks a catalog rule; a Go test runs the same checks over `catalog/` in CI.
 - **AC-12**: Opening `<base>/samples/whoami-postgres` shows the two modules, auto laid out with `whoami` left of `postgres`, and exactly one edge with its marker, from whoami's `postgresql` port to postgres's `postgresql` port; reloading that URL shows the same, with nothing read from browser storage.
 
@@ -124,7 +128,7 @@ healthcheck:
 | `image` | string | yes | Parsed with `github.com/distribution/reference` (already a compose-go dependency): must carry a tag, the tag must not be `latest`, a `@sha256:` digest after the tag is allowed; a registry host with a port is fine |
 | `provides` | map: capability → `{port}` | no | `port` (1 to 65535, required) is where a consumer reaches this capability on the service's host name |
 | `uses` | map: capability → `{optional, env}` | no | `optional` (bool, default `false`). `env` (optional) maps `host` and/or `port` to env var names the consumer reads; an omitted key delivers nothing for it |
-| `secrets` | list of `{name, env}` | no | Each becomes `secrets/<instance>/<name>` (created by `setup.sh` as 32 random bytes in hex, per 0001), the Compose secret `<instance>-<name>`, and `<env>=/run/secrets/<instance>-<name>` |
+| `secrets` | list of `{name, env}` | no | Each becomes `secrets/<instance>/<name>` (created by `setup.sh` as 32 random bytes in hex, per 0001), the Compose secret `<instance>_<name>`, and `<env>=/run/secrets/<instance>_<name>` (see *Secrets in Compose*) |
 | `healthcheck` | Compose healthcheck object (`test` list, `interval`, `timeout`, `retries`, `start_period`) | no | `test` is a list whose first item is `CMD` or `CMD-SHELL`; each duration parses with Go's `time.ParseDuration`; `retries` is 1 or more. Copied as is into the service |
 
 **Catalog rules** (AC-11): every field and pattern above; names unique; within one entry every env var name (from `uses.*.env` and `secrets[*].env`) appears once; an entry may provide and use the same capability (a proxy), but the planner never binds it to itself. A broken rule makes the planner log one line per problem as `catalog/<file>: <dotted.path>: <code>: <message>` (for example `catalog/whoami.yaml: uses.postgresql.env.host: invalid_env_name: ...`) and exit with code 1. The sample's `postgres` provides `postgresql` directly; provisioning (`postgresql-provisioner`, 0001 principle 4) is left to #3.
@@ -179,7 +183,11 @@ For each binding consumer `c`, capability `C`, provider `p`:
 
 Compose project `name:` is the graph `name`; one service per instance named by its key; no published ports (the sample is reachable only inside its network; publishing is for #3 and #6).
 
-**Secrets in Compose**: for each catalog secret `s` of instance `i`, a top level `secrets: {<i>-<s>: {file: ./secrets/<i>/<s>}}` entry, the service lists `secrets: [<i>-<s>]`, and its environment sets the declared env var to `/run/secrets/<i>-<s>`. That env var is the only thing that names the secret. "`secrets/<module>/`" in 0001 means this instance folder. `setup.sh` creates a missing file only and never overwrites one (0001).
+**Secrets in Compose**: for each catalog secret `s` of instance `i`, a top level `secrets: {<i>_<s>: {file: ./secrets/<i>/<s>}}` entry, the service lists `secrets: [<i>_<s>]` (no `target`, so Compose mounts it at `/run/secrets/<i>_<s>`), and its environment sets the declared env var to `/run/secrets/<i>_<s>`. That env var is the only thing that names the secret. "`secrets/<module>/`" in 0001 means this instance folder. `setup.sh` creates a missing file only and never overwrites one (0001).
+
+The Compose secret name can never collide. Compose accepts `^[a-zA-Z0-9._-]+$` as a secret name (the compose-go schema), and both parts are names under the shared naming rules, which never contain `_`. So the first `_` always marks where the instance ends, and every pair `(i, s)` gives its own name. Instance names are unique (map keys) and secret names are unique within one entry (catalog rule `duplicate_name`), so no two secrets in one stack share a name. This is why the planner needs no problem code for it, and `libs/render` keeps no "two secrets would share the Compose name" check: it could never fire. Runners up: `.` as the separator (same guarantee, but `/run/secrets/postgres.password` reads like a file extension); keeping `-` and adding a plan error (you would get an error for secret names a module author chose, fixable only by renaming an instance); a `target` of just `<s>` so the container reads `/run/secrets/password` (stable across instance renames, but one more field per secret for no current need).
+
+What changes in code for this update: in `libs/render/render.go`, the Compose name join becomes `i + "_" + s.Name`, the "two secrets would share the Compose name" check goes, and the `// <instance>-<name>` comment on `secret.Compose` becomes `// <instance>_<name>`. In `libs/render/render_test.go`, the expected strings and, in the golden `libs/render/testdata/whoami-postgres/docker-compose.yml`, the secret key, the service's `source` and the env value move from `postgres-password` to `postgres_password`. The README, `setup.sh` and `.env` golden files name only `secrets/postgres/password` and stay as they are. The render relies on getting only graphs the planner accepted (instance names already checked); the render endpoint already plans first and answers 422 on any error.
 
 **Render outputs** (the zip, AC-3):
 
@@ -202,7 +210,7 @@ Zip entries are written in byte order of their path, each with the fixed modific
 - **Problems**: every problem from the plan is listed under the canvas (severity, `message`, the instance it belongs to); an error also marks its node. A 429 shows "the planner is busy, try again in a minute". A failed catalog or plan call shows an error with a retry button.
 - **Ports and edges**: each node shows one handle per `provides` capability on its left side (id `provides:<capability>`) and one per `uses` capability on its right side (id `uses:<capability>`), an optional need drawn with a dashed outline. One edge per non null `uses` value, id `<consumer>.<capability>`, from the consumer's `uses:<capability>` handle to the provider's `provides:<capability>` handle, marker at the provider end (the same direction as Compose `depends_on`). Ports come from `GET /v1/catalog`.
 - **Auto layout** (no library): an instance's column is the length of the longest chain of consumers leading to it (0 when nobody uses it), so every provider sits right of all its consumers; the walk keeps a visited set so a cycle in an opened bad file cannot loop; rows sorted by instance name; 320 px between columns, 160 px between rows. #5 may replace it with a library.
-- **Sample route**: `samples/whoami-postgres/graph.yaml` is imported at build (`?raw`; the Vite dev server's `server.fs.allow` includes the repo root). The route `<base>/samples/$name` (under `/platform` this is AC-7's nested deep link `/platform/samples/whoami-postgres`) fetches `GET /v1/catalog`, plans the bundled sample once and shows it read only, with download (calls `POST /v1/render`, AC-3) and save as a file. It never reads or writes browser storage, so a reload is deterministic (AC-7, AC-12). An unknown `$name` shows a "no sample named <name>" screen with a link to `<base>/`.
+- **Sample route**: `samples/whoami-postgres/graph.yaml` is imported at build (`?raw`; the Vite dev server's `server.fs.allow` lists only `web/` and `samples/`, never the rest of the checkout). The route `<base>/samples/$name` (under `/platform` this is AC-7's nested deep link `/platform/samples/whoami-postgres`) fetches `GET /v1/catalog`, plans the bundled sample once and shows it read only, with download (calls `POST /v1/render`, AC-3) and save as a file. It never reads or writes browser storage, so a reload is deterministic (AC-7, AC-12). An unknown `$name` shows a "no sample named <name>" screen with a link to `<base>/`.
 
 ### Value sourcing
 
@@ -215,7 +223,8 @@ Zip entries are written in byte order of their path, each with the fixed modific
 | Render | `image`, `healthcheck` | the catalog entry |
 | Render | `DEMO_POSTGRESQL_HOST` | the provider's instance name (`postgres`) |
 | Render | `DEMO_POSTGRESQL_PORT` | the provider entry's `provides.postgresql.port` (`5432`) |
-| Render | secret file path and env value | catalog `secrets` plus instance name |
+| Render | secret file path `secrets/<i>/<s>` | catalog `secrets[*].name` plus instance name |
+| Render | Compose secret name and env value `/run/secrets/<i>_<s>` | instance name, `_`, catalog `secrets[*].name` |
 | Render | `graph.yaml` in the zip | the resolved graph, canonical text |
 | Editor | node positions | the auto layout, computed on every load |
 | Editor | edges | non null `uses` values of the current graph |
@@ -243,7 +252,7 @@ Table tests in `libs/planner` over fixed fixtures, one per row (all verify **AC-
 - A required need missing and an optional need set to `null` in the same instance: the first auto binds or errors, the second gives nothing (missing key and `null` differ).
 - A body with an unknown key, a duplicate key, or `apiVersion: modular-platform/v1`: 400.
 
-Round trip (**AC-9**): a shared fixtures folder read by both a Go test and an editor unit test, each writing every fixture and comparing to the same expected text. Render (**AC-10**): a golden test on the sample's `docker-compose.yml`, and rendering the sample twice gives byte identical zips. Catalog (**AC-11**): one bad fixture per catalog rule. Editor (**AC-12**): a component test on the sample route, and the `smoke` job's AC-7 check counts one edge marker.
+Round trip (**AC-9**): a shared fixtures folder read by both a Go test and an editor unit test, each writing every fixture and comparing to the same expected text. Render (**AC-10**): a golden test on the sample's `docker-compose.yml`, and rendering the sample twice gives byte identical zips. Secret names (inline in `libs/render/render_test.go`): a test catalog of two entries, one declaring secret `c` (env `C_FILE`) and one declaring secret `b-c` (env `BC_FILE`), and a graph with instance `a-b` running the first and instance `a` running the second. It renders without error; the top level `secrets:` keys are exactly `a-b_c` and `a_b-c`; service `a-b` lists only `a-b_c` with `C_FILE=/run/secrets/a-b_c`, and service `a` lists only `a_b-c` with `BC_FILE=/run/secrets/a_b-c`. Guard (in `libs/contract`): `ValidName("a_b")` is false, so widening the name pattern to allow `_` fails a test instead of quietly bringing collisions back. Catalog (**AC-11**): one bad fixture per catalog rule. Editor (**AC-12**): a component test on the sample route, and the `smoke` job's AC-7 check counts one edge marker.
 
 ## Consequences
 
@@ -261,13 +270,15 @@ Round trip (**AC-9**): a shared fixtures folder read by both a Go test and an ed
 - Optional needs never bind by themselves, so you click once per optional edge, and the sample's edge exists only because the file names it. Every graph with an unbound optional need and a matching provider carries an `optional_unbound` warning until you bind it or write `null`, which can feel like noise.
 - The env var mapping in `uses.*.env` already pins part of #3's binding format (how an address reaches an unchanged container); #3 must keep or migrate it.
 - Two YAML writers must stay byte identical; a library upgrade on either side can break AC-9 (the shared fixtures catch it).
+- Compose secret names mix `-` and `_` (`a-b_c`), which reads a little oddly. A stack downloaded before the 2026-10-30 update names its secrets with `-`; downloading it again changes those names in `docker-compose.yml`, but the files in `secrets/<i>/` keep their paths, so the secret values `setup.sh` made carry over. A stack already running from the old download needs `docker compose up -d` after you swap in the new `docker-compose.yml`, so Compose recreates the containers with the new `/run/secrets/` path.
+- The rule leans on names never containing `_`. If #3 or #4 ever allow `_` in an instance or secret name, they must pick a new separator or a new scheme.
 
 **Neutral**:
 - Problem codes and the `Problem` shape become part of the public planner contract early; #6 extends the list.
 
 ## Follow-up
 
-- [ ] Spec #3 must replace `v0alpha1` catalog entries: capability versions, named need slots (one module using `postgresql` twice), per binding credentials, provisioning, and whether the `uses.*.env` mapping stays.
+- [ ] Spec #3 must replace `v0alpha1` catalog entries: capability versions, named need slots (one module using `postgresql` twice), per binding credentials, provisioning, and whether the `uses.*.env` mapping stays. It keeps Compose secret names collision free (the `_` rule above, or a new one if names may contain `_`).
 - [ ] Spec #4 must replace the `v0alpha1` graph file and decide whether positions get stored after all, and how a `v0alpha1` file is handled (refuse, or convert once).
 - [ ] Spec #6 must extend the matching rules (versions, preferences between several providers, external providers) without changing the results pinned here.
 - [ ] Verify at scaffold: the current `traefik/whoami` and `postgres` tags to pin.
@@ -293,5 +304,6 @@ Round trip (**AC-9**): a shared fixtures folder read by both a Go test and an ed
 - [traefik/whoami README (flags, env vars, /health)](https://github.com/traefik/whoami)
 - [traefik/whoami Dockerfile (final stage FROM scratch)](https://github.com/traefik/whoami/blob/master/Dockerfile)
 - [Docker Compose project name rules](https://docs.docker.com/compose/how-tos/project-name.md)
+- Compose secret name pattern `^[a-zA-Z0-9._-]+$`: `schema/compose-spec.json` in `github.com/compose-spec/compose-go/v2` v2.16.2, the version in `libs/go.mod` (read locally on 2026-10-30)
 - [React Flow edge markers example](https://reactflow.dev/examples/edges/markers)
 - [React Flow MarkerType reference](https://reactflow.dev/api-reference/types/marker-type)
