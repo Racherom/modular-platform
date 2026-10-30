@@ -79,6 +79,12 @@
       "skillPath": "skills/golang-database/SKILL.md",
       "computedHash": "ce43d8932ba59822fe7455a85ba20e1d861313a66d953d13476ff040a2ae9d45"
     },
+    "golang-dependency-management": {
+      "source": "samber/cc-skills-golang",
+      "sourceType": "github",
+      "skillPath": "skills/golang-dependency-management/SKILL.md",
+      "computedHash": "263a39654c000a9406725901d482be83bedb5c87322edfe18a09a9c2bb19e7d8"
+    },
     "golang-error-handling": {
       "source": "samber/cc-skills-golang",
       "sourceType": "github",
