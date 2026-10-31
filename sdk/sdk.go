@@ -19,6 +19,7 @@ import (
 	"syscall"
 
 	"github.com/racherom/modular-platform/sdk/auth"
+	"github.com/racherom/modular-platform/sdk/httpclient"
 	"github.com/racherom/modular-platform/sdk/httpkit"
 	"github.com/racherom/modular-platform/sdk/internal/load"
 	"github.com/racherom/modular-platform/sdk/manifest"
@@ -52,9 +53,6 @@ type Declaration[C, U any] struct {
 	Provides *ProvideSpec
 	New      func(*Values, *Bindings) (C, U)
 }
-
-// Bindings holds the clients of a module's bindings; the generated Uses type reads it.
-type Bindings struct{}
 
 // Module is what setup gets: the module's config and bindings, its logger, and the switches it
 // may turn before it returns its handler.
@@ -141,9 +139,11 @@ func Main[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U],
 	return 0
 }
 
-// Build loads and checks the config, runs setup and returns the module's whole handler: health
-// and readiness, then the access log, the rate limit and the binding token check in front of the
-// module's own handler. On a refused start it logs one line per problem and returns ErrStart.
+// Build loads and checks the config, builds the binding clients, runs setup and returns the
+// module's whole handler: health and readiness, then the access log, the rate limit and the
+// binding token check in front of the module's own handler. /readyz answers 503 until every
+// required binding has answered once; the polls run until ctx ends. On a refused start it logs
+// one line per problem and returns ErrStart.
 func Build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], opts ...Option) (http.Handler, error) {
 	o := newOptions(opts)
 	log := o.log
@@ -170,7 +170,15 @@ func Build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 	}
 
 	values := &Values{m: res.Values}
-	cfg, uses := d.New(values, &Bindings{})
+	bindings := &Bindings{m: map[string]any{}}
+	for _, b := range res.Bindings {
+		if !b.Bound {
+			bindings.m[b.Capability] = nil
+			continue
+		}
+		bindings.m[b.Capability] = httpclient.New(b.URL, b.Token.Reveal())
+	}
+	cfg, uses := d.New(values, bindings)
 	if v, ok := any(cfg).(interface{ Validate(context.Context) error }); ok {
 		if err := v.Validate(ctx); err != nil {
 			refuse(ctx, log, []Problem{{Value: "module", Env: "module", Code: load.CodeValidate, Message: err.Error()}})
@@ -204,9 +212,14 @@ func Build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 	}
 	h = httpkit.AccessLog(log, h)
 
+	var r readiness
+	for _, b := range res.Bindings {
+		if b.Bound && !b.Optional {
+			r.wait(ctx, log, b.Capability, bindings.m[b.Capability].(pinger))
+		}
+	}
 	health := http.NewServeMux()
-	// readiness waits on nothing yet: no binding or certificate is polled in this version
-	httpkit.Health(health, func() bool { return true })
+	httpkit.Health(health, r.ready)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if slices.Contains(httpkit.HealthPaths, r.URL.Path) {
 			health.ServeHTTP(w, r)

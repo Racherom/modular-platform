@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -123,12 +124,23 @@ type Bootstrap struct {
 	CallerSigningFile string
 }
 
+// Binding is a loaded binding with a client, in capability order.
+type Binding struct {
+	Capability string
+	Client     string
+	Optional   bool
+	Bound      bool     // false only for an optional binding whose url is unset
+	URL        *url.URL // the provider's address
+	Token      Secret   // the content of token_file; empty when token_file is unset
+}
+
 // Result is a finished load. Values holds the parsed value of every set value, by name (a Secret
 // for a secret); Sources the source label of every value.
 type Result struct {
 	Bootstrap  Bootstrap
 	Values     map[string]any
 	Sources    map[string]string
+	Bindings   []Binding
 	ClientsDir string // empty when unset
 	Warnings   []Warning
 	Problems   []Problem // sorted; Load refuses the start when any is present
@@ -147,6 +159,9 @@ func Load(in Input) Result {
 	l.envFiles()
 	for _, v := range in.Values {
 		l.value(v)
+	}
+	for _, b := range in.Bindings {
+		l.binding(b)
 	}
 	l.clientsDir()
 	SortProblems(l.res.Problems)
@@ -337,10 +352,63 @@ func (l *loader) clientsDir() {
 	if p == nil || p.Auth != manifest.AuthBindingToken || p.ClientsDirEnv == "" {
 		return
 	}
-	for _, lv := range l.levels {
-		if dir, _, ok := lv.lookup(p.ClientsDirEnv); ok {
-			l.res.ClientsDir = dir
+	l.res.ClientsDir = l.key(p.ClientsDirEnv)
+}
+
+// binding loads the keys of a binding with a client: its url, and the token its token_file
+// names. Keys are plain env style keys, found at the highest level that sets them.
+func (l *loader) binding(b BindingSpec) {
+	if b.Client == "" {
+		return // env mapping only: the module reads nothing through the sdk
+	}
+	path := "uses." + b.Capability
+	if b.Client != manifest.ClientHTTP {
+		l.problem(path+".client", path+".client", CodeInvalidBinding, "the %s client is not available in this sdk version yet", b.Client)
+		return
+	}
+	urlEnv := b.Env["url"]
+	text := l.key(urlEnv)
+	if text == "" {
+		if b.Optional {
+			l.res.Bindings = append(l.res.Bindings, Binding{Capability: b.Capability, Client: b.Client, Optional: true})
 			return
 		}
+		l.problem(path+".url", urlEnv, CodeMissing, "the provider's address is required; set %s", urlEnv)
+		return
 	}
+	u, err := url.Parse(text)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		l.problem(path+".url", urlEnv, CodeInvalid, "must be an absolute http or https URL with a host")
+		return
+	}
+	bound := Binding{Capability: b.Capability, Client: b.Client, Optional: b.Optional, Bound: true, URL: u}
+	if env, ok := b.Env["token_file"]; ok {
+		if file := l.key(env); file != "" {
+			data, err := l.in.ReadFile(file)
+			if err != nil {
+				l.problem(path+".token_file", env, CodeInvalid, "the token file %s cannot be read", file)
+				return
+			}
+			token := strings.TrimRight(string(data), " \t\r\n")
+			if token == "" {
+				l.problem(path+".token_file", env, CodeMissing, "the token file %s is empty", file)
+				return
+			}
+			bound.Token = NewSecret(token)
+		}
+	}
+	l.res.Bindings = append(l.res.Bindings, bound)
+}
+
+// key returns the text of a plain key at the highest level that sets it, or "".
+func (l *loader) key(env string) string {
+	if env == "" {
+		return ""
+	}
+	for _, lv := range l.levels {
+		if v, _, ok := lv.lookup(env); ok {
+			return v
+		}
+	}
+	return ""
 }

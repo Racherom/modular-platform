@@ -1,0 +1,34 @@
+# sdk-pair
+
+This folder runs the stack `sdk-pair`, designed with Modular Platform. You need Docker with the Compose plugin, nothing else.
+
+## Run it
+
+```sh
+sh setup.sh
+docker compose up -d --wait --wait-timeout 120
+```
+
+`setup.sh` creates the secret files this stack needs, here on your machine. It never changes a file that already exists, so running it again is safe. If you skip it, `docker compose up` stops with a missing file error instead of starting without passwords.
+
+Secret files `setup.sh` creates:
+
+- `secrets/consumer/uses_greet`
+- `secrets/provider/signing-key`
+
+Settings of the modules built on the module SDK. Fill every line marked `required` before you start, and restart a module after you change its file:
+
+- `config/consumer.env`
+- `config/provider.env`
+
+On Windows, run `setup.sh` in WSL or Git Bash.
+
+## Stop it
+
+```sh
+docker compose down
+```
+
+## Change it
+
+`graph.yaml` is this stack's graph. Open it in the Modular Platform editor to change the stack, then download it again. Keep your `secrets/` folder: it holds the secrets `setup.sh` made, and a download never contains them. Keep your `config/` files too: a download holds them with empty settings, so do not let it replace the ones you filled, and run `setup.sh` again afterwards.

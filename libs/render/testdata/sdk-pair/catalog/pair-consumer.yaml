@@ -1,0 +1,29 @@
+apiVersion: modular-platform/v0alpha1
+kind: Module
+name: pair-consumer
+description: Calls the provider's greet capability with its binding token, for the sdk end to end test.
+image: modular-platform/pair-consumer:test
+runtime: sdk
+healthcheck:
+  test: ["CMD", "/pair-consumer", "healthcheck"]
+  interval: 1s
+  timeout: 3s
+  retries: 30
+  start_period: 30s
+uses:
+  greet:
+    client: http
+    env:
+      url: PAIR_GREET_URL
+      token_file: PAIR_GREET_TOKEN_FILE
+config:
+  note:
+    env: PAIR_NOTE
+    type: string
+    optional: true
+    description: Free text the consumer never reads.
+  shout:
+    env: PAIR_SHOUT
+    type: bool
+    default: "false"
+    description: Whether the consumer upper cases the answer.

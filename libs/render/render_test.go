@@ -16,7 +16,15 @@ import (
 	"github.com/racherom/modular-platform/libs/render"
 )
 
-var update = flag.Bool("update", false, "rewrite the golden files in testdata/")
+func init() {
+	// a library the e2e test's compose module links in defines -update too; share it then
+	if flag.Lookup("update") == nil {
+		flag.Bool("update", false, "rewrite the golden files in testdata/")
+	}
+}
+
+// updating reports whether -update asks to rewrite the golden files.
+func updating() bool { return flag.Lookup("update").Value.String() == "true" }
 
 func samplePlan(t *testing.T) (contract.PlanResult, []contract.CatalogEntry) {
 	t.Helper()
@@ -43,9 +51,15 @@ func TestRenderSampleGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	checkGolden(t, filepath.Join("testdata", "whoami-postgres"), out)
+}
+
+// checkGolden compares each rendered file with its copy under dir, or rewrites it with -update.
+func checkGolden(t *testing.T, dir string, out render.Output) {
+	t.Helper()
 	for _, f := range out.Files {
-		golden := filepath.Join("testdata", "whoami-postgres", f.Path)
-		if *update {
+		golden := filepath.Join(dir, f.Path)
+		if updating() {
 			if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
 				t.Fatal(err)
 			}

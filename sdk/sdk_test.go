@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -31,9 +32,29 @@ func file(t *testing.T, content string) string {
 	return path
 }
 
-// baseEnv is the least a start of the test module needs: its instance and its secret.
+// consumerToken is the binding token of the consumer instance "caller" in baseEnv's clients dir.
+const consumerToken = "caller-token-0123456789abcdef0123456789"
+
+// baseEnv is the least a start of the test module needs: its instance, its secret and a clients
+// directory with one consumer.
 func baseEnv(t *testing.T) map[string]string {
-	return map[string]string{"MP_INSTANCE": "tm", "TM_API_KEY_FILE": file(t, "key-from-file\n")}
+	return map[string]string{
+		"MP_INSTANCE":     "tm",
+		"TM_API_KEY_FILE": file(t, "key-from-file\n"),
+		"TM_CLIENTS_DIR":  clientsDir(t, map[string]string{"caller": consumerToken}),
+	}
+}
+
+// clientsDir writes one token file per consumer into a new directory and returns its path.
+func clientsDir(t *testing.T, tokens map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, token := range tokens {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(token+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
 }
 
 // start builds the test module with env as its whole process env and returns its config, its
@@ -525,11 +546,16 @@ func TestStartLog(t *testing.T) {
 	if fmt.Sprint(l.Values) != fmt.Sprint(wantValues) {
 		t.Errorf("values = %v, want %v", l.Values, wantValues)
 	}
-	if fmt.Sprint(l.Bindings) != fmt.Sprint(map[string]string{"echo": "env"}) {
+	if fmt.Sprint(l.Bindings) != fmt.Sprint(map[string]string{"echo": "http"}) {
 		t.Errorf("bindings = %v", l.Bindings)
 	}
+	// timestamps and the temp files the source labels name may hold any digits
+	text := regexp.MustCompile(`"time":"[^"]*"`).ReplaceAllString(logs.String(), "")
+	for _, path := range []string{envFile, env["TM_API_KEY_FILE"], env["TM_CLIENTS_DIR"]} {
+		text = strings.ReplaceAll(text, path, "")
+	}
 	for _, v := range []string{"howdy", "42", "key-from-file", "upstream.test"} {
-		if strings.Contains(logs.String(), v) {
+		if strings.Contains(text, v) {
 			t.Errorf("the value %q reached the log", v)
 		}
 	}

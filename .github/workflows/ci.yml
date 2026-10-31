@@ -45,6 +45,20 @@ jobs:
           task build:go build:web
           git diff --exit-code || { echo "::error::the build changed tracked files (route tree?); commit them"; exit 1; }
 
+  integration:
+    name: Integration (Docker, sdk end to end)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: "**/go.sum"
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.54.0
+      - run: task test:integration
+
   smoke:
     name: Smoke (online tool, sample zip, sub path)
     runs-on: ubuntu-24.04

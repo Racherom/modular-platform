@@ -25,6 +25,7 @@ const (
 	CodeAmbiguousProvider     = "ambiguous_provider"
 	CodeOptionalUnbound       = "optional_unbound"
 	CodeBindingCycle          = "binding_cycle"
+	CodeMissingTokenMapping   = "missing_token_mapping"
 )
 
 // Plan checks g against the catalog entries and fills in the automatic bindings. The returned
@@ -82,7 +83,22 @@ func (p *planning) run() {
 			p.instance(i)
 		}
 	}
+	p.tokens()
 	p.cycles(instances)
+}
+
+// tokens reports each binding to a provider that checks a token per binding (spec 0005) whose
+// consumer maps no token_file, so the consumer could never prove who calls.
+func (p *planning) tokens() {
+	for _, b := range p.bindings {
+		provider := p.entries[p.graph.Modules[b.Provider].Module]
+		consumer := p.entries[p.graph.Modules[b.Consumer].Module]
+		if provider.Provides[b.Capability].Auth == contract.BindingToken && consumer.Uses[b.Capability].Env.TokenFile == "" {
+			p.fail(CodeMissingTokenMapping, usePath(b.Consumer, b.Capability),
+				"Instance %s uses %s from %s, which checks a token per binding, but module %s maps no token_file for %s.",
+				b.Consumer, b.Capability, b.Provider, consumer.Name, b.Capability)
+		}
+	}
 }
 
 func (p *planning) instance(i string) {

@@ -4,10 +4,18 @@ name: testmodule
 description: Declares one value of every type, for the sdk's own tests.
 image: example.test/testmodule:1.0.0
 runtime: sdk
+provides:
+  greet:
+    auth: binding-token
+    env:
+      clients_dir: TM_CLIENTS_DIR
 uses:
   echo:
+    optional: true
+    client: http
     env:
       url: TM_ECHO_URL
+      token_file: TM_ECHO_TOKEN_FILE
 config:
   api-key:
     env: TM_API_KEY

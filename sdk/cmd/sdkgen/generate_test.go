@@ -63,6 +63,38 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
+// TestGenerateUses covers the Uses getters: one per binding with a client, none for an env only
+// binding, and the client package imported only then.
+func TestGenerateUses(t *testing.T) {
+	t.Parallel()
+	src, problems := Generate("catalog/svc.yaml", "config", []byte(header+`uses:
+  object-store:
+    client: http
+    env:
+      url: STORE_URL
+      token_file: STORE_TOKEN_FILE
+  cache:
+    env:
+      host: CACHE_HOST
+`))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	for _, want := range []string{
+		"\t\"github.com/racherom/modular-platform/sdk/httpclient\"\n",
+		"type Uses struct{ b *sdk.Bindings }\n",
+		"// ObjectStore is the client of the object-store binding.\nfunc (u Uses) ObjectStore(ctx context.Context) (*httpclient.Client, error) {\n\treturn sdk.Client[*httpclient.Client](ctx, u.b, \"object-store\")\n}",
+		"New: func(_ *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{}, Uses{b} },",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("the source lacks %q:\n%s", want, src)
+		}
+	}
+	if strings.Contains(string(src), "Cache(") {
+		t.Error("a getter for an env only binding")
+	}
+}
+
 // TestGenerateRefuses covers sdkgen refusing an entry with the lines the catalog check prints.
 func TestGenerateRefuses(t *testing.T) {
 	t.Parallel()
@@ -89,6 +121,10 @@ func TestGenerateRefuses(t *testing.T) {
 		"an enum value without a Go name": {
 			body: "config:\n  mode:\n    env: SVC_MODE\n    type: enum\n    values: [\"--\"]\n    description: M.\n",
 			want: []string{"catalog/svc.yaml: config.mode.values.0: name_clash: "},
+		},
+		"a client not available yet": {
+			body: "uses:\n  db:\n    client: postgresql\n    env:\n      url: DB_URL\n      database: DB_NAME\n      user: DB_USER\n      password_file: DB_PASSWORD_FILE\n",
+			want: []string{"catalog/svc.yaml: uses.db.client: client_not_allowed: "},
 		},
 		"an enum type that takes a generated name": {
 			body: "config:\n  module:\n    env: SVC_MODULE\n    type: enum\n    values: [a]\n    description: M.\n",

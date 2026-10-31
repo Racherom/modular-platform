@@ -18,6 +18,18 @@ Secret files `setup.sh` creates:
 {{else}}
 This stack needs no secret files.
 {{end}}
+{{- if .Placed}}
+Files you place yourself, from the setup of the module they connect to (`docker compose up` stops with a missing file error until each exists):
+{{range .Placed}}
+- `{{.Path}}`
+{{- end}}
+{{end}}
+{{- if .EnvFiles}}
+Settings of the modules built on the module SDK. Fill every line marked `required` before you start, and restart a module after you change its file:
+{{range .EnvFiles}}
+- `{{.}}`
+{{- end}}
+{{end}}
 On Windows, run `setup.sh` in WSL or Git Bash.
 
 ## Stop it
@@ -29,3 +41,4 @@ docker compose down
 ## Change it
 
 `graph.yaml` is this stack's graph. Open it in the Modular Platform editor to change the stack, then download it again. Keep your `secrets/` folder: it holds the secrets `setup.sh` made, and a download never contains them.
+{{- if .EnvFiles}} Keep your `config/` files too: a download holds them with empty settings, so do not let it replace the ones you filled, and run `setup.sh` again afterwards.{{end}}

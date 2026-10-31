@@ -109,6 +109,10 @@ func TestPlan(t *testing.T) {
 			bindings: []contract.Binding{bind("app", "db", "db", true)},
 			resolved: map[string]string{"app.db": "db"},
 		},
+		"missing-token-mapping": {
+			bindings: []contract.Binding{bind("caller", "greet", "greeter", true), bind("notoken", "greet", "greeter", true)},
+			problems: []problem{errorAt(planner.CodeMissingTokenMapping, "modules.notoken.uses.greet")},
+		},
 		"empty":      {ok: true},
 		"empty-uses": {ok: true},
 	}

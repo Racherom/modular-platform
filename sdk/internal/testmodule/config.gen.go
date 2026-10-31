@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/racherom/modular-platform/sdk"
+	"github.com/racherom/modular-platform/sdk/httpclient"
 )
 
 // Level is a value of level.
@@ -68,8 +69,14 @@ func (c Config) Verbose(ctx context.Context) (bool, error) {
 	return sdk.Value[bool](ctx, c.v, "verbose")
 }
 
-// Uses holds the testmodule module's binding clients.
-type Uses struct{}
+// Uses holds the testmodule module's binding clients; read them only through the getters.
+type Uses struct{ b *sdk.Bindings }
+
+// Echo is the client of the echo binding.
+// It returns sdk.ErrUnbound when the graph leaves echo unbound.
+func (u Uses) Echo(ctx context.Context) (*httpclient.Client, error) {
+	return sdk.Client[*httpclient.Client](ctx, u.b, "echo")
+}
 
 // Module is the declaration sdk.Run loads.
 var Module = sdk.Declaration[Config, Uses]{
@@ -85,7 +92,8 @@ var Module = sdk.Declaration[Config, Uses]{
 		{Name: "verbose", Env: "TM_VERBOSE", Type: "bool", Default: "false", Description: "Whether each call is logged."},
 	},
 	Bindings: []sdk.BindingSpec{
-		{Capability: "echo", Env: map[string]string{"url": "TM_ECHO_URL"}},
+		{Capability: "echo", Client: "http", Optional: true, Env: map[string]string{"token_file": "TM_ECHO_TOKEN_FILE", "url": "TM_ECHO_URL"}},
 	},
-	New: func(v *sdk.Values, _ *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{} },
+	Provides: &sdk.ProvideSpec{Capability: "greet", Auth: "binding-token", ClientsDirEnv: "TM_CLIENTS_DIR"},
+	New:      func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },
 }

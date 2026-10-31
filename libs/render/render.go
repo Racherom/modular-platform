@@ -1,5 +1,6 @@
 // Package render turns a plan into the files of a runnable Compose project: docker-compose.yml,
-// graph.yaml, setup.sh, .env and README.md (spec 0002, render rules). The zip download and the
+// graph.yaml, setup.sh, .env, README.md and a config/<instance>.env per module built on the sdk
+// (spec 0002, render rules; spec 0005, render additions). The zip download and the
 // managed deploy both use it, so they cannot drift.
 package render
 
@@ -55,8 +56,11 @@ type secret struct {
 }
 
 type templateData struct {
-	Name    string
-	Secrets []secret
+	Name     string
+	Secrets  []secret // the secret files setup.sh creates
+	Placed   []secret // the credential files you place
+	EnvFiles []string // config/<instance>.env of each sdk instance
+	SDK      bool     // an instance runs on the sdk, so setup.sh writes MP_UID and MP_GID
 }
 
 // Render renders the resolved graph of an ok plan. catalog must hold every module the graph uses.
@@ -99,6 +103,9 @@ func Render(plan contract.PlanResult, catalog []contract.CatalogEntry) (Output, 
 			setEnv(&svc, s.Env, "/run/secrets/"+sec.Compose)
 			data.Secrets = append(data.Secrets, sec)
 		}
+		if entry.Runtime == contract.Sdk {
+			sdkInstance(&project, &svc, &data, i, entry)
+		}
 		project.Services[i] = svc
 	}
 
@@ -122,7 +129,10 @@ func Render(plan contract.PlanResult, catalog []contract.CatalogEntry) (Output, 
 			setEnv(&consumer, env.Port, strconv.Itoa(providePort(providerEntry, b.Capability)))
 		}
 		project.Services[b.Consumer] = consumer
+		sdkBinding(&project, &data, b, entries[g.Modules[b.Consumer].Module], providerEntry)
 	}
+	slices.SortFunc(data.Secrets, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
+	slices.SortFunc(data.Placed, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
 
 	compose, err := composeYAML(project)
 	if err != nil {
@@ -149,6 +159,11 @@ func Render(plan contract.PlanResult, catalog []contract.CatalogEntry) (Output, 
 			return Output{}, fmt.Errorf("render %s: %w", t.path, err)
 		}
 		files = append(files, File{Path: t.path, Mode: t.mode, Data: buf.Bytes()})
+	}
+	for _, i := range instances {
+		if entry := entries[g.Modules[i].Module]; entry.Runtime == contract.Sdk {
+			files = append(files, File{Path: envFilePath(i), Mode: 0o644, Data: envFile(i, entry, consumerBindings(plan.Bindings, i))})
+		}
 	}
 	slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
 	return Output{Name: g.Name, Files: files}, nil
@@ -181,9 +196,6 @@ func setEnv(svc *types.ServiceConfig, name, value string) {
 	}
 	svc.Environment[name] = &value
 }
-
-// sdkPort is where a runtime: sdk module listens in plain mode (spec 0005).
-const sdkPort = 8080
 
 // providePort is the port a consumer reaches capability on: the entry's own, or 8080 for a module
 // built on the sdk, which declares none.

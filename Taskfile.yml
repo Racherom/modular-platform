@@ -30,7 +30,7 @@ tasks:
     desc: Generate Go and TypeScript code from contracts/openapi and the sdk getters from catalog entries (the output is committed)
     deps: [web:install]
     cmds:
-      - go generate ./libs/contract ./sdk/... ./services/planner/...
+      - go generate ./libs/contract ./libs/render/... ./sdk/... ./services/planner/...
       - pnpm --dir web run generate
 
   build:
@@ -62,12 +62,17 @@ tasks:
       - go test -race {{.GO_PACKAGES}}
       - pnpm --dir web test
 
+  test:integration:
+    desc: Run the Go tests that need Docker (build tags integration and e2e; they build test images)
+    cmds:
+      - go test -race -tags integration,e2e {{.GO_PACKAGES}}
+
   lint:
     desc: Check formatting, go vet and the editor's types (feature #2 adds linters)
     deps: [web:install]
     cmds:
       - test -z "$(gofmt -l catalog libs sdk services)" || { gofmt -l catalog libs sdk services; echo "run gofmt -w"; exit 1; }
-      - go vet {{.GO_PACKAGES}}
+      - go vet -tags integration,e2e {{.GO_PACKAGES}}
       - pnpm --dir web run typecheck
 
   online:env:

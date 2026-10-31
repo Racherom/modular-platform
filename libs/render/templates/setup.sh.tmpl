@@ -26,3 +26,17 @@ new_secret {{.Path}}
 {{- if not .Secrets}}
 echo "This stack needs no secret files."
 {{- end}}
+{{- if .SDK}}
+
+# The modules built on the module SDK run as you, so they can read the secret files above.
+set_id() {
+	if grep -q "^$1=" .env 2>/dev/null; then
+		echo "kept    $1 in .env"
+		return 0
+	fi
+	printf '%s=%s\n' "$1" "$2" >> .env
+	echo "added   $1 to .env"
+}
+set_id MP_UID "$(id -u)"
+set_id MP_GID "$(id -g)"
+{{- end}}

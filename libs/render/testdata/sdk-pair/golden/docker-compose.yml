@@ -1,0 +1,63 @@
+configs:
+  consumer_env:
+    file: ./config/consumer.env
+  provider_env:
+    file: ./config/provider.env
+name: sdk-pair
+secrets:
+  consumer_uses_greet:
+    file: ./secrets/consumer/uses_greet
+  provider_signing-key:
+    file: ./secrets/provider/signing-key
+services:
+  consumer:
+    configs:
+    - source: consumer_env
+      target: /etc/modular-platform/module.env
+    depends_on:
+      provider:
+        condition: service_healthy
+        required: true
+    environment:
+      MP_ENV_FILE: /etc/modular-platform/module.env
+      MP_INSTANCE: consumer
+      PAIR_GREET_TOKEN_FILE: /run/secrets/uses/greet/token
+      PAIR_GREET_URL: http://provider:8080
+    healthcheck:
+      interval: 1s
+      retries: 30
+      start_period: 30s
+      test:
+      - CMD
+      - /pair-consumer
+      - healthcheck
+      timeout: 3s
+    image: modular-platform/pair-consumer:test
+    secrets:
+    - source: consumer_uses_greet
+      target: /run/secrets/uses/greet/token
+    user: ${MP_UID}:${MP_GID}
+  provider:
+    configs:
+    - source: provider_env
+      target: /etc/modular-platform/module.env
+    environment:
+      MP_ENV_FILE: /etc/modular-platform/module.env
+      MP_INSTANCE: provider
+      PAIR_CLIENTS_DIR: /run/secrets/clients/greet
+      PAIR_SIGNING_KEY_FILE: /run/secrets/provider_signing-key
+    healthcheck:
+      interval: 1s
+      retries: 30
+      start_period: 30s
+      test:
+      - CMD
+      - /pair-provider
+      - healthcheck
+      timeout: 3s
+    image: modular-platform/pair-provider:test
+    secrets:
+    - source: provider_signing-key
+    - source: consumer_uses_greet
+      target: /run/secrets/clients/greet/consumer
+    user: ${MP_UID}:${MP_GID}
