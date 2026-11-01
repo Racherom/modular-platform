@@ -22,11 +22,14 @@ const (
 	sdkPort = 8080
 )
 
-// sdkInstance gives sdk instance i its bootstrap env, its user, its env file mount and its
-// generated secret values.
+// sdkInstance gives sdk instance i its bootstrap env, its host name as a network alias, its user,
+// its env file mount and its generated secret values.
 func sdkInstance(p *types.Project, svc *types.ServiceConfig, data *templateData, i string, e contract.CatalogEntry) {
 	setEnv(svc, "MP_INSTANCE", i)
+	setEnv(svc, "MP_DOMAIN", sdkDomain(p.Name))
 	setEnv(svc, "MP_ENV_FILE", moduleEnvPath)
+	// default is the only network the static render writes; the bare service name keeps resolving
+	svc.Networks = map[string]*types.ServiceNetworkConfig{"default": {Aliases: []string{sdkHost(p.Name, i)}}}
 	svc.User = sdkUser
 
 	config := i + "_env"
@@ -52,6 +55,14 @@ func sdkInstance(p *types.Project, svc *types.ServiceConfig, data *templateData,
 
 func envFilePath(i string) string { return "config/" + i + ".env" }
 
+// sdkDomain is the MP_DOMAIN of every sdk instance in graph: <graph>.internal, a name ICANN
+// reserves for private use.
+func sdkDomain(graph string) string { return graph + ".internal" }
+
+// sdkHost is the one name sdk instance i goes by: its network alias, the host of binding URLs
+// that point at it, and later its certificate name.
+func sdkHost(graph, i string) string { return i + "." + sdkDomain(graph) }
+
 // sdkBinding writes what a binding needs beyond 0002's host and port: the url, the per binding
 // token on both sides, the credential files the consumer reads, and sslmode.
 func sdkBinding(p *types.Project, data *templateData, b contract.Binding, consumer, provider contract.CatalogEntry) {
@@ -59,7 +70,7 @@ func sdkBinding(p *types.Project, data *templateData, b contract.Binding, consum
 	use := consumer.Uses[cp]
 	svc := p.Services[c]
 	if use.Env.Url != "" {
-		setEnv(&svc, use.Env.Url, bindingURL(provider, pv, cp, use.Client))
+		setEnv(&svc, use.Env.Url, bindingURL(p.Name, provider, pv, cp, use.Client))
 	}
 	if provide := provider.Provides[cp]; provide.Auth == contract.BindingToken && use.Env.TokenFile != "" {
 		sec := secret{Path: "secrets/" + c + "/uses_" + cp, Compose: c + "_uses_" + cp}
@@ -95,11 +106,12 @@ func sdkBinding(p *types.Project, data *templateData, b contract.Binding, consum
 	p.Services[c] = svc
 }
 
-// bindingURL is where a consumer reaches capability on provider: 8080 on an sdk module, else the
-// entry's own port, with the scheme of the consumer's client kind.
-func bindingURL(e contract.CatalogEntry, provider, capability string, client contract.UseClient) string {
+// bindingURL is where a consumer reaches capability on provider: an sdk module by its host name
+// on 8080, else the instance name on the entry's own port, with the scheme of the consumer's
+// client kind.
+func bindingURL(graph string, e contract.CatalogEntry, provider, capability string, client contract.UseClient) string {
 	if e.Runtime == contract.Sdk {
-		return fmt.Sprintf("http://%s:%d", provider, sdkPort)
+		return fmt.Sprintf("http://%s:%d", sdkHost(graph, provider), sdkPort)
 	}
 	scheme := "http"
 	if client == contract.Postgresql {

@@ -72,9 +72,22 @@ func start(t *testing.T, env map[string]string) (testmodule.Config, *bytes.Buffe
 	return cfg, &logs, err
 }
 
+// eventually fails the test unless cond holds within 30 seconds.
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting until %s", what)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 type logLine struct {
 	Level    string
 	Msg      string
+	Host     string            `json:"host"`
 	TLS      string            `json:"tls"`
 	Values   map[string]string `json:"values"`
 	Bindings map[string]string `json:"bindings"`
@@ -383,6 +396,14 @@ func TestStartProblems(t *testing.T) {
 			env:  func(*testing.T) map[string]string { return map[string]string{"MP_INSTANCE": "Bad_Name"} },
 			want: "config: MP_INSTANCE (MP_INSTANCE): invalid: ",
 		},
+		"an uppercase domain": {
+			env:  func(*testing.T) map[string]string { return map[string]string{"MP_DOMAIN": "Graph.internal"} },
+			want: "config: MP_DOMAIN (MP_DOMAIN): invalid: ",
+		},
+		"a domain with an empty label": {
+			env:  func(*testing.T) map[string]string { return map[string]string{"MP_DOMAIN": "graph..internal"} },
+			want: "config: MP_DOMAIN (MP_DOMAIN): invalid: ",
+		},
 		"a missing env file": {
 			env:  func(*testing.T) map[string]string { return map[string]string{"MP_ENV_FILE": "/no/such/file"} },
 			want: "config: MP_ENV_FILE (MP_ENV_FILE): env_file: /no/such/file does not exist",
@@ -525,13 +546,14 @@ func TestStartLog(t *testing.T) {
 	env := baseEnv(t)
 	env["TM_GREETING"] = "howdy"
 	env["MP_ENV_FILE"] = envFile
+	env["MP_DOMAIN"] = "sdk-test.internal"
 	_, logs, err := start(t, env)
 	if err != nil {
 		t.Fatalf("start refused: %v\n%s", err, logs)
 	}
 	l := loadedLine(t, logs)
-	if l.Level != "INFO" || l.TLS != "plain" {
-		t.Errorf("level %s, tls %q", l.Level, l.TLS)
+	if l.Level != "INFO" || l.TLS != "plain" || l.Host != "tm.sdk-test.internal" {
+		t.Errorf("level %s, tls %q, host %q", l.Level, l.TLS, l.Host)
 	}
 	wantValues := map[string]string{
 		"api-key":  "file:" + env["TM_API_KEY_FILE"],
@@ -546,7 +568,7 @@ func TestStartLog(t *testing.T) {
 	if fmt.Sprint(l.Values) != fmt.Sprint(wantValues) {
 		t.Errorf("values = %v, want %v", l.Values, wantValues)
 	}
-	if fmt.Sprint(l.Bindings) != fmt.Sprint(map[string]string{"echo": "http"}) {
+	if fmt.Sprint(l.Bindings) != fmt.Sprint(map[string]string{"echo": "http", "postgresql": "postgresql", "storage": "s3"}) {
 		t.Errorf("bindings = %v", l.Bindings)
 	}
 	// timestamps and the temp files the source labels name may hold any digits

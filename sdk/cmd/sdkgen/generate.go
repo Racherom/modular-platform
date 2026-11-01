@@ -67,7 +67,7 @@ func (g *generator) claim(ident, what, path string) {
 }
 
 func (g *generator) source(source, pkg string) []byte {
-	g.imports = map[string]bool{"context": true, "github.com/racherom/modular-platform/sdk": true}
+	g.imports = map[string]bool{"github.com/racherom/modular-platform/sdk": true}
 	names := sortedKeys(g.entry.Config)
 	caps := sortedKeys(g.entry.Uses)
 
@@ -117,6 +117,9 @@ func (g *generator) source(source, pkg string) []byte {
 		g.client(&body, c, goName, g.entry.Uses[c])
 	}
 
+	if len(names) > 0 || len(clients) > 0 {
+		g.imports["context"] = true // every getter takes ctx
+	}
 	g.declaration(&body, names, caps, len(clients) > 0)
 
 	var out bytes.Buffer
@@ -199,11 +202,19 @@ func (g *generator) getter(b *bytes.Buffer, name, goName string, v manifest.Valu
 	b.WriteString("}\n\n")
 }
 
-// clientTypes maps a client kind to the Go type its getter returns; the kinds missing here are
-// not available in this sdk version yet.
-var clientTypes = map[string]struct{ goType, pkg string }{
-	manifest.ClientHTTP: {"*httpclient.Client", "github.com/racherom/modular-platform/sdk/httpclient"},
+// clientType is what sdkgen writes for one client kind: the Go type its getter returns, the
+// package of that type, and the sdk.Opener that opens it (in package openPkg).
+type clientType struct{ goType, pkg, open, openPkg string }
+
+// clientTypes maps a client kind to its clientType; the kinds missing here are not available in
+// this sdk version yet.
+var clientTypes = map[string]clientType{
+	manifest.ClientHTTP:       {"*httpclient.Client", sdkPkg + "/httpclient", "httpclient.Open", sdkPkg + "/httpclient"},
+	manifest.ClientPostgreSQL: {"*pgxpool.Pool", "github.com/jackc/pgx/v5/pgxpool", "pg.Open", sdkPkg + "/pg"},
+	manifest.ClientS3:         {"*s3.Client", sdkPkg + "/s3", "s3.Open", sdkPkg + "/s3"},
 }
+
+const sdkPkg = "github.com/racherom/modular-platform/sdk"
 
 func (g *generator) client(b *bytes.Buffer, capability, goName string, u manifest.Use) {
 	ct, ok := clientTypes[u.Client]
@@ -211,7 +222,7 @@ func (g *generator) client(b *bytes.Buffer, capability, goName string, u manifes
 		g.problems = append(g.problems, fmt.Sprintf("catalog/%s: uses.%s.client: client_not_allowed: the %s client is not available in this sdk version yet", g.file, capability, u.Client))
 		return
 	}
-	g.imports[ct.pkg] = true
+	g.imports[ct.pkg], g.imports[ct.openPkg] = true, true
 	fmt.Fprintf(b, "// %s is the client of the %s binding.\n", goName, capability)
 	if u.Optional {
 		fmt.Fprintf(b, "// It returns sdk.ErrUnbound when the graph leaves %s unbound.\n", capability)
@@ -248,6 +259,9 @@ func (g *generator) declaration(b *bytes.Buffer, names, caps []string, clients b
 					env = append(env, strconv.Quote(k)+": "+strconv.Quote(u.Env[k]))
 				}
 				fields = append(fields, "Env: map[string]string{"+strings.Join(env, ", ")+"}")
+			}
+			if ct, ok := clientTypes[u.Client]; ok {
+				fields = append(fields, "Open: "+ct.open)
 			}
 			b.WriteString("\t\t{" + strings.Join(fields, ", ") + "},\n")
 		}

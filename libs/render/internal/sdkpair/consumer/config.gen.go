@@ -39,7 +39,7 @@ var Module = sdk.Declaration[Config, Uses]{
 		{Name: "shout", Env: "PAIR_SHOUT", Type: "bool", Default: "false", Description: "Whether the consumer upper cases the answer."},
 	},
 	Bindings: []sdk.BindingSpec{
-		{Capability: "greet", Client: "http", Env: map[string]string{"token_file": "PAIR_GREET_TOKEN_FILE", "url": "PAIR_GREET_URL"}},
+		{Capability: "greet", Client: "http", Env: map[string]string{"token_file": "PAIR_GREET_TOKEN_FILE", "url": "PAIR_GREET_URL"}, Open: httpclient.Open},
 	},
 	New: func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },
 }

@@ -7,6 +7,8 @@ package load
 
 import (
 	"cmp"
+	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -31,12 +33,14 @@ const (
 	CodeUnknownKey      = "unknown_key"
 	CodeInvalidBinding  = "invalid_binding"
 	CodeTLSConfig       = "tls_config"
+	CodeDowngrade       = "downgrade_refused"
 	CodeValidate        = "validate"
 )
 
 // Bootstrap names (manifest.BootstrapNames).
 const (
 	EnvInstance         = "MP_INSTANCE"
+	EnvDomain           = "MP_DOMAIN"
 	EnvEnvFile          = "MP_ENV_FILE"
 	EnvACMEURL          = "MP_ACME_URL"
 	EnvCAFile           = "MP_CA_FILE"
@@ -68,6 +72,18 @@ type BindingSpec struct {
 	Client     string // empty: env mapping only
 	Optional   bool
 	Env        map[string]string // binding key to env var name
+	Open       Opener            // opens the client; sdkgen sets it for every client binding
+}
+
+// Opener opens the client of a loaded binding. Each client package has one, so a module links
+// only the clients its catalog entry uses.
+type Opener func(Binding) (Opened, error)
+
+// Opened is an open binding client.
+type Opened struct {
+	Client any                         // what the generated getter returns
+	Ready  func(context.Context) error // polled until it answers once
+	Close  func()                      // run once the server has stopped; nil when there is nothing to close
 }
 
 // ProvideSpec declares the capability the module provides.
@@ -119,20 +135,62 @@ type Input struct {
 // Bootstrap holds the bootstrap names.
 type Bootstrap struct {
 	Instance          string
+	Domain            string // empty in plain mode without a host name suffix
 	ACMEURL, CAFile   string
+	Roots             *x509.CertPool // the certificates in CAFile; nil in plain mode
 	CallerKeyFile     string
 	CallerSigningFile string
 }
 
-// Binding is a loaded binding with a client, in capability order.
+// TLS reports whether the module runs in TLS mode: both MP_ACME_URL and MP_CA_FILE are set.
+func (b Bootstrap) TLS() bool { return b.ACMEURL != "" && b.CAFile != "" }
+
+// Host is the one name the module goes by: <MP_INSTANCE>.<MP_DOMAIN>, or MP_INSTANCE alone when
+// MP_DOMAIN is unset. It names the module's certificate, its network alias and the aud it accepts.
+func (b Bootstrap) Host() string {
+	if b.Domain == "" {
+		return b.Instance
+	}
+	return b.Instance + "." + b.Domain
+}
+
+// LoadBootstrap reads and checks the bootstrap names alone, for the healthcheck subcommand, which
+// loads no config.
+func LoadBootstrap(lookupEnv func(string) (string, bool), readFile func(string) ([]byte, error)) (Bootstrap, []Problem) {
+	l := loader{in: Input{LookupEnv: lookupEnv, ReadFile: readFile}}
+	l.bootstrap()
+	SortProblems(l.res.Problems)
+	return l.res.Bootstrap, l.res.Problems
+}
+
+// Binding is a loaded binding with a client, in capability order. Its secrets hide themselves
+// from fmt and slog.
 type Binding struct {
 	Capability string
 	Client     string
 	Optional   bool
-	Bound      bool     // false only for an optional binding whose url is unset
-	URL        *url.URL // the provider's address
-	Token      Secret   // the content of token_file; empty when token_file is unset
+	Bound      bool           // false only for an optional binding whose url is unset
+	URL        *url.URL       // the provider's address
+	Token      Secret         // the content of token_file; empty when token_file is unset
+	Roots      *x509.CertPool // the certificates in ca_file, else MP_CA_FILE's in TLS mode; nil in plain mode without ca_file
+
+	// postgresql
+	Database, User string
+	Password       Secret // the content of password_file
+	SSLMode        string // SSLModeDisable or SSLModeVerifyFull
+
+	// s3
+	Bucket, Region string // Region is empty when unset
+	AccessKeyID    string
+	SecretKey      Secret // the content of secret_access_key_file
 }
+
+// The sslmode values a postgresql binding takes; unset means SSLModeDisable, as the render writes
+// it while no unchanged provider has TLS (spec 0005).
+const (
+	SSLModeDisable    = "disable"
+	SSLModeVerifyFull = "verify-full"
+)
 
 // Result is a finished load. Values holds the parsed value of every set value, by name (a Secret
 // for a secret); Sources the source label of every value.
@@ -192,14 +250,26 @@ func (l *loader) bootstrap() {
 	case !manifest.ValidName(b.Instance):
 		l.problem(EnvInstance, EnvInstance, CodeInvalid, "%q must be a lowercase DNS label", b.Instance)
 	}
+	// checked in plain mode too: the host name feeds binding URLs and the accepted aud there
+	b.Domain = l.env(EnvDomain)
+	if b.Domain != "" && !manifest.ValidDomain(b.Domain) {
+		l.problem(EnvDomain, EnvDomain, CodeInvalid, "%q must be lowercase DNS labels joined by dots, like graph.internal", b.Domain)
+	}
 	b.ACMEURL, b.CAFile = l.env(EnvACMEURL), l.env(EnvCAFile)
 	switch {
 	case b.ACMEURL != "" && b.CAFile == "":
 		l.problem(EnvCAFile, EnvCAFile, CodeTLSConfig, "%s is set, so %s must be set too", EnvACMEURL, EnvCAFile)
 	case b.ACMEURL == "" && b.CAFile != "":
 		l.problem(EnvACMEURL, EnvACMEURL, CodeTLSConfig, "%s is set, so %s must be set too", EnvCAFile, EnvACMEURL)
-	case b.ACMEURL != "":
-		l.problem(EnvACMEURL, EnvACMEURL, CodeTLSConfig, "TLS mode is not available in this sdk version yet; unset %s and %s", EnvACMEURL, EnvCAFile)
+	case b.TLS():
+		if u, err := url.Parse(b.ACMEURL); err != nil || u.Scheme != "https" || u.Host == "" {
+			l.problem(EnvACMEURL, EnvACMEURL, CodeInvalid, "must be the issuer's ACME directory as an absolute https URL")
+		}
+		b.Roots = l.caFile(b.CAFile)
+		if b.Domain == "" {
+			// autocert refuses a single label name, so the host name needs a domain
+			l.problem(EnvDomain, EnvDomain, CodeTLSConfig, "TLS mode needs the host name's domain; set %s, like <graph>.internal", EnvDomain)
+		}
 	}
 	b.CallerKeyFile, b.CallerSigningFile = l.env(EnvCallerKeyFile), l.env(EnvCallerSigningKey)
 
@@ -207,6 +277,22 @@ func (l *loader) bootstrap() {
 		v, ok := l.in.LookupEnv(key)
 		return v, 0, ok && v != ""
 	}})
+}
+
+// caFile reads the certificates in MP_CA_FILE, the root CA of the issuer and of every module
+// certificate. An unreadable file or one without a certificate is a tls_config problem.
+func (l *loader) caFile(path string) *x509.CertPool {
+	data, err := l.in.ReadFile(path)
+	if err != nil {
+		l.problem(EnvCAFile, EnvCAFile, CodeTLSConfig, "the CA file %s cannot be read", path)
+		return nil
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(data) {
+		l.problem(EnvCAFile, EnvCAFile, CodeTLSConfig, "the CA file %s holds no PEM certificate", path)
+		return nil
+	}
+	return pool
 }
 
 // envFiles reads the files MP_ENV_FILE lists and adds them as levels, the last file first.
@@ -355,17 +441,21 @@ func (l *loader) clientsDir() {
 	l.res.ClientsDir = l.key(p.ClientsDirEnv)
 }
 
-// binding loads the keys of a binding with a client: its url, and the token its token_file
-// names. Keys are plain env style keys, found at the highest level that sets them.
+// urlSchemes are the schemes a binding url may have, per client kind.
+var urlSchemes = map[string][]string{
+	manifest.ClientHTTP:       {"http", "https"},
+	manifest.ClientPostgreSQL: {"postgres", "postgresql"},
+	manifest.ClientS3:         {"http", "https"},
+}
+
+// binding loads the keys of a binding with a client: its url and the files and credentials its
+// kind reads. Keys are plain env style keys, found at the highest level that sets them. An
+// optional binding whose url is unset is unbound.
 func (l *loader) binding(b BindingSpec) {
 	if b.Client == "" {
 		return // env mapping only: the module reads nothing through the sdk
 	}
-	path := "uses." + b.Capability
-	if b.Client != manifest.ClientHTTP {
-		l.problem(path+".client", path+".client", CodeInvalidBinding, "the %s client is not available in this sdk version yet", b.Client)
-		return
-	}
+	bl := bindingLoader{l: l, spec: b, path: "uses." + b.Capability}
 	urlEnv := b.Env["url"]
 	text := l.key(urlEnv)
 	if text == "" {
@@ -373,31 +463,142 @@ func (l *loader) binding(b BindingSpec) {
 			l.res.Bindings = append(l.res.Bindings, Binding{Capability: b.Capability, Client: b.Client, Optional: true})
 			return
 		}
-		l.problem(path+".url", urlEnv, CodeMissing, "the provider's address is required; set %s", urlEnv)
+		l.problem(bl.path+".url", urlEnv, CodeMissing, "the provider's address is required; set %s", urlEnv)
 		return
 	}
+	bound := Binding{Capability: b.Capability, Client: b.Client, Optional: b.Optional, Bound: true}
+	bound.URL = bl.url(text)
+	bound.Token = bl.file("token_file", "token")
+	bound.Roots = bl.roots()
+	switch b.Client {
+	case manifest.ClientPostgreSQL:
+		bound.Database = bl.required("database")
+		bound.User = bl.required("user")
+		bound.Password = bl.requiredFile("password_file", "password")
+		bound.SSLMode = bl.sslMode()
+	case manifest.ClientS3:
+		bound.Bucket = bl.required("bucket")
+		bound.Region = bl.optional("region")
+		bound.AccessKeyID = bl.required("access_key_id")
+		bound.SecretKey = bl.requiredFile("secret_access_key_file", "secret key")
+	}
+	if !bl.failed {
+		l.res.Bindings = append(l.res.Bindings, bound)
+	}
+}
+
+// bindingLoader reads the keys of one bound binding and reports each bad key.
+type bindingLoader struct {
+	l      *loader
+	spec   BindingSpec
+	path   string
+	failed bool
+}
+
+func (bl *bindingLoader) problem(key, code, format string, args ...any) {
+	bl.failed = true
+	bl.l.problem(bl.path+"."+key, bl.spec.Env[key], code, format, args...)
+}
+
+func (bl *bindingLoader) url(text string) *url.URL {
+	schemes := urlSchemes[bl.spec.Client]
 	u, err := url.Parse(text)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		l.problem(path+".url", urlEnv, CodeInvalid, "must be an absolute http or https URL with a host")
-		return
+	switch {
+	case err != nil || !slices.Contains(schemes, u.Scheme) || u.Host == "":
+		bl.problem("url", CodeInvalid, "must be an absolute %s URL with a host", strings.Join(schemes, " or "))
+	case bl.downgrade(u):
+		host := strings.ToLower(u.Hostname())
+		bl.problem("url", CodeDowngrade, "%s is a module on the sdk, which TLS mode never calls in plain HTTP; use https://%s:8443", host, host)
+	case bl.spec.Client != manifest.ClientHTTP && u.User != nil:
+		bl.problem("url", CodeInvalid, "must not carry credentials; the binding's own keys hold them")
+	case bl.spec.Client != manifest.ClientHTTP && strings.Trim(u.Path, "/") != "":
+		bl.problem("url", CodeInvalid, "must have no path; the binding's own keys name the database or bucket")
+	default:
+		return u
 	}
-	bound := Binding{Capability: b.Capability, Client: b.Client, Optional: b.Optional, Bound: true, URL: u}
-	if env, ok := b.Env["token_file"]; ok {
-		if file := l.key(env); file != "" {
-			data, err := l.in.ReadFile(file)
-			if err != nil {
-				l.problem(path+".token_file", env, CodeInvalid, "the token file %s cannot be read", file)
-				return
-			}
-			token := strings.TrimRight(string(data), " \t\r\n")
-			if token == "" {
-				l.problem(path+".token_file", env, CodeMissing, "the token file %s is empty", file)
-				return
-			}
-			bound.Token = NewSecret(token)
-		}
+	return nil
+}
+
+// downgrade reports an http URL to a module on the sdk in TLS mode: only those carry a host
+// name ending in .<MP_DOMAIN>.
+func (bl *bindingLoader) downgrade(u *url.URL) bool {
+	b := bl.l.res.Bootstrap
+	return b.TLS() && b.Domain != "" && u.Scheme == "http" && strings.HasSuffix(strings.ToLower(u.Hostname()), "."+b.Domain)
+}
+
+// optional returns the key's text, or "" when it is unmapped or unset.
+func (bl *bindingLoader) optional(key string) string {
+	return bl.l.key(bl.spec.Env[key])
+}
+
+// required returns the key's text and reports it missing when it is unset.
+func (bl *bindingLoader) required(key string) string {
+	text := bl.optional(key)
+	if text == "" {
+		bl.problem(key, CodeMissing, "a value is required; set %s", bl.spec.Env[key])
 	}
-	l.res.Bindings = append(l.res.Bindings, bound)
+	return text
+}
+
+// file reads the file a _file key names, trailing whitespace trimmed. An unset key gives an
+// empty Secret; an unreadable or empty file is a problem.
+func (bl *bindingLoader) file(key, what string) Secret {
+	path := bl.optional(key)
+	if path == "" {
+		return Secret{}
+	}
+	data, err := bl.l.in.ReadFile(path)
+	if err != nil {
+		bl.problem(key, CodeInvalid, "the %s file %s cannot be read", what, path)
+		return Secret{}
+	}
+	s := strings.TrimRight(string(data), " \t\r\n")
+	if s == "" {
+		bl.problem(key, CodeMissing, "the %s file %s is empty", what, path)
+		return Secret{}
+	}
+	return NewSecret(s)
+}
+
+// requiredFile is file for a key that must be set.
+func (bl *bindingLoader) requiredFile(key, what string) Secret {
+	if bl.optional(key) == "" {
+		bl.problem(key, CodeMissing, "a value is required; set %s to the %s file", bl.spec.Env[key], what)
+		return Secret{}
+	}
+	return bl.file(key, what)
+}
+
+// roots reads the certificates in the file ca_file names. Unset, the binding trusts MP_CA_FILE
+// in TLS mode and nothing beyond the system roots in plain mode (nil).
+func (bl *bindingLoader) roots() *x509.CertPool {
+	path := bl.optional("ca_file")
+	if path == "" {
+		return bl.l.res.Bootstrap.Roots
+	}
+	data, err := bl.l.in.ReadFile(path)
+	if err != nil {
+		bl.problem("ca_file", CodeInvalid, "the CA file %s cannot be read", path)
+		return nil
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(data) {
+		bl.problem("ca_file", CodeInvalid, "the CA file %s holds no PEM certificate", path)
+		return nil
+	}
+	return pool
+}
+
+func (bl *bindingLoader) sslMode() string {
+	switch mode := bl.optional("sslmode"); mode {
+	case "":
+		return SSLModeDisable
+	case SSLModeDisable, SSLModeVerifyFull:
+		return mode
+	default:
+		bl.problem("sslmode", CodeInvalidBinding, "%q is not %s or %s", mode, SSLModeDisable, SSLModeVerifyFull)
+		return ""
+	}
 }
 
 // key returns the text of a plain key at the highest level that sets it, or "".

@@ -7,8 +7,11 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/racherom/modular-platform/sdk"
 	"github.com/racherom/modular-platform/sdk/httpclient"
+	"github.com/racherom/modular-platform/sdk/pg"
+	"github.com/racherom/modular-platform/sdk/s3"
 )
 
 // Level is a value of level.
@@ -78,6 +81,18 @@ func (u Uses) Echo(ctx context.Context) (*httpclient.Client, error) {
 	return sdk.Client[*httpclient.Client](ctx, u.b, "echo")
 }
 
+// Postgresql is the client of the postgresql binding.
+// It returns sdk.ErrUnbound when the graph leaves postgresql unbound.
+func (u Uses) Postgresql(ctx context.Context) (*pgxpool.Pool, error) {
+	return sdk.Client[*pgxpool.Pool](ctx, u.b, "postgresql")
+}
+
+// Storage is the client of the storage binding.
+// It returns sdk.ErrUnbound when the graph leaves storage unbound.
+func (u Uses) Storage(ctx context.Context) (*s3.Client, error) {
+	return sdk.Client[*s3.Client](ctx, u.b, "storage")
+}
+
 // Module is the declaration sdk.Run loads.
 var Module = sdk.Declaration[Config, Uses]{
 	Name: "testmodule",
@@ -92,7 +107,9 @@ var Module = sdk.Declaration[Config, Uses]{
 		{Name: "verbose", Env: "TM_VERBOSE", Type: "bool", Default: "false", Description: "Whether each call is logged."},
 	},
 	Bindings: []sdk.BindingSpec{
-		{Capability: "echo", Client: "http", Optional: true, Env: map[string]string{"token_file": "TM_ECHO_TOKEN_FILE", "url": "TM_ECHO_URL"}},
+		{Capability: "echo", Client: "http", Optional: true, Env: map[string]string{"token_file": "TM_ECHO_TOKEN_FILE", "url": "TM_ECHO_URL"}, Open: httpclient.Open},
+		{Capability: "postgresql", Client: "postgresql", Optional: true, Env: map[string]string{"ca_file": "TM_DB_CA_FILE", "database": "TM_DB_NAME", "password_file": "TM_DB_PASSWORD_FILE", "sslmode": "TM_DB_SSLMODE", "url": "TM_DB_URL", "user": "TM_DB_USER"}, Open: pg.Open},
+		{Capability: "storage", Client: "s3", Optional: true, Env: map[string]string{"access_key_id": "TM_STORE_ACCESS_KEY_ID", "bucket": "TM_STORE_BUCKET", "ca_file": "TM_STORE_CA_FILE", "region": "TM_STORE_REGION", "secret_access_key_file": "TM_STORE_SECRET_KEY_FILE", "url": "TM_STORE_URL"}, Open: s3.Open},
 	},
 	Provides: &sdk.ProvideSpec{Capability: "greet", Auth: "binding-token", ClientsDirEnv: "TM_CLIENTS_DIR"},
 	New:      func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },

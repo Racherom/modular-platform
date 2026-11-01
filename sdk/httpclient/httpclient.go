@@ -5,11 +5,15 @@ package httpclient
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
+
+	"github.com/racherom/modular-platform/sdk"
 )
 
 // Client calls one provider. It implements the Do method generated API clients take.
@@ -20,10 +24,25 @@ type Client struct {
 
 // New returns a client for the provider at base. An empty token sends no Authorization header.
 func New(base *url.URL, token string) *Client {
+	return newClient(base, token, nil)
+}
+
+// Open is the sdk.Opener of an http binding: a client for the binding's url and token that
+// trusts the certificates in its ca_file, if set.
+func Open(b sdk.Binding) (sdk.Opened, error) {
+	c := newClient(b.URL, b.Token.Reveal(), b.Roots)
+	return sdk.Opened{Client: c, Ready: c.Ready, Close: c.hc.CloseIdleConnections}, nil
+}
+
+func newClient(base *url.URL, token string, roots *x509.CertPool) *Client {
 	b := *base
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	if roots != nil {
+		tr.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	}
 	return &Client{
 		base: &b,
-		hc:   &http.Client{Transport: &bearer{base: &b, token: token, next: http.DefaultTransport.(*http.Transport).Clone()}},
+		hc:   &http.Client{Transport: &bearer{base: &b, token: token, next: tr}},
 	}
 }
 

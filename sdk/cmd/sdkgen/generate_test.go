@@ -15,24 +15,39 @@ image: example.test/svc:1.0.0
 runtime: sdk
 `
 
-// TestTestModuleUpToDate keeps the checked in getters of the sdk's test module equal to what
-// sdkgen writes from its entry.
+// TestTestModuleUpToDate keeps the checked in getters of the sdk's test modules equal to what
+// sdkgen writes from their entries.
 func TestTestModuleUpToDate(t *testing.T) {
 	t.Parallel()
-	entry, err := os.ReadFile("../../internal/testmodule/testmodule.yaml")
-	if err != nil {
-		t.Fatal(err)
+	for _, pkg := range []string{"testmodule", "tlsmodule"} {
+		entry, err := os.ReadFile("../../internal/" + pkg + "/" + pkg + ".yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := os.ReadFile("../../internal/" + pkg + "/config.gen.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, problems := Generate(pkg+".yaml", pkg, entry)
+		if len(problems) > 0 {
+			t.Fatal(problems)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("internal/%s/config.gen.go is stale; run go generate ./...", pkg)
+		}
 	}
-	want, err := os.ReadFile("../../internal/testmodule/config.gen.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, problems := Generate("testmodule.yaml", "testmodule", entry)
+}
+
+// TestGenerateNothing covers an entry that declares no value and no client binding: it has no
+// getter, so the source imports no context and compiles.
+func TestGenerateNothing(t *testing.T) {
+	t.Parallel()
+	src, problems := Generate("catalog/svc.yaml", "config", []byte(header))
 	if len(problems) > 0 {
 		t.Fatal(problems)
 	}
-	if !bytes.Equal(got, want) {
-		t.Error("internal/testmodule/config.gen.go is stale; run go generate ./...")
+	if want := "import (\n\t\"github.com/racherom/modular-platform/sdk\"\n)\n"; !strings.Contains(string(src), want) {
+		t.Errorf("the source lacks %q:\n%s", want, src)
 	}
 }
 
@@ -95,6 +110,45 @@ func TestGenerateUses(t *testing.T) {
 	}
 }
 
+// TestGenerateDataClients covers the postgresql and s3 getters: the pgx pool and the s3 client,
+// each binding spec carrying its kind's opener, and only those client packages imported.
+func TestGenerateDataClients(t *testing.T) {
+	t.Parallel()
+	src, problems := Generate("catalog/svc.yaml", "config", []byte(header+`uses:
+  postgresql:
+    client: postgresql
+    env:
+      url: DB_URL
+      database: DB_NAME
+      user: DB_USER
+      password_file: DB_PASSWORD_FILE
+  storage:
+    client: s3
+    env:
+      url: S3_URL
+      bucket: S3_BUCKET
+      access_key_id: S3_ACCESS_KEY_ID
+      secret_access_key_file: S3_SECRET_KEY_FILE
+`))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	for _, want := range []string{
+		"import (\n\t\"context\"\n\n\t\"github.com/jackc/pgx/v5/pgxpool\"\n\t\"github.com/racherom/modular-platform/sdk\"\n\t\"github.com/racherom/modular-platform/sdk/pg\"\n\t\"github.com/racherom/modular-platform/sdk/s3\"\n)\n",
+		"func (u Uses) Postgresql(ctx context.Context) (*pgxpool.Pool, error) {\n\treturn sdk.Client[*pgxpool.Pool](ctx, u.b, \"postgresql\")\n}",
+		"func (u Uses) Storage(ctx context.Context) (*s3.Client, error) {\n\treturn sdk.Client[*s3.Client](ctx, u.b, \"storage\")\n}",
+		`"url": "DB_URL", "user": "DB_USER"}, Open: pg.Open},`,
+		`"url": "S3_URL"}, Open: s3.Open},`,
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("the source lacks %q:\n%s", want, src)
+		}
+	}
+	if strings.Contains(string(src), "httpclient") {
+		t.Error("an import the entry does not need")
+	}
+}
+
 // TestGenerateRefuses covers sdkgen refusing an entry with the lines the catalog check prints.
 func TestGenerateRefuses(t *testing.T) {
 	t.Parallel()
@@ -121,10 +175,6 @@ func TestGenerateRefuses(t *testing.T) {
 		"an enum value without a Go name": {
 			body: "config:\n  mode:\n    env: SVC_MODE\n    type: enum\n    values: [\"--\"]\n    description: M.\n",
 			want: []string{"catalog/svc.yaml: config.mode.values.0: name_clash: "},
-		},
-		"a client not available yet": {
-			body: "uses:\n  db:\n    client: postgresql\n    env:\n      url: DB_URL\n      database: DB_NAME\n      user: DB_USER\n      password_file: DB_PASSWORD_FILE\n",
-			want: []string{"catalog/svc.yaml: uses.db.client: client_not_allowed: "},
 		},
 		"an enum type that takes a generated name": {
 			body: "config:\n  module:\n    env: SVC_MODULE\n    type: enum\n    values: [a]\n    description: M.\n",

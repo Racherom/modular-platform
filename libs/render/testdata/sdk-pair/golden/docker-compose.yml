@@ -19,10 +19,11 @@ services:
         condition: service_healthy
         required: true
     environment:
+      MP_DOMAIN: sdk-pair.internal
       MP_ENV_FILE: /etc/modular-platform/module.env
       MP_INSTANCE: consumer
       PAIR_GREET_TOKEN_FILE: /run/secrets/uses/greet/token
-      PAIR_GREET_URL: http://provider:8080
+      PAIR_GREET_URL: http://provider.sdk-pair.internal:8080
     healthcheck:
       interval: 1s
       retries: 30
@@ -33,6 +34,10 @@ services:
       - healthcheck
       timeout: 3s
     image: modular-platform/pair-consumer:test
+    networks:
+      default:
+        aliases:
+        - consumer.sdk-pair.internal
     secrets:
     - source: consumer_uses_greet
       target: /run/secrets/uses/greet/token
@@ -42,6 +47,7 @@ services:
     - source: provider_env
       target: /etc/modular-platform/module.env
     environment:
+      MP_DOMAIN: sdk-pair.internal
       MP_ENV_FILE: /etc/modular-platform/module.env
       MP_INSTANCE: provider
       PAIR_CLIENTS_DIR: /run/secrets/clients/greet
@@ -56,6 +62,10 @@ services:
       - healthcheck
       timeout: 3s
     image: modular-platform/pair-provider:test
+    networks:
+      default:
+        aliases:
+        - provider.sdk-pair.internal
     secrets:
     - source: provider_signing-key
     - source: consumer_uses_greet

@@ -3,7 +3,9 @@ package sdk_test
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -162,6 +164,54 @@ func TestBindingProblems(t *testing.T) {
 			},
 			want: "config: uses.echo.token_file (TM_ECHO_TOKEN_FILE): invalid: ",
 		},
+		"postgresql user missing": {
+			env:  dataEnv(map[string]string{"TM_DB_USER": ""}),
+			want: "config: uses.postgresql.user (TM_DB_USER): missing: ",
+		},
+		"postgresql password file unset": {
+			env:  dataEnv(map[string]string{"TM_DB_PASSWORD_FILE": ""}),
+			want: "config: uses.postgresql.password_file (TM_DB_PASSWORD_FILE): missing: ",
+		},
+		"postgresql sslmode not allowed": {
+			env:  dataEnv(map[string]string{"TM_DB_SSLMODE": "require"}),
+			want: "config: uses.postgresql.sslmode (TM_DB_SSLMODE): invalid_binding: ",
+		},
+		"postgresql url not postgres": {
+			env:  dataEnv(map[string]string{"TM_DB_URL": "http://db:5432"}),
+			want: "config: uses.postgresql.url (TM_DB_URL): invalid: ",
+		},
+		"postgresql url with credentials": {
+			env:  dataEnv(map[string]string{"TM_DB_URL": "postgres://app:pw@db:5432"}),
+			want: "config: uses.postgresql.url (TM_DB_URL): invalid: ",
+		},
+		"postgresql url with a database": {
+			env:  dataEnv(map[string]string{"TM_DB_URL": "postgres://db:5432/app"}),
+			want: "config: uses.postgresql.url (TM_DB_URL): invalid: ",
+		},
+		"postgresql ca file without a certificate": {
+			env: func(t *testing.T) map[string]string {
+				env := dataEnv(nil)(t)
+				env["TM_DB_CA_FILE"] = file(t, "not a certificate\n")
+				return env
+			},
+			want: "config: uses.postgresql.ca_file (TM_DB_CA_FILE): invalid: ",
+		},
+		"s3 bucket missing": {
+			env:  dataEnv(map[string]string{"TM_STORE_BUCKET": ""}),
+			want: "config: uses.storage.bucket (TM_STORE_BUCKET): missing: ",
+		},
+		"s3 secret key file empty": {
+			env: func(t *testing.T) map[string]string {
+				env := dataEnv(nil)(t)
+				env["TM_STORE_SECRET_KEY_FILE"] = file(t, "\n")
+				return env
+			},
+			want: "config: uses.storage.secret_access_key_file (TM_STORE_SECRET_KEY_FILE): missing: ",
+		},
+		"s3 url not http": {
+			env:  dataEnv(map[string]string{"TM_STORE_URL": "s3://store"}),
+			want: "config: uses.storage.url (TM_STORE_URL): invalid: ",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -179,6 +229,88 @@ func TestBindingProblems(t *testing.T) {
 				t.Errorf("error lines = %q, want one starting %q", lines, tc.want)
 			}
 		})
+	}
+}
+
+// Credentials of the data bindings in dataEnv; no test may find them in a log line.
+const (
+	dbPassword = "db-password-0123456789"
+	s3Secret   = "s3-secret-key-0123456789"
+)
+
+// dataEnv binds the test module's postgresql and storage bindings to hosts that need not exist,
+// then applies over (an empty value unsets a key).
+func dataEnv(over map[string]string) func(t *testing.T) map[string]string {
+	return func(t *testing.T) map[string]string {
+		env := map[string]string{
+			"TM_DB_URL":                "postgres://db.test:5432",
+			"TM_DB_NAME":               "app",
+			"TM_DB_USER":               "app",
+			"TM_DB_PASSWORD_FILE":      file(t, dbPassword+"\n"),
+			"TM_DB_SSLMODE":            "disable",
+			"TM_STORE_URL":             "http://store.test:9000",
+			"TM_STORE_BUCKET":          "files",
+			"TM_STORE_ACCESS_KEY_ID":   "access",
+			"TM_STORE_SECRET_KEY_FILE": file(t, s3Secret+"\n"),
+		}
+		for k, v := range over {
+			env[k] = v
+		}
+		return env
+	}
+}
+
+// TestDataBindings covers the getters of the postgresql and s3 bindings without a server: each
+// gives its client built from the binding's keys, and neither credential reaches the logs.
+func TestDataBindings(t *testing.T) {
+	t.Parallel()
+	uses, logs, err := consumerUses(t, dataEnv(map[string]string{"TM_STORE_REGION": "eu-west-1"})(t))
+	if err != nil {
+		t.Fatalf("start refused: %v\n%s", err, logs)
+	}
+	pool, err := uses.Postgresql(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cc := pool.Config().ConnConfig
+	if cc.Host != "db.test" || cc.Port != 5432 || cc.Database != "app" || cc.User != "app" || cc.Password != dbPassword || cc.TLSConfig != nil {
+		t.Errorf("pool config = host %q port %d database %q user %q tls %v", cc.Host, cc.Port, cc.Database, cc.User, cc.TLSConfig != nil)
+	}
+	store, err := uses.Storage(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.Bucket != "files" || store.EndpointURL().Host != "store.test:9000" {
+		t.Errorf("s3 client = %v", store)
+	}
+	for _, out := range []string{logs.String(), fmt.Sprintf("%v %+v", store, store)} {
+		if strings.Contains(out, dbPassword) || strings.Contains(out, s3Secret) {
+			t.Errorf("a credential shows: %s", out)
+		}
+	}
+}
+
+// TestVerifyFull covers sslmode verify-full: the pool speaks TLS to the url's host and trusts the
+// binding's ca_file.
+func TestVerifyFull(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	t.Cleanup(srv.Close)
+	ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	uses, logs, err := consumerUses(t, dataEnv(map[string]string{"TM_DB_SSLMODE": "verify-full", "TM_DB_CA_FILE": file(t, string(ca))})(t))
+	if err != nil {
+		t.Fatalf("start refused: %v\n%s", err, logs)
+	}
+	pool, err := uses.Postgresql(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tc := pool.Config().ConnConfig.TLSConfig
+	if tc == nil || tc.ServerName != "db.test" || tc.RootCAs == nil || tc.InsecureSkipVerify {
+		t.Fatalf("tls config = %+v", tc)
+	}
+	if _, err := srv.Certificate().Verify(x509.VerifyOptions{Roots: tc.RootCAs}); err != nil {
+		t.Errorf("the pool does not trust the ca_file: %v", err)
 	}
 }
 
@@ -305,7 +437,7 @@ func TestHiddenAndLinkedClients(t *testing.T) {
 // own binding is optional, and readiness waits on required ones only.
 var requiredEcho = sdk.Declaration[struct{}, struct{}]{
 	Name:     "ready",
-	Bindings: []sdk.BindingSpec{{Capability: "echo", Client: "http", Env: map[string]string{"url": "R_ECHO_URL"}}},
+	Bindings: []sdk.BindingSpec{{Capability: "echo", Client: "http", Env: map[string]string{"url": "R_ECHO_URL"}, Open: httpclient.Open}},
 	New:      func(*sdk.Values, *sdk.Bindings) (struct{}, struct{}) { return struct{}{}, struct{}{} },
 }
 

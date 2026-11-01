@@ -41,6 +41,7 @@ const AuthBindingToken = "binding-token"
 // a hand written Compose file.
 var BootstrapNames = []string{
 	"MP_INSTANCE",
+	"MP_DOMAIN",
 	"MP_ENV_FILE",
 	"MP_ACME_URL",
 	"MP_CA_FILE",
@@ -188,6 +189,17 @@ var (
 // names, instance names, catalog entry names, capability names, secret names and value names.
 func ValidName(s string) bool {
 	return nameRe.MatchString(s) && !reservedNames[s]
+}
+
+// ValidDomain reports whether s is one or more DNS labels joined by dots, like the
+// <graph>.internal the render writes into MP_DOMAIN.
+func ValidDomain(s string) bool {
+	for label := range strings.SplitSeq(s, ".") {
+		if !nameRe.MatchString(label) {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidEnvName reports whether s may name an environment variable in a catalog entry.

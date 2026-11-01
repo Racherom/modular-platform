@@ -9,9 +9,11 @@ package sdk
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,13 +21,13 @@ import (
 	"syscall"
 
 	"github.com/racherom/modular-platform/sdk/auth"
-	"github.com/racherom/modular-platform/sdk/httpclient"
 	"github.com/racherom/modular-platform/sdk/httpkit"
 	"github.com/racherom/modular-platform/sdk/internal/load"
 	"github.com/racherom/modular-platform/sdk/manifest"
+	"github.com/racherom/modular-platform/sdk/tlsacme"
 )
 
-// plainAddr is where a module listens without TLS.
+// plainAddr is where a module listens without TLS; tlsacme.Addr is where it listens in TLS mode.
 const plainAddr = ":8080"
 
 type (
@@ -35,6 +37,12 @@ type (
 	BindingSpec = load.BindingSpec
 	// ProvideSpec declares the capability the module provides.
 	ProvideSpec = load.ProvideSpec
+	// Binding is a loaded binding: the provider's address and the credentials its client uses.
+	Binding = load.Binding
+	// Opener opens the client of a loaded binding; each client package has one.
+	Opener = load.Opener
+	// Opened is an open binding client, how readiness polls it, and how it closes.
+	Opened = load.Opened
 	// Secret holds a secret value; only Reveal returns it.
 	Secret = load.Secret
 	// Problem is one line of a refused start.
@@ -87,6 +95,9 @@ type Option func(*options)
 type options struct {
 	lookupEnv func(string) (string, bool)
 	log       *slog.Logger
+	// certificates replaces autocert in TLS mode, for tests; nil outside them.
+	certificates       tlsacme.Getter
+	plainAddr, tlsAddr string
 }
 
 // WithEnv replaces the process env with env, for tests.
@@ -102,7 +113,7 @@ func WithLogger(l *slog.Logger) Option {
 }
 
 func newOptions(opts []Option) options {
-	o := options{lookupEnv: os.LookupEnv}
+	o := options{lookupEnv: os.LookupEnv, plainAddr: plainAddr, tlsAddr: tlsacme.Addr}
 	for _, opt := range opts {
 		opt(&o)
 	}
@@ -116,7 +127,7 @@ func newOptions(opts []Option) options {
 // it starts the module and serves until SIGINT or SIGTERM. It exits 1 on a refused start.
 func Run[C, U any](d Declaration[C, U], setup Setup[C, U], opts ...Option) {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
-		os.Exit(httpkit.Healthcheck("http://127.0.0.1:8080/readyz"))
+		os.Exit(healthcheck(newOptions(opts)))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	code := Main(ctx, d, setup, opts...)
@@ -124,28 +135,81 @@ func Run[C, U any](d Declaration[C, U], setup Setup[C, U], opts ...Option) {
 	os.Exit(code)
 }
 
+// healthcheck probes the module's own /readyz: in TLS mode on the TLS port, trusting MP_CA_FILE
+// and checking the module's host name; else in plain HTTP. It reads only the bootstrap names and
+// exits 1 on a missing or bad one.
+func healthcheck(o options) int {
+	b, problems := load.LoadBootstrap(o.lookupEnv, os.ReadFile)
+	if len(problems) > 0 {
+		for _, p := range problems {
+			fmt.Fprintln(os.Stderr, "healthcheck: "+p.String())
+		}
+		return 1
+	}
+	if !b.TLS() {
+		return httpkit.Healthcheck("http://"+loopback(o.plainAddr)+"/readyz", nil)
+	}
+	return httpkit.Healthcheck("https://"+loopback(o.tlsAddr)+"/readyz", tlsacme.ClientConfig(b.Roots, b.Host()))
+}
+
+// loopback turns a listen address like :8080 into one to call, 127.0.0.1:8080.
+func loopback(addr string) string {
+	_, port, _ := net.SplitHostPort(addr)
+	return net.JoinHostPort("127.0.0.1", port)
+}
+
 // Main starts the module and serves until ctx ends. It returns the exit code: 1 when the start is
-// refused (nothing listens then) or serving fails.
+// refused (nothing listens then) or serving fails. In TLS mode it listens first and then gets the
+// module's certificate, so /readyz answers 503 until one is held. The binding clients close once
+// the server has stopped, so a request still running at shutdown keeps its connections.
 func Main[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], opts ...Option) int {
 	o := newOptions(opts)
-	h, err := Build(ctx, d, setup, opts...)
+	clients, closeClients := context.WithCancel(context.WithoutCancel(ctx))
+	defer closeClients()
+	b, err := build(clients, d, setup, o)
 	if err != nil {
 		return 1
 	}
-	if err := httpkit.Serve(ctx, o.log, plainAddr, h); err != nil {
+	addr, cfg := o.plainAddr, (*tls.Config)(nil)
+	if b.cert != nil {
+		addr, cfg = o.tlsAddr, b.cert.ServerConfig()
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		o.log.Error("module stopped", slog.Any("error", err))
+		return 1
+	}
+	if b.cert != nil {
+		go b.cert.Run(ctx)
+	}
+	if err := httpkit.ServeListener(ctx, o.log, ln, b.handler, cfg); err != nil {
 		o.log.Error("module stopped", slog.Any("error", err))
 		return 1
 	}
 	return 0
 }
 
-// Build loads and checks the config, builds the binding clients, runs setup and returns the
+// Build loads and checks the config, opens the binding clients, runs setup and returns the
 // module's whole handler: health and readiness, then the access log, the rate limit and the
 // binding token check in front of the module's own handler. /readyz answers 503 until every
-// required binding has answered once; the polls run until ctx ends. On a refused start it logs
-// one line per problem and returns ErrStart.
+// required binding has answered once and, in TLS mode, a certificate is held (Build gets none;
+// Main does once it listens); the polls run until ctx ends, and the clients close then. On a
+// refused start it logs one line per problem and returns ErrStart.
 func Build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], opts ...Option) (http.Handler, error) {
-	o := newOptions(opts)
+	b, err := build(ctx, d, setup, newOptions(opts))
+	if err != nil {
+		return nil, err
+	}
+	return b.handler, nil
+}
+
+// built is a module ready to serve: its handler and, in TLS mode, its certificate.
+type built struct {
+	handler http.Handler
+	cert    *tlsacme.Manager // nil in plain mode
+}
+
+func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], o options) (built, error) {
 	log := o.log
 	res := load.Load(load.Input{
 		Values:    d.Values,
@@ -163,26 +227,29 @@ func Build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 		for _, err := range errs {
 			problems = append(problems, clientsProblem(p, load.CodeInvalidBinding, err.Error()))
 		}
-		load.SortProblems(problems)
 	}
+	opened, openProblems := open(d.Bindings, res.Bindings)
+	problems = append(problems, openProblems...)
+	load.SortProblems(problems)
 	if refuse(ctx, log, problems) {
-		return nil, ErrStart
+		closeAll(opened)
+		return built{}, ErrStart
 	}
+	context.AfterFunc(ctx, func() { closeAll(opened) })
 
 	values := &Values{m: res.Values}
 	bindings := &Bindings{m: map[string]any{}}
 	for _, b := range res.Bindings {
-		if !b.Bound {
-			bindings.m[b.Capability] = nil
-			continue
+		bindings.m[b.Capability] = nil // an optional binding left unbound
+		if o, ok := opened[b.Capability]; ok {
+			bindings.m[b.Capability] = o.Client
 		}
-		bindings.m[b.Capability] = httpclient.New(b.URL, b.Token.Reveal())
 	}
 	cfg, uses := d.New(values, bindings)
 	if v, ok := any(cfg).(interface{ Validate(context.Context) error }); ok {
 		if err := v.Validate(ctx); err != nil {
 			refuse(ctx, log, []Problem{{Value: "module", Env: "module", Code: load.CodeValidate, Message: err.Error()}})
-			return nil, ErrStart
+			return built{}, ErrStart
 		}
 	}
 	startLog(ctx, log, d, res)
@@ -193,7 +260,7 @@ func Build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 		if !errors.Is(err, ErrStart) {
 			log.ErrorContext(ctx, "module setup failed", slog.Any("error", err))
 		}
-		return nil, ErrStart
+		return built{}, ErrStart
 	}
 	if p := d.Provides; p != nil && p.Auth == manifest.AuthBindingToken {
 		switch {
@@ -202,7 +269,7 @@ func Build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 		case clients.Len() == 0:
 			refuse(ctx, log, []Problem{clientsProblem(p, load.CodeMissing,
 				fmt.Sprintf("binding token auth needs at least one consumer token; set %s to the clients directory", p.ClientsDirEnv))})
-			return nil, ErrStart
+			return built{}, ErrStart
 		default:
 			h = auth.Middleware(clients, h)
 		}
@@ -215,18 +282,75 @@ func Build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 	var r readiness
 	for _, b := range res.Bindings {
 		if b.Bound && !b.Optional {
-			r.wait(ctx, log, b.Capability, bindings.m[b.Capability].(pinger))
+			r.wait(ctx, log, b.Capability, opened[b.Capability].Ready)
 		}
 	}
-	health := http.NewServeMux()
-	httpkit.Health(health, r.ready)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if slices.Contains(httpkit.HealthPaths, r.URL.Path) {
-			health.ServeHTTP(w, r)
-			return
+	var cert *tlsacme.Manager
+	ready := r.ready
+	if bs := res.Bootstrap; bs.TLS() {
+		get := o.certificates
+		if get == nil {
+			acme, err := tlsacme.ACME(bs.ACMEURL, bs.Roots, bs.Host())
+			if err != nil {
+				log.ErrorContext(ctx, "module setup failed", slog.Any("error", err))
+				return built{}, ErrStart
+			}
+			get = acme
 		}
-		h.ServeHTTP(w, r)
-	}), nil
+		cert = tlsacme.New(get, bs.Host(), log)
+		ready = func() bool { return r.ready() && cert.Ready() }
+	}
+	health := http.NewServeMux()
+	httpkit.Health(health, ready)
+	return built{
+		handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if slices.Contains(httpkit.HealthPaths, r.URL.Path) {
+				health.ServeHTTP(w, r)
+				return
+			}
+			h.ServeHTTP(w, r)
+		}),
+		cert: cert,
+	}, nil
+}
+
+// open opens the client of every bound binding with its spec's Opener. A binding that cannot be
+// opened is an invalid_binding problem; the clients opened so far are returned all the same, so
+// the caller can close them.
+func open(specs []BindingSpec, loaded []Binding) (map[string]Opened, []Problem) {
+	openers := map[string]Opener{}
+	for _, s := range specs {
+		openers[s.Capability] = s.Open
+	}
+	opened := map[string]Opened{}
+	var problems []Problem
+	for _, b := range loaded {
+		if !b.Bound {
+			continue
+		}
+		path := "uses." + b.Capability
+		openFn := openers[b.Capability]
+		if openFn == nil {
+			problems = append(problems, Problem{Value: path, Env: path, Code: load.CodeInvalidBinding,
+				Message: fmt.Sprintf("the declaration has no opener for the %s client; run sdkgen again", b.Client)})
+			continue
+		}
+		o, err := openFn(b)
+		if err != nil {
+			problems = append(problems, Problem{Value: path, Env: path, Code: load.CodeInvalidBinding, Message: err.Error()})
+			continue
+		}
+		opened[b.Capability] = o
+	}
+	return opened, problems
+}
+
+func closeAll(opened map[string]Opened) {
+	for _, o := range opened {
+		if o.Close != nil {
+			o.Close()
+		}
+	}
 }
 
 func clientsProblem(p *ProvideSpec, code, message string) Problem {
@@ -241,8 +365,9 @@ func refuse(ctx context.Context, log *slog.Logger, problems []Problem) bool {
 	return len(problems) > 0
 }
 
-// startLog writes the one config loaded line (each value's source, never a value), the warnings,
-// and the plain HTTP warning.
+// startLog writes the one config loaded line (the host name, the TLS mode, each value's source,
+// never a value, and each binding's client kind), the warnings, and in plain mode the plain HTTP
+// warning.
 func startLog[C, U any](ctx context.Context, log *slog.Logger, d Declaration[C, U], res load.Result) {
 	values := make([]any, 0, len(d.Values))
 	for _, v := range d.Values {
@@ -256,13 +381,20 @@ func startLog[C, U any](ctx context.Context, log *slog.Logger, d Declaration[C, 
 		}
 		bindings = append(bindings, slog.String(b.Capability, kind))
 	}
+	mode := "plain"
+	if res.Bootstrap.TLS() {
+		mode = "tls"
+	}
 	log.InfoContext(ctx, "config loaded",
-		slog.String("tls", "plain"),
+		slog.String("host", res.Bootstrap.Host()),
+		slog.String("tls", mode),
 		slog.Group("values", values...),
 		slog.Group("bindings", bindings...),
 	)
 	for _, w := range res.Warnings {
 		log.WarnContext(ctx, w.Message, slog.String("value", w.Value), slog.String("at", w.At))
 	}
-	log.WarnContext(ctx, "serving plain HTTP: no certificate issuer bound")
+	if !res.Bootstrap.TLS() {
+		log.WarnContext(ctx, "serving plain HTTP: no certificate issuer bound")
+	}
 }

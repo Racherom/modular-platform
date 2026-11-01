@@ -1,0 +1,12 @@
+apiVersion: modular-platform/v0alpha1
+kind: Module
+name: tls-module
+description: Answers GET /hello over TLS, for the sdk's tests against pebble.
+image: modular-platform/sdk-tls-module:test
+runtime: sdk
+healthcheck:
+  test: ["CMD", "/tls-module", "healthcheck"]
+  interval: 1s
+  timeout: 3s
+  retries: 30
+  start_period: 30s

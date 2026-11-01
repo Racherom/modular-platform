@@ -64,8 +64,12 @@ tasks:
 
   test:integration:
     desc: Run the Go tests that need Docker (build tags integration and e2e; they build test images)
+    # Two runs: testcontainers shares one session, and one reaper, across every package of a go
+    # test run. The e2e test builds images for about 10 seconds before it reaches Docker, and by
+    # then the reaper of packages that finished early prunes the session's containers.
     cmds:
-      - go test -race -tags integration,e2e {{.GO_PACKAGES}}
+      - go test -race -tags integration {{.GO_PACKAGES}}
+      - go test -race -tags e2e {{.GO_PACKAGES}}
 
   lint:
     desc: Check formatting, go vet and the editor's types (feature #2 adds linters)

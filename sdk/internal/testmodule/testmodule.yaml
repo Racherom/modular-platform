@@ -16,6 +16,26 @@ uses:
     env:
       url: TM_ECHO_URL
       token_file: TM_ECHO_TOKEN_FILE
+  postgresql:
+    optional: true
+    client: postgresql
+    env:
+      url: TM_DB_URL
+      database: TM_DB_NAME
+      user: TM_DB_USER
+      password_file: TM_DB_PASSWORD_FILE
+      sslmode: TM_DB_SSLMODE
+      ca_file: TM_DB_CA_FILE
+  storage:
+    optional: true
+    client: s3
+    env:
+      url: TM_STORE_URL
+      bucket: TM_STORE_BUCKET
+      region: TM_STORE_REGION
+      access_key_id: TM_STORE_ACCESS_KEY_ID
+      secret_access_key_file: TM_STORE_SECRET_KEY_FILE
+      ca_file: TM_STORE_CA_FILE
 config:
   api-key:
     env: TM_API_KEY

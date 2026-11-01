@@ -2,10 +2,12 @@ package httpkit
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -63,9 +65,14 @@ func Health(mux *http.ServeMux, ready func() bool) {
 var HealthPaths = []string{"/healthz", "/readyz"}
 
 // Healthcheck is the healthcheck subcommand of every binary (distroless images have no curl):
-// it calls url and returns the exit code, 0 for a 2xx answer.
-func Healthcheck(url string) int {
+// it calls url and returns the exit code, 0 for a 2xx answer. An https url is called with cfg.
+func Healthcheck(url string, cfg *tls.Config) int {
 	client := http.Client{Timeout: 3 * time.Second}
+	if cfg != nil {
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr.TLSClientConfig = cfg
+		client.Transport = tr
+	}
 	resp, err := client.Get(url)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "healthcheck:", err)
@@ -115,9 +122,19 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 
 // Serve runs handler on addr until ctx ends, then shuts down gracefully.
 func Serve(ctx context.Context, log *slog.Logger, addr string, handler http.Handler) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("serve: %w", err)
+	}
+	return ServeListener(ctx, log, ln, handler, nil)
+}
+
+// ServeListener runs handler on ln until ctx ends, then shuts down gracefully. With cfg it serves
+// only TLS.
+func ServeListener(ctx context.Context, log *slog.Logger, ln net.Listener, handler http.Handler, cfg *tls.Config) error {
 	srv := &http.Server{
-		Addr:              addr,
 		Handler:           handler,
+		TLSConfig:         cfg,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      20 * time.Second,
@@ -126,8 +143,12 @@ func Serve(ctx context.Context, log *slog.Logger, addr string, handler http.Hand
 	}
 	errc := make(chan error, 1)
 	go func() {
-		log.Info("listening", slog.String("addr", addr))
-		errc <- srv.ListenAndServe()
+		log.Info("listening", slog.String("addr", ln.Addr().String()), slog.Bool("tls", cfg != nil))
+		if cfg != nil {
+			errc <- srv.ServeTLS(ln, "", "")
+			return
+		}
+		errc <- srv.Serve(ln)
 	}()
 	select {
 	case err := <-errc:
