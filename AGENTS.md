@@ -18,7 +18,7 @@ Builds a microservice stack from exchangeable modules. A graph planner checks th
 ## Commands
 
 ```bash
-task generate   # Go and TS code from contracts/openapi (output committed; CI fails on a diff)
+task generate   # Go and TS code from contracts/openapi, sdk getters from catalog entries (output committed; CI fails on a diff)
 task dev        # online tool on https://platform.localhost, editor with hot reload (binds 80 and 443)
 task build      # Go, the editor, and the web and planner images
 task test       # go test -race and vitest (installs web deps itself)
@@ -39,6 +39,7 @@ Stored in `docs/specs/`, one folder per spec: `docs/specs/NNNN-title/index.md`, 
 - **Contract first**: API changes start in `contracts/openapi/*.yaml`, then `task generate`. Never hand edit `*.gen.go`, `*.gen.ts` or `routeTree.gen.ts`. Wire errors use the contract's `Problem` and `ProblemList` schemas.
 - **Errors**: return errors, wrap with `fmt.Errorf("...: %w", err)`, use sentinel or typed errors where callers branch; no panics for expected failures.
 - **Config**: every `MP_*` setting is parsed and checked once at startup in `internal/config`; a bad value stops the service. Public origin from config only (principle 12).
+- **Module config (spec 0005)**: a module declares its values in the `config:` section of its catalog entry (`catalog/<module>.yaml`) and runs on `sdk.Run`; `sdkgen` writes `internal/config/config.gen.go`, and only `sdk/` reads env vars or `*_FILE` paths. See [sdk/AGENTS.md](sdk/AGENTS.md).
 - **Logs**: `log/slog` JSON only, never `fmt.Print` or `log.Printf` in services; never log request bodies or secret values.
 - **Naming and docs**: Go idioms (short receivers, MixedCaps, no stutter like `render.RenderZip`); every exported Go identifier has a doc comment.
 - **Tests**: unit plus integration. Go table tests beside the code, `httptest` for handlers, golden files in `testdata/` for render output, always `-race`. Editor rules in [web/AGENTS.md](web/AGENTS.md).
@@ -83,5 +84,6 @@ Chosen here, installed by `/develop tooling`:
 ## Context files
 
 - [web/AGENTS.md](web/AGENTS.md) (the editor: React, Vite, base path handling, its tests and skills)
+- [sdk/AGENTS.md](sdk/AGENTS.md): the module SDK, its packages, `sdkgen`, and the config and secret rules
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

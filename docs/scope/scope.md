@@ -22,6 +22,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 23 | Replace the platform's own modules | Slice 4 | planned |
 | 24 | Planner website standalone or in your site | Slice 4 | planned |
 | 25 | Upgrade a managed install | Slice 4 | planned |
+| 28 | Exchangeable sign in methods | Slice 4 | planned |
 | 7 | Exchange a provider | Slice 5 | planned |
 | 8 | Capability conformance checks | Slice 6 | planned |
 | 9 | Secrets handling | Slice 7 | planned |
@@ -33,6 +34,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 15 | Audit log | Slice 11 | planned |
 | 17 | Config provider module | Slice 12 | planned |
 | 18 | Users, groups and permissions modules | Slice 13 | planned |
+| 29 | Sign in policy and tenant issuers | Slice 13 | planned |
 | 19 | Live graph changes | Slice 14 | planned |
 | 20 | Scale modules | Slice 15 | planned |
 | 21 | Per user provider routing | Slice 16 | planned |
@@ -80,7 +82,7 @@ spec [0005](../specs/0005-module-sdk/index.md) · code in `sdk/`, `catalog/plann
 - [ ] Build it: `/develop module SDK`
    - [x] Planner on a thin SDK: the `sdk` module absorbs `libs/platform`, the new catalog fields and rules, `sdkgen`, the config loader with env files, `sdk.Run`, `catalog/planner.yaml` (AC-1, AC-2, AC-3, AC-4, AC-5, AC-13)
    - [x] Bindings and protection: per consumer tokens, the HTTP client, readiness, the render additions and the rendered end to end test (AC-6, AC-7, AC-9, AC-12)
-   - [ ] TLS and the data clients: ACME TLS tested against `pebble`, the PostgreSQL and S3 clients (AC-6, AC-8, AC-9)
+   - [x] TLS and the data clients: dotted host names (`MP_DOMAIN`, a network alias per SDK service), ACME TLS through autocert tested against `pebble`, the PostgreSQL and S3 clients (AC-6, AC-8, AC-9, AC-12)
    - [ ] Caller token and pluggable sources: `MP-Caller` mint and check, push, per caller and binding resolver sources (AC-10, AC-11)
    - [ ] The written contract `sdk/CONTRACT.md`, each statement backed by a test (AC-14)
 - [ ] Verify it: `/check verify module SDK`
@@ -89,7 +91,7 @@ spec [0005](../specs/0005-module-sdk/index.md) · code in `sdk/`, `catalog/plann
 - [ ] Document it: `/document module SDK`
 
 ### 16. Managed mode control plane · needs a decision
-You download the platform itself as a zip, run `setup.sh` and start it next to your stack, and it becomes the control plane: sign in (one admin to start), plan in your own planner, deploy to the host, and see the live state of every module. Sign in and host deploy live here, not in static mode. This is now the first thread through the whole product (spec 0004), so it stays narrow: full sign in and the database, no event bus yet (the api polls the deployer), the provisional graph format of spec 0002 and a hand written managed zip, deploying any graph the editor can open after you review the plan, with blunt interim refusal rules for host level access. It builds its own screens on the current editor styling without waiting for #5, and runs at the site root only. Spec 0001 and 0004 fix its overall shape; this spec settles the API and deployer contracts, polling and state, labels, the first tables and the managed smoke job. It ships the bundled defaults, but keeps image specific choices behind their capabilities (#23) and does not tie the editor to the site root (#24).
+You download the platform itself as a zip, run `setup.sh` and start it next to your stack, and it becomes the control plane: sign in (one admin to start), plan in your own planner, deploy to the host, and see the live state of every module. Sign in and host deploy live here, not in static mode. This is now the first thread through the whole product (spec 0004), so it stays narrow: full sign in and the database, no event bus yet (the api polls the deployer), the provisional graph format of spec 0002 and a hand written managed zip, deploying any graph the editor can open after you review the plan, with blunt interim refusal rules for host level access. It builds its own screens on the current editor styling without waiting for #5, and runs at the site root only. Spec 0001 and 0004 fix its overall shape; this spec settles the API and deployer contracts, polling and state, labels, the first tables and the managed smoke job. It ships the bundled defaults, but keeps image specific choices behind their capabilities (#23), does not tie the editor to the site root (#24), and keeps its one sign in method behind a seam so methods can be exchanged later (#28).
 **Done when:** you install the managed zip on a clean host, sign in, deploy a stack from the editor to that host, and the editor shows the running graph with each module's state.
 - [ ] Design it (spec): `/architect managed mode control plane`
 
@@ -128,6 +130,11 @@ In managed mode the planner website runs on its own domain, or under a path of a
 Move a running managed platform to a newer version: new images, database migrations, and setup steps a newer zip adds, while your secrets, volumes, deployments and replaced modules (#23) stay. Until this lands, an upgrade means installing the new zip over the old folder by hand. Surfaced by spec 0004.
 **Done when:** you upgrade an install with deployed stacks to a newer version, new setup steps run once, migrations apply, sign in and every deployment keep working, and a failed upgrade leaves the old version running.
 - [ ] Design it (spec): `/architect upgrade a managed install`
+
+### 28. Exchangeable sign in methods · needs a decision
+How someone proves who they are is exchangeable, not only the container behind it (#23). Each sign in method (passkey, FIDO security key, username and password, OIDC through another identity provider, OID4VP with a wallet credential) comes from a module that provides a sign in method capability, and one module may provide several methods. You enable several at once, each user picks one, and two can stack as two factors (#14). The managed platform's own sign in uses them, and apps in the stack can bind to the same capability. A method the platform does not ship with plugs in as a new module, with no platform change. Its spec decides the seam: what the platform and apps learn after a sign in (who, by which methods, how strong), and how methods relate to the identity modules of #18.
+**Done when:** you sign in to the managed platform with at least two different methods enabled side by side; a user can combine two methods as two factors; you remove one method module and add another with no change to the platform or any app; an app in the stack signs its users in through the same capability; a fresh install starts with one bundled method, and the planner refuses to remove the last one or a module that does not provide what sign in needs.
+- [ ] Design it (spec): `/architect exchangeable sign in methods`
 
 ## Slice 5: Exchange a provider
 
@@ -179,7 +186,7 @@ Add community or company catalogs from a repository next to the built in one, wi
 ## Slice 11: Roles and audit
 
 ### 14. Roles and permissions · needs a decision
-Managed mode starts with a single admin (#16); this adds roles that decide who may view, plan or deploy, and moves the bundled sign in to two factors. Managed mode only: the online tool has no accounts. These built in roles stay the bootstrap fallback once users, groups and permissions come from modules (#18).
+Managed mode starts with a single admin (#16); this adds roles that decide who may view, plan or deploy, and moves the bundled sign in to two factors (the factors themselves are exchangeable sign in methods, #28). Managed mode only: the online tool has no accounts. These built in roles stay the bootstrap fallback once users, groups and permissions come from modules (#18).
 **Done when:** a viewer cannot change a graph, a planner cannot deploy, and every action checks the role on the server. (basis: role based access control)
 - [ ] Design it (spec): `/architect roles and permissions`
 
@@ -201,6 +208,11 @@ Config becomes a capability that an exchangeable module provides. Unchanged cont
 Users, groups and permissions become capabilities provided by exchangeable modules (one module or separate ones). Managed mode only: the platform's own sign in and roles use them, and apps in the stack can bind to the same capabilities. The built in sign in and roles (#14) stay as the bootstrap fallback, and the identity provider behind that fallback is itself replaceable at install (#23).
 **Done when:** in managed mode you sign in to the platform through an identity module, its groups and permissions decide what you may do, an app in the stack can bind to the same capability, and a fresh install still starts on the built in fallback.
 - [ ] Design it (spec): `/architect users, groups and permissions modules`
+
+### 29. Sign in policy and tenant issuers · needs a decision
+Config decides which sign in methods (#28) count for what: per app in the stack, per action (viewing needs one factor, deploying or changing secrets steps up to a stronger method or a second one), and per tenant. A tenant is a group or org of users from the identity modules (#18), and each tenant trusts its own OID4VP credential issuers, so a wallet credential from one tenant's issuer never signs a user into another tenant. The policy is config, so it changes without a platform change. Its spec decides how app, action and tenant rules combine, where the policy lives (with #17 or #18), and what a refused or step up sign in tells the user.
+**Done when:** two apps in the stack accept different methods for the same user; deploying asks for a step up that viewing does not; two tenants each trust only their own OID4VP issuer, and a credential from tenant A's issuer is refused for tenant B; a policy change takes effect without a redeploy; and the planner refuses a policy that leaves an app, action or tenant with no enabled method.
+- [ ] Design it (spec): `/architect sign in policy and tenant issuers`
 
 ## Slice 14: Live graph changes
 
@@ -283,6 +295,8 @@ Other deferred ideas, not yet numbered:
 - Spec 0004 follow up, applied by `/scope` replan (2026-10-30): managed mode first; #16 moved to slice 1, #3 and #4 after it, then #6 as graph editing, then #23 and #24; #22 deferred; #1's CI milestone no longer carries the online smoke job; new #25 for upgrading a managed install.
 - Your answers in the `/scope` add pass (2026-10-30): in managed mode, config and secrets come from the network, provisioned through capabilities such as create database, with a login for each module; secrets between modules are never shown and no string is typed twice; an external with a provisioning capability takes its admin login once; new #26 in slice 7, after #9.
 - Your answers in the `/scope` add pass (2026-10-30): a module SDK handles config, connections and protection for a new module container; the module declares its config and the SDK reads it from env vars, secrets, a config server, a vault, or per request (the caller's token picks the values); protection covers traffic between modules only; it comes before the platform's own modules because they are built on it; new #27 at the start of slice 1, before #16.
+- Your answers in the `/scope` add pass (2026-10-31): the sign in method is exchangeable, not only its container (passkey, FIDO, username and password, OIDC, OID4VP); used by the platform's own sign in and by apps in the stack; several methods at once, combinable as two factors; a new method is a module with no platform change; new #28 in slice 4, next to #23, with #16 keeping its one method behind a seam.
+- Your answers in the `/scope` add pass (2026-10-31, second): some sign in modules offer several methods; config decides which methods count per app, per action (step up) and per tenant; a tenant is a group or org of users from #18, each trusting its own OID4VP issuers; new #29 in slice 13, after #18, keeping #28 small.
 
 **Practices & standards**
 - Vertical slices ship real value early (tracer bullet development)

@@ -77,7 +77,41 @@ The done line asks for "no parsing code of its own" and for later sources that p
 
 Within Option 2, the declaration lives in the catalog entry (your choice) because the entry is already what the planner and the render read; putting config there means the editor, the render's env file and #3 all see the same declaration, and nothing can drift (basis: spec 0002, one schema for planner and editor). Generating Go from it, checked in and run through `go tool`, follows how `oapi-codegen` already works in this repository, so a stale file fails CI the same way (basis: spec 0001, `task generate` and the CI diff check). Explicit env names per value (your choice over derived names) keep native names possible and make the contract read like the entry; the cost is that a second language must read the entry rather than compute names, which it does anyway.
 
-On protection, the per binding bearer token keeps the credential model of principle 8 and looks like PostgreSQL roles and S3 keys, and works for calls with no user. You chose short lived certificates and the deployer as the issuer, where I recommended one year certificates and a separate step-ca module. Your choice gives the strongest certificate hygiene and no new container, and embedding step-ca's own packages keeps the CA code real rather than house built (basis: smallstep certificates). The tradeoffs you accept: every managed SDK module depends on the deployer being up to restart, and the CA key lives in the service with the Docker socket; both are written into Consequences. ACME tls-alpn-01 needs no enrolment secret per module, because a module proves its name by answering on its own TLS port (basis: RFC 8737), and Go's `autocert` already speaks it against a custom directory (basis: `golang.org/x/crypto/acme/autocert`).
+On protection, the per binding bearer token keeps the credential model of principle 8 and looks like PostgreSQL roles and S3 keys, and works for calls with no user. You chose short lived certificates and the deployer as the issuer, where I recommended one year certificates and a separate step-ca module. Your choice gives the strongest certificate hygiene and no new container, and embedding step-ca's own packages keeps the CA code real rather than house built (basis: smallstep certificates). The tradeoffs you accept: every managed SDK module depends on the deployer being up to restart, and the CA key lives in the service with the Docker socket; both are written into Consequences. ACME tls-alpn-01 needs no enrolment secret per module, because a module proves its name by answering on its own TLS port (basis: RFC 8737), and Go's `x/crypto/acme` client speaks it against a custom directory (basis: `golang.org/x/crypto/acme`). `autocert` was the first pick; the engine was replaced on 2026-11-01 (see *ACME engine* below).
+
+### Certificate names (decided 2026-10-31, while building task 6)
+
+autocert refuses any server name without a dot, and `MP_INSTANCE` is a single DNS label (spec 0002's naming rule), so the design as first written could never enrol. The issuers are not the problem: pebble v2.10.1 and step-ca 0.30.2 both issued `planner` and `deployer-docker` over tls-alpn-01 on port 8443 (evidence below). The choice was between keeping autocert and changing the name, or keeping the name and changing the client.
+
+| Option | Pros | Cons |
+|---|---|---|
+| Own small manager on `x/crypto/acme` (my recommendation) | name stays `MP_INSTANCE`, the Compose service name; no render change; no new dependency; explicit enrolment and hourly renewal were already written around autocert | about 200 lines of ACME order, challenge and renewal code the project owns and must test; pebble needs `CreateCertFromOrder` (it sends no `Location` on finalize) |
+| Keep autocert, dotted names (chosen) | autocert is maintained by the Go team and already handles challenge certificates, renewal timers and concurrent handshakes; less ACME code in the repo | one more bootstrap name, a network alias per SDK service, task 5's render changes, the certificate name differs from the instance name, and a client hello rewrite so TLS 1.3 only clients do not trigger an RSA enrolment |
+| lego v4 as a library | mature, widely used ACME client | one large module for one challenge type; its own renewal model to fit around readiness |
+| certmagic | full automation, storage, OCSP | heaviest; built for public certificates; its internal name handling would need its own check |
+
+You chose to keep autocert with dotted names, where I recommended a small manager on the plain ACME client (the engine half of this call was reversed on 2026-11-01, see *ACME engine* below; the dotted names stay). Your choice keeps ACME protocol code out of the repository and leans on a library the Go team maintains, which is the boring option for a GA tier security path. What it costs is spread across the render, the bootstrap names and the `aud` rule, all written into index.md, plus one non obvious workaround (the hello rewrite, below). Both paths work against both issuers, so this is a call about where the complexity lives, not about correctness.
+
+The name is `<instance>.<graph>.internal`. The graph part keeps names unique when one issuer in `deployer-docker` (#16) serves several stacks, so a certificate from one stack is never valid for a service of the same name in another. `.internal` is reserved by ICANN for private use, so it can never shadow a public name (basis: ICANN's 2024 `.internal` reservation). The suffix arrives as `MP_DOMAIN` rather than a full name so the instance part cannot disagree with `MP_INSTANCE`, and it is used in plain mode too, so a module has one name in both modes and the `aud` a consumer mints from the URL host is exactly what the provider checks.
+
+(This paragraph applies only to the autocert build of task 6 and is gone with the engine change.) The hello rewrite came out of reading autocert while writing this: it decides between an ECDSA and an RSA certificate from the TLS 1.2 cipher suites a client offers, and a Go client with `MinVersion` TLS 1.3 offers only TLS 1.3 suites (measured: 3 suites, no ECDHE_ECDSA). Without the rewrite, that client's first handshake would block on a second, RSA enrolment. TLS 1.3 requires every client to support ECDSA P-256 signatures, so telling autocert so is always true for a TLS 1.3 only server.
+
+### ACME engine (decided 2026-11-01, after building task 6 on autocert)
+
+Task 6 shipped TLS on autocert as decided above, and building it showed how much code sat around autocert rather than in it. The SDK had to start enrolment itself with a made up client hello, because autocert only orders on a real handshake. It rewrote every hello so autocert would not order a second, RSA certificate, a rule that hangs on autocert's unexported key type logic. It read the held certificate back through `GetCertificate` once an hour, because autocert exposes no state, and had to avoid that call before enrolment, because it blocks. Renewal ran on autocert's private timer and clock, so no unit test could drive it, and a failed renewal waited 30 to 60 minutes before the next try. That last part works against the 2 hour readiness rule. The backoff, readiness and logging were already the SDK's own code; autocert contributed the order and challenge steps and a timer the SDK could not see.
+
+| Option | Pros | Cons |
+|---|---|---|
+| Keep autocert (as built) | already built and green against pebble; the Go team maintains the order logic | the hello rewrite on unexported behaviour; enrolment by a made up hello; renewal and its retry cadence untestable and outside readiness; state only visible through `GetCertificate` |
+| Own manager on `x/crypto/acme` (chosen, your pick and my recommendation) | the order flow is a straight line of protocol client calls; one ECDSA key type by construction, so no rewrite; renewal, retry and readiness in one place with a clock tests replace; handshakes never order | about 250 lines of order, challenge and renewal code the project owns; pebble needs `CreateCertFromOrder`; a lost account has to be handled by us |
+| lego v4 as a library | mature, widely used, many challenge types | one large module for one challenge type; its own renewal model would again sit outside readiness |
+| certmagic | full automation and storage | heaviest; built for public certificates and on disk storage, which this SDK avoids |
+
+You chose the own manager. It moves the hard parts into code the project can test end to end: every rule the spec states about renewal, retry and readiness now has one owner and a unit test, where before two of them lived in autocert's private state. The protocol work stays in `x/crypto/acme`, which the Go team maintains, so the code the SDK adds is orchestration (order, challenge, finalize, check, wait), not ACME message handling (basis: RFC 8555 order flow; the 2026-10-31 probe, which ran exactly this flow against both issuers). What you accept is owning that orchestration and its tests; the Issuer seam keeps it replaceable.
+
+The names were asked again, since single label names now work. You kept `<instance>.<graph>.internal`: the reasons in *Certificate names* that are not about autocert still hold (one issuer for several stacks in #16, and an issuer joined to several stack networks must resolve the name it validates without ambiguity), and the render, alias and `aud` work is already built.
+
+The smaller calls for the engine are in the table below, marked "(engine)".
 
 You chose `api` as the only minter of the internal caller token, where I recommended a separate token issuer capability. That keeps thread 1 smaller, and since `api` already signs users in, it is the natural first minter; the cost is that user apps behind the ingress carry no caller until a later feature adds a path. EdDSA with a key id from the RFC 7638 thumbprint, a per target audience and a 5 minute lifetime keep replay narrow without a token store, and go-jose v4 forces the allowed algorithms to be named at parse time, which closes the classic `alg` confusion attack (basis: go-jose v4 release notes; OWASP JWT guidance).
 
@@ -95,7 +129,7 @@ Env vars and files stay the only sources in thread 1 even in managed mode. That'
 | Bad pushed snapshot | refuse it whole, keep the previous one | never run with a mixed snapshot | apply the good values only |
 | Per caller budget and cache | 200 ms, 30 seconds per caller and value | bounded latency, fewer calls to the policy source | no cache (a policy call on every read) |
 | Provides per SDK module | at most one capability, one port | one listener and one clients directory in v0alpha1 | path prefixes per capability on one port |
-| Certificate cache | memory only | no key on disk; a restart enrols again in seconds | a cache directory on a volume |
+| Certificate and account keys | memory only; a fresh account key per start | no key on disk, no volume per SDK service; a restart registers and enrols again in seconds | a cache directory on a volume |
 | Readiness on certificate | 503 under 2 hours left | 24 hour certificates renew after 16 hours, so 2 hours means renewal has failed for 6 hours | 4 hours |
 | Caller key files | PEM, key id from the thumbprint | `openssl` can make them in a setup script, no key id to store | a JWK set file |
 | Binding token paths | `/run/secrets/uses/<cap>/token` and `/run/secrets/clients/<cap>/<consumer>` | one secret mounted on both sides; the consumer name comes from the file name | one shared directory |
@@ -104,21 +138,53 @@ Env vars and files stay the only sources in thread 1 even in managed mode. That'
 | Planner in the catalog | add `catalog/planner.yaml` | the entry is where its declaration must live (principle 2) | a hidden entry outside `catalog/` |
 | Caller token trust (cross check) | only after binding auth, `iss` must equal `CallerModule` | ties the user claim to the module that proved itself | trust any signed token (replayable by any module that received one) |
 | Container user (cross check) | `user: "${MP_UID}:${MP_GID}"` from `setup.sh` | Compose without swarm ignores secret `uid`, `gid` and `mode`, so 0600 files are readable only as the host user | world readable secret files (0644) |
-| ACME start (cross check) | listen, then enrol explicitly, renew hourly | autocert enrols lazily on the first handshake and renews on demand only | wait for the first real handshake |
+| ACME start (cross check, updated for the engine) | listen with `/readyz` 503, then `Run` orders in the background | the first certificate does not wait for a handshake; a handshake never orders | order before listening (the issuer cannot validate a port nobody listens on) |
 | Readiness after first success | not rechecked | a later provider outage does not flap every consumer | recheck continuously |
+| `MP_DOMAIN` in TLS mode | required, `tls_config` when missing | names stay unique per stack under one issuer (first reason was autocert's dot check, gone with the engine) | allow single label names in TLS mode |
+| Certificate key type (engine) | ECDSA P-256, a fresh key per order | every TLS 1.3 client must support it; a leaked key dies with its leaf | Ed25519 (not mandatory in TLS 1.3, some clients refuse it) |
+| `iss` after the rename | stays `MP_INSTANCE` | it is compared with `CallerModule`, a clients directory file name, which is the instance | the minter's host name (needs a mapping on the checking side) |
+| Testing renewal and the 2 hour rule (engine) | fake issuer and fake clock for renewal, backoff, deadline and readiness; pebble with a 90 second profile for one real renewal | renewal is now our code, so the unit tests drive the production path | pebble only (slow, and cannot show the retry cadence) |
+| When to renew (engine) | two thirds of the lifetime, no jitter, never sooner than 30 seconds after an issue | deterministic and testable; a few dozen modules renewing together is no load for one issuer; the floor stops an order loop when an issuer hands out tiny or backdated leaves | jitter of a tenth of the last third (autocert's), or ACME Renewal Information (no `x/crypto` support) |
+| Expired certificate (cross check) | keep serving it, `/readyz` 503 | matches "they keep serving"; dropping it changes nothing for clients, which refuse it either way | stop serving TLS |
+| Downgrade detection (cross check) | an `http://` host ending in `.<MP_DOMAIN>` | a consumer has no other sign that a URL points at an SDK provider; non SDK providers keep bare names | a per binding flag written by the render |
+| Bare SNI in TLS mode (engine) | the one held certificate for any server name | the certificate names only the host name, so a client checking another name refuses it on its side; a healthcheck by IP with the right `ServerName` keeps working | fail the handshake for any name but the host name (autocert's behaviour; no security gain) |
+| Retry (engine) | backoff 1 second doubling to 30 seconds, forever, same at start and on renewal | a module is ready within 30 seconds of the issuer recovering; one cadence to test | up to 10 minutes, or a slower cadence while a valid certificate is held |
+| Attempt deadline (engine) | 5 minutes (your pick) | tolerates a slow issuer; the backoff starts only after a stuck attempt is cut | 1 minute (my recommendation: local issuers answer in under a second, so a hung order would block readiness for less time) |
+| Account (engine) | registered once per process; after `accountDoesNotExist`, registered again with the same key | an issuer restart (pebble keeps accounts in memory) must not leave a module unable to renew until its own restart | register before every order (one extra round trip each time) |
+| Issued certificate check (engine) | verify against `MP_CA_FILE` for the host name, key match, valid now; a failure is a failed attempt | a module only reports ready with a certificate its clients will accept | trust whatever the issuer returns |
+| Challenge answer (engine) | only for an `acme-tls/1` only hello whose server name is the host name, only while an order waits | the challenge certificate is never shown to normal clients or for other names | answer any `acme-tls/1` hello |
+| Where the engine lives (engine) | exported `tlsacme.Client` beside the manager | one package owns the whole TLS path; tests swap the `Issuer` | an internal sub package (more structure for little code) |
+
+## Evidence: ACME issuance probe (2026-10-31)
+
+A small Go client on `golang.org/x/crypto` v0.58.0 ran in a busybox container on a Docker network, with its name as a network alias, against each issuer. It is not in the repository; rerun it from the steps here if a version changes.
+
+| Issuer | Client | Name | Result |
+|---|---|---|---|
+| pebble v2.10.1 (`tlsPort` 8443) | `x/crypto/acme` | `planner`, `api`, `deployer-docker` | issued, SAN = the name, 90 day default lifetime |
+| step-ca 0.30.2 (validation on 443) | `x/crypto/acme` | `planner`, `deployer-docker` | issued, 24 hour lifetime |
+| step-ca 0.30.2 (`--acme-tls-port 8443 --insecure`) | `x/crypto/acme` | `planner`, `deployer-docker` | issued, 24 hour lifetime |
+| pebble v2.10.1 | `autocert` | `planner` | refused by autocert before any request: `server name component count invalid` |
+| pebble v2.10.1 | `autocert` | `planner.demo.internal` | issued |
+| step-ca 0.30.2 (8443) | `autocert` | `planner.demo.internal` | issued |
+
+Also found: `CreateOrderCert` fails against pebble (no `Location` header on finalize) while `CreateCertFromOrder` works with both; step-ca's tls-alpn-01 port is the package variable `acme.InsecurePortTLSALPN01` (`acme/challenge.go`), which the binary sets only with `--insecure`; pebble's lifetime is set per profile (`profiles.<name>.validityPeriod`, seconds).
 
 ## References
 
 **Project sources**:
+- The ACME issuance probe above (2026-10-31); `x/crypto` v0.58.0 `acme/autocert/autocert.go` (the dot check and `supportsECDSA`), `acme/rfc8555.go` (`AuthorizeOrder`, `WaitOrder`, `CreateCertFromOrder`) and `acme/acme.go` (`TLSALPN01ChallengeCert`); step-ca v0.30.2 `acme/challenge.go` and `commands/app.go`; pebble v2.10.1 `cmd/pebble/main.go`
 - Spec 0001, principles 8 and 9, *Managed mode wiring*, and AC-5 (the planner's internal mode)
 - Spec 0002, the `v0alpha1` catalog entry, render rules and secret naming
 - Spec 0004, thread 1 contents and the refused graph guard
 - Scope #27 (done line), #16, #17, #21, #3
-- `libs/platform` and `services/planner/internal/config/config.go` (the code this replaces)
+- `libs/platform` and `services/planner/internal/config/config.go` (the code this replaces); `sdk/tlsacme` as built on autocert in task 6 (the code the engine change replaces)
 - Installed skills: `golang-security`, `golang-testing`, `golang-dependency-management`
 
 **Practices & standards**:
 - ACME, RFC 8555; tls-alpn-01, RFC 8737
+- TLS 1.3 mandatory signature algorithms (ECDSA P-256), RFC 8446 section 9.1
+- `.internal` reserved for private use (ICANN, 2024)
 - JWK thumbprint, RFC 7638
 - The `<NAME>_FILE` convention for secrets (official Postgres image)
 - OWASP JWT guidance: name allowed algorithms, short lifetimes, audience checks
