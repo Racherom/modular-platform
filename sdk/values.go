@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/racherom/modular-platform/sdk/auth"
+	"github.com/racherom/modular-platform/sdk/caller"
 )
 
 // Values holds a module's loaded values. Module code reads them only through the generated
@@ -83,4 +84,19 @@ func Client[T any](_ context.Context, b *Bindings, capability string) (T, error)
 // CallerModule returns the consumer instance whose binding token an incoming request carried.
 func CallerModule(ctx context.Context) (string, bool) {
 	return auth.CallerModule(ctx)
+}
+
+// Caller is the user a call is made for, and the module that minted its MP-Caller token.
+type Caller = caller.Caller
+
+// CallerFrom returns the caller of an incoming request (from a checked MP-Caller token), or the
+// one WithCaller put into ctx.
+func CallerFrom(ctx context.Context) (Caller, bool) {
+	return caller.From(ctx)
+}
+
+// WithCaller returns ctx carrying c. api's sign in code calls it; a module holding
+// MP_CALLER_SIGNING_KEY_FILE then sends c as an MP-Caller token on its http binding calls.
+func WithCaller(ctx context.Context, c Caller) context.Context {
+	return caller.With(ctx, c)
 }

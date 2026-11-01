@@ -406,7 +406,7 @@ Tests that need Docker (testcontainers) carry the build tag `integration`, and t
    - Wire `sdk.Run` to `tlsacme.NewClient(MP_ACME_URL, roots)` and `tlsacme.New(issuer, host, roots, log)`; the test option in `export_test.go` takes an `Issuer` instead of a getter.
    - Replace the hello rewrite tests in `sdk/tlsacme` with the manager and engine tests in *Critical test scenarios*; keep `TestTLSMode`, `TestTLSUnreadyWithoutCertificate` and `TestTLSBindingTrust` green on a fake issuer; set `TestTLSAgainstPebble`'s renewal window to 25 to 35 seconds before expiry.
    - Reword the `MP_DOMAIN` comment in `sdk/internal/load` (TLS needs the domain for unique names per stack, not because of autocert), and refresh the `tlsacme` and pebble lines in `verify.md` and any autocert mention in `sdk/AGENTS.md`.
-9. Add `sdk/caller` (`Mint`, `Verify`, the `MP-Caller` middleware, the HTTP client hook; `aud` is a host name, `iss` the instance), with a test per refusal case, satisfies **AC-11**
+9. [x] Add `sdk/caller` (`Mint`, `Verify`, the `MP-Caller` middleware, the HTTP client hook; `aud` is a host name, `iss` the instance), with a test per refusal case, satisfies **AC-11**
 10. Add the `Source`, `PushSource`, `CallerSource` and `BindingResolver` options to `sdk.Run`, the snapshot swap and refusal, the `managed_env` rule, the 200 ms budget and 30 second cache, and fakes in `sdktest`, satisfies **AC-10**
 11. Write `sdk/CONTRACT.md` and `sdk/README.md`, linking each contract statement to its test, satisfies **AC-14**
 

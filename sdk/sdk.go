@@ -21,6 +21,7 @@ import (
 	"syscall"
 
 	"github.com/racherom/modular-platform/sdk/auth"
+	"github.com/racherom/modular-platform/sdk/caller"
 	"github.com/racherom/modular-platform/sdk/httpkit"
 	"github.com/racherom/modular-platform/sdk/internal/load"
 	"github.com/racherom/modular-platform/sdk/manifest"
@@ -190,8 +191,8 @@ func Main[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U],
 }
 
 // Build loads and checks the config, opens the binding clients, runs setup and returns the
-// module's whole handler: health and readiness, then the access log, the rate limit and the
-// binding token check in front of the module's own handler. /readyz answers 503 until every
+// module's whole handler: health and readiness, then the access log, the rate limit, the binding
+// token check and the MP-Caller check in front of the module's own handler. /readyz answers 503 until every
 // required binding has answered once and, in TLS mode, a certificate is held (Build gets none;
 // Main does once it listens); the polls run until ctx ends, and the clients close then. On a
 // refused start it logs one line per problem and returns ErrStart.
@@ -262,6 +263,7 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 		}
 		return built{}, ErrStart
 	}
+	h = caller.Middleware(res.Bootstrap.CallerKeys, res.Bootstrap.Host(), log, h)
 	if p := d.Provides; p != nil && p.Auth == manifest.AuthBindingToken {
 		switch {
 		case m.anonymous:

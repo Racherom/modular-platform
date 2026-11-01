@@ -8,6 +8,7 @@ package load
 import (
 	"cmp"
 	"context"
+	"crypto/ed25519"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/racherom/modular-platform/sdk/caller"
 	"github.com/racherom/modular-platform/sdk/envfile"
 	"github.com/racherom/modular-platform/sdk/manifest"
 )
@@ -140,6 +142,12 @@ type Bootstrap struct {
 	Roots             *x509.CertPool // the certificates in CAFile; nil in plain mode
 	CallerKeyFile     string
 	CallerSigningFile string
+	// CallerKeys are the keys in CallerKeyFile; empty when it is unset. Load reads them, and
+	// LoadBootstrap does not.
+	CallerKeys caller.Keys
+	// CallerSigner mints with the key in CallerSigningFile as Instance; nil when it is unset. Load
+	// reads it, and LoadBootstrap does not.
+	CallerSigner *caller.Signer
 }
 
 // TLS reports whether the module runs in TLS mode: both MP_ACME_URL and MP_CA_FILE are set.
@@ -173,6 +181,7 @@ type Binding struct {
 	URL        *url.URL       // the provider's address
 	Token      Secret         // the content of token_file; empty when token_file is unset
 	Roots      *x509.CertPool // the certificates in ca_file, else MP_CA_FILE's in TLS mode; nil in plain mode without ca_file
+	Caller     *caller.Signer // mints MP-Caller on calls to an http binding; nil without MP_CALLER_SIGNING_KEY_FILE
 
 	// postgresql
 	Database, User string
@@ -214,6 +223,7 @@ type level struct {
 func Load(in Input) Result {
 	l := loader{in: in, res: Result{Values: map[string]any{}, Sources: map[string]string{}}}
 	l.bootstrap()
+	l.callerKeys()
 	l.envFiles()
 	for _, v := range in.Values {
 		l.value(v)
@@ -278,6 +288,41 @@ func (l *loader) bootstrap() {
 		v, ok := l.in.LookupEnv(key)
 		return v, 0, ok && v != ""
 	}})
+}
+
+// callerKeys reads the MP-Caller key files: the public keys a token may be signed with, and the
+// key this module signs with. An unreadable file or one that holds no such key is invalid.
+func (l *loader) callerKeys() {
+	b := &l.res.Bootstrap
+	if path := b.CallerKeyFile; path != "" {
+		data, err := l.in.ReadFile(path)
+		if err == nil {
+			b.CallerKeys, err = caller.ParseKeys(data)
+		}
+		if err != nil {
+			l.problem(EnvCallerKeyFile, EnvCallerKeyFile, CodeInvalid, "the key file %s: %s", path, keyFileReason(err))
+		}
+	}
+	if path := b.CallerSigningFile; path != "" {
+		data, err := l.in.ReadFile(path)
+		var key ed25519.PrivateKey
+		if err == nil {
+			key, err = caller.ParseSigningKey(data)
+		}
+		if err != nil {
+			l.problem(EnvCallerSigningKey, EnvCallerSigningKey, CodeInvalid, "the signing key file %s: %s", path, keyFileReason(err))
+			return
+		}
+		b.CallerSigner = caller.NewSigner(key, b.Instance)
+	}
+}
+
+// keyFileReason says why a key file failed, without the file's content.
+func keyFileReason(err error) string {
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
+		return "it cannot be read"
+	}
+	return err.Error()
 }
 
 // caFile reads the certificates in MP_CA_FILE, the root CA of the issuer and of every module
@@ -472,6 +517,8 @@ func (l *loader) binding(b BindingSpec) {
 	bound.Token = bl.file("token_file", "token")
 	bound.Roots = bl.roots()
 	switch b.Client {
+	case manifest.ClientHTTP:
+		bound.Caller = l.res.Bootstrap.CallerSigner
 	case manifest.ClientPostgreSQL:
 		bound.Database = bl.required("database")
 		bound.User = bl.required("user")

@@ -12,8 +12,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
+	"time"
 
 	"github.com/racherom/modular-platform/sdk"
+	"github.com/racherom/modular-platform/sdk/caller"
 )
 
 // Client calls one provider. It implements the Do method generated API clients take.
@@ -24,17 +27,18 @@ type Client struct {
 
 // New returns a client for the provider at base. An empty token sends no Authorization header.
 func New(base *url.URL, token string) *Client {
-	return newClient(base, token, nil)
+	return newClient(base, token, nil, nil)
 }
 
 // Open is the sdk.Opener of an http binding: a client for the binding's url and token that
-// trusts the certificates in its ca_file, if set.
+// trusts the certificates in its ca_file, if set, and sends the caller in a request's context
+// as an MP-Caller token when the module holds a signing key.
 func Open(b sdk.Binding) (sdk.Opened, error) {
-	c := newClient(b.URL, b.Token.Reveal(), b.Roots)
+	c := newClient(b.URL, b.Token.Reveal(), b.Roots, b.Caller)
 	return sdk.Opened{Client: c, Ready: c.Ready, Close: c.hc.CloseIdleConnections}, nil
 }
 
-func newClient(base *url.URL, token string, roots *x509.CertPool) *Client {
+func newClient(base *url.URL, token string, roots *x509.CertPool, signer *caller.Signer) *Client {
 	b := *base
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	if roots != nil {
@@ -42,7 +46,7 @@ func newClient(base *url.URL, token string, roots *x509.CertPool) *Client {
 	}
 	return &Client{
 		base: &b,
-		hc:   &http.Client{Transport: &bearer{base: &b, token: token, next: tr}},
+		hc:   &http.Client{Transport: &bearer{base: &b, token: token, signer: signer, next: tr}},
 	}
 }
 
@@ -97,18 +101,35 @@ func (c *Client) Format(f fmt.State, _ rune) {
 // LogValue shows the base URL only, never the token.
 func (c *Client) LogValue() slog.Value { return slog.StringValue(c.base.Redacted()) }
 
-// bearer adds the token to every request for the binding's scheme and host.
+// bearer adds the token, and an MP-Caller token minted for the caller in the request's context,
+// to every request for the binding's scheme and host.
 type bearer struct {
-	base  *url.URL
-	token string
-	next  http.RoundTripper
+	base   *url.URL
+	token  string
+	signer *caller.Signer // nil: no MP-Caller
+	next   http.RoundTripper
 }
 
 func (b *bearer) RoundTrip(req *http.Request) (*http.Response, error) {
-	if b.token == "" || req.URL.Scheme != b.base.Scheme || req.URL.Host != b.base.Host {
+	if req.URL.Scheme != b.base.Scheme || req.URL.Host != b.base.Host {
+		return b.next.RoundTrip(req)
+	}
+	c, hasCaller := caller.From(req.Context())
+	mint := b.signer != nil && hasCaller
+	if b.token == "" && !mint {
 		return b.next.RoundTrip(req)
 	}
 	r := req.Clone(req.Context())
-	r.Header.Set("Authorization", "Bearer "+b.token)
+	if b.token != "" {
+		r.Header.Set("Authorization", "Bearer "+b.token)
+	}
+	if mint {
+		// aud is the provider's host name: the URL's host without the port, lowercased
+		token, err := b.signer.Mint(c, strings.ToLower(req.URL.Hostname()), time.Now())
+		if err != nil {
+			return nil, fmt.Errorf("httpclient: %w", err)
+		}
+		r.Header.Set(caller.Header, token)
+	}
 	return b.next.RoundTrip(r)
 }
