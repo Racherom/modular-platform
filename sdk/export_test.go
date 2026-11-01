@@ -2,9 +2,9 @@ package sdk
 
 import "github.com/racherom/modular-platform/sdk/tlsacme"
 
-// WithCertificates lets a test run TLS mode with a fake certificate getter in place of autocert.
-func WithCertificates(g tlsacme.Getter) Option {
-	return func(o *options) { o.certificates = g }
+// WithIssuer lets a test run TLS mode with a fake issuer in place of the ACME client.
+func WithIssuer(i tlsacme.Issuer) Option {
+	return func(o *options) { o.issuer = i }
 }
 
 // WithAddrs moves the plain and TLS listen addresses off 8080 and 8443.

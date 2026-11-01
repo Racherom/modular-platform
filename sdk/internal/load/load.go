@@ -267,7 +267,8 @@ func (l *loader) bootstrap() {
 		}
 		b.Roots = l.caFile(b.CAFile)
 		if b.Domain == "" {
-			// autocert refuses a single label name, so the host name needs a domain
+			// a bare instance name would be valid in every stack an issuer serves, so TLS names
+			// carry the domain to stay unique per stack
 			l.problem(EnvDomain, EnvDomain, CodeTLSConfig, "TLS mode needs the host name's domain; set %s, like <graph>.internal", EnvDomain)
 		}
 	}

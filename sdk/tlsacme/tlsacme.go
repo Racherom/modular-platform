@@ -1,26 +1,24 @@
 // Package tlsacme holds a module's TLS certificate in TLS mode (spec 0005, "Bindings, clients and
-// protection"): autocert gets an ECDSA P-256 certificate for the module's host name from the
-// issuer's ACME directory over tls-alpn-01 and renews it; the module serves only TLS 1.3 with it
-// and reports whether the held certificate can still serve.
+// protection"). The Manager orders an ECDSA P-256 certificate for the module's host name through
+// an Issuer, checks it against MP_CA_FILE, holds it, and renews it at two thirds of its lifetime;
+// the module serves only TLS 1.3 with it and reports whether it can still serve. Client is the
+// Issuer outside tests: the SDK's own ACME client on x/crypto/acme, validated over tls-alpn-01.
+// Only Manager.Run orders certificates; a TLS handshake never does.
 package tlsacme
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
+	"crypto"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/big"
-	"net/http"
+	"slices"
 	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/acme"
-	"golang.org/x/crypto/acme/autocert"
 )
 
 // Addr is where a module listens in TLS mode. It serves nothing in plain HTTP then.
@@ -29,69 +27,67 @@ const Addr = ":8443"
 const (
 	// minLeft is the least time left on the held certificate for the module to count as ready.
 	minLeft = 2 * time.Hour
-	// retryMin and retryMax bound the backoff between failed enrolments.
+	// retryMin and retryMax bound the backoff between failed attempts.
 	retryMin = time.Second
 	retryMax = 30 * time.Second
-	// checkEvery is how often the held certificate's time left is read in the background.
-	checkEvery = time.Hour
+	// attemptTimeout cuts off one attempt to issue a certificate.
+	attemptTimeout = 5 * time.Minute
+	// renewFloor is the least wait between an issue and the next one.
+	renewFloor = 30 * time.Second
+	// caSkew is how far ahead of the module's clock the issuer's clock may run.
+	caSkew = time.Minute
 )
 
-// Getter returns the certificate for a client hello: the module's own, or the answer to a
-// tls-alpn-01 validation. *autocert.Manager is the one outside tests.
-type Getter interface {
-	GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error)
+// Issuer issues the module's certificates. Client is the one outside tests.
+type Issuer interface {
+	// Issue returns a new certificate for name, with Leaf set.
+	Issue(ctx context.Context, name string) (*tls.Certificate, error)
+	// Challenge answers a tls-alpn-01 validation of a pending Issue.
+	Challenge(hello *tls.ClientHelloInfo) (*tls.Certificate, error)
 }
 
-// ACME returns the autocert manager of a module: it orders from the ACME directory, trusting
-// roots (MP_CA_FILE) for it, only for host, with a fresh ECDSA P-256 account key held in memory,
-// and no cache, so a restart enrols again. It renews at a third of the certificate's lifetime.
-func ACME(directory string, roots *x509.CertPool, host string) (*autocert.Manager, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, fmt.Errorf("tlsacme: account key: %w", err)
-	}
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
-	return &autocert.Manager{
-		Prompt:     autocert.AcceptTOS,
-		Client:     &acme.Client{DirectoryURL: directory, Key: key, HTTPClient: &http.Client{Transport: tr}},
-		HostPolicy: autocert.HostWhitelist(host),
-	}, nil
+// clock is where the manager reads time; tests replace it.
+type clock interface {
+	Now() time.Time
+	After(d time.Duration) <-chan time.Time
 }
 
-// Manager holds the module's certificate. Run enrols it; ServerConfig serves it.
+type realClock struct{}
+
+func (realClock) Now() time.Time                         { return time.Now() }
+func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
+
+// Manager holds the module's certificate. Run issues and renews it; ServerConfig serves it.
 type Manager struct {
-	get      Getter
-	host     string
-	log      *slog.Logger
-	enrolled atomic.Bool
+	issuer Issuer
+	host   string
+	roots  *x509.CertPool
+	log    *slog.Logger
+	clock  clock
+	held   atomic.Pointer[tls.Certificate]
 }
 
-// New returns a manager that gets the certificate for host from get. It holds none until Run has
-// enrolled.
-func New(get Getter, host string, log *slog.Logger) *Manager {
-	return &Manager{get: get, host: host, log: log}
+// New returns a manager that orders the certificate for host from issuer and holds it only once
+// it verifies against roots (MP_CA_FILE). It holds none until Run has issued one.
+func New(issuer Issuer, host string, roots *x509.CertPool, log *slog.Logger) *Manager {
+	return &Manager{issuer: issuer, host: host, roots: roots, log: log, clock: realClock{}}
 }
 
-// GetCertificate asks the getter with an ECDSA only copy of hello, so every certificate is ECDSA
-// P-256. autocert picks the key type from the hello and finds ECDSA only in a TLS 1.2 cipher
-// suite; a client offering TLS 1.3 alone would make it enrol a second, RSA certificate. Every
-// TLS 1.3 client supports P-256 ECDSA, so the copy is always true. ServerName and
-// SupportedProtos stay as they came: autocert answers a tls-alpn-01 hello from those two.
+// GetCertificate answers a hello offering only acme-tls/1 with the issuer's validation answer,
+// and any other hello with the held certificate, whatever its server name. With none held yet it
+// fails the handshake.
 func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	return m.get.GetCertificate(ecdsaHello(hello))
-}
-
-func ecdsaHello(hello *tls.ClientHelloInfo) *tls.ClientHelloInfo {
-	h := *hello
-	h.CipherSuites = []uint16{tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256}
-	h.SignatureSchemes = []tls.SignatureScheme{tls.ECDSAWithP256AndSHA256}
-	h.SupportedCurves = []tls.CurveID{tls.CurveP256}
-	return &h
+	if slices.Equal(hello.SupportedProtos, []string{acme.ALPNProto}) {
+		return m.issuer.Challenge(hello)
+	}
+	if c := m.held.Load(); c != nil {
+		return c, nil
+	}
+	return nil, errors.New("tlsacme: no certificate held yet")
 }
 
 // ServerConfig is the TLS config of the module's server: TLS 1.3 only, the held certificate for
-// every handshake, and autocert's answer to a tls-alpn-01 validation.
+// every handshake, and the issuer's answer to a tls-alpn-01 validation.
 func (m *Manager) ServerConfig() *tls.Config {
 	return &tls.Config{
 		MinVersion:     tls.VersionTLS13,
@@ -100,79 +96,115 @@ func (m *Manager) ServerConfig() *tls.Config {
 	}
 }
 
-// Ready reports whether a certificate is held with at least two hours left. Before the first
-// enrolment it does not ask the getter: autocert would block until that enrolment ends.
+// Ready reports whether a certificate is held with at least two hours left.
 func (m *Manager) Ready() bool {
-	if !m.enrolled.Load() {
-		return false
-	}
-	c, err := m.held()
-	return err == nil && time.Until(c.Leaf.NotAfter) >= minLeft
+	c := m.held.Load()
+	return c != nil && c.Leaf.NotAfter.Sub(m.clock.Now()) >= minLeft
 }
 
-// held returns the certificate autocert holds for the host name. After enrolment it never orders:
-// autocert returns the one in memory, even an expired one, and renews on its own timer.
-func (m *Manager) held() (*tls.Certificate, error) {
-	c, err := m.GetCertificate(&tls.ClientHelloInfo{ServerName: m.host})
-	if err != nil {
-		return nil, err
-	}
-	if c == nil || c.Leaf == nil {
-		return nil, errors.New("tlsacme: the issuer returned no certificate")
-	}
-	return c, nil
-}
-
-// Run enrols the first certificate, retrying with backoff from 1 to 30 seconds until it holds
-// one, then reads the held certificate's time left every hour and logs a renewal or a
-// certificate about to expire. Run returns when ctx ends.
+// Run issues the first certificate and then renews it, each time once two thirds of the held
+// one's lifetime have passed, but never sooner than 30 seconds after the last issue. A failed
+// attempt is retried with backoff from 1 to 30 seconds while the held certificate keeps serving.
+// Run returns when ctx ends, cutting any attempt in flight.
 func (m *Manager) Run(ctx context.Context) {
-	serial, ok := m.enrol(ctx)
-	if !ok {
-		return
-	}
 	for {
+		c, ok := m.obtain(ctx)
+		if !ok {
+			return
+		}
+		issued := m.clock.Now()
+		lifetime := c.Leaf.NotAfter.Sub(c.Leaf.NotBefore)
+		renew := c.Leaf.NotBefore.Add(lifetime * 2 / 3)
+		renew = later(renew, issued.Add(renewFloor))
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(checkEvery):
-		}
-		c, err := m.held()
-		switch {
-		case err != nil:
-			m.log.WarnContext(ctx, "certificate not readable", slog.Any("error", err))
-		case c.Leaf.SerialNumber.Cmp(serial) != 0:
-			serial = c.Leaf.SerialNumber
-			m.log.InfoContext(ctx, "certificate renewed", slog.Time("not_after", c.Leaf.NotAfter))
-		case time.Until(c.Leaf.NotAfter) < minLeft:
-			m.log.WarnContext(ctx, "certificate expires soon", slog.Time("not_after", c.Leaf.NotAfter))
+		case <-m.clock.After(renew.Sub(issued)):
 		}
 	}
 }
 
-// enrol gets the first certificate by asking for it with a hello holding only the host name
-// (autocert otherwise waits for the first handshake). It returns the certificate's serial, and
-// false when ctx ended first.
-func (m *Manager) enrol(ctx context.Context) (serial *big.Int, ok bool) {
+func later(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
+// obtain makes attempts until one gives a certificate that passes the check, holds it, and
+// returns it; false when ctx ended first.
+func (m *Manager) obtain(ctx context.Context) (*tls.Certificate, bool) {
 	backoff := retryMin
 	for {
-		c, err := m.held()
+		c, err := m.attempt(ctx)
 		if err == nil {
-			m.enrolled.Store(true)
+			m.held.Store(c)
 			m.log.InfoContext(ctx, "certificate held", slog.String("host", m.host), slog.Time("not_after", c.Leaf.NotAfter))
-			return c.Leaf.SerialNumber, true
+			return c, true
 		}
 		if ctx.Err() != nil {
 			return nil, false
 		}
-		m.log.WarnContext(ctx, "certificate not ready", slog.Any("error", err))
+		m.log.WarnContext(ctx, "certificate issue failed", slog.Any("error", err))
 		select {
 		case <-ctx.Done():
 			return nil, false
-		case <-time.After(backoff):
+		case <-m.clock.After(backoff):
 		}
 		backoff = min(backoff*2, retryMax)
 	}
+}
+
+// attempt issues one certificate within attemptTimeout and checks it.
+func (m *Manager) attempt(ctx context.Context) (*tls.Certificate, error) {
+	ctx, cancel := context.WithTimeout(ctx, attemptTimeout)
+	defer cancel()
+	c, err := m.issuer.Issue(ctx, m.host)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.check(c); err != nil {
+		return nil, fmt.Errorf("tlsacme: the issued certificate is refused: %w", err)
+	}
+	return c, nil
+}
+
+// check holds an issued certificate to the rules: a leaf for the host name with server auth that
+// verifies against roots, a CA clock up to a minute ahead tolerated; its key pair matches; it has
+// not expired.
+func (m *Manager) check(c *tls.Certificate) error {
+	if c == nil || c.Leaf == nil {
+		return errors.New("no leaf")
+	}
+	now := m.clock.Now()
+	if !now.Before(c.Leaf.NotAfter) {
+		return fmt.Errorf("it expired at %s", c.Leaf.NotAfter.Format(time.RFC3339))
+	}
+	inter := x509.NewCertPool()
+	for _, der := range c.Certificate[1:] {
+		ic, err := x509.ParseCertificate(der)
+		if err != nil {
+			return fmt.Errorf("chain: %w", err)
+		}
+		inter.AddCert(ic)
+	}
+	if _, err := c.Leaf.Verify(x509.VerifyOptions{
+		Roots:         m.roots,
+		Intermediates: inter,
+		DNSName:       m.host,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		CurrentTime:   now.Add(caSkew),
+	}); err != nil {
+		return err
+	}
+	priv, ok := c.PrivateKey.(crypto.Signer)
+	if !ok {
+		return errors.New("the private key cannot sign")
+	}
+	if pub, ok := c.Leaf.PublicKey.(interface{ Equal(crypto.PublicKey) bool }); !ok || !pub.Equal(priv.Public()) {
+		return errors.New("the leaf's public key is not the certificate's private key")
+	}
+	return nil
 }
 
 // ClientConfig is the TLS config for calling another SDK module: it trusts roots (MP_CA_FILE) and

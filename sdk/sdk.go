@@ -95,8 +95,8 @@ type Option func(*options)
 type options struct {
 	lookupEnv func(string) (string, bool)
 	log       *slog.Logger
-	// certificates replaces autocert in TLS mode, for tests; nil outside them.
-	certificates       tlsacme.Getter
+	// issuer replaces the ACME client in TLS mode, for tests; nil outside them.
+	issuer             tlsacme.Issuer
 	plainAddr, tlsAddr string
 }
 
@@ -288,16 +288,16 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 	var cert *tlsacme.Manager
 	ready := r.ready
 	if bs := res.Bootstrap; bs.TLS() {
-		get := o.certificates
-		if get == nil {
-			acme, err := tlsacme.ACME(bs.ACMEURL, bs.Roots, bs.Host())
+		issuer := o.issuer
+		if issuer == nil {
+			c, err := tlsacme.NewClient(bs.ACMEURL, bs.Roots)
 			if err != nil {
 				log.ErrorContext(ctx, "module setup failed", slog.Any("error", err))
 				return built{}, ErrStart
 			}
-			get = acme
+			issuer = c
 		}
-		cert = tlsacme.New(get, bs.Host(), log)
+		cert = tlsacme.New(issuer, bs.Host(), bs.Roots, log)
 		ready = func() bool { return r.ready() && cert.Ready() }
 	}
 	health := http.NewServeMux()

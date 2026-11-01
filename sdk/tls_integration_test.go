@@ -140,11 +140,11 @@ func (s tlsStack) orders(t *testing.T) int {
 }
 
 // TestTLSAgainstPebble covers AC-8 and AC-9 against a real ACME server: the module enrols its
-// host name over tls-alpn-01 on 8443 (pebble's validation hello offers only acme-tls/1, so it
-// also proves the challenge passes the hello rewrite), a client offering TLS 1.2 and 1.3 and a TLS
-// 1.3 only client get the same ECDSA P-256 certificate from one order, the healthcheck passes
-// over TLS and fails without MP_CA_FILE, and autocert renews at a third of the lifetime. It needs
-// Docker; run it with go test -tags integration.
+// host name through the SDK's ACME client over tls-alpn-01 on 8443 (pebble's validation hello
+// offers only acme-tls/1), a client offering TLS 1.2 and 1.3 and a TLS 1.3 only client get the
+// same ECDSA P-256 certificate from one order, the healthcheck passes over TLS and fails without
+// MP_CA_FILE, and the module renews once two thirds of the lifetime have passed. It needs Docker;
+// run it with go test -tags integration.
 func TestTLSAgainstPebble(t *testing.T) {
 	cmd := exec.CommandContext(t.Context(), "docker", "build", "-q", "-f", "sdk/internal/tlsmodule/Dockerfile", "-t", tlsModuleImage, ".")
 	cmd.Dir = ".."
@@ -214,10 +214,10 @@ func TestTLSAgainstPebble(t *testing.T) {
 		if renewed == nil {
 			t.Fatalf("no renewal before the first certificate expired\n%s", containerLogs(t, s.module))
 		}
-		// autocert renews a third of the lifetime (30s) before expiry, less up to a tenth of that
-		// as jitter; the order and the poll above take a little more
-		if left := time.Until(first.NotAfter); left < 20*time.Second || left > 30*time.Second {
-			t.Errorf("the module presented its renewed certificate %s before the first expired, want 20s to 30s", left)
+		// the module renews at two thirds of the 90 second lifetime, 30s before expiry; the order,
+		// the poll above and pebble's clock take a few seconds either way
+		if left := time.Until(first.NotAfter); left < 25*time.Second || left > 35*time.Second {
+			t.Errorf("the module presented its renewed certificate %s before the first expired, want 25s to 35s", left)
 		}
 		if n := s.orders(t); n != 2 {
 			t.Errorf("pebble saw %d orders, want 2", n)

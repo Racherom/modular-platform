@@ -3,6 +3,7 @@
 package testpki
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -62,12 +63,26 @@ func (ca *CA) Pool() *x509.CertPool {
 // lifetime, with its Leaf set.
 func (ca *CA) Leaf(t testing.TB, lifetime time.Duration, names ...string) *tls.Certificate {
 	t.Helper()
-	key := newKey(t)
 	now := time.Now()
+	return ca.LeafBetween(t, now, now.Add(lifetime), names...)
+}
+
+// LeafBetween returns a server certificate for names, valid from notBefore to notAfter, with its
+// Leaf set.
+func (ca *CA) LeafBetween(t testing.TB, notBefore, notAfter time.Time, names ...string) *tls.Certificate {
+	t.Helper()
+	key := newKey(t)
+	leaf := ca.Sign(t, &key.PublicKey, notBefore, notAfter, names...)
+	return &tls.Certificate{Certificate: [][]byte{leaf.Raw}, PrivateKey: key, Leaf: leaf}
+}
+
+// Sign returns a server certificate for pub and names, valid from notBefore to notAfter.
+func (ca *CA) Sign(t testing.TB, pub crypto.PublicKey, notBefore, notAfter time.Time, names ...string) *x509.Certificate {
+	t.Helper()
 	tmpl := &x509.Certificate{
 		SerialNumber: serial(t),
-		NotBefore:    now,
-		NotAfter:     now.Add(lifetime),
+		NotBefore:    notBefore,
+		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
@@ -78,7 +93,7 @@ func (ca *CA) Leaf(t testing.TB, lifetime time.Duration, names ...string) *tls.C
 			tmpl.DNSNames = append(tmpl.DNSNames, n)
 		}
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.cert, &key.PublicKey, ca.key)
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.cert, pub, ca.key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +101,7 @@ func (ca *CA) Leaf(t testing.TB, lifetime time.Duration, names ...string) *tls.C
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}
+	return leaf
 }
 
 func newKey(t testing.TB) *ecdsa.PrivateKey {

@@ -24,31 +24,30 @@ import (
 // tmHost is the test module's host name in TLS mode.
 const tmHost = "tm.sdk-test.internal"
 
-// fakeCerts stands in for autocert: it signs a 24 hour certificate for the hello's server name
-// with its CA, once release is closed (at once when release is nil), and keeps it.
-type fakeCerts struct {
+// fakeIssuer stands in for the ACME client: it signs a 24 hour certificate for the asked name
+// with its CA, once release is closed (at once when release is nil). It answers no validation.
+type fakeIssuer struct {
 	t       *testing.T
 	ca      *testpki.CA
 	release chan struct{}
-	held    atomic.Pointer[tls.Certificate]
 }
 
-func (f *fakeCerts) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	if c := f.held.Load(); c != nil {
-		return c, nil
-	}
+func (f *fakeIssuer) Issue(ctx context.Context, name string) (*tls.Certificate, error) {
 	if f.release != nil {
 		select {
 		case <-f.release:
-		default:
-			return nil, errors.New("the issuer is not there yet")
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
-	f.held.CompareAndSwap(nil, f.ca.Leaf(f.t, 24*time.Hour, hello.ServerName))
-	return f.held.Load(), nil
+	return f.ca.Leaf(f.t, 24*time.Hour, name), nil
 }
 
-var _ tlsacme.Getter = (*fakeCerts)(nil)
+func (f *fakeIssuer) Challenge(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+	return nil, errors.New("no validation pending")
+}
+
+var _ tlsacme.Issuer = (*fakeIssuer)(nil)
 
 // tlsEnv is baseEnv in TLS mode, with ca as MP_CA_FILE and the host name tmHost.
 func tlsEnv(t *testing.T, ca *testpki.CA) map[string]string {
@@ -132,7 +131,7 @@ func TestTLSProblems(t *testing.T) {
 			var logs syncBuffer
 			_, err := sdk.Build(t.Context(), testmodule.Module, func(context.Context, *tmModule) (http.Handler, error) {
 				return http.NotFoundHandler(), nil
-			}, sdk.WithEnv(env), sdk.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))), sdk.WithCertificates(&fakeCerts{t: t, ca: ca}))
+			}, sdk.WithEnv(env), sdk.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))), sdk.WithIssuer(&fakeIssuer{t: t, ca: ca}))
 			if !errors.Is(err, sdk.ErrStart) {
 				t.Fatalf("err = %v, want sdk.ErrStart", err)
 			}
@@ -159,7 +158,7 @@ func TestTLSHTTPSBindingToSDK(t *testing.T) {
 		env["TM_ECHO_URL"] = u
 		_, err := sdk.Build(t.Context(), testmodule.Module, func(context.Context, *tmModule) (http.Handler, error) {
 			return http.NotFoundHandler(), nil
-		}, sdk.WithEnv(env), sdk.WithLogger(slog.New(slog.DiscardHandler)), sdk.WithCertificates(&fakeCerts{t: t, ca: ca}))
+		}, sdk.WithEnv(env), sdk.WithLogger(slog.New(slog.DiscardHandler)), sdk.WithIssuer(&fakeIssuer{t: t, ca: ca}))
 		if err != nil {
 			t.Errorf("TM_ECHO_URL=%s: %v", u, err)
 		}
@@ -176,7 +175,7 @@ func TestTLSMode(t *testing.T) {
 	env := tlsEnv(t, ca)
 	plainAddr, tlsAddr := freeAddr(t), freeAddr(t)
 	addrs := sdk.WithAddrs(plainAddr, tlsAddr)
-	certs := &fakeCerts{t: t, ca: ca, release: make(chan struct{})}
+	issuer := &fakeIssuer{t: t, ca: ca, release: make(chan struct{})}
 	var (
 		logs    syncBuffer
 		reached atomic.Int64
@@ -189,7 +188,7 @@ func TestTLSMode(t *testing.T) {
 				reached.Add(1)
 				_, _ = io.WriteString(w, "hi")
 			}), nil
-		}, sdk.WithEnv(env), sdk.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))), sdk.WithCertificates(certs), addrs)
+		}, sdk.WithEnv(env), sdk.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))), sdk.WithIssuer(issuer), addrs)
 	}()
 	defer func() {
 		cancel()
@@ -213,7 +212,7 @@ func TestTLSMode(t *testing.T) {
 		t.Errorf("healthcheck before a certificate = %d, want 1", code)
 	}
 
-	close(certs.release)
+	close(issuer.release)
 	eventually(t, "the healthcheck passes", func() bool { return sdk.Healthcheck(sdk.WithEnv(env), addrs) == 0 })
 	for _, k := range []string{"MP_CA_FILE", "MP_DOMAIN"} {
 		without := maps.Clone(env)
@@ -265,7 +264,7 @@ func TestTLSUnreadyWithoutCertificate(t *testing.T) {
 	ca := testpki.New(t)
 	h, err := sdk.Build(t.Context(), testmodule.Module, func(context.Context, *tmModule) (http.Handler, error) {
 		return http.NotFoundHandler(), nil
-	}, sdk.WithEnv(tlsEnv(t, ca)), sdk.WithLogger(slog.New(slog.DiscardHandler)), sdk.WithCertificates(&fakeCerts{t: t, ca: ca}))
+	}, sdk.WithEnv(tlsEnv(t, ca)), sdk.WithLogger(slog.New(slog.DiscardHandler)), sdk.WithIssuer(&fakeIssuer{t: t, ca: ca}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +291,7 @@ func TestTLSBindingTrust(t *testing.T) {
 	_, err := sdk.Build(t.Context(), testmodule.Module, func(_ context.Context, m *tmModule) (http.Handler, error) {
 		uses = m.Uses
 		return http.NotFoundHandler(), nil
-	}, sdk.WithEnv(env), sdk.WithLogger(slog.New(slog.DiscardHandler)), sdk.WithCertificates(&fakeCerts{t: t, ca: ca}))
+	}, sdk.WithEnv(env), sdk.WithLogger(slog.New(slog.DiscardHandler)), sdk.WithIssuer(&fakeIssuer{t: t, ca: ca}))
 	if err != nil {
 		t.Fatal(err)
 	}
