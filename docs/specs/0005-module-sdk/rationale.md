@@ -153,7 +153,25 @@ Env vars and files stay the only sources in thread 1 even in managed mode. That'
 | Account (engine) | registered once per process; after `accountDoesNotExist`, registered again with the same key | an issuer restart (pebble keeps accounts in memory) must not leave a module unable to renew until its own restart | register before every order (one extra round trip each time) |
 | Issued certificate check (engine) | verify against `MP_CA_FILE` for the host name, key match, valid now; a failure is a failed attempt | a module only reports ready with a certificate its clients will accept | trust whatever the issuer returns |
 | Challenge answer (engine) | only for an `acme-tls/1` only hello whose server name is the host name, only while an order waits | the challenge certificate is never shown to normal clients or for other names | answer any `acme-tls/1` hello |
+| Account already registered (engine, cross check) | `ErrAccountAlreadyExists` counts as success | `x/crypto` caches the account URL before returning it, so the client is usable | fail and retry (loops forever against an issuer that kept the account) |
+| Overlapping `Issue` (engine, cross check) | one mutex for the whole `Issue`, one pending answer slot | `Issue` is exported, so `Run` being the only caller is not enough | a map of pending answers by token (more state for a case the SDK never needs) |
+| Authorization states (engine, cross check) | `valid` skipped, `pending` answered, anything else fails the attempt | a new order on the next attempt is the simplest recovery | try to revive a dead authorization |
+| Clock skew (engine, cross check) | 1 minute tolerance on `NotBefore` in the leaf check | an issuer whose clock runs slightly ahead would otherwise fail every attempt | no tolerance (stalls on any forward skew) |
+| Leaf with under 2 hours left on arrival (engine, cross check) | held; `/readyz` reports it | rejecting it would break the 90 second pebble renewal test and gains nothing a client cannot see | count it as a failed attempt |
+| CA file (engine, cross check) | read once at start; a new root needs a restart | one read on the security path, same as the clients' trust | read it again per attempt |
+| ACME HTTP client (engine, cross check) | no proxy from env, 30 second response header timeout | the issuer is internal; a proxy setting meant for outbound traffic must not catch it | `http.DefaultTransport` as is |
 | Where the engine lives (engine) | exported `tlsacme.Client` beside the manager | one package owns the whole TLS path; tests swap the `Issuer` | an internal sub package (more structure for little code) |
+| Start `Source` rank (2026-11-01) | above the process env, `<ENV>_FILE`, env files and default (your pick) | a source the module wires in code (a vault, #9) is authoritative, the way a push source is in managed mode; nothing lower can shadow it | after the process env, before env files (my recommendation: keeps `environment:` as the per container override); below env files (Viper's order) |
+| Start sources per module (2026-11-01) | one; a second `WithSource` replaces the first; label `source` | matches one push and one caller source; no name rule needed | several named sources, label `source:<name>` |
+| Start `Source` failure (2026-11-01) | `source_error` per value; all start lookups run one after another on `sdk.Run`'s signal context under one 10 second deadline; an error fails only its value | a hung store must not hang the start past the healthcheck's `start_period`; one line per value keeps AC-3's shape | no deadline (a hung source blocks forever); parallel lookups (more code for a start path) |
+| `source_error` text (2026-11-01, cross check) | fixed text, the Source's error never printed | the Source controls its error text, which may carry a secret or token (AC-4) | print `err.Error()` (more helpful, can leak) |
+| Below a Source answer (2026-11-01, cross check) | lower levels not read, so no `ambiguous_source`, `secret_in_env` or env file line warning for that value; env files still parsed whole | "the highest level wins whole" already holds for the other levels; env file problems are about the file, not the value | check every level anyway (reports problems in settings that are never used) |
+| Empty Source answer (2026-11-01, cross check) | only `""` is empty; spaces go to the parser | env vars are not trimmed either; trimming would hide a store's bad data | trim whitespace |
+| `config loaded` with a push source (2026-11-01, cross check) | logged on each accepted snapshot, not at start | the labels are only known once a snapshot is in | log once at start with no values |
+| Names `module` and `push` (2026-11-01, cross check) | not reserved | the code and message already tell the lines apart; a catalog rule for it costs more than it saves | reserve them in the catalog rules |
+| `WithSource` with `WithPushSource` (2026-11-01) | stops the start (`source_error`, value part `module`) | a snapshot is complete, so the start source could never matter; silently ignoring a wired option hides a mistake | ignore the start source |
+| No first snapshot (2026-11-01) | `config: push (push): no_snapshot: no snapshot arrived within 30 seconds` | the value part matches the `push` label; a new code keeps it apart from `missing`, which sends you to the env files | `module (module)`, or reuse `missing` |
+| Undeclared name in a pushed snapshot (2026-11-01) | `unknown_key`, value part = the name, snapshot refused whole | the same fact and line shape as an undeclared env file key; a typo never drops a setting. #17 pushes only the names the running version declares | a new code `unknown_value` |
 
 ## Evidence: ACME issuance probe (2026-10-31)
 
@@ -167,6 +185,8 @@ A small Go client on `golang.org/x/crypto` v0.58.0 ran in a busybox container on
 | pebble v2.10.1 | `autocert` | `planner` | refused by autocert before any request: `server name component count invalid` |
 | pebble v2.10.1 | `autocert` | `planner.demo.internal` | issued |
 | step-ca 0.30.2 (8443) | `autocert` | `planner.demo.internal` | issued |
+
+Checked again against pebble v2.10.1 on 2026-11-01, while building task 8: a lost account is answered with the problem type `urn:ietf:params:acme:error:accountDoesNotExist`, which is what `tlsacme.Client` looks for before it registers again; and pebble does not backdate `NotBefore`, so a 90 second leaf renews 60 seconds after issue and `TestTLSAgainstPebble`'s window of 25 to 35 seconds before expiry needs no change. step-ca 0.30.2 was not checked for either; that moves to #16, where step-ca enters.
 
 Also found: `CreateOrderCert` fails against pebble (no `Location` header on finalize) while `CreateCertFromOrder` works with both; step-ca's tls-alpn-01 port is the package variable `acme.InsecurePortTLSALPN01` (`acme/challenge.go`), which the binary sets only with `--insecure`; pebble's lifetime is set per profile (`profiles.<name>.validityPeriod`, seconds).
 
