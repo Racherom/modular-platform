@@ -85,8 +85,8 @@ spec [0005](../specs/0005-module-sdk/index.md) · code in `sdk/`, `catalog/plann
    - [x] TLS and the data clients: dotted host names (`MP_DOMAIN`, a network alias per SDK service), ACME TLS on the SDK's own `x/crypto/acme` client and renewal (replacing the autocert build) tested against `pebble`, the PostgreSQL and S3 clients (AC-6, AC-8, AC-9, AC-12)
    - [x] Caller token and pluggable sources: `MP-Caller` mint and check, push, per caller and binding resolver sources (AC-10, AC-11)
    - [x] The written contract `sdk/CONTRACT.md`, each statement backed by a test (AC-14)
-- [ ] Verify it: `/check verify module SDK`
-- [ ] Test it: `/test module SDK`
+- [x] Verify it: `/check verify module SDK`
+- [x] Test it: `/test module SDK`
 - [ ] Review it (fresh model): `/check review module SDK`
 - [ ] Document it: `/document module SDK`
 
