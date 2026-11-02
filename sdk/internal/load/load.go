@@ -1,8 +1,9 @@
 // Package load fills a module's declared values at start (spec 0005, "Sources and precedence"):
-// bootstrap names from the process env only; a value from its env var or the file its _FILE form
-// names, else from the env files in MP_ENV_FILE (a later file overriding an earlier one), else
-// from its default. It parses each value by type, checks its rules and reports every problem in
-// one pass, as lines that never carry a value.
+// bootstrap names from the process env only; a value from the start source, when one is set,
+// else from its env var or the file its _FILE form names, else from the env files in MP_ENV_FILE
+// (a later file overriding an earlier one), else from its default. With a push source the values
+// come only from pushed snapshots, which Snapshot checks. It parses each value by type, checks its
+// rules and reports every problem in one pass, as lines that never carry a value.
 package load
 
 import (
@@ -16,6 +17,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/racherom/modular-platform/sdk/caller"
 	"github.com/racherom/modular-platform/sdk/envfile"
@@ -37,6 +39,16 @@ const (
 	CodeTLSConfig       = "tls_config"
 	CodeDowngrade       = "downgrade_refused"
 	CodeValidate        = "validate"
+	CodeSourceError     = "source_error"
+	CodeManagedEnv      = "managed_env"
+	CodeNoSnapshot      = "no_snapshot"
+)
+
+// The fixed source_error messages: the error a start source returns is never printed, because
+// its text may carry a secret.
+const (
+	SourceFailed   = "the start source failed"
+	SourceDeadline = "the start source missed the 10 second deadline"
 )
 
 // Bootstrap names (manifest.BootstrapNames).
@@ -66,6 +78,19 @@ type ValueSpec struct {
 
 func (v ValueSpec) rules() manifest.Rules {
 	return manifest.Rules{Type: v.Type, Min: v.Min, Max: v.Max, Pattern: v.Pattern, Values: v.Values}
+}
+
+// Parse parses text by v's type and checks v's rules; a secret comes back as a Secret. A failure
+// is a *manifest.RuleError, whose message never carries a secret's text.
+func (v ValueSpec) Parse(text string) (any, error) {
+	parsed, err := v.rules().Parse(text)
+	if err != nil {
+		return nil, err
+	}
+	if v.Type == manifest.TypeSecret {
+		parsed = NewSecret(parsed.(string))
+	}
+	return parsed, nil
 }
 
 // BindingSpec declares one capability the module uses.
@@ -132,6 +157,15 @@ type Input struct {
 	LookupEnv func(string) (string, bool)
 	// ReadFile reads a file the env names: an env file or a _FILE value.
 	ReadFile func(string) ([]byte, error)
+	// Source is the start source's Lookup, asked by value name above every other level; nil
+	// without one.
+	Source func(ctx context.Context, value string) (string, bool, error)
+	// SourceDeadline bounds all Source calls together.
+	SourceDeadline time.Duration
+	// Managed is set when a push source supplies the values: Load reads no value then, and a
+	// declared value found in the process env or an env file is a managed_env problem. Bootstrap
+	// names, binding keys and the clients directory are still read from env.
+	Managed bool
 }
 
 // Bootstrap holds the bootstrap names.
@@ -219,14 +253,24 @@ type level struct {
 	lookup func(key string) (value string, line int, ok bool)
 }
 
-// Load reads every declared value and returns the result.
-func Load(in Input) Result {
+// Load reads every declared value and returns the result. ctx bounds the start source's calls.
+func Load(ctx context.Context, in Input) Result {
 	l := loader{in: in, res: Result{Values: map[string]any{}, Sources: map[string]string{}}}
 	l.bootstrap()
 	l.callerKeys()
 	l.envFiles()
+	answers := l.askSource(ctx)
 	for _, v := range in.Values {
-		l.value(v)
+		switch text, asked := answers[v.Name]; {
+		case in.Managed:
+			l.managed(v)
+		case asked && text == nil:
+			// the source failed for v; askSource reported it
+		case asked:
+			l.parse(v, *text, "source")
+		default:
+			l.value(v)
+		}
 	}
 	for _, b := range in.Bindings {
 		l.binding(b)
@@ -404,6 +448,70 @@ func (l *loader) knownKeys() map[string]bool {
 	return known
 }
 
+// askSource asks the start source for every declared value in name order, one after another,
+// under one deadline shared by all calls. A found, non empty answer is returned as its text; a
+// failed call, and every value once the deadline has passed, is a source_error and returned as
+// nil; a value not in the map falls through to the lower levels. A call that ignores ctx holds
+// the start no longer than the deadline: its answer is dropped.
+func (l *loader) askSource(ctx context.Context) map[string]*string {
+	if l.in.Source == nil || l.in.Managed {
+		return nil
+	}
+	specs := slices.SortedFunc(slices.Values(l.in.Values), func(a, b ValueSpec) int { return strings.Compare(a.Name, b.Name) })
+	ctx, cancel := context.WithTimeout(ctx, l.in.SourceDeadline)
+	defer cancel()
+	answers := map[string]*string{}
+	for _, v := range specs {
+		type answer struct {
+			text  string
+			found bool
+			err   error
+		}
+		got := make(chan answer, 1)
+		if ctx.Err() == nil {
+			go func() {
+				text, found, err := l.in.Source(ctx, v.Name)
+				got <- answer{text, found, err}
+			}()
+		}
+		var a answer
+		select {
+		case a = <-got:
+		case <-ctx.Done():
+			a.err = ctx.Err()
+		}
+		switch {
+		case a.err != nil || ctx.Err() != nil:
+			msg := SourceFailed
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				msg = SourceDeadline
+			}
+			l.problem(v.Name, v.Env, CodeSourceError, "%s", msg)
+			answers[v.Name] = nil
+		case a.found && a.text != "":
+			answers[v.Name] = &a.text
+		}
+	}
+	return answers
+}
+
+// managed reports v as managed_env when the process env or an env file sets it, in either form:
+// a push source supplies every declared value.
+func (l *loader) managed(v ValueSpec) {
+	for _, lv := range l.levels {
+		for _, key := range []string{v.Env, v.Env + "_FILE"} {
+			if _, line, ok := lv.lookup(key); ok {
+				where := "the process env"
+				if lv.file != "" {
+					where = fmt.Sprintf("%s:%d", lv.file, line)
+				}
+				l.problem(v.Name, v.Env, CodeManagedEnv, "a push source supplies this value; remove %s from %s", key, where)
+				return
+			}
+		}
+	}
+}
+
 // value finds v at the highest level that sets it, parses it and checks its rules.
 func (l *loader) value(v ValueSpec) {
 	text, source, ok := l.find(v)
@@ -422,17 +530,52 @@ func (l *loader) value(v ValueSpec) {
 			return
 		}
 	}
-	parsed, err := v.rules().Parse(text)
+	l.parse(v, text, source)
+}
+
+// parse parses text as v and records it with its source label, or reports its first broken rule.
+func (l *loader) parse(v ValueSpec, text, source string) {
+	parsed, err := v.Parse(text)
 	if err != nil {
 		re := err.(*manifest.RuleError)
 		l.problem(v.Name, v.Env, re.Code, "%s", re.Message)
 		return
 	}
-	if v.Type == manifest.TypeSecret {
-		parsed = NewSecret(parsed.(string))
-	}
 	l.res.Values[v.Name] = parsed
 	l.res.Sources[v.Name] = source
+}
+
+// Snapshot checks a pushed snapshot with the start rules and returns its values and source
+// labels (push, default or unset). A snapshot is complete: a value it leaves out falls back to
+// its default, or is missing. A name it carries that specs does not declare is unknown_key. Any
+// problem refuses the whole snapshot.
+func Snapshot(specs []ValueSpec, snapshot map[string]string) (values map[string]any, sources map[string]string, problems []Problem) {
+	l := loader{res: Result{Values: map[string]any{}, Sources: map[string]string{}}}
+	declared := map[string]bool{}
+	for _, v := range specs {
+		declared[v.Name] = true
+		text, source := snapshot[v.Name], "push"
+		if text == "" {
+			switch {
+			case v.Default != "":
+				text, source = v.Default, "default"
+			case v.Optional:
+				l.res.Sources[v.Name] = "unset"
+				continue
+			default:
+				l.problem(v.Name, v.Env, CodeMissing, "a value is required; the snapshot leaves it out")
+				continue
+			}
+		}
+		l.parse(v, text, source)
+	}
+	for name := range snapshot {
+		if !declared[name] {
+			l.problem(name, name, CodeUnknownKey, "the snapshot names %s, which the catalog entry does not declare", name)
+		}
+	}
+	SortProblems(l.res.Problems)
+	return l.res.Values, l.res.Sources, l.res.Problems
 }
 
 // find returns the text of v at the highest level that sets it, and its source label. An empty
@@ -567,10 +710,14 @@ func (bl *bindingLoader) url(text string) *url.URL {
 	return nil
 }
 
-// downgrade reports an http URL to a module on the sdk in TLS mode: only those carry a host
-// name ending in .<MP_DOMAIN>.
+// downgrade reports an http URL to a module on the sdk in TLS mode.
 func (bl *bindingLoader) downgrade(u *url.URL) bool {
-	b := bl.l.res.Bootstrap
+	return bl.l.res.Bootstrap.Downgrade(u)
+}
+
+// Downgrade reports an http URL to a module on the sdk in TLS mode: only those carry a host name
+// ending in .<MP_DOMAIN>.
+func (b Bootstrap) Downgrade(u *url.URL) bool {
 	return b.TLS() && b.Domain != "" && u.Scheme == "http" && strings.HasSuffix(strings.ToLower(u.Hostname()), "."+b.Domain)
 }
 

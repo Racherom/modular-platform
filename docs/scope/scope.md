@@ -83,7 +83,7 @@ spec [0005](../specs/0005-module-sdk/index.md) · code in `sdk/`, `catalog/plann
    - [x] Planner on a thin SDK: the `sdk` module absorbs `libs/platform`, the new catalog fields and rules, `sdkgen`, the config loader with env files, `sdk.Run`, `catalog/planner.yaml` (AC-1, AC-2, AC-3, AC-4, AC-5, AC-13)
    - [x] Bindings and protection: per consumer tokens, the HTTP client, readiness, the render additions and the rendered end to end test (AC-6, AC-7, AC-9, AC-12)
    - [x] TLS and the data clients: dotted host names (`MP_DOMAIN`, a network alias per SDK service), ACME TLS on the SDK's own `x/crypto/acme` client and renewal (replacing the autocert build) tested against `pebble`, the PostgreSQL and S3 clients (AC-6, AC-8, AC-9, AC-12)
-   - [ ] Caller token and pluggable sources: `MP-Caller` mint and check, push, per caller and binding resolver sources (AC-10, AC-11)
+   - [x] Caller token and pluggable sources: `MP-Caller` mint and check, push, per caller and binding resolver sources (AC-10, AC-11)
    - [ ] The written contract `sdk/CONTRACT.md`, each statement backed by a test (AC-14)
 - [ ] Verify it: `/check verify module SDK`
 - [ ] Test it: `/test module SDK`

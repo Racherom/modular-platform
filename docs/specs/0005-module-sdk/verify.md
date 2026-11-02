@@ -1,4 +1,4 @@
-# Verify: Module SDK · spec 0005 · updated 2026-11-01
+# Verify: Module SDK · spec 0005 · updated 2026-11-02
 _Steps derived from spec 0005 acceptance criteria. `/check verify` runs these; `/test` locks the durable ones. Milestone 1 (planner on a thin SDK) covers AC-1 to AC-5 and AC-13; milestone 2 (bindings and protection) covers AC-7 and AC-12 and the HTTP parts of AC-6 and AC-9; later milestones append their steps here._
 
 ## Commands
@@ -39,6 +39,12 @@ _Steps derived from spec 0005 acceptance criteria. `/check verify` runs these; `
 - [ ] `go test -race ./sdk/caller -v` → a minted token verifies and carries `EdDSA`, the kid, `iss`, `sub`, `groups`, one `aud`, `iat`, `exp` 5 minutes later and a 16 byte `jti` (a fresh one per token); the kid matches RFC 8037 A.3 (`kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k`); an ECDSA key cannot mint; `Verify` refuses (`invalid_token`) another `aud`, the bare instance as `aud`, two `aud`s, `exp` passed by more than 30 seconds, `iat` more than 30 seconds ahead (29 seconds either way passes), no `exp` or `iat`, a lifetime over 5 minutes, an empty or missing `sub`, an unknown kid, a known kid signed by another key, `ES256`, `alg: none`, a tampered payload and anything not a compact JWS; the key files take PKIX and PKCS 8 Ed25519 PEM and refuse the rest without showing a key; the signer mints as its own instance and hides its key from `fmt` and `slog`; the middleware puts the caller into ctx, lets a request without the header through with no caller, and answers 401 `invalid_token` to the header twice, a call without binding token auth, a token passed on by another module (`iss` is not `CallerModule`) and another `aud`, logging the reason but never the token; with no key file the header is ignored and logged once → AC-11
 - [ ] `go test -race ./sdk/ -run 'TestCaller' -v` → a consumer on the sdk holding `MP_CALLER_SIGNING_KEY_FILE` (as `api` does) sends the caller its code put into ctx with `sdk.WithCaller` to a provider on the sdk holding `MP_CALLER_KEY_FILE`, which sees `sdk.CallerFrom` = `{Issuer: caller, User: ada, Groups: [admins]}` and `sdk.CallerModule` = `caller`; without a caller in ctx no header is sent; a binding URL naming the provider by IP mints for that IP and gets 401; an unreadable or wrong key file stops the start with one `invalid` line naming the file → AC-11
 
+- [ ] `go test -race -run 'TestStartSource$' ./sdk/` → a start source answer beats `TM_X`, `TM_X_FILE`, an env file and the default, shows as `source` in `config loaded`, hides `ambiguous_source` and `secret_in_env` below it; an empty or missing answer falls through; all 8 values are asked in name order → AC-10, AC-5
+- [ ] `go test -race -run TestStartSourceProblems ./sdk/` → a failing call gives one `source_error: the start source failed` line for that value only and the marker text never shows; a slow one gives `the start source missed the 10 second deadline` for the value in flight and each after it, and no later value is asked; with a push source too, the one line `config: module (module): source_error: WithSource and WithPushSource cannot be combined` → AC-10
+- [ ] `go test -race -run 'TestPushSnapshots|TestPushManagedEnv' ./sdk/` → a pushed snapshot replaces the values while the module runs; a bad value, a missing required value or an undeclared name (`unknown_key`) is refused whole and the previous one stays; `config loaded` logs once per accepted snapshot; a declared value in the env (either form) or on an env file line is `managed_env` → AC-10, AC-5
+- [ ] `go test -race -run 'TestPushNoSnapshot|TestPushReady' ./sdk/` → the module listens with `/readyz` and every call at 503 until the first accepted snapshot; with none in time it exits 1, and its last error line is exactly `config: push (push): no_snapshot: no snapshot arrived within 30 seconds` → AC-10, AC-9
+- [ ] `go test -race -run 'TestCallerSource|TestBindingResolver|TestLRU' ./sdk/` → a caller source answers one value differently for one caller; a slow (over 200 ms) or failing one gives `sdk.ErrCallerSource` and the module answers 503; answers are kept 30 seconds per caller and value, at most 10,000, and a snapshot swap clears them; a binding resolver picks another provider for one caller with one client per provider binding → AC-10
+
 ## Running the planner by hand
 - [ ] `MP_INSTANCE=planner MP_PLANNER_MODE=internal go run ./services/planner/cmd/planner` → exits 1 with `config: provides.planner.clients_dir (MP_PLANNER_CLIENTS_DIR): missing: ...` and listens on nothing → AC-13
 - [ ] Same with `MP_PLANNER_CLIENTS_DIR` pointing at a folder holding a file `api` with a token of 32 characters or more → starts; `curl localhost:8080/v1/catalog` → 401; with `-H "Authorization: Bearer <token>"` → 200 listing `planner`, `postgres`, `whoami`; `/readyz` → 200 without a token → AC-13
@@ -71,6 +77,10 @@ _Steps derived from spec 0005 acceptance criteria. `/check verify` runs these; `
 - [ ] Minting `sub`, `groups`: the `Caller` passed to `sdk.WithCaller` is what the provider sees; an `Issuer` set by module code is replaced by the instance → Value sourcing "Minting" `sub`, `groups`
 - [ ] `kid`: the header kid is the RFC 7638 thumbprint of the public key (`TestKID`), and a token whose kid is not in `MP_CALLER_KEY_FILE` gets 401 → Value sourcing "Minting / checking" `kid`
 
+- [ ] Start load (start source): set the same value through the source, `TM_GREETING`, `TM_GREETING_FILE`, an env file and the default, then remove them one by one from the top → the getter and the `config loaded` label follow the highest one left (`source`, `env`, `file:<path>`, `env-file:<path>:<line>`, `default`) → Value sourcing "Start load"
+- [ ] Start log (push and unset): push a snapshot that leaves out `count` and `note` → `count` shows `default`, `note` shows `unset`, a pushed value shows `push` → Value sourcing "Start log"
+- [ ] Per caller value: ask `greeting` as `alice` (answered), as `bob` (not answered) and with no caller → `hi`, the snapshot value, the snapshot value; change the caller's groups → asked again, since the cache key holds the issuer, user and groups → Value sourcing "Per caller value"
+
 ## Acceptance-criteria coverage
 - AC-1 … generate diff, the gone files, the env read grep
 - AC-2 … TestSources, TestPrecedence, the env file run
@@ -84,4 +94,5 @@ _Steps derived from spec 0005 acceptance criteria. `/check verify` runs these; `
 - AC-13 … the planner tests, the internal mode runs, lint, test and smoke
 - AC-8 … TestStartProblems (MP_DOMAIN), TestTLSProblems, TestTLSHTTPSBindingToSDK, TestTLSMode, TestTLSBindingTrust, the tlsacme tests, TestTLSAgainstPebble
 - AC-11 … the sdk/caller tests (TestMintVerify, TestKID, TestMintRefusesOtherKeys, TestVerifyRefusals, TestKeyFiles, TestSignerHidesKey, TestMiddleware, TestMiddlewareWithoutKeys), TestCallerEndToEnd, TestCallerKeyFileProblems
-- AC-10, AC-14 … later milestones
+- AC-10 … TestStartSource, TestStartSourceProblems, TestPushSnapshots, TestPushManagedEnv, TestPushNoSnapshot, TestPushReady, TestCallerSource, TestCallerSourceFails, TestCallerSourceSwap, TestBindingResolver, TestLRU
+- AC-14 … later milestones

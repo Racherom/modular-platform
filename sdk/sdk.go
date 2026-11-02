@@ -2,6 +2,8 @@
 // bindings once, in its catalog entry; sdkgen turns that into typed getters and a Declaration;
 // Run loads every value from env vars, files and env files, refuses to start on any problem,
 // checks each consumer's binding token, serves health and readiness, and shuts down gracefully.
+// Options plug in a start source, a push source, a caller source and a binding resolver without
+// changing module code.
 //
 //	//go:generate go tool sdkgen -entry ../../../../catalog/planner.yaml -package config -out config.gen.go
 //	func main() { sdk.Run(config.Module, setup) }
@@ -18,7 +20,9 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/racherom/modular-platform/sdk/auth"
 	"github.com/racherom/modular-platform/sdk/caller"
@@ -49,6 +53,9 @@ type (
 	// Problem is one line of a refused start.
 	Problem = load.Problem
 )
+
+// NewSecret wraps s, for a BindingResolver that hands the sdk a binding's credentials.
+func NewSecret(s string) Secret { return load.NewSecret(s) }
 
 // ErrStart reports a refused start; Build has logged the reasons.
 var ErrStart = errors.New("sdk: the module cannot start")
@@ -99,6 +106,13 @@ type options struct {
 	// issuer replaces the ACME client in TLS mode, for tests; nil outside them.
 	issuer             tlsacme.Issuer
 	plainAddr, tlsAddr string
+
+	source   Source
+	push     PushSource
+	callers  CallerSource
+	resolver BindingResolver
+	// the source limits; tests shorten them
+	sourceDeadline, pushWait, callerBudget, callerTTL time.Duration
 }
 
 // WithEnv replaces the process env with env, for tests.
@@ -114,7 +128,10 @@ func WithLogger(l *slog.Logger) Option {
 }
 
 func newOptions(opts []Option) options {
-	o := options{lookupEnv: os.LookupEnv, plainAddr: plainAddr, tlsAddr: tlsacme.Addr}
+	o := options{
+		lookupEnv: os.LookupEnv, plainAddr: plainAddr, tlsAddr: tlsacme.Addr,
+		sourceDeadline: sourceDeadline, pushWait: pushWait, callerBudget: callerBudget, callerTTL: callerTTL,
+	}
 	for _, opt := range opts {
 		opt(&o)
 	}
@@ -161,8 +178,10 @@ func loopback(addr string) string {
 
 // Main starts the module and serves until ctx ends. It returns the exit code: 1 when the start is
 // refused (nothing listens then) or serving fails. In TLS mode it listens first and then gets the
-// module's certificate, so /readyz answers 503 until one is held. The binding clients close once
-// the server has stopped, so a request still running at shutdown keeps its connections.
+// module's certificate, so /readyz answers 503 until one is held. With a push source it listens
+// with /readyz at 503 until the first snapshot is accepted, and returns 1 when none is in time.
+// The binding clients close once the server has stopped, so a request still running at shutdown
+// keeps its connections.
 func Main[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], opts ...Option) int {
 	o := newOptions(opts)
 	clients, closeClients := context.WithCancel(context.WithoutCancel(ctx))
@@ -183,8 +202,22 @@ func Main[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U],
 	if b.cert != nil {
 		go b.cert.Run(ctx)
 	}
-	if err := httpkit.ServeListener(ctx, o.log, ln, b.handler, cfg); err != nil {
+	serveCtx, stopServe := context.WithCancel(ctx)
+	defer stopServe()
+	var gaveUp atomic.Bool
+	if b.first != nil {
+		go func() {
+			if err := <-b.first; errors.Is(err, ErrStart) {
+				gaveUp.Store(true)
+				stopServe()
+			}
+		}()
+	}
+	if err := httpkit.ServeListener(serveCtx, o.log, ln, b.handler, cfg); err != nil {
 		o.log.Error("module stopped", slog.Any("error", err))
+		return 1
+	}
+	if gaveUp.Load() {
 		return 1
 	}
 	return 0
@@ -194,12 +227,18 @@ func Main[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U],
 // module's whole handler: health and readiness, then the access log, the rate limit, the binding
 // token check and the MP-Caller check in front of the module's own handler. /readyz answers 503 until every
 // required binding has answered once and, in TLS mode, a certificate is held (Build gets none;
-// Main does once it listens); the polls run until ctx ends, and the clients close then. On a
-// refused start it logs one line per problem and returns ErrStart.
+// Main does once it listens); the polls run until ctx ends, and the clients close then. With a
+// push source it returns once the first snapshot is accepted. On a refused start it logs one line
+// per problem and returns ErrStart.
 func Build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], opts ...Option) (http.Handler, error) {
 	b, err := build(ctx, d, setup, newOptions(opts))
 	if err != nil {
 		return nil, err
+	}
+	if b.first != nil {
+		if err := <-b.first; err != nil {
+			return nil, err
+		}
 	}
 	return b.handler, nil
 }
@@ -208,17 +247,30 @@ func Build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 type built struct {
 	handler http.Handler
 	cert    *tlsacme.Manager // nil in plain mode
+	first   <-chan error     // with a push source: the first snapshot's outcome; nil without one
 }
 
 func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], o options) (built, error) {
 	log := o.log
-	res := load.Load(load.Input{
-		Values:    d.Values,
-		Bindings:  d.Bindings,
-		Provides:  d.Provides,
-		LookupEnv: o.lookupEnv,
-		ReadFile:  os.ReadFile,
-	})
+	if o.source != nil && o.push != nil {
+		// a pushed snapshot is complete, so nothing may answer above it
+		refuse(ctx, log, []Problem{{Value: "module", Env: "module", Code: load.CodeSourceError,
+			Message: "WithSource and WithPushSource cannot be combined"}})
+		return built{}, ErrStart
+	}
+	in := load.Input{
+		Values:         d.Values,
+		Bindings:       d.Bindings,
+		Provides:       d.Provides,
+		LookupEnv:      o.lookupEnv,
+		ReadFile:       os.ReadFile,
+		SourceDeadline: o.sourceDeadline,
+		Managed:        o.push != nil,
+	}
+	if o.source != nil {
+		in.Source = o.source.Lookup
+	}
+	res := load.Load(ctx, in)
 	problems := res.Problems
 
 	var clients auth.Clients
@@ -238,7 +290,7 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 	}
 	context.AfterFunc(ctx, func() { closeAll(opened) })
 
-	values := &Values{m: res.Values}
+	values := newValues(d.Values, res.Values, o)
 	bindings := &Bindings{m: map[string]any{}}
 	for _, b := range res.Bindings {
 		bindings.m[b.Capability] = nil // an optional binding left unbound
@@ -246,40 +298,36 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 			bindings.m[b.Capability] = o.Client
 		}
 	}
+	if o.resolver != nil {
+		bindings.resolver = newResolver(ctx, d.Bindings, res.Bootstrap, o)
+	}
 	cfg, uses := d.New(values, bindings)
-	if v, ok := any(cfg).(interface{ Validate(context.Context) error }); ok {
-		if err := v.Validate(ctx); err != nil {
-			refuse(ctx, log, []Problem{{Value: "module", Env: "module", Code: load.CodeValidate, Message: err.Error()}})
+	if o.push == nil {
+		if err := validate(ctx, cfg); err != nil {
+			refuse(ctx, log, []Problem{validateProblem(err)})
 			return built{}, ErrStart
 		}
+		configLoaded(ctx, log, d, res.Bootstrap, res.Sources)
 	}
-	startLog(ctx, log, d, res)
+	startWarnings(ctx, log, res)
 
 	m := &Module[C, U]{Config: cfg, Uses: uses, Log: log, Instance: res.Bootstrap.Instance}
-	h, err := setup(ctx, m)
-	if err != nil {
-		if !errors.Is(err, ErrStart) {
-			log.ErrorContext(ctx, "module setup failed", slog.Any("error", err))
+	serve := func() (http.Handler, error) { return wrap(ctx, d, setup, m, clients, res.Bootstrap) }
+	var (
+		app   atomic.Pointer[http.Handler]
+		first <-chan error
+	)
+	if o.push == nil {
+		h, err := serve()
+		if err != nil {
+			return built{}, err
 		}
-		return built{}, ErrStart
+		app.Store(&h)
+	} else {
+		p := newPusher(d, values, bindings, res.Bootstrap, o, &app, serve)
+		p.start(ctx, o.push)
+		first = p.first
 	}
-	h = caller.Middleware(res.Bootstrap.CallerKeys, res.Bootstrap.Host(), log, h)
-	if p := d.Provides; p != nil && p.Auth == manifest.AuthBindingToken {
-		switch {
-		case m.anonymous:
-			log.WarnContext(ctx, "binding auth off: anonymous calls allowed")
-		case clients.Len() == 0:
-			refuse(ctx, log, []Problem{clientsProblem(p, load.CodeMissing,
-				fmt.Sprintf("binding token auth needs at least one consumer token; set %s to the clients directory", p.ClientsDirEnv))})
-			return built{}, ErrStart
-		default:
-			h = auth.Middleware(clients, h)
-		}
-	}
-	if m.limiter != nil {
-		h = m.limiter.Middleware(m.hops, nil, h)
-	}
-	h = httpkit.AccessLog(log, h)
 
 	var r readiness
 	for _, b := range res.Bindings {
@@ -288,7 +336,7 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 		}
 	}
 	var cert *tlsacme.Manager
-	ready := r.ready
+	ready := func() bool { return r.ready() && app.Load() != nil }
 	if bs := res.Bootstrap; bs.TLS() {
 		issuer := o.issuer
 		if issuer == nil {
@@ -300,7 +348,7 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 			issuer = c
 		}
 		cert = tlsacme.New(issuer, bs.Host(), bs.Roots, log)
-		ready = func() bool { return r.ready() && cert.Ready() }
+		ready = func() bool { return r.ready() && app.Load() != nil && cert.Ready() }
 	}
 	health := http.NewServeMux()
 	httpkit.Health(health, ready)
@@ -310,10 +358,58 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 				health.ServeHTTP(w, r)
 				return
 			}
-			h.ServeHTTP(w, r)
+			h := app.Load()
+			if h == nil {
+				httpkit.WriteProblem(w, http.StatusServiceUnavailable, "not_ready", "the module is waiting for its first config snapshot")
+				return
+			}
+			(*h).ServeHTTP(w, r)
 		}),
-		cert: cert,
+		cert:  cert,
+		first: first,
 	}, nil
+}
+
+// wrap runs setup and puts the module's middleware around its handler: the access log, the rate
+// limit, the binding token check and the MP-Caller check, in that order.
+func wrap[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], m *Module[C, U], clients auth.Clients, bs load.Bootstrap) (http.Handler, error) {
+	log := m.Log
+	h, err := setup(ctx, m)
+	if err != nil {
+		if !errors.Is(err, ErrStart) {
+			log.ErrorContext(ctx, "module setup failed", slog.Any("error", err))
+		}
+		return nil, ErrStart
+	}
+	h = caller.Middleware(bs.CallerKeys, bs.Host(), log, h)
+	if p := d.Provides; p != nil && p.Auth == manifest.AuthBindingToken {
+		switch {
+		case m.anonymous:
+			log.WarnContext(ctx, "binding auth off: anonymous calls allowed")
+		case clients.Len() == 0:
+			refuse(ctx, log, []Problem{clientsProblem(p, load.CodeMissing,
+				fmt.Sprintf("binding token auth needs at least one consumer token; set %s to the clients directory", p.ClientsDirEnv))})
+			return nil, ErrStart
+		default:
+			h = auth.Middleware(clients, h)
+		}
+	}
+	if m.limiter != nil {
+		h = m.limiter.Middleware(m.hops, nil, h)
+	}
+	return httpkit.AccessLog(log, h), nil
+}
+
+// validate runs the module's optional Validate on cfg.
+func validate[C any](ctx context.Context, cfg C) error {
+	if v, ok := any(cfg).(interface{ Validate(context.Context) error }); ok {
+		return v.Validate(ctx)
+	}
+	return nil
+}
+
+func validateProblem(err error) Problem {
+	return Problem{Value: "module", Env: "module", Code: load.CodeValidate, Message: err.Error()}
 }
 
 // open opens the client of every bound binding with its spec's Opener. A binding that cannot be
@@ -367,13 +463,13 @@ func refuse(ctx context.Context, log *slog.Logger, problems []Problem) bool {
 	return len(problems) > 0
 }
 
-// startLog writes the one config loaded line (the host name, the TLS mode, each value's source,
-// never a value, and each binding's client kind), the warnings, and in plain mode the plain HTTP
-// warning.
-func startLog[C, U any](ctx context.Context, log *slog.Logger, d Declaration[C, U], res load.Result) {
+// configLoaded writes the one config loaded line: the host name, the TLS mode, each value's
+// source (never a value) and each binding's client kind. With a push source it is written for
+// every accepted snapshot.
+func configLoaded[C, U any](ctx context.Context, log *slog.Logger, d Declaration[C, U], bs load.Bootstrap, sources map[string]string) {
 	values := make([]any, 0, len(d.Values))
 	for _, v := range d.Values {
-		values = append(values, slog.String(v.Name, res.Sources[v.Name]))
+		values = append(values, slog.String(v.Name, sources[v.Name]))
 	}
 	bindings := make([]any, 0, len(d.Bindings))
 	for _, b := range d.Bindings {
@@ -384,15 +480,20 @@ func startLog[C, U any](ctx context.Context, log *slog.Logger, d Declaration[C, 
 		bindings = append(bindings, slog.String(b.Capability, kind))
 	}
 	mode := "plain"
-	if res.Bootstrap.TLS() {
+	if bs.TLS() {
 		mode = "tls"
 	}
 	log.InfoContext(ctx, "config loaded",
-		slog.String("host", res.Bootstrap.Host()),
+		slog.String("host", bs.Host()),
 		slog.String("tls", mode),
 		slog.Group("values", values...),
 		slog.Group("bindings", bindings...),
 	)
+}
+
+// startWarnings writes the load's warnings and, in plain mode, the plain HTTP warning, once at
+// start.
+func startWarnings(ctx context.Context, log *slog.Logger, res load.Result) {
 	for _, w := range res.Warnings {
 		log.WarnContext(ctx, w.Message, slog.String("value", w.Value), slog.String("at", w.At))
 	}
