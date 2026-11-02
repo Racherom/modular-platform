@@ -387,12 +387,18 @@ func TestBindingAuth(t *testing.T) {
 func TestClientsDirProblems(t *testing.T) {
 	t.Parallel()
 	for name, tc := range map[string]struct {
-		files map[string]string
-		want  string
+		files  map[string]string
+		subdir string // an entry that is a directory, not a file
+		want   string
 	}{
 		"empty directory": {files: nil, want: "config: provides.greet.clients_dir (TM_CLIENTS_DIR): missing: "},
 		"short token":     {files: map[string]string{"api": "short"}, want: "config: provides.greet.clients_dir (TM_CLIENTS_DIR): invalid_binding: "},
+		"empty file":      {files: map[string]string{"api": ""}, want: "config: provides.greet.clients_dir (TM_CLIENTS_DIR): invalid_binding: "},
 		"bad file name":   {files: map[string]string{"Api": consumerToken}, want: "config: provides.greet.clients_dir (TM_CLIENTS_DIR): invalid_binding: "},
+		"a directory": {
+			files: map[string]string{"api": consumerToken}, subdir: "tool",
+			want: "config: provides.greet.clients_dir (TM_CLIENTS_DIR): invalid_binding: ",
+		},
 		"same token twice": {
 			files: map[string]string{"a": consumerToken, "b": consumerToken},
 			want:  "config: provides.greet.clients_dir (TM_CLIENTS_DIR): invalid_binding: ",
@@ -402,6 +408,11 @@ func TestClientsDirProblems(t *testing.T) {
 			t.Parallel()
 			env := baseEnv(t)
 			env["TM_CLIENTS_DIR"] = clientsDir(t, tc.files)
+			if tc.subdir != "" {
+				if err := os.Mkdir(filepath.Join(env["TM_CLIENTS_DIR"], tc.subdir), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
 			_, logs, err := start(t, env)
 			if !errors.Is(err, sdk.ErrStart) {
 				t.Fatalf("err = %v, want sdk.ErrStart", err)
@@ -430,6 +441,30 @@ func TestHiddenAndLinkedClients(t *testing.T) {
 	env["TM_CLIENTS_DIR"] = dir
 	if _, logs, err := start(t, env); err != nil {
 		t.Fatalf("start refused: %v\n%s", err, logs)
+	}
+}
+
+// TestAllowAnonymous covers a provider whose setup turns the binding token check off: it starts
+// without a clients directory, answers a call without a token, and logs one warning.
+func TestAllowAnonymous(t *testing.T) {
+	t.Parallel()
+	env := baseEnv(t)
+	delete(env, "TM_CLIENTS_DIR")
+	var logs bytes.Buffer
+	h, err := sdk.Build(t.Context(), testmodule.Module, func(_ context.Context, m *tmModule) (http.Handler, error) {
+		m.AllowAnonymous()
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "hi") }), nil
+	}, sdk.WithEnv(env), sdk.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))))
+	if err != nil {
+		t.Fatalf("start refused: %v\n%s", err, logs.String())
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "hi" {
+		t.Errorf("a call without a token = %d %q, want 200 hi", rec.Code, rec.Body)
+	}
+	if n := strings.Count(logs.String(), "binding auth off: anonymous calls allowed"); n != 1 {
+		t.Errorf("%d anonymous warnings, want 1\n%s", n, logs.String())
 	}
 }
 

@@ -79,12 +79,12 @@ A kit for building a new module container, so a module only describes what it ne
 **Done when:** a module declares its config in one place and starts with values from env vars, files or secrets, with no parsing code of its own; a missing or invalid required value stops it at start with a clear error naming that value; the module reaches a bound capability through the SDK using that binding's credentials; a call from a module without valid credentials for the binding is refused; and a new source (config server, vault, per request token) plugs in without changing the modules that use the SDK.
 spec [0005](../specs/0005-module-sdk/index.md) · code in `sdk/`, `catalog/planner.yaml`, `libs/contract/`, `libs/planner/`, `libs/render/`, `services/planner/`
 - [x] Design it (spec): `/architect module SDK`
-- [ ] Build it: `/develop module SDK`
+- [x] Build it: `/develop module SDK`
    - [x] Planner on a thin SDK: the `sdk` module absorbs `libs/platform`, the new catalog fields and rules, `sdkgen`, the config loader with env files, `sdk.Run`, `catalog/planner.yaml` (AC-1, AC-2, AC-3, AC-4, AC-5, AC-13)
    - [x] Bindings and protection: per consumer tokens, the HTTP client, readiness, the render additions and the rendered end to end test (AC-6, AC-7, AC-9, AC-12)
    - [x] TLS and the data clients: dotted host names (`MP_DOMAIN`, a network alias per SDK service), ACME TLS on the SDK's own `x/crypto/acme` client and renewal (replacing the autocert build) tested against `pebble`, the PostgreSQL and S3 clients (AC-6, AC-8, AC-9, AC-12)
    - [x] Caller token and pluggable sources: `MP-Caller` mint and check, push, per caller and binding resolver sources (AC-10, AC-11)
-   - [ ] The written contract `sdk/CONTRACT.md`, each statement backed by a test (AC-14)
+   - [x] The written contract `sdk/CONTRACT.md`, each statement backed by a test (AC-14)
 - [ ] Verify it: `/check verify module SDK`
 - [ ] Test it: `/test module SDK`
 - [ ] Review it (fresh model): `/check review module SDK`

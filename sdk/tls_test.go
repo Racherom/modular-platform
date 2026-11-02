@@ -257,6 +257,42 @@ func TestTLSMode(t *testing.T) {
 	}
 }
 
+// TestPlainHealthcheck covers the healthcheck subcommand in plain mode: it reads only the
+// bootstrap names and loads no config, so a bad declared value does not fail it; it passes once
+// the module answers /readyz 200 on its plain port, and fails while nothing answers or when
+// MP_INSTANCE is missing or breaks the naming rule.
+func TestPlainHealthcheck(t *testing.T) {
+	t.Parallel()
+	env := baseEnv(t)
+	var logs syncBuffer
+	ctx, cancel := context.WithCancel(t.Context())
+	base, exit := runMain(t, ctx, env, &logs)
+	defer func() {
+		cancel()
+		if code := <-exit; code != 0 {
+			t.Errorf("Main returned %d\n%s", code, logs.String())
+		}
+	}()
+	addrs := sdk.WithAddrs(strings.TrimPrefix(base, "http://"), freeAddr(t))
+	if code := sdk.Healthcheck(sdk.WithEnv(env), sdk.WithAddrs(freeAddr(t), freeAddr(t))); code != 1 {
+		t.Errorf("healthcheck with nothing listening = %d, want 1", code)
+	}
+	eventually(t, "the healthcheck passes", func() bool { return sdk.Healthcheck(sdk.WithEnv(env), addrs) == 0 })
+
+	badValue := maps.Clone(env)
+	badValue["TM_COUNT"] = "many"
+	if code := sdk.Healthcheck(sdk.WithEnv(badValue), addrs); code != 0 {
+		t.Errorf("healthcheck with a bad declared value = %d, want 0", code)
+	}
+	for _, instance := range []string{"", "Bad_Name"} {
+		broken := maps.Clone(env)
+		broken["MP_INSTANCE"] = instance
+		if code := sdk.Healthcheck(sdk.WithEnv(broken), addrs); code != 1 {
+			t.Errorf("healthcheck with MP_INSTANCE=%q = %d, want 1", instance, code)
+		}
+	}
+}
+
 // TestTLSUnreadyWithoutCertificate covers AC-9 in TLS mode: a built module answers /readyz 503
 // while it holds no certificate (Build enrols none).
 func TestTLSUnreadyWithoutCertificate(t *testing.T) {

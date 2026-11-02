@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -426,6 +427,12 @@ func TestStartProblems(t *testing.T) {
 			},
 			want: "config: count (TM_COUNT): ambiguous_source: ",
 		},
+		"a source rule before a type rule": {
+			env: func(t *testing.T) map[string]string {
+				return map[string]string{"TM_COUNT": "many", "TM_COUNT_FILE": file(t, "7")}
+			},
+			want: "config: count (TM_COUNT): ambiguous_source: ",
+		},
 		"a _FILE that cannot be read": {
 			env:  func(*testing.T) map[string]string { return map[string]string{"TM_COUNT_FILE": "/no/such/file"} },
 			want: "config: count (TM_COUNT): invalid: ",
@@ -583,6 +590,53 @@ func TestStartLog(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "serving plain HTTP: no certificate issuer bound") {
 		t.Error("no plain HTTP warning")
+	}
+}
+
+// checked is a Config with a Validate method, which counts its runs and refuses every start.
+type checked struct{ runs *atomic.Int64 }
+
+func (c checked) Validate(context.Context) error {
+	c.runs.Add(1)
+	return errors.New("limit must be even")
+}
+
+// TestValidate covers the module's optional Validate: its error is the one line
+// config: module (module): validate: <error>, and it runs only once every value loaded without a
+// problem.
+func TestValidate(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		limit string
+		runs  int64
+		want  string
+	}{
+		"its error refuses the start": {limit: "3", runs: 1, want: "config: module (module): validate: limit must be even"},
+		"not run after a problem":     {limit: "many", runs: 0, want: "config: limit (V_LIMIT): invalid: "},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var runs atomic.Int64
+			d := sdk.Declaration[checked, struct{}]{
+				Name:   "validated",
+				Values: []sdk.ValueSpec{{Name: "limit", Env: "V_LIMIT", Type: "int", Description: "A limit."}},
+				New:    func(*sdk.Values, *sdk.Bindings) (checked, struct{}) { return checked{&runs}, struct{}{} },
+			}
+			var logs bytes.Buffer
+			_, err := sdk.Build(t.Context(), d, func(context.Context, *sdk.Module[checked, struct{}]) (http.Handler, error) {
+				return http.NotFoundHandler(), nil
+			}, sdk.WithEnv(map[string]string{"MP_INSTANCE": "validated", "V_LIMIT": tc.limit}),
+				sdk.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))))
+			if !errors.Is(err, sdk.ErrStart) {
+				t.Fatalf("err = %v, want sdk.ErrStart", err)
+			}
+			if got := errorMsgs(t, &logs); len(got) != 1 || !strings.HasPrefix(got[0], tc.want) {
+				t.Errorf("error lines = %q, want one starting %q", got, tc.want)
+			}
+			if runs.Load() != tc.runs {
+				t.Errorf("Validate ran %d times, want %d", runs.Load(), tc.runs)
+			}
+		})
 	}
 }
 

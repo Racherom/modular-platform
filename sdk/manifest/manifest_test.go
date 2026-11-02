@@ -72,6 +72,8 @@ func TestRulesParse(t *testing.T) {
 		"int":                {manifest.Rules{Type: "int", Min: "1", Max: "10"}, "10", 10, ""},
 		"int negative":       {manifest.Rules{Type: "int"}, "-3", -3, ""},
 		"int not a number":   {manifest.Rules{Type: "int"}, "1.5", nil, manifest.CodeInvalid},
+		"int 64 bit":         {manifest.Rules{Type: "int"}, "9223372036854775807", 9223372036854775807, ""},
+		"int past 64 bit":    {manifest.Rules{Type: "int"}, "9223372036854775808", nil, manifest.CodeInvalid},
 		"int below min":      {manifest.Rules{Type: "int", Min: "1"}, "0", nil, manifest.CodeOutOfRange},
 		"int above max":      {manifest.Rules{Type: "int", Max: "10"}, "11", nil, manifest.CodeOutOfRange},
 		"bool true":          {manifest.Rules{Type: "bool"}, "true", true, ""},
