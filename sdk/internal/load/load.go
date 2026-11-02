@@ -177,10 +177,10 @@ type Bootstrap struct {
 	CallerKeyFile     string
 	CallerSigningFile string
 	// CallerKeys are the keys in CallerKeyFile; empty when it is unset. Load reads them, and
-	// LoadBootstrap does not.
+	// ReadBootstrap does not.
 	CallerKeys caller.Keys
 	// CallerSigner mints with the key in CallerSigningFile as Instance; nil when it is unset. Load
-	// reads it, and LoadBootstrap does not.
+	// reads it, and ReadBootstrap does not.
 	CallerSigner *caller.Signer
 }
 
@@ -196,9 +196,9 @@ func (b Bootstrap) Host() string {
 	return b.Instance + "." + b.Domain
 }
 
-// LoadBootstrap reads and checks the bootstrap names alone, for the healthcheck subcommand, which
+// ReadBootstrap reads and checks the bootstrap names alone, for the healthcheck subcommand, which
 // loads no config.
-func LoadBootstrap(lookupEnv func(string) (string, bool), readFile func(string) ([]byte, error)) (Bootstrap, []Problem) {
+func ReadBootstrap(lookupEnv func(string) (string, bool), readFile func(string) ([]byte, error)) (Bootstrap, []Problem) {
 	l := loader{in: Input{LookupEnv: lookupEnv, ReadFile: readFile}}
 	l.bootstrap()
 	SortProblems(l.res.Problems)
@@ -389,7 +389,7 @@ func (l *loader) caFile(path string) *x509.CertPool {
 func (l *loader) envFiles() {
 	known := l.knownKeys()
 	var files []level
-	for _, path := range strings.Split(l.env(EnvEnvFile), ":") {
+	for path := range strings.SplitSeq(l.env(EnvEnvFile), ":") {
 		if path == "" {
 			continue
 		}
@@ -399,21 +399,27 @@ func (l *loader) envFiles() {
 			if errors.Is(err, fs.ErrNotExist) {
 				reason = "does not exist"
 			}
-			l.res.Problems = append(l.res.Problems, Problem{Value: EnvEnvFile, Env: EnvEnvFile, Code: CodeEnvFile,
-				Message: fmt.Sprintf("%s %s", path, reason), File: path})
+			l.res.Problems = append(l.res.Problems, Problem{
+				Value: EnvEnvFile, Env: EnvEnvFile, Code: CodeEnvFile,
+				Message: fmt.Sprintf("%s %s", path, reason), File: path,
+			})
 			continue
 		}
 		lines, errs := envfile.Parse(data)
 		for _, e := range errs {
-			l.res.Problems = append(l.res.Problems, Problem{Value: EnvEnvFile, Env: EnvEnvFile, Code: CodeEnvFile,
-				Message: fmt.Sprintf("%s:%d: %s", path, e.Line, e.Message), File: path, Line: e.Line})
+			l.res.Problems = append(l.res.Problems, Problem{
+				Value: EnvEnvFile, Env: EnvEnvFile, Code: CodeEnvFile,
+				Message: fmt.Sprintf("%s:%d: %s", path, e.Line, e.Message), File: path, Line: e.Line,
+			})
 		}
 		set := map[string]envfile.Line{}
 		for _, line := range lines {
 			if !known[line.Key] {
-				l.res.Problems = append(l.res.Problems, Problem{Value: line.Key, Env: line.Key, Code: CodeUnknownKey,
+				l.res.Problems = append(l.res.Problems, Problem{
+					Value: line.Key, Env: line.Key, Code: CodeUnknownKey,
 					Message: fmt.Sprintf("%s:%d: %s is not a declared value, a binding key or a bootstrap name", path, line.Line, line.Key),
-					File:    path, Line: line.Line})
+					File:    path, Line: line.Line,
+				})
 				continue
 			}
 			if line.Value != "" {
@@ -537,7 +543,7 @@ func (l *loader) value(v ValueSpec) {
 func (l *loader) parse(v ValueSpec, text, source string) {
 	parsed, err := v.Parse(text)
 	if err != nil {
-		re := err.(*manifest.RuleError)
+		re := err.(*manifest.RuleError) //nolint:errorlint // Parse returns only an unwrapped *RuleError
 		l.problem(v.Name, v.Env, re.Code, "%s", re.Message)
 		return
 	}

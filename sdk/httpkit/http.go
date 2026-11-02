@@ -73,7 +73,12 @@ func Healthcheck(url string, cfg *tls.Config) int {
 		tr.TLSClientConfig = cfg
 		client.Transport = tr
 	}
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "healthcheck:", err)
+		return 1
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "healthcheck:", err)
 		return 1
@@ -122,7 +127,7 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 
 // Serve runs handler on addr until ctx ends, then shuts down gracefully.
 func Serve(ctx context.Context, log *slog.Logger, addr string, handler http.Handler) error {
-	ln, err := net.Listen("tcp", addr)
+	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}

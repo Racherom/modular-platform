@@ -227,12 +227,8 @@ func TestBackoff(t *testing.T) {
 		}
 		time.Sleep(4 * time.Hour)
 		synctest.Wait()
-		want := []time.Duration{2 * time.Hour, 1, 2, 4, 8, 16, 30, 30, 2 * time.Hour, 1}
-		for i := 1; i < len(want); i++ {
-			if want[i] < time.Hour {
-				want[i] *= time.Second
-			}
-		}
+		s := time.Second
+		want := []time.Duration{2 * time.Hour, s, 2 * s, 4 * s, 8 * s, 16 * s, 30 * s, 30 * s, 2 * time.Hour, s}
 		if got := f.gaps(); !slices.Equal(got[:len(want)], want) {
 			t.Errorf("issues %v apart, want %v", got, want)
 		}

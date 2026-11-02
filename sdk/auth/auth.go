@@ -60,7 +60,7 @@ func LoadClients(dir string) (Clients, []error) {
 			errs = append(errs, fmt.Errorf("%s: the file name must be a consumer instance name", path))
 			continue
 		}
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) //nolint:gosec // an entry of the clients directory the module is configured with
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s cannot be read: %w", path, err))
 			continue

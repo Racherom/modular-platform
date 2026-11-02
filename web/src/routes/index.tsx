@@ -66,13 +66,7 @@ function Editor() {
     <>
       {open.isError && <Failure error={open.error} onRetry={() => input.current?.click()} />}
       {working ? (
-        <GraphScreen
-          key={opens}
-          graph={working.graph}
-          plan={working.plan}
-          fileName={working.fileName}
-          toolbar={opener}
-        />
+        <GraphScreen key={opens} graph={working.graph} plan={working.plan} fileName={working.fileName} toolbar={opener} />
       ) : (
         <div className="screen empty">
           <h1>No graph open</h1>

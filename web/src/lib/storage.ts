@@ -22,13 +22,12 @@ function open(): Promise<IDBDatabase> {
 }
 
 function run<T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return open().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const req = op(db.transaction(STORE, mode).objectStore(STORE))
-        req.onsuccess = () => resolve(req.result)
-        req.onerror = () => reject(req.error ?? new Error('IndexedDB failed.'))
-      }).finally(() => db.close()),
+  return open().then((db) =>
+    new Promise<T>((resolve, reject) => {
+      const req = op(db.transaction(STORE, mode).objectStore(STORE))
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error ?? new Error('IndexedDB failed.'))
+    }).finally(() => db.close()),
   )
 }
 

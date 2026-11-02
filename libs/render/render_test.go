@@ -102,7 +102,7 @@ func TestRenderSampleRules(t *testing.T) {
 			t.Errorf("docker-compose.yml lacks %q\n%s", want, compose)
 		}
 	}
-	whoami := compose[strings.Index(compose, "  whoami:\n"):]
+	whoami := from(t, compose, "  whoami:\n")
 	if strings.Contains(whoami, "secrets:") {
 		t.Error("whoami must get no secret")
 	}
@@ -184,12 +184,13 @@ func TestSecretComposeNamesNeverCollide(t *testing.T) {
 			compose = string(f.Data)
 		}
 	}
-	top := compose[strings.Index(compose, "secrets:\n"):strings.Index(compose, "services:\n")]
+	top, _, _ := strings.Cut(from(t, compose, "secrets:\n"), "services:\n")
 	if want := "secrets:\n  a-b_c:\n    file: ./secrets/a-b/c\n  a_b-c:\n    file: ./secrets/a/b-c\n"; top != want {
 		t.Errorf("top level secrets =\n%s\nwant\n%s", top, want)
 	}
-	services := compose[strings.Index(compose, "services:\n"):]
-	a, ab := services[strings.Index(services, "  a:\n"):strings.Index(services, "  a-b:\n")], services[strings.Index(services, "  a-b:\n"):]
+	services := from(t, compose, "services:\n")
+	ab := from(t, services, "  a-b:\n")
+	a, _, _ := strings.Cut(from(t, services, "  a:\n"), "  a-b:\n")
 	for _, c := range []struct{ svc, want, not string }{
 		{a, "      BC_FILE: /run/secrets/a_b-c\n", "a-b_c"},
 		{a, "    - source: a_b-c\n", "a-b_c"},
@@ -208,4 +209,14 @@ func TestRenderRefusesErrors(t *testing.T) {
 	if !errors.Is(err, render.ErrPlanHasErrors) {
 		t.Errorf("err = %v, want ErrPlanHasErrors", err)
 	}
+}
+
+// from returns s from the first marker on, and fails the test when s lacks the marker.
+func from(t *testing.T, s, marker string) string {
+	t.Helper()
+	i := strings.Index(s, marker)
+	if i < 0 {
+		t.Fatalf("%q is missing from\n%s", marker, s)
+	}
+	return s[i:]
 }

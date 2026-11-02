@@ -1,4 +1,4 @@
-import { MarkerType, Position, type Edge, type Node, type NodeHandle } from '@xyflow/react'
+import { type Edge, MarkerType, type Node, type NodeHandle, Position } from '@xyflow/react'
 import type { CatalogEntry, Graph, Problem } from '../api/client'
 import { layout } from './layout'
 

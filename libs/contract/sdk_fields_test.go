@@ -40,7 +40,7 @@ func TestSDKFieldFixtures(t *testing.T) {
 				got = append(got, p.Path+" "+p.Code)
 			}
 			slices.Sort(got)
-			if !slices.Equal(got, tc.Want) && !(len(got) == 0 && len(tc.Want) == 0) {
+			if !slices.Equal(got, tc.Want) && (len(got) != 0 || len(tc.Want) != 0) {
 				t.Errorf("problems = %q, want %q", got, tc.Want)
 			}
 		})

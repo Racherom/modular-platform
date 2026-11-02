@@ -27,9 +27,9 @@ const Addr = ":8443"
 const (
 	// minLeft is the least time left on the held certificate for the module to count as ready.
 	minLeft = 2 * time.Hour
-	// retryMin and retryMax bound the backoff between failed attempts.
-	retryMin = time.Second
-	retryMax = 30 * time.Second
+	// minRetryBackoff and maxRetryBackoff bound the backoff between failed attempts.
+	minRetryBackoff = time.Second
+	maxRetryBackoff = 30 * time.Second
 	// attemptTimeout cuts off one attempt to issue a certificate.
 	attemptTimeout = 5 * time.Minute
 	// renewFloor is the least wait between an issue and the next one.
@@ -134,7 +134,7 @@ func later(a, b time.Time) time.Time {
 // obtain makes attempts until one gives a certificate that passes the check, holds it, and
 // returns it; false when ctx ended first.
 func (m *Manager) obtain(ctx context.Context) (*tls.Certificate, bool) {
-	backoff := retryMin
+	backoff := minRetryBackoff
 	for {
 		c, err := m.attempt(ctx)
 		if err == nil {
@@ -151,7 +151,7 @@ func (m *Manager) obtain(ctx context.Context) (*tls.Certificate, bool) {
 			return nil, false
 		case <-m.clock.After(backoff):
 		}
-		backoff = min(backoff*2, retryMax)
+		backoff = min(backoff*2, maxRetryBackoff)
 	}
 }
 

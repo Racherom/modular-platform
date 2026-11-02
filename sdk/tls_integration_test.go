@@ -66,7 +66,8 @@ func startTLSStack(t *testing.T, validity int) tlsStack {
 	}
 	testcontainers.CleanupNetwork(t, nw)
 
-	pebble, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{Started: true,
+	pebble, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		Started: true,
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: pebbleImage,
 			Cmd:   []string{"-config", "/pebble.json"},
@@ -77,7 +78,8 @@ func startTLSStack(t *testing.T, validity int) tlsStack {
 			Networks:       []string{nw.Name},
 			NetworkAliases: map[string][]string{nw.Name: {pebbleHost}},
 			WaitingFor:     wait.ForLog("ACME directory available"),
-		}})
+		},
+	})
 	testcontainers.CleanupContainer(t, pebble)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +97,8 @@ func startTLSStack(t *testing.T, validity int) tlsStack {
 		t.Fatalf("pebble's root is no PEM certificate: %q", root)
 	}
 
-	module, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{Started: true,
+	module, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		Started: true,
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: tlsModuleImage,
 			Env: map[string]string{
@@ -111,7 +114,8 @@ func startTLSStack(t *testing.T, validity int) tlsStack {
 			Networks:       []string{nw.Name},
 			NetworkAliases: map[string][]string{nw.Name: {tmHost}},
 			WaitingFor:     wait.ForLog("certificate held").WithStartupTimeout(2 * time.Minute),
-		}})
+		},
+	})
 	testcontainers.CleanupContainer(t, module)
 	if err != nil {
 		t.Fatal(err)

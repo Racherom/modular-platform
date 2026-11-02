@@ -207,7 +207,7 @@ func (s *stub) challenge(w http.ResponseWriter, _ *http.Request) {
 		if err == nil {
 			leaf, perr := x509.ParseCertificate(c.Certificate[0])
 			if perr != nil || !slices.Equal(leaf.DNSNames, []string{name}) {
-				err = fmt.Errorf("the answer names %v, %v", leaf.DNSNames, perr)
+				err = fmt.Errorf("the answer names %v, %w", leaf.DNSNames, perr)
 			}
 		}
 		answers[sni] = err

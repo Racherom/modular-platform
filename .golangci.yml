@@ -1,0 +1,117 @@
+# golangci-lint v2, run through `task lint` (pinned in Taskfile.yml). Start from the linters that
+# catch real defects; style linters the code never followed (wsl, paralleltest, thelper, goconst)
+# stay off.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  build-tags: [integration, e2e]
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  enable:
+    # correctness
+    - govet
+    - staticcheck
+    - unused
+    - errcheck
+    - errorlint
+    - nilerr
+    - copyloopvar
+    - durationcheck
+    - reassign
+    # style
+    - gocritic
+    - revive
+    - whitespace
+    - godot
+    - misspell
+    - dupword
+    - predeclared
+    - errname
+    - asciicheck
+    # complexity
+    - nestif
+    - funlen
+    - dupl
+    # performance
+    - perfsprint
+    - unconvert
+    - ineffassign
+    # security and resources
+    - gosec
+    - bidichk
+    - bodyclose
+    - noctx
+    - containedctx
+    - fatcontext
+    - sqlclosecheck
+    - rowserrcheck
+    # logging
+    - sloglint
+    - loggercheck
+    # modernization and meta
+    - modernize
+    - intrange
+    - usestdlibvars
+    - exhaustive
+    - nolintlint
+    # project rules from AGENTS.md
+    - forbidigo
+
+  settings:
+    dupl:
+      threshold: 100
+    funlen:
+      lines: 120
+      statements: 80
+    revive:
+      enable-default-rules: true
+      rules:
+        # test helpers take t first
+        - name: context-as-argument
+          arguments:
+            - allowTypesBefore: "*testing.T"
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    forbidigo:
+      forbid:
+        - pattern: ^(fmt\.Print.*|log\.(Print|Fatal|Panic).*)$
+          msg: log with log/slog (AGENTS.md, Logs)
+        - pattern: ^os\.(Getenv|LookupEnv|Environ)$
+          msg: declare the value in the catalog entry's config section; only sdk/ reads env vars (AGENTS.md, Module config)
+
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
+    rules:
+      # tests close bodies loosely, read fixtures by path and carry fake credentials
+      - path: _test\.go
+        linters: [errcheck, gosec, noctx, bodyclose, dupl, funlen, containedctx, dupword]
+      - path: _test\.go
+        linters: [forbidigo]
+        text: os\.
+      - path: ^sdk/
+        linters: [forbidigo]
+        text: os\.
+      # a command line tool prints to its terminal
+      - path: /cmd/
+        linters: [forbidigo]
+        text: fmt\.
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra:
+        group-params: true
+  exclusions:
+    generated: lax

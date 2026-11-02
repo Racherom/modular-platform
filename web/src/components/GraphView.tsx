@@ -16,7 +16,7 @@ interface Props {
 export function GraphView({ graph, catalog, problems }: Props) {
   const { nodes, edges } = useMemo(() => toFlow(graph, catalog, problems), [graph, catalog, problems])
   return (
-    <div className="graph-view" aria-label={`Graph ${graph.name}`}>
+    <section className="graph-view" aria-label={`Graph ${graph.name}`}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -30,6 +30,6 @@ export function GraphView({ graph, catalog, problems }: Props) {
         <Background />
         <Controls showInteractive={false} />
       </ReactFlow>
-    </div>
+    </section>
   )
 }

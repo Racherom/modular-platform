@@ -11,6 +11,8 @@
     "dev": "vite",
     "build": "tsc -p . && vite build",
     "typecheck": "tsc -p .",
+    "lint": "biome check .",
+    "format": "biome check --write .",
     "test": "vitest run",
     "generate": "openapi-typescript ../contracts/openapi/planner.yaml -o src/api/planner.gen.ts",
     "smoke:browser": "playwright test --config smoke/playwright.config.ts"
@@ -26,6 +28,7 @@
     "zustand": "5.0.16"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.4",
     "@playwright/test": "1.64.1",
     "@tanstack/router-plugin": "1.168.48",
     "@testing-library/react": "16.3.3",

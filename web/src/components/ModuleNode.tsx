@@ -1,5 +1,5 @@
-import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { portY, type ModuleFlowNode } from '../graph/flow'
+import { Handle, type NodeProps, Position } from '@xyflow/react'
+import { type ModuleFlowNode, portY } from '../graph/flow'
 
 export function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
   return (

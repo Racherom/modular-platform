@@ -157,7 +157,7 @@ func Run[C, U any](d Declaration[C, U], setup Setup[C, U], opts ...Option) {
 // and checking the module's host name; else in plain HTTP. It reads only the bootstrap names and
 // exits 1 on a missing or bad one.
 func healthcheck(o options) int {
-	b, problems := load.LoadBootstrap(o.lookupEnv, os.ReadFile)
+	b, problems := load.ReadBootstrap(o.lookupEnv, os.ReadFile)
 	if len(problems) > 0 {
 		for _, p := range problems {
 			fmt.Fprintln(os.Stderr, "healthcheck: "+p.String())
@@ -194,7 +194,7 @@ func Main[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U],
 	if b.cert != nil {
 		addr, cfg = o.tlsAddr, b.cert.ServerConfig()
 	}
-	ln, err := net.Listen("tcp", addr)
+	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", addr)
 	if err != nil {
 		o.log.Error("module stopped", slog.Any("error", err))
 		return 1
@@ -254,8 +254,10 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 	log := o.log
 	if o.source != nil && o.push != nil {
 		// a pushed snapshot is complete, so nothing may answer above it
-		refuse(ctx, log, []Problem{{Value: "module", Env: "module", Code: load.CodeSourceError,
-			Message: "WithSource and WithPushSource cannot be combined"}})
+		refuse(ctx, log, []Problem{{
+			Value: "module", Env: "module", Code: load.CodeSourceError,
+			Message: "WithSource and WithPushSource cannot be combined",
+		}})
 		return built{}, ErrStart
 	}
 	in := load.Input{
@@ -429,8 +431,10 @@ func open(specs []BindingSpec, loaded []Binding) (map[string]Opened, []Problem) 
 		path := "uses." + b.Capability
 		openFn := openers[b.Capability]
 		if openFn == nil {
-			problems = append(problems, Problem{Value: path, Env: path, Code: load.CodeInvalidBinding,
-				Message: fmt.Sprintf("the declaration has no opener for the %s client; run sdkgen again", b.Client)})
+			problems = append(problems, Problem{
+				Value: path, Env: path, Code: load.CodeInvalidBinding,
+				Message: fmt.Sprintf("the declaration has no opener for the %s client; run sdkgen again", b.Client),
+			})
 			continue
 		}
 		o, err := openFn(b)

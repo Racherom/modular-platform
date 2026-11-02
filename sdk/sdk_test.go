@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -144,29 +145,43 @@ type typeCase struct {
 }
 
 var typeCases = []typeCase{
-	{name: "greeting", env: "TM_GREETING", text: "howdy", def: "hello", want: "howdy",
-		get: func(ctx context.Context, c testmodule.Config) (any, error) { return c.Greeting(ctx) }},
-	{name: "count", env: "TM_COUNT", text: "42", def: 5, want: 42,
-		get: func(ctx context.Context, c testmodule.Config) (any, error) { return c.Count(ctx) }},
-	{name: "verbose", env: "TM_VERBOSE", text: "true", def: false, want: true,
-		get: func(ctx context.Context, c testmodule.Config) (any, error) { return c.Verbose(ctx) }},
-	{name: "timeout", env: "TM_TIMEOUT", text: "90s", def: 10 * time.Second, want: 90 * time.Second,
-		get: func(ctx context.Context, c testmodule.Config) (any, error) { return c.Timeout(ctx) }},
-	{name: "upstream", env: "TM_UPSTREAM", text: "https://other.test/x", def: "http://upstream.test:8080", want: "https://other.test/x",
+	{
+		name: "greeting", env: "TM_GREETING", text: "howdy", def: "hello", want: "howdy",
+		get: func(ctx context.Context, c testmodule.Config) (any, error) { return c.Greeting(ctx) },
+	},
+	{
+		name: "count", env: "TM_COUNT", text: "42", def: 5, want: 42,
+		get: func(ctx context.Context, c testmodule.Config) (any, error) { return c.Count(ctx) },
+	},
+	{
+		name: "verbose", env: "TM_VERBOSE", text: "true", def: false, want: true,
+		get: func(ctx context.Context, c testmodule.Config) (any, error) { return c.Verbose(ctx) },
+	},
+	{
+		name: "timeout", env: "TM_TIMEOUT", text: "90s", def: 10 * time.Second, want: 90 * time.Second,
+		get: func(ctx context.Context, c testmodule.Config) (any, error) { return c.Timeout(ctx) },
+	},
+	{
+		name: "upstream", env: "TM_UPSTREAM", text: "https://other.test/x", def: "http://upstream.test:8080", want: "https://other.test/x",
 		get: func(ctx context.Context, c testmodule.Config) (any, error) {
 			u, err := c.Upstream(ctx)
 			if err != nil {
 				return nil, err
 			}
 			return u.String(), nil
-		}},
-	{name: "level", env: "TM_LEVEL", text: "high", def: testmodule.LevelLow, want: testmodule.LevelHigh,
-		get: func(ctx context.Context, c testmodule.Config) (any, error) { return c.Level(ctx) }},
-	{name: "api-key", env: "TM_API_KEY", text: "key-from-test", want: "key-from-test",
+		},
+	},
+	{
+		name: "level", env: "TM_LEVEL", text: "high", def: testmodule.LevelLow, want: testmodule.LevelHigh,
+		get: func(ctx context.Context, c testmodule.Config) (any, error) { return c.Level(ctx) },
+	},
+	{
+		name: "api-key", env: "TM_API_KEY", text: "key-from-test", want: "key-from-test",
 		get: func(ctx context.Context, c testmodule.Config) (any, error) {
 			s, err := c.ApiKey(ctx)
 			return s.Reveal(), err
-		}},
+		},
+	},
 }
 
 // TestSources covers AC-2 and the source labels of AC-5: every type in the core set from its env
@@ -293,9 +308,7 @@ func TestPrecedence(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			env := baseEnv(t)
-			for k, v := range tc.env(t) {
-				env[k] = v
-			}
+			maps.Copy(env, tc.env(t))
 			cfg, logs, err := start(t, env)
 			if err != nil {
 				t.Fatalf("start refused: %v\n%s", err, logs)
@@ -465,9 +478,7 @@ func TestStartProblems(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			env := baseEnv(t)
-			for k, v := range tc.env(t) {
-				env[k] = v
-			}
+			maps.Copy(env, tc.env(t))
 			_, logs, err := start(t, env)
 			if !errors.Is(err, sdk.ErrStart) {
 				t.Fatalf("err = %v, want sdk.ErrStart", err)
@@ -533,7 +544,7 @@ func TestSecretNeverShows(t *testing.T) {
 	}
 	fmt.Fprintln(&out, cfg, secret, &secret, []sdk.Secret{secret})
 	for _, h := range []slog.Handler{slog.NewJSONHandler(&out, nil), slog.NewTextHandler(&out, nil)} {
-		slog.New(h).Info("dump", slog.Any("config", cfg), slog.Any("secret", secret), "plain", secret)
+		slog.New(h).Info("dump", slog.Any("config", cfg), slog.Any("secret", secret), "plain", secret) //nolint:sloglint // both forms must redact the secret
 	}
 	data, _ := json.Marshal(map[string]any{"secret": secret})
 	out.Write(data)

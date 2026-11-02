@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, type Page, test } from '@playwright/test'
 
 // SMOKE_BASE is '' for the site root or '/platform' for compose.subpath.yaml.
 const base = process.env.SMOKE_BASE ?? ''

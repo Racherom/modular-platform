@@ -29,7 +29,7 @@ func main() {
 }
 
 func run(entry, pkg, out string) int {
-	data, err := os.ReadFile(entry)
+	data, err := os.ReadFile(entry) //nolint:gosec // the catalog entry named on the command line
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "sdkgen:", err)
 		return 1
@@ -41,7 +41,7 @@ func run(entry, pkg, out string) int {
 		}
 		return 1
 	}
-	if err := os.WriteFile(out, src, 0o644); err != nil {
+	if err := os.WriteFile(out, src, 0o644); err != nil { //nolint:gosec // generated source is committed and world readable
 		fmt.Fprintln(os.Stderr, "sdkgen:", err)
 		return 1
 	}

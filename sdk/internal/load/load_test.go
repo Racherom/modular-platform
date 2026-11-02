@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -105,9 +106,7 @@ func TestLoadPrecedence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			env := map[string]string{"MP_INSTANCE": "tm"}
-			for k, v := range tt.env {
-				env[k] = v
-			}
+			maps.Copy(env, tt.env)
 			in := load.Input{Values: []load.ValueSpec{greeting}, LookupEnv: lookup(env), ReadFile: readFile(files)}
 			if tt.source != nil {
 				in.Source = func(_ context.Context, value string) (string, bool, error) {
@@ -251,17 +250,13 @@ func dataEnv(over map[string]string) map[string]string {
 		"TM_STORE_ACCESS_KEY_ID":   "key-id",
 		"TM_STORE_SECRET_KEY_FILE": "/run/secrets/s3",
 	}
-	for k, v := range over {
-		env[k] = v
-	}
+	maps.Copy(env, over)
 	return env
 }
 
 func dataFiles(over map[string]string) map[string]string {
 	files := map[string]string{"/run/secrets/db": dbPassword + "\n", "/run/secrets/s3": s3Secret + " \r\n"}
-	for k, v := range over {
-		files[k] = v
-	}
+	maps.Copy(files, over)
 	return files
 }
 

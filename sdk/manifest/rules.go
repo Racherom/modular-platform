@@ -67,7 +67,7 @@ func (r Rules) Parse(text string) (any, error) {
 	switch r.Type {
 	case TypeString, TypeSecret:
 		if r.Pattern != "" && !fullMatch(r.Pattern).MatchString(text) {
-			return nil, &RuleError{CodeNoMatch, fmt.Sprintf("does not match the pattern %s", r.Pattern)}
+			return nil, &RuleError{CodeNoMatch, "does not match the pattern " + r.Pattern}
 		}
 		return text, nil
 	case TypeInt:
@@ -375,7 +375,7 @@ func (c *checker) value(path string, v Value) {
 		if *v.Default == "" {
 			c.add(path+".default", CodeInvalidDefault, "an empty default is no default; leave it out")
 		} else if _, err := RulesOf(v).Parse(*v.Default); err != nil {
-			c.add(path+".default", CodeInvalidDefault, "default %s", err.(*RuleError).Message)
+			c.add(path+".default", CodeInvalidDefault, "default %s", err.(*RuleError).Message) //nolint:errorlint // Parse returns only an unwrapped *RuleError
 		}
 	}
 }

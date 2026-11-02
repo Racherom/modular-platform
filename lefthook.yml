@@ -1,0 +1,30 @@
+# Pre commit checks: format, lint and typecheck what you staged; tests stay in CI. Install the
+# hook once with `task hooks`; skip it for one commit with LEFTHOOK=0.
+pre-commit:
+  parallel: true
+  jobs:
+    - name: go
+      group:
+        piped: true
+        jobs:
+          - name: go format
+            glob: "*.go"
+            run: task fmt:go -- {staged_files}
+            stage_fixed: true
+          # golangci-lint checks whole packages, so it runs on all of them
+          - name: go lint
+            glob: "*.go"
+            run: task lint:go
+    - name: web
+      group:
+        piped: true
+        jobs:
+          - name: web format and lint
+            root: web/
+            glob: "*.{ts,tsx,js,json,css}"
+            run: pnpm exec biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+            stage_fixed: true
+          - name: web typecheck
+            root: web/
+            glob: "*.{ts,tsx}"
+            run: pnpm run typecheck

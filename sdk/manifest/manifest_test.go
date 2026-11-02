@@ -1,6 +1,7 @@
 package manifest_test
 
 import (
+	"errors"
 	"net/url"
 	"os"
 	"slices"
@@ -50,7 +51,7 @@ func TestCheckFixtures(t *testing.T) {
 				}
 			}
 			slices.Sort(got)
-			if !slices.Equal(got, want) && !(len(got) == 0 && len(want) == 0) {
+			if !slices.Equal(got, want) && (len(got) != 0 || len(want) != 0) {
 				t.Errorf("problems = %q, want %q", got, want)
 			}
 		})
@@ -96,7 +97,8 @@ func TestRulesParse(t *testing.T) {
 			t.Parallel()
 			got, err := tc.rules.Parse(tc.text)
 			if tc.code != "" {
-				re, ok := err.(*manifest.RuleError)
+				re := &manifest.RuleError{}
+				ok := errors.As(err, &re)
 				if !ok || re.Code != tc.code {
 					t.Fatalf("Parse(%q) error = %v, want code %s", tc.text, err, tc.code)
 				}

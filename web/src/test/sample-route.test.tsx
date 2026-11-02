@@ -60,7 +60,8 @@ describe('sample route', () => {
 
     const whoami = await screen.findByTestId('node-whoami')
     const postgres = screen.getByTestId('node-postgres')
-    const x = (el: HTMLElement) => Number(el.closest<HTMLElement>('.react-flow__node')!.style.transform.match(/translate\((-?[\d.]+)px/)![1])
+    const x = (el: HTMLElement) =>
+      Number(el.closest<HTMLElement>('.react-flow__node')!.style.transform.match(/translate\((-?[\d.]+)px/)![1])
     expect(x(whoami)).toBeLessThan(x(postgres))
 
     await vi.waitFor(() => expect(container.querySelectorAll('.react-flow__edge')).toHaveLength(1))

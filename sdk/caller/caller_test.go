@@ -317,7 +317,7 @@ func TestSignerHidesKey(t *testing.T) {
 func fmtAll(v any) string {
 	var b strings.Builder
 	for _, f := range []string{"%v", "%s", "%+v", "%#v"} {
-		b.WriteString(fmt.Sprintf(f, v))
+		fmt.Fprintf(&b, f, v)
 	}
 	return b.String()
 }

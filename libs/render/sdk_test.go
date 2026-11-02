@@ -65,7 +65,7 @@ func TestRenderSDKRules(t *testing.T) {
 	t.Parallel()
 	files := renderPair(t)
 	compose := string(files["docker-compose.yml"].Data)
-	services := compose[strings.Index(compose, "services:\n"):]
+	services := from(t, compose, "services:\n")
 	split := strings.Index(services, "\n  provider:\n") + 1
 	consumer, provider := services[:split], services[split:]
 	for _, c := range []struct{ where, in, want string }{

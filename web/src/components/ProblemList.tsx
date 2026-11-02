@@ -6,7 +6,8 @@ export function ProblemList({ problems }: { problems: Problem[] }) {
   return (
     <ul className="problems" aria-label="Problems">
       {problems.map((p, i) => (
-        <li key={`${i}|${p.path}|${p.code}`}className={`problem problem--${p.severity}`}>
+        // biome-ignore lint/suspicious/noArrayIndexKey: the list is never reordered, and two problems may share a path and code
+        <li key={`${i}|${p.path}|${p.code}`} className={`problem problem--${p.severity}`}>
           <span className="problem__severity">{p.severity}</span>
           {problemInstance(p) !== undefined && <span className="problem__instance">{problemInstance(p)}</span>}
           <span>{p.message}</span>

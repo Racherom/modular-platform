@@ -12,7 +12,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | # | Feature | Phase | Status |
 |---|---------|-------|--------|
 | 1 | Stack & architecture | Foundation | in-progress |
-| 2 | Coding standards & tooling | Foundation | planned |
+| 2 | Coding standards & tooling | Foundation | in-progress |
 | 5 | Design system & graph editor foundation | Foundation | planned |
 | 27 | Module SDK | Slice 1 | in-progress |
 | 16 | Managed mode control plane | Slice 1 | planned |
@@ -60,11 +60,12 @@ spec [0001](../specs/0001-platform-stack-architecture/index.md) · [0002](../spe
 - [x] Review it: `/check review stack & architecture`
 - [ ] Document it: `/document`
 
-### 2. Coding standards & tooling
+### 2. Coding standards & tooling · in-progress
 Capture conventions, then install lint, format and pre commit enforcement from the real scaffolded project.
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format and pre commit checks run clean.
+code in `.golangci.yml`, `web/biome.json`, `lefthook.yml`, `Taskfile.yml` (`lint`, `fmt`, `hooks`)
 - [ ] Capture conventions and tooling choices: `/audit`
-- [ ] Install the tooling: `/develop tooling`
+- [x] Install the tooling: `/develop tooling`
 - [ ] Check it runs clean: `/test`
 
 ### 5. Design system & graph editor foundation · needs a decision

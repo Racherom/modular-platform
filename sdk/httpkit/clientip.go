@@ -19,7 +19,7 @@ func ClientIP(r *http.Request, hops int) netip.Addr {
 	if hops > 0 {
 		var entries []string
 		for _, line := range r.Header.Values("X-Forwarded-For") {
-			for _, e := range strings.Split(line, ",") {
+			for e := range strings.SplitSeq(line, ",") {
 				entries = append(entries, strings.TrimSpace(e))
 			}
 		}

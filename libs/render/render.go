@@ -224,7 +224,7 @@ func healthcheck(h *contract.Healthcheck) *types.HealthCheckConfig {
 	out.Timeout = duration(h.Timeout)
 	out.StartPeriod = duration(h.StartPeriod)
 	if h.Retries != nil {
-		r := uint64(*h.Retries)
+		r := uint64(*h.Retries) //nolint:gosec // CheckEntry refuses retries below 1
 		out.Retries = &r
 	}
 	return out

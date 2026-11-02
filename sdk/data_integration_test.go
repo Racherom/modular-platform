@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -46,9 +47,7 @@ func requiring(capability string) sdk.Declaration[testmodule.Config, testmodule.
 func buildData(t *testing.T, d sdk.Declaration[testmodule.Config, testmodule.Uses], env map[string]string) (http.Handler, testmodule.Uses, *syncBuffer) {
 	t.Helper()
 	base := baseEnv(t)
-	for k, v := range env {
-		base[k] = v
-	}
+	maps.Copy(base, env)
 	var (
 		logs syncBuffer
 		uses testmodule.Uses

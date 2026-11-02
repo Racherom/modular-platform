@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -164,10 +165,8 @@ func Parse(data []byte) (Entry, error) {
 
 func knownBindingKey(key string) bool {
 	for _, keys := range BindingKeys {
-		for _, k := range keys {
-			if k == key {
-				return true
-			}
+		if slices.Contains(keys, key) {
+			return true
 		}
 	}
 	return false
@@ -214,12 +213,7 @@ func ValidKey(s string) bool {
 
 // IsBootstrap reports whether s is one of the BootstrapNames.
 func IsBootstrap(s string) bool {
-	for _, b := range BootstrapNames {
-		if s == b {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(BootstrapNames, s)
 }
 
 // GoName turns a name like planner-rate into PlannerRate: every run of letters and digits starts

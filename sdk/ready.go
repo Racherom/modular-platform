@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-// Readiness polls each required binding with backoff from readyMin to readyMax until it answers
+// Readiness polls each required binding with backoff from minReadyBackoff to maxReadyBackoff until it answers
 // once; it is not checked again after that (spec 0005, "Middleware order and readiness").
 const (
-	readyMin     = time.Second
-	readyMax     = 30 * time.Second
-	readyAttempt = 5 * time.Second // the longest one poll may take
+	minReadyBackoff = time.Second
+	maxReadyBackoff = 30 * time.Second
+	readyAttempt    = 5 * time.Second // the longest one poll may take
 )
 
 // readiness counts the required bindings that have not answered yet.
@@ -27,7 +27,7 @@ func (r *readiness) ready() bool { return r.pending.Load() == 0 }
 func (r *readiness) wait(ctx context.Context, log *slog.Logger, capability string, ready func(context.Context) error) {
 	r.pending.Add(1)
 	go func() {
-		backoff := readyMin
+		backoff := minReadyBackoff
 		for {
 			attempt, cancel := context.WithTimeout(ctx, readyAttempt)
 			err := ready(attempt)
@@ -45,7 +45,7 @@ func (r *readiness) wait(ctx context.Context, log *slog.Logger, capability strin
 				return
 			case <-time.After(backoff):
 			}
-			backoff = min(backoff*2, readyMax)
+			backoff = min(backoff*2, maxReadyBackoff)
 		}
 	}()
 }

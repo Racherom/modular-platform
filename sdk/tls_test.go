@@ -82,7 +82,7 @@ func TestTLSProblems(t *testing.T) {
 		want  string
 	}{
 		"only the ACME URL": {
-			env: func(t *testing.T) map[string]string {
+			env: func(*testing.T) map[string]string {
 				return map[string]string{"MP_ACME_URL": "https://issuer.test/directory"}
 			},
 			unset: "MP_CA_FILE",
@@ -94,13 +94,13 @@ func TestTLSProblems(t *testing.T) {
 			want:  "config: MP_ACME_URL (MP_ACME_URL): tls_config: MP_CA_FILE is set, so MP_ACME_URL must be set too",
 		},
 		"an http ACME URL": {
-			env: func(t *testing.T) map[string]string {
+			env: func(*testing.T) map[string]string {
 				return map[string]string{"MP_ACME_URL": "http://issuer.test/directory"}
 			},
 			want: "config: MP_ACME_URL (MP_ACME_URL): invalid: ",
 		},
 		"an unreadable CA file": {
-			env:  func(t *testing.T) map[string]string { return map[string]string{"MP_CA_FILE": "/no/such/ca.pem"} },
+			env:  func(*testing.T) map[string]string { return map[string]string{"MP_CA_FILE": "/no/such/ca.pem"} },
 			want: "config: MP_CA_FILE (MP_CA_FILE): tls_config: the CA file /no/such/ca.pem cannot be read",
 		},
 		"a CA file without a certificate": {
@@ -125,9 +125,7 @@ func TestTLSProblems(t *testing.T) {
 			t.Parallel()
 			env := tlsEnv(t, ca)
 			delete(env, tc.unset)
-			for k, v := range tc.env(t) {
-				env[k] = v
-			}
+			maps.Copy(env, tc.env(t))
 			var logs syncBuffer
 			_, err := sdk.Build(t.Context(), testmodule.Module, func(context.Context, *tmModule) (http.Handler, error) {
 				return http.NotFoundHandler(), nil
@@ -136,7 +134,7 @@ func TestTLSProblems(t *testing.T) {
 				t.Fatalf("err = %v, want sdk.ErrStart", err)
 			}
 			var lines []string
-			for _, l := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+			for l := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
 				if strings.Contains(l, `"level":"ERROR"`) {
 					lines = append(lines, l)
 				}

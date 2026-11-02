@@ -57,7 +57,7 @@ func setup(ctx context.Context, m *sdk.Module[consumer.Config, consumer.Uses]) (
 
 // get prints "<status> <body>" of GET url on stdout; it returns 1 when the call fails.
 func get(url string) int {
-	resp, err := http.Get(url) //nolint:noctx // a one shot probe that exits right after
+	resp, err := http.Get(url) //nolint:noctx,gosec // a one shot probe to the address the test passes, exits right after
 	if err != nil {
 		_, _ = io.WriteString(os.Stderr, err.Error()+"\n")
 		return 1

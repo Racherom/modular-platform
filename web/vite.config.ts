@@ -1,7 +1,8 @@
 /// <reference types="vitest/config" />
+
+import { fileURLToPath } from 'node:url'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
-import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 
 // the dev server may read only the editor itself and the bundled samples, never the rest of the checkout

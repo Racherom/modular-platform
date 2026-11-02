@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -68,9 +69,7 @@ func provider(t *testing.T, tokens map[string]string) *httptest.Server {
 func consumerUses(t *testing.T, env map[string]string) (testmodule.Uses, *syncBuffer, error) {
 	t.Helper()
 	base := baseEnv(t)
-	for k, v := range env {
-		base[k] = v
-	}
+	maps.Copy(base, env)
 	var (
 		logs syncBuffer
 		uses testmodule.Uses
@@ -253,9 +252,7 @@ func dataEnv(over map[string]string) func(t *testing.T) map[string]string {
 			"TM_STORE_ACCESS_KEY_ID":   "access",
 			"TM_STORE_SECRET_KEY_FILE": file(t, s3Secret+"\n"),
 		}
-		for k, v := range over {
-			env[k] = v
-		}
+		maps.Copy(env, over)
 		return env
 	}
 }

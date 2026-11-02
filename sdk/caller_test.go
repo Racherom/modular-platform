@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -146,9 +147,7 @@ func TestCallerKeyFileProblems(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			env := baseEnv(t)
-			for k, v := range tc.env {
-				env[k] = v
-			}
+			maps.Copy(env, tc.env)
 			_, logs, err := start(t, env)
 			if !errors.Is(err, sdk.ErrStart) {
 				t.Fatalf("err = %v, want sdk.ErrStart", err)
