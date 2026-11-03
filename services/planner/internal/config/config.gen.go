@@ -31,6 +31,16 @@ func (c Config) PlannerRate(ctx context.Context) (int, error) {
 	return sdk.Value[int](ctx, c.v, "planner-rate")
 }
 
+// PlatformHttpPort is host port of the platform's ingress for HTTP, which no deployed project may publish.
+func (c Config) PlatformHttpPort(ctx context.Context) (int, error) {
+	return sdk.Value[int](ctx, c.v, "platform-http-port")
+}
+
+// PlatformHttpsPort is host port of the platform's ingress for HTTPS, which no deployed project may publish.
+func (c Config) PlatformHttpsPort(ctx context.Context) (int, error) {
+	return sdk.Value[int](ctx, c.v, "platform-https-port")
+}
+
 // ProxyHops is proxies in front of the planner that append X-Forwarded-For.
 func (c Config) ProxyHops(ctx context.Context) (int, error) {
 	return sdk.Value[int](ctx, c.v, "proxy-hops")
@@ -45,6 +55,8 @@ var Module = sdk.Declaration[Config, Uses]{
 	Values: []sdk.ValueSpec{
 		{Name: "planner-mode", Env: "MP_PLANNER_MODE", Type: "enum", Values: []string{"public", "internal"}, Description: "Where the planner runs, public behind the online tool or internal inside the platform."},
 		{Name: "planner-rate", Env: "MP_PLANNER_RATE", Type: "int", Default: "60", Min: "1", Description: "Requests per minute per client address in public mode."},
+		{Name: "platform-http-port", Env: "MP_PLATFORM_HTTP_PORT", Type: "int", Default: "80", Min: "1", Max: "65535", Description: "Host port of the platform's ingress for HTTP, which no deployed project may publish."},
+		{Name: "platform-https-port", Env: "MP_PLATFORM_HTTPS_PORT", Type: "int", Default: "443", Min: "1", Max: "65535", Description: "Host port of the platform's ingress for HTTPS, which no deployed project may publish."},
 		{Name: "proxy-hops", Env: "MP_PROXY_HOPS", Type: "int", Default: "1", Min: "0", Description: "Proxies in front of the planner that append X-Forwarded-For."},
 	},
 	Provides: &sdk.ProvideSpec{Capability: "planner", Auth: "binding-token", ClientsDirEnv: "MP_PLANNER_CLIENTS_DIR"},

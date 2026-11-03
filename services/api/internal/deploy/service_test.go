@@ -1,10 +1,14 @@
 package deploy_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -467,5 +471,67 @@ func TestStateIsDerived(t *testing.T) {
 		if got := (deploy.Deployment{Latest: tc.op}).State(); got != tc.want {
 			t.Errorf("%+v: %s, want %s", tc.op, got, tc.want)
 		}
+	}
+}
+
+// TestPlacedValuesNeverLeak applies with a placed value, through a run to running, a refusal by
+// the deploy target and a deploy target that does not answer, then searches every log line,
+// every answer and everything the store holds for it: only paths travel back (spec 0006, AC-11).
+func TestPlacedValuesNeverLeak(t *testing.T) {
+	t.Parallel()
+	const value = "placed-value-6f1c0de5"
+	placed := []deploy.PlacedInput{{Path: "secrets/app/uses_db_password", Value: value}}
+	for name, target := range map[string]*fakeTarget{
+		"runs":        {boot: "boot-1", polls: []deploytarget.OperationStatus{deploytarget.OperationStatusSucceeded}},
+		"refused":     {applyErr: &deploy.RefusedError{Problems: []contract.Problem{{Code: "placed_invalid", Path: "placed.secrets/app/uses_db_password"}}}},
+		"unavailable": {applyErr: deploy.ErrTargetUnavailable},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			st := newMem()
+			var logs bytes.Buffer
+			ctx, cancel := context.WithCancel(t.Context())
+			s := deploy.NewService(ctx, st, fakePlanner{digest: "sha256:abc"}, target, deploy.NewHub(),
+				slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+			t.Cleanup(func() { cancel(); s.Wait() })
+			deploy.SetPollEvery(s, 5*time.Millisecond)
+
+			op, err := s.Apply(t.Context(), admin, "sample", sample, "sha256:abc", placed)
+			seen := []any{op, fmt.Sprint(err)}
+			if err == nil {
+				waitFor(t, "a final status", func() bool {
+					o, _, _ := st.Operation(t.Context(), op.ID)
+					return o.Status != deploy.StatusRunning
+				})
+				history, err := s.Operations(t.Context(), "sample", nil, 50)
+				if err != nil {
+					t.Fatal(err)
+				}
+				view, err := s.View(t.Context(), "sample")
+				if err != nil {
+					t.Fatal(err)
+				}
+				seen = append(seen, history, view)
+			}
+			st.mu.Lock()
+			for _, o := range st.ops {
+				seen = append(seen, *o)
+			}
+			st.mu.Unlock()
+			cancel()
+			s.Wait()
+			for _, v := range seen {
+				data, err := json.Marshal(v)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if bytes.Contains(data, []byte(value)) || strings.Contains(fmt.Sprintf("%+v", v), value) {
+					t.Errorf("the placed value leaked into %T: %s", v, data)
+				}
+			}
+			if bytes.Contains(logs.Bytes(), []byte(value)) {
+				t.Errorf("the placed value leaked into the log:\n%s", logs.String())
+			}
+		})
 	}
 }

@@ -11,11 +11,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/racherom/modular-platform/libs/contract"
+	"github.com/racherom/modular-platform/libs/render"
 )
 
 // Problem codes of a refused request.
 const (
-	CodeInvalidProject = "invalid_project"
+	CodeInvalidProject = render.CodeInvalidProject
+	CodeHostAccess     = render.CodeHostAccess
 	CodeInvalidPath    = "invalid_path"
 	CodePlacedMissing  = "placed_missing"
 	CodePlacedInvalid  = "placed_invalid"
@@ -88,7 +92,8 @@ func (e *Engine) Apply(req ApplyRequest) (Operation, error) {
 }
 
 // check runs every check that needs no lock: the project name, each path, each placed value,
-// and that every placed secret exists or is supplied.
+// the guard and the labels on the loaded Compose file, and that every placed secret exists or
+// is supplied.
 func (e *Engine) check(req ApplyRequest) []Problem {
 	var problems []Problem
 	refuse := func(code, path, format string, args ...any) {
@@ -103,16 +108,21 @@ func (e *Engine) check(req ApplyRequest) []Problem {
 			refuse(CodeInvalidPath, "files."+f.Path, "%q is not a file a rendered project holds.", f.Path)
 		}
 	}
+	placed := map[string]bool{}
 	for _, s := range req.Secrets {
 		if !secretPattern.MatchString(s.Path) {
 			refuse(CodeInvalidPath, "secrets."+s.Path, "%q is not a secret path secrets/<instance>/<name>.", s.Path)
 		}
+		placed[s.Path] = s.Kind == SecretPlaced
 	}
 	supplied := map[string]bool{}
 	for _, p := range req.Placed {
 		switch {
 		case !secretPattern.MatchString(p.Path):
 			refuse(CodeInvalidPath, "placed."+p.Path, "%q is not a secret path secrets/<instance>/<name>.", p.Path)
+		case !placed[p.Path]:
+			// a generated secret is never overwritten, so no value may name one
+			refuse(CodeInvalidPath, "placed."+p.Path, "%s is not a credential this project places.", p.Path)
 		case len(p.Data) == 0:
 			refuse(CodePlacedInvalid, "placed."+p.Path, "The value for %s is empty.", p.Path)
 		case len(p.Data) > maxPlaced:
@@ -124,6 +134,9 @@ func (e *Engine) check(req ApplyRequest) []Problem {
 		}
 	}
 	if len(problems) > 0 {
+		return problems
+	}
+	if problems := e.guard(req); len(problems) > 0 {
 		return problems
 	}
 	dir := e.projectDir(req.Project)
@@ -140,6 +153,42 @@ func (e *Engine) check(req ApplyRequest) []Problem {
 		}
 	}
 	return problems
+}
+
+// guard loads docker-compose.yml with .env and deploy.env as docker compose will, then runs
+// render.Guard and render.CheckProject on it: this service cannot trust its caller, so a
+// bypassed planner must not reach the host (spec 0006, AC-8).
+func (e *Engine) guard(req ApplyRequest) []Problem {
+	var compose, env []byte
+	for _, f := range req.Files {
+		switch f.Path {
+		case "docker-compose.yml":
+			compose = f.Data
+		case ".env":
+			env = f.Data
+		}
+	}
+	if compose == nil {
+		return []Problem{{Code: CodeInvalidProject, Path: "files", Message: "The project has no docker-compose.yml."}}
+	}
+	project, err := render.LoadProject(e.ctx, compose, env, e.deployEnv())
+	if err != nil {
+		return []Problem{{Code: CodeInvalidProject, Path: "files.docker-compose.yml", Message: err.Error()}}
+	}
+	var problems []Problem
+	for _, p := range append(render.Guard(project, e.cfg.ReservedPorts), render.CheckProject(project, req.Project, req.Deployment)...) {
+		problems = append(problems, fromContract(p))
+	}
+	return problems
+}
+
+func fromContract(p contract.Problem) Problem {
+	return Problem{Code: p.Code, Path: p.Path, Message: p.Message}
+}
+
+// deployEnv is the deploy.env the engine writes beside .env: the user deployed sdk modules run as.
+func (e *Engine) deployEnv() []byte {
+	return fmt.Appendf(nil, "# Written by the deployer: the user deployed sdk modules run as.\nMP_UID=%d\nMP_GID=%d\n", e.cfg.UID, e.cfg.GID)
 }
 
 func (e *Engine) projectDir(project string) string { return filepath.Join(e.cfg.Dir, project) }
@@ -190,8 +239,7 @@ func (e *Engine) prepare(dir string, req ApplyRequest) error {
 			return err
 		}
 	}
-	deployEnv := fmt.Sprintf("# Written by the deployer: the user deployed sdk modules run as.\nMP_UID=%d\nMP_GID=%d\n", e.cfg.UID, e.cfg.GID)
-	if err := e.writeFile(dir, "deploy.env", []byte(deployEnv), 0o644, false); err != nil {
+	if err := e.writeFile(dir, "deploy.env", e.deployEnv(), 0o644, false); err != nil {
 		return err
 	}
 	for _, s := range req.Secrets {

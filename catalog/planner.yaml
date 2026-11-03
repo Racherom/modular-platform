@@ -34,3 +34,17 @@ config:
     default: "1"
     min: 0
     description: Proxies in front of the planner that append X-Forwarded-For.
+  platform-http-port:
+    env: MP_PLATFORM_HTTP_PORT
+    type: int
+    default: "80"
+    min: 1
+    max: 65535
+    description: Host port of the platform's ingress for HTTP, which no deployed project may publish.
+  platform-https-port:
+    env: MP_PLATFORM_HTTPS_PORT
+    type: int
+    default: "443"
+    min: 1
+    max: 65535
+    description: Host port of the platform's ingress for HTTPS, which no deployed project may publish.

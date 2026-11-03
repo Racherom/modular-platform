@@ -12,10 +12,10 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | # | Feature | Phase | Status |
 |---|---------|-------|--------|
 | 1 | Stack & architecture | Foundation | in-progress |
-| 2 | Coding standards & tooling | Foundation | in-progress |
-| 5 | Design system & graph editor foundation | Foundation | planned |
+| 2 | Coding standards & tooling | Foundation | done |
+| 5 | Design system & graph editor foundation | Foundation | in-progress |
 | 27 | Module SDK | Slice 1 | in-progress |
-| 16 | Managed mode control plane | Slice 1 | planned |
+| 16 | Managed mode control plane | Slice 1 | in-progress |
 | 3 | Capability and module contract | Slice 2 | planned |
 | 4 | Platform data model | Slice 2 | planned |
 | 6 | Design online, download, compose up | Slice 3 | planned |
@@ -23,6 +23,8 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 24 | Planner website standalone or in your site | Slice 4 | planned |
 | 25 | Upgrade a managed install | Slice 4 | planned |
 | 28 | Exchangeable sign in methods | Slice 4 | planned |
+| 30 | Sign in protocol an app requires | Slice 4 | planned |
+| 31 | TLS for deployed stacks | Slice 4 | planned |
 | 7 | Exchange a provider | Slice 5 | planned |
 | 8 | Capability conformance checks | Slice 6 | planned |
 | 9 | Secrets handling | Slice 7 | planned |
@@ -60,18 +62,28 @@ spec [0001](../specs/0001-platform-stack-architecture/index.md) · [0002](../spe
 - [x] Review it: `/check review stack & architecture`
 - [ ] Document it: `/document`
 
-### 2. Coding standards & tooling · in-progress
+### 2. Coding standards & tooling · done
 Capture conventions, then install lint, format and pre commit enforcement from the real scaffolded project.
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format and pre commit checks run clean.
 code in `.golangci.yml`, `web/biome.json`, `lefthook.yml`, `Taskfile.yml` (`lint`, `fmt`, `hooks`)
-- [ ] Capture conventions and tooling choices: `/audit`
+- [x] Capture conventions and tooling choices: `/audit`
 - [x] Install the tooling: `/develop tooling`
-- [ ] Check it runs clean: `/test`
+- [x] Check it runs clean: `/test`
 
-### 5. Design system & graph editor foundation · needs a decision
+### 5. Design system & graph editor foundation · in-progress
 Visual language, layout primitives and the base graph canvas (modules as nodes, capabilities as ports, bindings as edges, selection) that every planner screen builds on.
 **Done when:** `design.md` covers type, color, spacing and components, and the canvas can show, select and connect modules and capabilities.
-- [ ] Design it (spec): `/architect design system & graph editor foundation`
+spec [0010](../specs/0010-design-system-graph-editor/index.md) · code in `web/src/styles/`, `web/src/components/`, `web/src/graph/`, `web/src/lib/`, `web/a11y/`, `web/design.md`
+- [x] Design it (spec): `/architect design system & graph editor foundation`
+- [ ] Build it: `/develop design system & graph editor foundation`
+   - [ ] Thin thread: tokens and themes, the app shell, drag connect through the planner into the working copy, the browser check harness (AC-2, AC-3, AC-6, AC-7, AC-9, AC-12, AC-16)
+   - [ ] Editing: rebind and unbind, selection and the inspector, problem marks and panel, plan failures and the download gate (AC-8, AC-9, AC-10, AC-11, AC-13, AC-14)
+   - [ ] Session: undo and redo, Tidy layout, the edited flag and replace Dialog, the sample copy, the catalog filter, unknown modules (AC-15, AC-16, AC-17, AC-18, AC-19, AC-20)
+   - [ ] Design system complete: the component set, the dev only `/design` route, `web/design.md`, the full axe and scale checks, the smoke additions (AC-1, AC-3, AC-4, AC-5, AC-7)
+- [ ] Verify it: `/check verify design system & graph editor foundation`
+- [ ] Test it: `/test design system & graph editor foundation`
+- [ ] Review it (fresh model): `/check review design system & graph editor foundation`
+- [ ] Document it: `/document design system & graph editor foundation`
 
 ## Slice 1: Managed mode, the first thread
 
@@ -88,13 +100,24 @@ spec [0005](../specs/0005-module-sdk/index.md) · code in `sdk/`, `catalog/plann
    - [x] The written contract `sdk/CONTRACT.md`, each statement backed by a test (AC-14)
 - [x] Verify it: `/check verify module SDK`
 - [x] Test it: `/test module SDK`
-- [ ] Review it (fresh model): `/check review module SDK`
-- [ ] Document it: `/document module SDK`
+- [x] Review it (fresh model): `/check review module SDK`
+- [x] Document it: `/document module SDK`
 
-### 16. Managed mode control plane · needs a decision
+### 16. Managed mode control plane · in-progress
 You download the platform itself as a zip, run `setup.sh` and start it next to your stack, and it becomes the control plane: sign in (one admin to start), plan in your own planner, deploy to the host, and see the live state of every module. Sign in and host deploy live here, not in static mode. This is now the first thread through the whole product (spec 0004), so it stays narrow: full sign in and the database, no event bus yet (the api polls the deployer), the provisional graph format of spec 0002 and a hand written managed zip, deploying any graph the editor can open after you review the plan, with blunt interim refusal rules for host level access. It builds its own screens on the current editor styling without waiting for #5, and runs at the site root only. Spec 0001 and 0004 fix its overall shape; this spec settles the API and deployer contracts, polling and state, labels, the first tables and the managed smoke job. It ships the bundled defaults, but keeps image specific choices behind their capabilities (#23), does not tie the editor to the site root (#24), and keeps its one sign in method behind a seam so methods can be exchanged later (#28).
 **Done when:** you install the managed zip on a clean host, sign in, deploy a stack from the editor to that host, and the editor shows the running graph with each module's state.
-- [ ] Design it (spec): `/architect managed mode control plane`
+spec [0006](../specs/0006-managed-mode-control-plane/index.md) · [0007](../specs/0006-managed-mode-control-plane/0007-deploy-target-deployer.md) (deploy target and deployer) · [0008](../specs/0006-managed-mode-control-plane/0008-managed-tls-cert-issuer.md) (managed TLS and the certificate issuer) · [0009](../specs/0006-managed-mode-control-plane/0009-managed-zip-install-smoke.md) (managed zip, install and smoke job) · code in `contracts/openapi/`, `catalog/`, `libs/planner/`, `libs/render/`, `libs/target/deploytarget/`, `services/api/`, `services/deployer-docker/`, `services/planner/`, `deploy/managed/`, `web/`, `scripts/smoke-managed.sh`
+- [x] Design it (spec): `/architect managed mode control plane`
+- [ ] Build it: `/develop managed mode control plane`
+   - [x] The thread runs: contracts, `api` with sign in, sessions and the four tables, the deployer applying the sample, the managed render and digest, `deploy/managed/` with `setup.sh`, the editor's deploy and live state, the `smoke-managed` CI job; platform services plain for now (AC-1, AC-2, AC-3, AC-5, AC-9, AC-11, AC-13, AC-18, AC-19)
+   - [x] Review you can trust: the full review answer, `plan_changed`, the allow list guard in planner and deployer, placed credentials end to end (AC-7, AC-8, AC-10, AC-11)
+   - [ ] Lifecycle and recovery: remove with delete data, `busy` across processes, `unknown` and resumed polling, automatic rollback with one retry (AC-9, AC-14, AC-15, AC-16)
+   - [ ] TLS for the platform's own services: the step-ca spike, `cert-issuer`, TLS mode for `api`, `planner` and `deployer-docker` (AC-17)
+   - [ ] Live state, sessions, the admin and the release: poll cadence and badges, sign out and `prompt=login`, `admin reset`, download zip, Docker restart, the zip on releases (AC-3, AC-4, AC-6, AC-12, AC-13, AC-19, AC-20)
+- [ ] Verify it: `/check verify managed mode control plane`
+- [ ] Test it: `/test managed mode control plane`
+- [ ] Review it (fresh model): `/check review managed mode control plane`
+- [ ] Document it: `/document managed mode control plane`
 
 ## Slice 2: The real contract and data model
 
@@ -136,6 +159,16 @@ Move a running managed platform to a newer version: new images, database migrati
 How someone proves who they are is exchangeable, not only the container behind it (#23). Each sign in method (passkey, FIDO security key, username and password, OIDC through another identity provider, OID4VP with a wallet credential) comes from a module that provides a sign in method capability, and one module may provide several methods. You enable several at once, each user picks one, and two can stack as two factors (#14). The managed platform's own sign in uses them, and apps in the stack can bind to the same capability. A method the platform does not ship with plugs in as a new module, with no platform change. Its spec decides the seam: what the platform and apps learn after a sign in (who, by which methods, how strong), and how methods relate to the identity modules of #18.
 **Done when:** you sign in to the managed platform with at least two different methods enabled side by side; a user can combine two methods as two factors; you remove one method module and add another with no change to the platform or any app; an app in the stack signs its users in through the same capability; a fresh install starts with one bundled method, and the planner refuses to remove the last one or a module that does not provide what sign in needs.
 - [ ] Design it (spec): `/architect exchangeable sign in methods`
+
+### 30. Sign in protocol an app requires · needs a decision
+Some apps in the stack speak only one sign in protocol to their users (for example only LDAP, only SAML, only OIDC, or only forward auth headers from the ingress). Such a module declares that it requires exactly that protocol, and the planner binds it only to a provider that speaks it. By default the app shares the users of the platform's own sign in, reached through a provider that bridges to that protocol (for example LDAP served from the identity module, #18). Per app you can instead point it at its own separate provider with its own users, apart from the platform login. Its spec decides how a required protocol is named in the contract (#3), what a bridge provider is, which sign in methods (#28) a protocol can carry, and how the shared and the separate choice meet policy (#29) and roles (#14).
+**Done when:** a module that requires LDAP binds only to a provider that speaks LDAP, and the planner refuses one that speaks only another protocol, naming the protocol needed; that app signs in the users of the platform's sign in by default, with no change to the app; you switch it to its own separate provider and users, and the platform's sign in and every other app keep working unchanged; and two apps that require different protocols (for example LDAP and OIDC) share the same users in one stack.
+- [ ] Design it (spec): `/architect sign in protocol an app requires`
+
+### 31. TLS for deployed stacks · needs a decision
+In managed mode the platform's own services talk TLS through the internal certificate issuer (spec 0006), but SDK modules in the stacks you deploy still run plain with a token per binding, exactly like their static zip. This brings TLS to deployed stacks without putting a platform service on the networks of untrusted graphs: for example one issuer per deployment, or a separate issuer joined to each project network. Comes after #3, which gives unchanged providers certificates. From spec 0006.
+**Done when:** SDK modules in a deployed stack serve only TLS with certificates for their own host names, an issuer for one deployment cannot issue names of another, no platform service joins a deployed stack's network, and the static zip of the same graph still runs plain.
+- [ ] Design it (spec): `/architect TLS for deployed stacks`
 
 ## Slice 5: Exchange a provider
 
@@ -298,6 +331,7 @@ Other deferred ideas, not yet numbered:
 - Your answers in the `/scope` add pass (2026-10-30): a module SDK handles config, connections and protection for a new module container; the module declares its config and the SDK reads it from env vars, secrets, a config server, a vault, or per request (the caller's token picks the values); protection covers traffic between modules only; it comes before the platform's own modules because they are built on it; new #27 at the start of slice 1, before #16.
 - Your answers in the `/scope` add pass (2026-10-31): the sign in method is exchangeable, not only its container (passkey, FIDO, username and password, OIDC, OID4VP); used by the platform's own sign in and by apps in the stack; several methods at once, combinable as two factors; a new method is a module with no platform change; new #28 in slice 4, next to #23, with #16 keeping its one method behind a seam.
 - Your answers in the `/scope` add pass (2026-10-31, second): some sign in modules offer several methods; config decides which methods count per app, per action (step up) and per tenant; a tenant is a group or org of users from #18, each trusting its own OID4VP issuers; new #29 in slice 13, after #18, keeping #28 small.
+- Your answers in the `/scope` add pass (2026-11-03): a module can require one sign in protocol for its users when the protocol allows no other (LDAP, SAML, OIDC, forward auth); by default it shares the platform's users through a bridge, and per app you can separate it onto its own provider and users; new #30 in slice 4, after #28.
 
 **Practices & standards**
 - Vertical slices ship real value early (tracer bullet development)

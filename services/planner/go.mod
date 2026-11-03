@@ -12,7 +12,9 @@ require (
 
 require (
 	github.com/go-jose/go-jose/v4 v4.1.7 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 )
 
 require (

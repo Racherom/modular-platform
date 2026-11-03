@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import type { Graph } from '../api/client'
-import { ApiError, applyDeployment, type PlacedInput, reviewDeployment } from '../api/platform'
+import { ApiError, applyDeployment, isRefusal, type PlacedInput, reviewDeployment } from '../api/platform'
 import { Failure } from './Failure'
 import { ProblemList } from './ProblemList'
 
@@ -50,7 +50,12 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
           {notice}
         </p>
       )}
-      {review.isError && <Failure error={review.error} onRetry={() => void review.refetch()} />}
+      {review.isError &&
+        (isRefusal(review.error) ? (
+          <ProblemList problems={review.error.problems} />
+        ) : (
+          <Failure error={review.error} onRetry={() => void review.refetch()} />
+        ))}
       {review.isPending && <p>Reviewing the plan…</p>}
       {review.data && !review.data.plan.ok && <ProblemList problems={review.data.plan.problems} />}
       {review.data?.plan.ok && (
@@ -112,7 +117,13 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
               )}
             </div>
           ))}
-          {apply.isError && !planChanged && <Failure error={apply.error} onRetry={() => apply.mutate()} />}
+          {apply.isError &&
+            !planChanged &&
+            (isRefusal(apply.error) ? (
+              <ProblemList problems={apply.error.problems} />
+            ) : (
+              <Failure error={apply.error} onRetry={() => apply.mutate()} />
+            ))}
           <div className="review__actions">
             <button type="button" onClick={() => dialog.current?.close()}>
               Cancel

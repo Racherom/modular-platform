@@ -149,6 +149,13 @@ func Setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 	if cfg.WaitTimeout, err = m.Config.WaitTimeout(ctx); err != nil {
 		return nil, err
 	}
+	for _, port := range []func(context.Context) (int, error){m.Config.PlatformHttpPort, m.Config.PlatformHttpsPort} {
+		p, err := port(ctx)
+		if err != nil {
+			return nil, err
+		}
+		cfg.ReservedPorts = append(cfg.ReservedPorts, p)
+	}
 	engine, err := docker.New()
 	if err != nil {
 		return nil, err

@@ -66,16 +66,48 @@ func newEngine(t *testing.T, c *fakeCompose, d fakeDocker) (*deploy.Engine, stri
 	var logs bytes.Buffer
 	e := deploy.New(t.Context(), deploy.Config{
 		Dir: dir, UID: os.Getuid(), GID: os.Getgid(), PullTimeout: time.Minute, WaitTimeout: 30 * time.Second,
+		ReservedPorts: []int{80, 443},
 	}, c, d, slog.New(slog.NewJSONHandler(&logs, nil)))
 	t.Cleanup(e.Wait)
 	return e, dir, &logs
 }
 
+// sampleCompose is a project in the shape the managed render emits.
+const sampleCompose = `name: mp-sample
+secrets:
+  app_uses_postgresql_password:
+    file: ./secrets/app/uses_postgresql_password
+  postgres_password:
+    file: ./secrets/postgres/password
+services:
+  app:
+    image: traefik/whoami:v1.12.0
+    labels:
+      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
+      io.github.racherom.modular-platform.graph: sample
+      io.github.racherom.modular-platform.instance: app
+      io.github.racherom.modular-platform.module: whoami
+    restart: unless-stopped
+    secrets:
+    - source: app_uses_postgresql_password
+    user: ${MP_UID}:${MP_GID}
+  postgres:
+    image: postgres:18.6
+    labels:
+      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
+      io.github.racherom.modular-platform.graph: sample
+      io.github.racherom.modular-platform.instance: postgres
+      io.github.racherom.modular-platform.module: postgres
+    restart: unless-stopped
+    secrets:
+    - source: postgres_password
+`
+
 func sampleRequest() deploy.ApplyRequest {
 	return deploy.ApplyRequest{
 		Project: "mp-sample", Deployment: "01960000-0000-7000-8000-000000000001", Caller: "user-1",
 		Files: []deploy.File{
-			{Path: "docker-compose.yml", Data: []byte("name: mp-sample\n")},
+			{Path: "docker-compose.yml", Data: []byte(sampleCompose)},
 			{Path: ".env", Data: []byte("# env\n")},
 			{Path: "config/app.env", Data: []byte("A=1\n")},
 		},
@@ -260,6 +292,18 @@ func TestApplyRefused(t *testing.T) {
 		"placed with NUL":         {func(r *deploy.ApplyRequest) { r.Placed[0].Data = []byte("a\x00b") }, deploy.CodePlacedInvalid},
 		"placed too long":         {func(r *deploy.ApplyRequest) { r.Placed[0].Data = bytes.Repeat([]byte("a"), 4097) }, deploy.CodePlacedInvalid},
 		"placed missing":          {func(r *deploy.ApplyRequest) { r.Placed = nil }, deploy.CodePlacedMissing},
+		"placed over a generated": {func(r *deploy.ApplyRequest) { r.Placed[0].Path = "secrets/postgres/password" }, deploy.CodeInvalidPath},
+		"no compose file":         {func(r *deploy.ApplyRequest) { r.Files = r.Files[1:] }, deploy.CodeInvalidProject},
+		"a broken compose file":   {func(r *deploy.ApplyRequest) { r.Files[0].Data = []byte("services: [") }, deploy.CodeInvalidProject},
+		"another project's name":  {func(r *deploy.ApplyRequest) { r.Project = "mp-other" }, deploy.CodeInvalidProject},
+		"another deployment":      {func(r *deploy.ApplyRequest) { r.Deployment = "01960000-0000-7000-8000-000000000002" }, deploy.CodeInvalidProject},
+		"privileged":              {composeEdit("    restart: unless-stopped\n", "    restart: unless-stopped\n    privileged: true\n"), deploy.CodeHostAccess},
+		"the docker socket":       {composeEdit("    restart: unless-stopped\n", "    restart: unless-stopped\n    volumes: [/var/run/docker.sock:/var/run/docker.sock]\n"), deploy.CodeHostAccess},
+		"a reserved port":         {composeEdit("    restart: unless-stopped\n", "    restart: unless-stopped\n    ports: [\"443:8080\"]\n"), deploy.CodeHostAccess},
+		"the platform's network": {func(r *deploy.ApplyRequest) {
+			r.Files[0].Data = append(r.Files[0].Data, "networks:\n  default:\n    external: true\n    name: modular-platform_internal\n"...)
+		}, deploy.CodeHostAccess},
+		"another engine in .env": {func(r *deploy.ApplyRequest) { r.Files[1].Data = []byte("DOCKER_HOST=tcp://elsewhere:2375\n") }, deploy.CodeHostAccess},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -279,6 +323,13 @@ func TestApplyRefused(t *testing.T) {
 				t.Error("a refused apply touched the folder or ran compose")
 			}
 		})
+	}
+}
+
+// composeEdit changes the sample's docker-compose.yml.
+func composeEdit(old, replacement string) func(*deploy.ApplyRequest) {
+	return func(r *deploy.ApplyRequest) {
+		r.Files[0].Data = []byte(strings.Replace(string(r.Files[0].Data), old, replacement, 1))
 	}
 }
 
@@ -318,6 +369,7 @@ func TestApplyBusy(t *testing.T) {
 	}
 	other := sampleRequest()
 	other.Project = "mp-other"
+	other.Files[0].Data = []byte(strings.NewReplacer("name: mp-sample", "name: mp-other", "graph: sample", "graph: other").Replace(sampleCompose))
 	if _, err := e.Apply(other); err != nil {
 		t.Errorf("another project must run in parallel: %v", err)
 	}

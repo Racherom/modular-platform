@@ -152,6 +152,8 @@ services:
       MP_INSTANCE: planner
       MP_DOMAIN: modular-platform.internal
       MP_PLANNER_MODE: internal
+      MP_PLATFORM_HTTP_PORT: ${PLATFORM_HTTP_PORT:-80}
+      MP_PLATFORM_HTTPS_PORT: ${PLATFORM_HTTPS_PORT:-443}
       MP_PLANNER_CLIENTS_DIR: /run/secrets/clients/planner
       MP_CALLER_KEY_FILE: /run/secrets/caller_public_key
     secrets:

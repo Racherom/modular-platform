@@ -34,6 +34,7 @@ func serve(t *testing.T, withCaller bool) (*httptest.Server, *deploy.Engine) {
 	t.Helper()
 	e := deploy.New(t.Context(), deploy.Config{
 		Dir: t.TempDir(), UID: os.Getuid(), GID: os.Getgid(), PullTimeout: time.Minute, WaitTimeout: time.Minute,
+		ReservedPorts: []int{80, 443},
 	}, okCompose{}, noDocker{}, slog.New(slog.DiscardHandler))
 	t.Cleanup(e.Wait)
 	h := api.NewHandler(e, slog.New(slog.DiscardHandler))
@@ -47,11 +48,34 @@ func serve(t *testing.T, withCaller bool) (*httptest.Server, *deploy.Engine) {
 	return srv, e
 }
 
+// sampleCompose is a one service project in the shape the managed render emits.
+const sampleCompose = `name: mp-sample
+secrets:
+  postgres_password:
+    file: ./secrets/postgres/password
+services:
+  postgres:
+    image: postgres:18.6
+    labels:
+      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
+      io.github.racherom.modular-platform.graph: sample
+      io.github.racherom.modular-platform.instance: postgres
+      io.github.racherom.modular-platform.module: postgres
+    restart: unless-stopped
+    secrets:
+    - source: postgres_password
+`
+
 func applyBody(t *testing.T) string {
+	t.Helper()
+	return applyBodyWith(t, sampleCompose)
+}
+
+func applyBodyWith(t *testing.T, compose string) string {
 	t.Helper()
 	body, err := json.Marshal(map[string]any{
 		"deployment": "01960000-0000-7000-8000-000000000001",
-		"files":      []map[string]any{{"path": "docker-compose.yml", "mode": 420, "data": base64.StdEncoding.EncodeToString([]byte("name: mp-sample\n"))}},
+		"files":      []map[string]any{{"path": "docker-compose.yml", "mode": 420, "data": base64.StdEncoding.EncodeToString([]byte(compose))}},
 		"secrets":    []map[string]any{{"path": "secrets/postgres/password", "kind": "generated", "instance": "postgres"}},
 	})
 	if err != nil {
@@ -136,6 +160,33 @@ func TestBadRequests(t *testing.T) {
 	} {
 		if resp, data := do(t, srv, tc.method, tc.path, tc.body); resp.StatusCode != tc.want {
 			t.Errorf("%s: status %d, want %d: %.200s", name, resp.StatusCode, tc.want, data)
+		}
+	}
+}
+
+// TestApplyRefusesACraftedProject sends the deployer a project no render emits, as a bypassed
+// planner would: the guard refuses it with 422 host_access naming the instance and key
+// (spec 0006, AC-8).
+func TestApplyRefusesACraftedProject(t *testing.T) {
+	t.Parallel()
+	srv, _ := serve(t, true)
+	crafted := strings.Replace(sampleCompose, "    restart: unless-stopped\n",
+		"    restart: unless-stopped\n    privileged: true\n    volumes: [/:/host]\n", 1)
+	resp, data := do(t, srv, http.MethodPost, "/v1/projects/mp-sample/apply", applyBodyWith(t, crafted))
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d: %s", resp.StatusCode, data)
+	}
+	var problems contract.ProblemList
+	if err := json.Unmarshal(data, &problems); err != nil {
+		t.Fatal(err)
+	}
+	paths := map[string]string{}
+	for _, p := range problems.Problems {
+		paths[p.Path] = p.Code
+	}
+	for _, want := range []string{"services.postgres.privileged", "services.postgres.volumes"} {
+		if paths[want] != "host_access" {
+			t.Errorf("problems %s lack host_access at %s", data, want)
 		}
 	}
 }

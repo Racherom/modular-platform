@@ -1,7 +1,7 @@
 import createClient from 'openapi-fetch'
 import { basePath } from '../lib/config'
 import type { components, paths } from './api.gen'
-import type { Graph } from './client'
+import type { Graph, Problem } from './client'
 
 export type Session = components['schemas']['Session']
 export type Deployment = components['schemas']['Deployment']
@@ -11,25 +11,34 @@ export type Operation = components['schemas']['Operation']
 export type ModuleState = components['schemas']['ModuleState']
 export type Review = components['schemas']['Review']
 export type PlacedInput = components['schemas']['PlacedInput']
-type Problem = { code: string; message: string }
 
 // the managed platform's api, on the page's own origin under the base path; its paths start with /api/v1
 const client = createClient<paths>({ baseUrl: new URL(basePath || '/', window.location.origin).href.replace(/\/$/, '') })
 
-/** A failed api call, with the problem code the editor branches on and the message it shows. */
+/**
+ * A failed api call, with the first problem's code the editor branches on, its message, and every
+ * problem of a refusal (a 422 can name several, such as one host_access per instance and key).
+ */
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly code?: string,
+    readonly problems: Problem[] = [],
   ) {
     super(message)
   }
 }
 
 function failure(status: number, error: unknown): ApiError {
-  const problem = (error as { problems?: Problem[] } | undefined)?.problems?.[0]
-  return new ApiError(problem?.message ?? `The platform answered ${status}.`, status, problem?.code)
+  const problems = (error as { problems?: Problem[] } | undefined)?.problems ?? []
+  const first = problems[0]
+  return new ApiError(first?.message ?? `The platform answered ${status}.`, status, first?.code, problems)
+}
+
+/** True for a refusal (422) that lists its problems, which the editor shows in full. */
+export function isRefusal(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 422 && error.problems.length > 0
 }
 
 /** True for the answer of a call made without a valid session. */

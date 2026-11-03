@@ -104,12 +104,14 @@ type ApplyRequest struct {
 	Caller              string
 }
 
-// Config is where and as whom the engine writes, and how long Compose may take.
+// Config is where and as whom the engine writes, how long Compose may take, and which host
+// ports no project may publish.
 type Config struct {
-	Dir         string // the deployments folder; project p lives in Dir/p
-	UID, GID    int    // owner of every file and folder the engine writes
-	PullTimeout time.Duration
-	WaitTimeout time.Duration
+	Dir           string // the deployments folder; project p lives in Dir/p
+	UID, GID      int    // owner of every file and folder the engine writes
+	PullTimeout   time.Duration
+	WaitTimeout   time.Duration
+	ReservedPorts []int // the platform ingress's HTTP and HTTPS ports
 }
 
 // Compose runs `docker compose` for the project in dir and returns its combined output.

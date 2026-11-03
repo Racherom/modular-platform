@@ -33,8 +33,9 @@ var _ StrictServerInterface = (*Server)(nil)
 
 // Server implements the planner contract over the built in catalog.
 type Server struct {
-	catalog []contract.CatalogEntry
-	managed bool // internal mode: /v1/render/managed answers
+	catalog  []contract.CatalogEntry
+	managed  bool  // internal mode: /v1/render/managed answers
+	reserved []int // host ports of the platform's ingress, which no managed project may publish
 }
 
 // GetCatalog lists the catalog, sorted by name.
@@ -76,7 +77,8 @@ func (s *Server) Render(ctx context.Context, req RenderRequestObject) (RenderRes
 }
 
 // RenderManaged answers the project the managed deployer applies, or the plan itself (422) when
-// it has an error. Public mode has no managed render: 404.
+// it has an error or the rendered project fails the guard (host_access, spec 0006 AC-8). Public
+// mode has no managed render: 404.
 func (s *Server) RenderManaged(ctx context.Context, req RenderManagedRequestObject) (RenderManagedResponseObject, error) {
 	if !s.managed {
 		return RenderManaged404JSONResponse{Problems: []contract.Problem{{
@@ -94,7 +96,26 @@ func (s *Server) RenderManaged(ctx context.Context, req RenderManagedRequestObje
 	if err != nil {
 		return nil, err
 	}
+	project, err := render.LoadProject(ctx, fileData(m.Output, "docker-compose.yml"), fileData(m.Output, ".env"))
+	if err != nil {
+		return nil, err
+	}
+	if problems := render.Guard(project, s.reserved); len(problems) > 0 {
+		plan.Ok, plan.Digest = false, ""
+		plan.Problems = append(plan.Problems, problems...)
+		return RenderManaged422JSONResponse(plan), nil
+	}
 	return RenderManaged200JSONResponse(renderedProject(plan, m)), nil
+}
+
+// fileData is the content of the rendered file at path, nil when there is none.
+func fileData(out render.Output, path string) []byte {
+	for _, f := range out.Files {
+		if f.Path == path {
+			return f.Data
+		}
+	}
+	return nil
 }
 
 // renderedProject maps a managed render onto the contract.
@@ -140,6 +161,16 @@ func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
 		if err != nil {
 			return nil, err
 		}
+		var reserved []int
+		if mode == config.PlannerModeInternal {
+			for _, port := range []func(context.Context) (int, error){m.Config.PlatformHttpPort, m.Config.PlatformHttpsPort} {
+				p, err := port(ctx)
+				if err != nil {
+					return nil, err
+				}
+				reserved = append(reserved, p)
+			}
+		}
 		if mode == config.PlannerModePublic {
 			rate, err := m.Config.PlannerRate(ctx)
 			if err != nil {
@@ -155,7 +186,7 @@ func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
 			m.WithRateLimit(limiter, hops)
 		}
 		m.Log.InfoContext(ctx, "planner starting", slog.String("mode", string(mode)), slog.Int("catalog_entries", len(entries)))
-		return newHandler(&Server{catalog: entries, managed: mode == config.PlannerModeInternal}, m.Log), nil
+		return newHandler(&Server{catalog: entries, managed: mode == config.PlannerModeInternal, reserved: reserved}, m.Log), nil
 	}
 }
 
