@@ -24,6 +24,8 @@ var (
 	ErrNotFound    = errors.New("deploy: no such deployment")
 	ErrBusy        = errors.New("deploy: an operation of this deployment is running")
 	ErrPlanChanged = errors.New("deploy: the plan changed since review")
+	// ErrAlreadyRemoved refuses a plain remove of a removed deployment.
+	ErrAlreadyRemoved = errors.New("deploy: the deployment is removed already")
 	// ErrPlanner reports a planner that did not answer as its contract says.
 	ErrPlanner = errors.New("deploy: the planner failed")
 	// ErrTargetUnavailable reports a deploy target that did not answer.
@@ -166,10 +168,11 @@ type ModuleState struct {
 // View is a deployment with its running graph and the live state of its modules.
 type View struct {
 	Deployment
-	Graph          *contract.Graph // of the latest succeeded apply
-	RolledBackFrom *Operation
-	Modules        []ModuleState
-	StateError     string
+	Graph            *contract.Graph // of the latest succeeded apply
+	LatestApplyGraph *contract.Graph // of the newest apply, any status; Apply again reviews it
+	RolledBackFrom   *Operation
+	Modules          []ModuleState
+	StateError       string
 }
 
 // PlacedCredential is a placed secret the review lists.
@@ -209,6 +212,9 @@ type Store interface {
 	// StartOperation inserts op as running and makes it the deployment's latest, in one
 	// transaction; ErrBusy when another runs.
 	StartOperation(ctx context.Context, op Operation) (Operation, error)
+	// StartOperationIfLatest starts op like StartOperation, but only while latest is still the
+	// deployment's latest operation; false when it is not, or another operation runs.
+	StartOperationIfLatest(ctx context.Context, op Operation, latest uuid.UUID) (Operation, bool, error)
 	// DropOperation deletes an operation the deploy target refused and restores the latest.
 	DropOperation(ctx context.Context, op Operation) error
 	AcceptOperation(ctx context.Context, id uuid.UUID, deployerID, bootID string) error
@@ -225,6 +231,12 @@ type Store interface {
 	Operations(ctx context.Context, deploymentID uuid.UUID, before *uuid.UUID, limit int) ([]Operation, error)
 	LatestSucceededApply(ctx context.Context, deploymentID uuid.UUID) (Operation, bool, error)
 	LatestApplyReachedUp(ctx context.Context, deploymentID uuid.UUID) (Operation, bool, error)
+	// LatestApply returns the newest apply of the deployment, whatever its status.
+	LatestApply(ctx context.Context, deploymentID uuid.UUID) (Operation, bool, error)
+	// LatestSucceededBefore returns the newest succeeded operation started before failed.
+	LatestSucceededBefore(ctx context.Context, deploymentID, failed uuid.UUID) (Operation, bool, error)
+	// CountRollbacks counts the operations whose rollback_of is of.
+	CountRollbacks(ctx context.Context, of uuid.UUID) (int, error)
 }
 
 // Planner plans and renders graphs.
@@ -245,6 +257,8 @@ type TargetOperation struct {
 // ErrTargetUnavailable (no answer, 5xx, timeout), ErrNotFound (404), ErrTarget (anything else).
 type Target interface {
 	Apply(ctx context.Context, project string, req deploytarget.ApplyRequest) (TargetOperation, error)
+	// Remove starts a remove; ErrNotFound when the project has neither a folder nor a container.
+	Remove(ctx context.Context, project string, deleteData bool) (TargetOperation, error)
 	// Operation reads an operation; a 404 is ErrNotFound with the boot id it answered under.
 	Operation(ctx context.Context, id string) (TargetOperation, string, error)
 	State(ctx context.Context, project string) (deploytarget.ProjectState, error)

@@ -51,6 +51,9 @@ func view(v deploy.View) Deployment {
 	if v.Graph != nil {
 		out.Graph = *v.Graph
 	}
+	if v.LatestApplyGraph != nil {
+		out.LatestApplyGraph = *v.LatestApplyGraph
+	}
 	if v.RolledBackFrom != nil {
 		out.RolledBackFrom = operation(*v.RolledBackFrom)
 	}

@@ -78,6 +78,21 @@ func (m *memStore) StartOperation(_ context.Context, op deploy.Operation) (deplo
 	return op, nil
 }
 
+func (m *memStore) StartOperationIfLatest(ctx context.Context, op deploy.Operation, latest uuid.UUID) (deploy.Operation, bool, error) {
+	m.mu.Lock()
+	d := m.byID(op.DeploymentID)
+	current := d.Latest != nil && d.Latest.ID == latest
+	m.mu.Unlock()
+	if !current {
+		return deploy.Operation{}, false, nil
+	}
+	started, err := m.StartOperation(ctx, op)
+	if errors.Is(err, deploy.ErrBusy) {
+		return deploy.Operation{}, false, nil
+	}
+	return started, err == nil, err
+}
+
 func (m *memStore) DropOperation(_ context.Context, op deploy.Operation) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -217,6 +232,31 @@ func (m *memStore) LatestApplyReachedUp(_ context.Context, id uuid.UUID) (deploy
 	})
 }
 
+func (m *memStore) LatestApply(_ context.Context, id uuid.UUID) (deploy.Operation, bool, error) {
+	return m.latest(id, func(op *deploy.Operation) bool { return op.Action == deploy.ActionApply })
+}
+
+func (m *memStore) LatestSucceededBefore(_ context.Context, id, failed uuid.UUID) (deploy.Operation, bool, error) {
+	m.mu.Lock()
+	before := m.ops[failed].StartedAt
+	m.mu.Unlock()
+	return m.latest(id, func(op *deploy.Operation) bool {
+		return op.Status == deploy.StatusSucceeded && op.StartedAt.Before(before)
+	})
+}
+
+func (m *memStore) CountRollbacks(_ context.Context, of uuid.UUID) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, op := range m.ops {
+		if op.RollbackOf != nil && *op.RollbackOf == of {
+			n++
+		}
+	}
+	return n, nil
+}
+
 type fakePlanner struct{ digest string }
 
 func (p fakePlanner) Plan(_ context.Context, g contract.Graph) (contract.PlanResult, error) {
@@ -232,15 +272,19 @@ func (p fakePlanner) RenderManaged(_ context.Context, g contract.Graph, _ uuid.U
 	}, nil
 }
 
-// fakeTarget answers apply with applyErr, and each poll from its script in turn.
+// fakeTarget answers apply with applyErr and remove with removeErr, and each poll from its
+// script in turn; a failed poll reports failStep, by default up.
 type fakeTarget struct {
-	mu       sync.Mutex
-	applyErr error
-	boot     string
-	polls    []deploytarget.OperationStatus
-	callers  []string
-	applied  []deploytarget.ApplyRequest
-	present  []string
+	mu        sync.Mutex
+	applyErr  error
+	removeErr error
+	boot      string
+	polls     []deploytarget.OperationStatus
+	failStep  deploytarget.OperationStep
+	callers   []string
+	applied   []deploytarget.ApplyRequest
+	removed   []bool // deleteData of each remove
+	present   []string
 }
 
 func (f *fakeTarget) Apply(ctx context.Context, _ string, req deploytarget.ApplyRequest) (deploy.TargetOperation, error) {
@@ -256,6 +300,19 @@ func (f *fakeTarget) Apply(ctx context.Context, _ string, req deploytarget.Apply
 	return deploy.TargetOperation{Operation: deploytarget.Operation{Id: "t1", Status: deploytarget.OperationStatusRunning}, BootID: "boot-1"}, nil
 }
 
+func (f *fakeTarget) Remove(ctx context.Context, _ string, deleteData bool) (deploy.TargetOperation, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if c, ok := sdk.CallerFrom(ctx); ok {
+		f.callers = append(f.callers, c.User)
+	}
+	if f.removeErr != nil {
+		return deploy.TargetOperation{}, f.removeErr
+	}
+	f.removed = append(f.removed, deleteData)
+	return deploy.TargetOperation{Operation: deploytarget.Operation{Id: "r1", Status: deploytarget.OperationStatusRunning}, BootID: "boot-1"}, nil
+}
+
 func (f *fakeTarget) Operation(ctx context.Context, id string) (deploy.TargetOperation, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -267,8 +324,11 @@ func (f *fakeTarget) Operation(ctx context.Context, id string) (deploy.TargetOpe
 		status, f.polls = f.polls[0], f.polls[1:]
 	}
 	step := deploytarget.Up
-	if status == deploytarget.OperationStatusSucceeded {
+	switch {
+	case status == deploytarget.OperationStatusSucceeded:
 		step = deploytarget.Done
+	case status == deploytarget.OperationStatusFailed && f.failStep != "":
+		step = f.failStep
 	}
 	return deploy.TargetOperation{Operation: deploytarget.Operation{Id: id, Status: status, Step: step}}, f.boot, nil
 }

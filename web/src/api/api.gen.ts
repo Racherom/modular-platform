@@ -211,6 +211,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/deployments/{name}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop and remove a deployment's containers
+         * @description Keeps volumes, secrets and the history, so a later apply brings the stack back with its
+         *     data. With `deleteData` the volumes and secrets go too, and `confirmName` must equal the
+         *     name. A plain remove of a removed deployment answers 409 `already_removed`.
+         */
+        post: operations["removeDeployment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events": {
         parameters: {
             query?: never;
@@ -272,6 +294,11 @@ export interface components {
             createdAt: string;
             /** @description The graph of the latest succeeded apply. */
             graph?: components["schemas"]["Graph"];
+            /**
+             * @description The graph of the newest apply, whatever its status; *Apply again* reviews it. A
+             *     rollback counts, so after a failed rollback it is the last good graph.
+             */
+            latestApplyGraph?: components["schemas"]["Graph"];
             /** @description The failed operation, when `rolled-back`. */
             rolledBackFrom?: components["schemas"]["Operation"];
             /** @description Sorted by instance; absent when `stateError` is set. */
@@ -340,6 +367,12 @@ export interface components {
             /** @description The `plan.digest` of the review you confirmed. */
             planDigest: string;
             placed?: components["schemas"]["PlacedInput"][];
+        };
+        RemoveRequest: {
+            /** @description Also delete the volumes and secrets; the data is gone for good. */
+            deleteData: boolean;
+            /** @description Required with `deleteData`; must equal the deployment's name. */
+            confirmName?: string;
         };
         PlacedInput: {
             path: string;
@@ -989,6 +1022,67 @@ export interface operations {
             413: components["responses"]["TooLarge"];
             422: components["responses"]["Refused"];
             502: components["responses"]["PlannerError"];
+        };
+    };
+    removeDeployment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The deployment name, equal to its graph's `name`. */
+                name: components["parameters"]["Name"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoveRequest"];
+            };
+        };
+        responses: {
+            /**
+             * @description The operation, `running`; or `failed` with `deployer_unavailable` when the deploy
+             *     target did not answer.
+             */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Operation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["BadOrigin"];
+            404: components["responses"]["NotFound"];
+            /** @description An operation of this deployment runs (`busy`), or it is removed already (`already_removed`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description `confirmName` is not the deployment's name (`confirm_mismatch`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description The deploy target refused api's call, a wiring fault (`deployer_error`). */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
         };
     };
     events: {

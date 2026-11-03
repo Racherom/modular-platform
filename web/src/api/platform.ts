@@ -103,6 +103,16 @@ export async function applyDeployment(graph: Graph, planDigest: string, placed: 
   return data
 }
 
+/** Removes a deployment's containers; with deleteData its volumes and secrets too, confirmed by its name. */
+export async function removeDeployment(name: string, deleteData: boolean, confirmName?: string): Promise<Operation> {
+  const { data, error, response } = await client.POST('/api/v1/deployments/{name}/remove', {
+    params: { path: { name } },
+    body: deleteData ? { deleteData, confirmName } : { deleteData },
+  })
+  if (!data) throw failure(response.status, error)
+  return data
+}
+
 /** The event stream, for the whole list or one deployment. */
 export function eventsURL(deployment?: string): string {
   const query = deployment ? `?deployment=${encodeURIComponent(deployment)}` : ''

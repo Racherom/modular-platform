@@ -9,7 +9,7 @@ info:
     creates missing secrets and runs `docker compose` (spec 0006, child 0007). It keeps running
     operations in memory only; it never plans, never stores history and never decides a rollback.
 
-    Every call needs the consumer's binding token. Apply needs an `MP-Caller` token too
+    Every call needs the consumer's binding token. Apply and remove need an `MP-Caller` token too
     (401 `invalid_token` without one). Every answer, error answers included, carries the
     `MP-Boot-Id` header: 16 random bytes, base64url, chosen at each start. A new value means the
     deployer restarted and forgot its running operations.
@@ -74,6 +74,62 @@ paths:
           description: |
             The project is refused: `invalid_project`, `host_access`, `invalid_path`,
             `placed_missing` or `placed_invalid`, one problem per finding.
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+  /v1/projects/{project}/remove:
+    post:
+      operationId: removeProject
+      summary: Stop and remove the project's containers
+      description: |
+        Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+        `secrets/` folder. The other files stay. Answers at once with the running operation.
+      parameters:
+        - $ref: "#/components/parameters/Project"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoveRequest"
+      responses:
+        "202":
+          description: The operation started.
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: The project has neither a folder nor a container (`not_found`).
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+        "409":
+          description: An operation of this project is still running (`busy`).
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+        "503":
+          description: The container engine did not answer (`docker_unavailable`).
           headers:
             MP-Boot-Id:
               $ref: "#/components/headers/BootId"
@@ -186,7 +242,7 @@ components:
           schema:
             $ref: "./planner.yaml#/components/schemas/ProblemList"
     Unauthorized:
-      description: The binding token is missing or wrong (`unauthorized`), or apply came without an `MP-Caller` token (`invalid_token`).
+      description: The binding token is missing or wrong (`unauthorized`), or apply or remove came without an `MP-Caller` token (`invalid_token`).
       headers:
         MP-Boot-Id:
           $ref: "#/components/headers/BootId"
@@ -272,6 +328,14 @@ components:
         replace:
           type: boolean
           default: false
+    RemoveRequest:
+      type: object
+      additionalProperties: false
+      required: [deleteData]
+      properties:
+        deleteData:
+          type: boolean
+          description: Also remove the volumes and the `secrets/` folder.
     Operation:
       type: object
       additionalProperties: false

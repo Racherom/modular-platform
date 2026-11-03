@@ -89,7 +89,9 @@ func (s *Service) poll(op RunningOperation) {
 	}
 }
 
-// finish records op's final status and tells the streams.
+// finish records op's final status, tells the streams, and starts what a failure calls for.
+// Only the api process whose write changed the row goes on, so two processes polling the same
+// operation never both roll it back.
 func (s *Service) finish(op RunningOperation, status Status, step Step, errText string) {
 	ctx := context.WithoutCancel(s.ctx)
 	changed, err := s.store.FinishOperation(ctx, op.ID, status, step, errText)
@@ -101,5 +103,11 @@ func (s *Service) finish(op RunningOperation, status Status, step Step, errText 
 		return
 	}
 	s.logEnd(ctx, op.DeploymentName, op.ID, status, step, op.StartedBy.Subject)
-	_, _ = s.publishOperation(ctx, op.DeploymentName, op.ID)
+	done, err := s.publishOperation(ctx, op.DeploymentName, op.ID)
+	if err != nil {
+		s.log.ErrorContext(ctx, "reading a finished operation failed", slog.String("operation", op.ID.String()), slog.Any("error", err))
+		return
+	}
+	op.Operation = done
+	s.afterFailure(op)
 }

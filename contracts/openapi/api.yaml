@@ -328,6 +328,57 @@ paths:
           $ref: "#/components/responses/Refused"
         "502":
           $ref: "#/components/responses/PlannerError"
+  /api/v1/deployments/{name}/remove:
+    post:
+      operationId: removeDeployment
+      summary: Stop and remove a deployment's containers
+      description: |
+        Keeps volumes, secrets and the history, so a later apply brings the stack back with its
+        data. With `deleteData` the volumes and secrets go too, and `confirmName` must equal the
+        name. A plain remove of a removed deployment answers 409 `already_removed`.
+      parameters:
+        - $ref: "#/components/parameters/Name"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoveRequest"
+      responses:
+        "202":
+          description: |
+            The operation, `running`; or `failed` with `deployer_unavailable` when the deploy
+            target did not answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/BadOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: An operation of this deployment runs (`busy`), or it is removed already (`already_removed`).
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+        "422":
+          description: "`confirmName` is not the deployment's name (`confirm_mismatch`)."
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+        "502":
+          description: The deploy target refused api's call, a wiring fault (`deployer_error`).
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
   /api/v1/events:
     get:
       operationId: events
@@ -495,6 +546,11 @@ components:
         graph:
           $ref: "./planner.yaml#/components/schemas/Graph"
           description: The graph of the latest succeeded apply.
+        latestApplyGraph:
+          $ref: "./planner.yaml#/components/schemas/Graph"
+          description: |
+            The graph of the newest apply, whatever its status; *Apply again* reviews it. A
+            rollback counts, so after a failed rollback it is the last good graph.
         rolledBackFrom:
           $ref: "#/components/schemas/Operation"
           description: The failed operation, when `rolled-back`.
@@ -644,6 +700,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PlacedInput"
+    RemoveRequest:
+      type: object
+      additionalProperties: false
+      required: [deleteData]
+      properties:
+        deleteData:
+          type: boolean
+          description: Also delete the volumes and secrets; the data is gone for good.
+        confirmName:
+          type: string
+          description: Required with `deleteData`; must equal the deployment's name.
     PlacedInput:
       type: object
       additionalProperties: false

@@ -117,6 +117,28 @@ WHERE deployment_id = $1 AND action = 'apply' AND status = 'succeeded'
 ORDER BY started_at DESC, id DESC
 LIMIT 1;
 
+-- name: LatestApply :one
+-- the graph Apply again reviews: the newest apply, whatever its status
+SELECT * FROM operations
+WHERE deployment_id = $1 AND action = 'apply'
+ORDER BY started_at DESC, id DESC
+LIMIT 1;
+
+-- name: LatestSucceededBefore :one
+-- the version a rollback returns to: the newest succeeded operation before the failed apply
+SELECT o.* FROM operations o
+WHERE o.deployment_id = sqlc.arg(deployment_id) AND o.status = 'succeeded'
+  AND (o.started_at, o.id) < (SELECT f.started_at, f.id FROM operations f WHERE f.id = sqlc.arg(failed))
+ORDER BY o.started_at DESC, o.id DESC
+LIMIT 1;
+
+-- name: CountRollbacks :one
+SELECT count(*) FROM operations WHERE rollback_of = $1;
+
+-- name: LockLatestOperation :one
+-- holds the deployment row, so its latest operation cannot change until the transaction ends
+SELECT latest_operation_id FROM deployments WHERE id = $1 FOR UPDATE;
+
 -- name: LatestApplyReachedUp :one
 -- the graph whose instances the state read expects
 SELECT * FROM operations

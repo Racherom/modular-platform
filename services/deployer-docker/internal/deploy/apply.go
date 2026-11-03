@@ -193,11 +193,17 @@ func (e *Engine) deployEnv() []byte {
 
 func (e *Engine) projectDir(project string) string { return filepath.Join(e.cfg.Dir, project) }
 
-// apply runs prepare, pull and up.
+// apply runs prepare, pull and up. A failure in prepare or pull puts the folder back as it
+// was, so the running containers and their files stay untouched (child 0007, "Apply pipeline").
 func (e *Engine) apply(op *Operation, req ApplyRequest) error {
 	dir := e.projectDir(req.Project)
-	if err := e.prepare(dir, req); err != nil {
+	before, err := e.snapshot(dir, req)
+	if err != nil {
 		return fmt.Errorf("%s\n%w", codePrepareFailed, err)
+	}
+	created, err := e.prepare(dir, req)
+	if err != nil {
+		return e.restore(dir, before, created, fmt.Errorf("%s\n%w", codePrepareFailed, err))
 	}
 
 	e.step(op, StepPull)
@@ -205,7 +211,7 @@ func (e *Engine) apply(op *Operation, req ApplyRequest) error {
 	out, err := e.compose.Run(ctx, dir, req.Project, "pull")
 	cancel()
 	if err != nil {
-		return composeError(codePullFailed, out, err)
+		return e.restore(dir, before, created, composeError(codePullFailed, out, err))
 	}
 
 	e.step(op, StepUp)
@@ -229,36 +235,86 @@ func (e *Engine) apply(op *Operation, req ApplyRequest) error {
 }
 
 // prepare writes the project's files, deploy.env, every missing generated secret and every
-// supplied placed value that is missing.
-func (e *Engine) prepare(dir string, req ApplyRequest) error {
+// supplied placed value that is missing. It returns the secrets it created, also on failure.
+func (e *Engine) prepare(dir string, req ApplyRequest) (created []string, err error) {
 	if err := e.ensureDir(e.cfg.Dir, dir, 0o755); err != nil {
-		return err
+		return nil, err
 	}
 	for _, f := range req.Files {
 		if err := e.writeFile(dir, f.Path, f.Data, 0o644, false); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if err := e.writeFile(dir, "deploy.env", e.deployEnv(), 0o644, false); err != nil {
+		return nil, err
+	}
+	create := func(path string, data []byte) error {
+		err := e.writeSecret(dir, path, data, false)
+		if err == nil {
+			created = append(created, path)
+		}
+		if errors.Is(err, errExists) {
+			return nil
+		}
 		return err
 	}
 	for _, s := range req.Secrets {
 		if s.Kind != SecretGenerated {
 			continue
 		}
-		if err := e.writeSecret(dir, s.Path, []byte(newSecret()), false); err != nil && !errors.Is(err, errExists) {
-			return err
+		if err := create(s.Path, []byte(newSecret())); err != nil {
+			return created, err
 		}
 	}
 	for _, p := range req.Placed {
 		if p.Replace {
 			continue
 		}
-		if err := e.writeSecret(dir, p.Path, p.Data, false); err != nil && !errors.Is(err, errExists) {
-			return err
+		if err := create(p.Path, p.Data); err != nil {
+			return created, err
 		}
 	}
-	return nil
+	return created, nil
+}
+
+// snapshot reads the current content of every file prepare will write; nil marks a file that
+// does not exist yet.
+func (e *Engine) snapshot(dir string, req ApplyRequest) (map[string][]byte, error) {
+	out := make(map[string][]byte, len(req.Files)+1)
+	paths := []string{"deploy.env"}
+	for _, f := range req.Files {
+		paths = append(paths, f.Path)
+	}
+	for _, rel := range paths {
+		data, err := readFile(dir, rel)
+		if err != nil {
+			return nil, err
+		}
+		out[rel] = data
+	}
+	return out, nil
+}
+
+// restore puts back the files of before, deletes the ones that did not exist, and deletes the
+// secrets this operation created, never an existing one. It returns cause, with any restore
+// failure joined to it.
+func (e *Engine) restore(dir string, before map[string][]byte, created []string, cause error) error {
+	var errs []error
+	for rel, data := range before {
+		if data == nil {
+			errs = append(errs, removeFile(dir, rel))
+			continue
+		}
+		errs = append(errs, e.writeFile(dir, rel, data, 0o644, false))
+	}
+	for _, rel := range created {
+		errs = append(errs, removeFile(dir, rel))
+	}
+	if err := errors.Join(errs...); err != nil {
+		e.log.WarnContext(e.ctx, "restoring the previous files failed", slog.String("dir", dir), slog.Any("error", err))
+		return fmt.Errorf("%w\nrestoring the previous files failed: %w", cause, err)
+	}
+	return cause
 }
 
 // composeError is code, the command's error, and at most the last 16 KB of its output.

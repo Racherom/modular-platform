@@ -238,6 +238,12 @@ type ProjectState struct {
 	Services []ServiceState `json:"services"`
 }
 
+// RemoveRequest defines model for RemoveRequest.
+type RemoveRequest struct {
+	// DeleteData Also remove the volumes and the `secrets/` folder.
+	DeleteData bool `json:"deleteData"`
+}
+
 // ServiceState defines model for ServiceState.
 type ServiceState struct {
 	// ExitCode Set when `exited`.
@@ -275,6 +281,9 @@ type Unauthorized = externalRef0.ProblemList
 
 // ApplyProjectJSONRequestBody defines body for ApplyProject for application/json ContentType.
 type ApplyProjectJSONRequestBody = ApplyRequest
+
+// RemoveProjectJSONRequestBody defines body for RemoveProject for application/json ContentType.
+type RemoveProjectJSONRequestBody = RemoveRequest
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -375,6 +384,26 @@ type ClientInterface interface {
 	// Corresponds with POST /v1/projects/{project}/apply (the `ApplyProject` operationId).
 	ApplyProject(ctx context.Context, project Project, body ApplyProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// RemoveProjectWithBody Stop and remove the project's containers
+	//
+	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+	// `secrets/` folder. The other files stay. Answers at once with the running operation.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
+	RemoveProjectWithBody(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveProject Stop and remove the project's containers
+	//
+	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+	// `secrets/` folder. The other files stay. Answers at once with the running operation.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
+	RemoveProject(ctx context.Context, project Project, body RemoveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetProjectSecrets List the secret files of the project that exist, never their content
 	//
 	// Corresponds with GET /v1/projects/{project}/secrets (the `GetProjectSecrets` operationId).
@@ -431,6 +460,46 @@ func (c *Client) ApplyProjectWithBody(ctx context.Context, project Project, cont
 // Corresponds with POST /v1/projects/{project}/apply (the `ApplyProject` operationId).
 func (c *Client) ApplyProject(ctx context.Context, project Project, body ApplyProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewApplyProjectRequest(c.Server, project, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RemoveProjectWithBody Stop and remove the project's containers
+//
+// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+// `secrets/` folder. The other files stay. Answers at once with the running operation.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
+func (c *Client) RemoveProjectWithBody(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveProjectRequestWithBody(c.Server, project, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RemoveProject Stop and remove the project's containers
+//
+// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+// `secrets/` folder. The other files stay. Answers at once with the running operation.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
+func (c *Client) RemoveProject(ctx context.Context, project Project, body RemoveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveProjectRequest(c.Server, project, body)
 	if err != nil {
 		return nil, err
 	}
@@ -533,6 +602,53 @@ func NewApplyProjectRequestWithBody(server string, project Project, contentType 
 	}
 
 	operationPath := fmt.Sprintf("/v1/projects/%s/apply", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRemoveProjectRequest calls the generic RemoveProject builder with application/json body
+func NewRemoveProjectRequest(server string, project Project, body RemoveProjectJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRemoveProjectRequestWithBody(server, project, "application/json", bodyReader)
+}
+
+// NewRemoveProjectRequestWithBody constructs an http.Request for the RemoveProject method, with any body, and a specified content type
+func NewRemoveProjectRequestWithBody(server string, project Project, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project", project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/projects/%s/remove", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -690,6 +806,26 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/projects/{project}/apply (the `ApplyProject` operationId).
 	ApplyProjectWithResponse(ctx context.Context, project Project, body ApplyProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplyProjectResponse, error)
+
+	// RemoveProjectWithBodyWithResponse Stop and remove the project's containers
+	//
+	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+	// `secrets/` folder. The other files stay. Answers at once with the running operation.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
+	RemoveProjectWithBodyWithResponse(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveProjectResponse, error)
+
+	// RemoveProjectWithResponse Stop and remove the project's containers
+	//
+	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+	// `secrets/` folder. The other files stay. Answers at once with the running operation.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
+	RemoveProjectWithResponse(ctx context.Context, project Project, body RemoveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveProjectResponse, error)
 
 	// GetProjectSecretsWithResponse List the secret files of the project that exist, never their content
 	//
@@ -894,6 +1030,124 @@ func (r ApplyProjectResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ApplyProjectResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// RemoveProjectResponse202Headers the declared response headers of an HTTP 202 response for RemoveProject
+type RemoveProjectResponse202Headers struct {
+	MPBootId string
+}
+
+// RemoveProjectResponse400Headers the declared response headers of an HTTP 400 response for RemoveProject
+type RemoveProjectResponse400Headers struct {
+	MPBootId string
+}
+
+// RemoveProjectResponse401Headers the declared response headers of an HTTP 401 response for RemoveProject
+type RemoveProjectResponse401Headers struct {
+	MPBootId string
+}
+
+// RemoveProjectResponse404Headers the declared response headers of an HTTP 404 response for RemoveProject
+type RemoveProjectResponse404Headers struct {
+	MPBootId string
+}
+
+// RemoveProjectResponse409Headers the declared response headers of an HTTP 409 response for RemoveProject
+type RemoveProjectResponse409Headers struct {
+	MPBootId string
+}
+
+// RemoveProjectResponse503Headers the declared response headers of an HTTP 503 response for RemoveProject
+type RemoveProjectResponse503Headers struct {
+	MPBootId string
+}
+
+type RemoveProjectResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON202 the response for an HTTP 202 `application/json` response
+	JSON202 *Operation
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *externalRef0.ProblemList
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *externalRef0.ProblemList
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *externalRef0.ProblemList
+	// Headers202 the parsed response headers for an HTTP 202 response
+	Headers202 *RemoveProjectResponse202Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *RemoveProjectResponse400Headers
+	// Headers401 the parsed response headers for an HTTP 401 response
+	Headers401 *RemoveProjectResponse401Headers
+	// Headers404 the parsed response headers for an HTTP 404 response
+	Headers404 *RemoveProjectResponse404Headers
+	// Headers409 the parsed response headers for an HTTP 409 response
+	Headers409 *RemoveProjectResponse409Headers
+	// Headers503 the parsed response headers for an HTTP 503 response
+	Headers503 *RemoveProjectResponse503Headers
+}
+
+// GetJSON202 returns the response for an HTTP 202 `application/json` response
+func (r RemoveProjectResponse) GetJSON202() *Operation {
+	return r.JSON202
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RemoveProjectResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RemoveProjectResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RemoveProjectResponse) GetJSON404() *externalRef0.ProblemList {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RemoveProjectResponse) GetJSON409() *externalRef0.ProblemList {
+	return r.JSON409
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r RemoveProjectResponse) GetJSON503() *externalRef0.ProblemList {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r RemoveProjectResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RemoveProjectResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -1109,6 +1363,38 @@ func (c *ClientWithResponses) ApplyProjectWithResponse(ctx context.Context, proj
 		return nil, err
 	}
 	return ParseApplyProjectResponse(rsp)
+}
+
+// RemoveProjectWithBodyWithResponse Stop and remove the project's containers
+//
+// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+// `secrets/` folder. The other files stay. Answers at once with the running operation.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
+func (c *ClientWithResponses) RemoveProjectWithBodyWithResponse(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveProjectResponse, error) {
+	rsp, err := c.RemoveProjectWithBody(ctx, project, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveProjectResponse(rsp)
+}
+
+// RemoveProjectWithResponse Stop and remove the project's containers
+//
+// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+// `secrets/` folder. The other files stay. Answers at once with the running operation.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
+func (c *ClientWithResponses) RemoveProjectWithResponse(ctx context.Context, project Project, body RemoveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveProjectResponse, error) {
+	rsp, err := c.RemoveProject(ctx, project, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveProjectResponse(rsp)
 }
 
 // GetProjectSecretsWithResponse List the secret files of the project that exist, never their content
@@ -1329,6 +1615,130 @@ func ParseApplyProjectResponse(rsp *http.Response) (*ApplyProjectResponse, error
 			headers.MPBootId = value
 		}
 		response.Headers422 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseRemoveProjectResponse parses an HTTP response from a RemoveProjectWithResponse call
+func ParseRemoveProjectResponse(rsp *http.Response) (*RemoveProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest Operation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.ProblemList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest externalRef0.ProblemList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest externalRef0.ProblemList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 202:
+		var headers RemoveProjectResponse202Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers202 = &headers
+	case rsp.StatusCode == 400:
+		var headers RemoveProjectResponse400Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers400 = &headers
+	case rsp.StatusCode == 401:
+		var headers RemoveProjectResponse401Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers401 = &headers
+	case rsp.StatusCode == 404:
+		var headers RemoveProjectResponse404Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers404 = &headers
+	case rsp.StatusCode == 409:
+		var headers RemoveProjectResponse409Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers409 = &headers
+	case rsp.StatusCode == 503:
+		var headers RemoveProjectResponse503Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers503 = &headers
 	}
 
 	return response, nil

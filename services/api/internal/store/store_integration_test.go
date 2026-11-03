@@ -232,3 +232,86 @@ func TestRunningOperations(t *testing.T) {
 		t.Errorf("running %+v, err %v", running, err)
 	}
 }
+
+func TestRollbackQueries(t *testing.T) {
+	st, _ := startStore(t)
+	ctx := t.Context()
+	id, _, _, _ := st.EnsureDeployment(ctx, "sample")
+	good, err := st.StartOperation(ctx, applyOp(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.FinishOperation(ctx, good.ID, deploy.StatusSucceeded, deploy.StepDone, "")
+	changed := applyOp(id)
+	changed.Graph = json.RawMessage(`{"name":"sample","changed":true}`)
+	bad, err := st.StartOperation(ctx, changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.FinishOperation(ctx, bad.ID, deploy.StatusFailed, deploy.StepUp, "up_failed")
+
+	if op, ok, err := st.LatestApply(ctx, id); err != nil || !ok || op.ID != bad.ID {
+		t.Errorf("latest apply %v %v %v, want the failed one", op.ID, ok, err)
+	}
+	if op, ok, err := st.LatestSucceededBefore(ctx, id, bad.ID); err != nil || !ok || op.ID != good.ID {
+		t.Errorf("succeeded before %v %v %v, want the good one", op.ID, ok, err)
+	}
+	if _, ok, _ := st.LatestSucceededBefore(ctx, id, good.ID); ok {
+		t.Error("found a succeeded operation before the first one")
+	}
+
+	rollback := applyOp(id)
+	rollback.RollbackOf = &bad.ID
+	if _, started, err := st.StartOperationIfLatest(ctx, rollback, good.ID); err != nil || started {
+		t.Errorf("started while another operation is latest: %v %v", started, err)
+	}
+	rb, started, err := st.StartOperationIfLatest(ctx, rollback, bad.ID)
+	if err != nil || !started || rb.RollbackOf == nil || *rb.RollbackOf != bad.ID {
+		t.Fatalf("rollback %+v started %v err %v", rb, started, err)
+	}
+	if d, _, _ := st.Deployment(ctx, "sample"); d.State() != deploy.StateRollingBack {
+		t.Errorf("state %s, want rolling-back", d.State())
+	}
+	if _, started, err := st.StartOperationIfLatest(ctx, rollback, rb.ID); err != nil || started {
+		t.Errorf("a second running operation started: %v %v", started, err)
+	}
+	if n, err := st.CountRollbacks(ctx, bad.ID); err != nil || n != 1 {
+		t.Errorf("rollbacks %d, err %v", n, err)
+	}
+}
+
+// TestBusyAcrossProcesses: two api processes, each with its own pool, start an operation of the
+// same deployment at once; exactly one gets it (AC-9).
+func TestBusyAcrossProcesses(t *testing.T) {
+	first, pool := startStore(t)
+	otherPool, err := pgxpool.New(t.Context(), pool.Config().ConnString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(otherPool.Close)
+	second := store.New(otherPool)
+	id, _, _, _ := first.EnsureDeployment(t.Context(), "sample")
+
+	for round := range 10 {
+		var wg sync.WaitGroup
+		errs := make([]error, 2)
+		ops := make([]deploy.Operation, 2)
+		for i, st := range []*store.Store{first, second} {
+			wg.Go(func() { ops[i], errs[i] = st.StartOperation(t.Context(), applyOp(id)) })
+		}
+		wg.Wait()
+		var won []deploy.Operation
+		for i, err := range errs {
+			switch {
+			case err == nil:
+				won = append(won, ops[i])
+			case !errors.Is(err, deploy.ErrBusy):
+				t.Fatalf("round %d: %v", round, err)
+			}
+		}
+		if len(won) != 1 {
+			t.Fatalf("round %d: %d operations started, want 1", round, len(won))
+		}
+		first.FinishOperation(t.Context(), won[0].ID, deploy.StatusSucceeded, deploy.StepDone, "")
+	}
+}

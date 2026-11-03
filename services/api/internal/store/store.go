@@ -158,11 +158,7 @@ func (s *Store) StartOperation(ctx context.Context, op deploy.Operation) (deploy
 	var out deploy.Operation
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		row, err := q.InsertOperation(ctx, queries.InsertOperationParams{
-			DeploymentID: op.DeploymentID, Action: string(op.Action), Graph: op.Graph, PlanDigest: optional(op.PlanDigest),
-			DeleteData: op.DeleteData, RollbackOf: op.RollbackOf, PlacedSupplied: nonNil(op.PlacedSupplied),
-			StartedByIss: op.StartedBy.Issuer, StartedBySub: op.StartedBy.Subject, StartedByEmail: op.StartedBy.Email,
-		})
+		row, err := q.InsertOperation(ctx, insertParams(op))
 		if err != nil {
 			return err
 		}
@@ -176,6 +172,34 @@ func (s *Store) StartOperation(ctx context.Context, op deploy.Operation) (deploy
 		return deploy.Operation{}, deploy.ErrBusy
 	}
 	return out, err
+}
+
+// StartOperationIfLatest starts op only while latest is the deployment's latest operation. The
+// deployment row stays locked from the check to the insert, so an apply or remove that another
+// api process starts meanwhile either comes first (false) or waits.
+func (s *Store) StartOperationIfLatest(ctx context.Context, op deploy.Operation, latest uuid.UUID) (deploy.Operation, bool, error) {
+	var out deploy.Operation
+	var started bool
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		q := s.q.WithTx(tx)
+		current, err := q.LockLatestOperation(ctx, op.DeploymentID)
+		if err != nil || current == nil || *current != latest {
+			return err
+		}
+		row, err := q.InsertOperation(ctx, insertParams(op))
+		if err != nil {
+			return err
+		}
+		if err := q.SetLatestOperation(ctx, queries.SetLatestOperationParams{ID: op.DeploymentID, LatestOperationID: &row.ID}); err != nil {
+			return err
+		}
+		out, started = operation(row), true
+		return nil
+	})
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == uniqueViolation {
+		return deploy.Operation{}, false, nil
+	}
+	return out, started, err
 }
 
 // DropOperation deletes a refused operation and points latest back at the one before it.
@@ -312,6 +336,38 @@ func (s *Store) LatestApplyReachedUp(ctx context.Context, deploymentID uuid.UUID
 		return deploy.Operation{}, false, err
 	}
 	return operation(row), true, nil
+}
+
+// LatestApply returns the newest apply, whatever its status.
+func (s *Store) LatestApply(ctx context.Context, deploymentID uuid.UUID) (deploy.Operation, bool, error) {
+	row, ok, err := found(s.q.LatestApply(ctx, deploymentID))
+	if !ok {
+		return deploy.Operation{}, false, err
+	}
+	return operation(row), true, nil
+}
+
+// LatestSucceededBefore returns the newest succeeded operation started before failed.
+func (s *Store) LatestSucceededBefore(ctx context.Context, deploymentID, failed uuid.UUID) (deploy.Operation, bool, error) {
+	row, ok, err := found(s.q.LatestSucceededBefore(ctx, queries.LatestSucceededBeforeParams{DeploymentID: deploymentID, Failed: failed}))
+	if !ok {
+		return deploy.Operation{}, false, err
+	}
+	return operation(row), true, nil
+}
+
+// CountRollbacks counts the rollbacks of an operation.
+func (s *Store) CountRollbacks(ctx context.Context, of uuid.UUID) (int, error) {
+	n, err := s.q.CountRollbacks(ctx, &of)
+	return int(n), err
+}
+
+func insertParams(op deploy.Operation) queries.InsertOperationParams {
+	return queries.InsertOperationParams{
+		DeploymentID: op.DeploymentID, Action: string(op.Action), Graph: op.Graph, PlanDigest: optional(op.PlanDigest),
+		DeleteData: op.DeleteData, RollbackOf: op.RollbackOf, PlacedSupplied: nonNil(op.PlacedSupplied),
+		StartedByIss: op.StartedBy.Issuer, StartedBySub: op.StartedBy.Subject, StartedByEmail: op.StartedBy.Email,
+	}
 }
 
 func operation(r queries.Operation) deploy.Operation {

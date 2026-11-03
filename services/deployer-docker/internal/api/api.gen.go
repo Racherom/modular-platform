@@ -25,6 +25,9 @@ type ServerInterface interface {
 	// ApplyProject Write the project's files and start it
 	// (POST /v1/projects/{project}/apply)
 	ApplyProject(w http.ResponseWriter, r *http.Request, project Project)
+	// RemoveProject Stop and remove the project's containers
+	// (POST /v1/projects/{project}/remove)
+	RemoveProject(w http.ResponseWriter, r *http.Request, project Project)
 	// GetProjectSecrets List the secret files of the project that exist, never their content
 	// (GET /v1/projects/{project}/secrets)
 	GetProjectSecrets(w http.ResponseWriter, r *http.Request, project Project)
@@ -85,6 +88,32 @@ func (siw *ServerInterfaceWrapper) ApplyProject(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ApplyProject(w, r, project)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveProject operation middleware
+func (siw *ServerInterfaceWrapper) RemoveProject(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "project" -------------
+	var project Project
+
+	err = runtime.BindStyledParameterWithOptions("simple", "project", r.PathValue("project"), &project, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveProject(w, r, project)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -267,6 +296,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/projects/{project}/apply", wrapper.ApplyProject)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/projects/{project}/remove", wrapper.RemoveProject)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/operations/{id}", wrapper.GetOperation)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/projects/{project}/state", wrapper.GetProjectState)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/projects/{project}/secrets", wrapper.GetProjectSecrets)
@@ -488,6 +518,133 @@ func (response ApplyProject422JSONResponse) VisitApplyProjectResponse(w http.Res
 	return err
 }
 
+type RemoveProjectRequestObject struct {
+	Project Project `json:"project"`
+	Body    *RemoveProjectJSONRequestBody
+}
+
+type RemoveProjectResponseObject interface {
+	VisitRemoveProjectResponse(w http.ResponseWriter) error
+}
+
+type RemoveProject202ResponseHeaders struct {
+	MPBootId string
+}
+
+type RemoveProject202JSONResponse struct {
+	Body    Operation
+	Headers RemoveProject202ResponseHeaders
+}
+
+func (response RemoveProject202JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveProject400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RemoveProject400JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveProject401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RemoveProject401JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveProject404ResponseHeaders struct {
+	MPBootId string
+}
+
+type RemoveProject404JSONResponse struct {
+	Body    externalRef0.ProblemList
+	Headers RemoveProject404ResponseHeaders
+}
+
+func (response RemoveProject404JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveProject409ResponseHeaders struct {
+	MPBootId string
+}
+
+type RemoveProject409JSONResponse struct {
+	Body    externalRef0.ProblemList
+	Headers RemoveProject409ResponseHeaders
+}
+
+func (response RemoveProject409JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveProject503ResponseHeaders struct {
+	MPBootId string
+}
+
+type RemoveProject503JSONResponse struct {
+	Body    externalRef0.ProblemList
+	Headers RemoveProject503ResponseHeaders
+}
+
+func (response RemoveProject503JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetProjectSecretsRequestObject struct {
 	Project Project `json:"project"`
 }
@@ -638,6 +795,9 @@ type StrictServerInterface interface {
 	// ApplyProject Write the project's files and start it
 	// (POST /v1/projects/{project}/apply)
 	ApplyProject(ctx context.Context, request ApplyProjectRequestObject) (ApplyProjectResponseObject, error)
+	// RemoveProject Stop and remove the project's containers
+	// (POST /v1/projects/{project}/remove)
+	RemoveProject(ctx context.Context, request RemoveProjectRequestObject) (RemoveProjectResponseObject, error)
 	// GetProjectSecrets List the secret files of the project that exist, never their content
 	// (GET /v1/projects/{project}/secrets)
 	GetProjectSecrets(ctx context.Context, request GetProjectSecretsRequestObject) (GetProjectSecretsResponseObject, error)
@@ -737,6 +897,39 @@ func (sh *strictHandler) ApplyProject(w http.ResponseWriter, r *http.Request, pr
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ApplyProjectResponseObject); ok {
 		if err := validResponse.VisitApplyProjectResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveProject operation middleware
+func (sh *strictHandler) RemoveProject(w http.ResponseWriter, r *http.Request, project Project) {
+	var request RemoveProjectRequestObject
+
+	request.Project = project
+
+	var body RemoveProjectJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveProject(ctx, request.(RemoveProjectRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveProject")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveProjectResponseObject); ok {
+		if err := validResponse.VisitRemoveProjectResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

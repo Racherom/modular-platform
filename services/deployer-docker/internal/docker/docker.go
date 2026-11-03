@@ -5,6 +5,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -28,16 +29,20 @@ type Compose struct{}
 var _ deploy.Compose = Compose{}
 
 // Run runs docker compose for project in dir with its .env and deploy.env, and returns the
-// combined output.
+// combined output. Without a docker-compose.yml in dir it names the project alone, which is
+// enough for down to find its containers by their labels.
 func (Compose) Run(ctx context.Context, dir, project string, args ...string) ([]byte, error) {
-	base := []string{
-		"compose", "--project-name", project, "--project-directory", dir,
-		"--file", filepath.Join(dir, "docker-compose.yml"),
-		"--env-file", filepath.Join(dir, ".env"), "--env-file", filepath.Join(dir, "deploy.env"),
-		"--progress", "plain",
+	base := []string{"compose", "--project-name", project, "--progress", "plain"}
+	file := filepath.Join(dir, "docker-compose.yml")
+	_, statErr := os.Stat(file)
+	if statErr == nil {
+		base = append(base, "--project-directory", dir, "--file", file,
+			"--env-file", filepath.Join(dir, ".env"), "--env-file", filepath.Join(dir, "deploy.env"))
 	}
 	cmd := exec.CommandContext(ctx, "docker", append(base, args...)...) //nolint:gosec // fixed binary; project and dir are checked by deploy
-	cmd.Dir = dir
+	if statErr == nil {
+		cmd.Dir = dir
+	}
 	cmd.Env = composeEnv
 	out, err := cmd.CombinedOutput()
 	if err != nil {

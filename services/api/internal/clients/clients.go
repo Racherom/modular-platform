@@ -142,6 +142,23 @@ func (t *Target) Apply(ctx context.Context, project string, req deploytarget.App
 	return deploy.TargetOperation{}, targetError("apply", resp.StatusCode(), resp.Body)
 }
 
+// Remove starts a remove of the project.
+func (t *Target) Remove(ctx context.Context, project string, deleteData bool) (deploy.TargetOperation, error) {
+	resp, err := t.c.RemoveProjectWithResponse(ctx, project, deploytarget.RemoveRequest{DeleteData: deleteData})
+	if err != nil {
+		return deploy.TargetOperation{}, errors.Join(deploy.ErrTargetUnavailable, err)
+	}
+	switch {
+	case resp.JSON202 != nil:
+		return deploy.TargetOperation{Operation: *resp.JSON202, BootID: resp.HTTPResponse.Header.Get(bootHeader)}, nil
+	case resp.JSON404 != nil:
+		return deploy.TargetOperation{}, deploy.ErrNotFound
+	case resp.JSON409 != nil:
+		return deploy.TargetOperation{}, deploy.ErrBusy
+	}
+	return deploy.TargetOperation{}, targetError("remove", resp.StatusCode(), resp.Body)
+}
+
 // Operation reads an operation and the boot id it answered under.
 func (t *Target) Operation(ctx context.Context, id string) (deploy.TargetOperation, string, error) {
 	resp, err := t.c.GetOperationWithResponse(ctx, id)

@@ -34,9 +34,10 @@ type Service struct {
 	hub     *Hub
 	log     *slog.Logger
 	//nolint:containedctx // the service's lifetime: pollers outlive the request that started them and end with it
-	ctx   context.Context
-	now   func() time.Time
-	every time.Duration
+	ctx        context.Context
+	now        func() time.Time
+	every      time.Duration
+	retryAfter time.Duration
 
 	mu      sync.Mutex
 	polling map[uuid.UUID]bool
@@ -47,7 +48,7 @@ type Service struct {
 func NewService(ctx context.Context, store Store, planner Planner, target Target, hub *Hub, log *slog.Logger) *Service {
 	return &Service{
 		store: store, planner: planner, target: target, hub: hub, log: log, ctx: ctx,
-		now: time.Now, every: pollEvery, polling: map[uuid.UUID]bool{},
+		now: time.Now, every: pollEvery, retryAfter: retryAfter, polling: map[uuid.UUID]bool{},
 	}
 }
 
@@ -137,17 +138,7 @@ func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract
 		dropNew()
 		return Operation{}, fmt.Errorf("deploy: %w", err)
 	}
-	req := deploytarget.ApplyRequest{Deployment: id}
-	for _, f := range rendered.Files {
-		req.Files = append(req.Files, deploytarget.ProjectFile{Path: f.Path, Mode: f.Mode, Data: f.Data})
-	}
-	req.Secrets = make([]deploytarget.ProjectSecret, 0, len(rendered.Secrets))
-	for _, sec := range rendered.Secrets {
-		req.Secrets = append(req.Secrets, deploytarget.ProjectSecret{
-			Path: sec.Path, Kind: deploytarget.ProjectSecretKind(sec.Kind), Instance: sec.Instance,
-			Capability: sec.Capability, Field: deploytarget.ProjectSecretField(sec.Field),
-		})
-	}
+	req := applyRequest(id, rendered)
 	supplied := []string{}
 	for _, p := range placed {
 		req.Placed = append(req.Placed, deploytarget.PlacedValue{Path: p.Path, Data: []byte(p.Value), Replace: p.Replace})
@@ -192,6 +183,77 @@ func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract
 		slog.String("action", string(ActionApply)), slog.String("caller", by.Subject))
 	op.DeployerOperationID, op.DeployerBootID = accepted.Id, accepted.BootID
 	s.startPolling(RunningOperation{Operation: op, DeploymentName: name, Project: project})
+	return s.publishOperation(ctx, name, op.ID)
+}
+
+// applyRequest is the deploy target's apply of a rendered project, without placed values.
+func applyRequest(deployment uuid.UUID, rendered contract.RenderedProject) deploytarget.ApplyRequest {
+	req := deploytarget.ApplyRequest{Deployment: deployment}
+	for _, f := range rendered.Files {
+		req.Files = append(req.Files, deploytarget.ProjectFile{Path: f.Path, Mode: f.Mode, Data: f.Data})
+	}
+	req.Secrets = make([]deploytarget.ProjectSecret, 0, len(rendered.Secrets))
+	for _, sec := range rendered.Secrets {
+		req.Secrets = append(req.Secrets, deploytarget.ProjectSecret{
+			Path: sec.Path, Kind: deploytarget.ProjectSecretKind(sec.Kind), Instance: sec.Instance,
+			Capability: sec.Capability, Field: deploytarget.ProjectSecretField(sec.Field),
+		})
+	}
+	return req
+}
+
+// Remove starts a remove of the deployment named name (AC-15). It keeps volumes and secrets
+// unless deleteData is set, which needs confirmName equal to name. A plain remove of a removed
+// deployment is ErrAlreadyRemoved. As with Apply, a refusal leaves no trace, and a deploy target
+// that does not answer gives an operation recorded as failed with deployer_unavailable.
+func (s *Service) Remove(ctx context.Context, by Starter, name string, deleteData bool, confirmName string) (Operation, error) {
+	d, ok, err := s.store.Deployment(ctx, name)
+	if err != nil {
+		return Operation{}, err
+	}
+	if !ok {
+		return Operation{}, ErrNotFound
+	}
+	if deleteData && confirmName != name {
+		return Operation{}, refused("confirm_mismatch", "confirmName",
+			fmt.Sprintf("Type the deployment's name, %s, to delete its data.", name))
+	}
+	if !deleteData && d.State() == StateRemoved {
+		return Operation{}, ErrAlreadyRemoved
+	}
+	op, err := s.store.StartOperation(ctx, Operation{DeploymentID: d.ID, Action: ActionRemove, DeleteData: deleteData, StartedBy: by})
+	if err != nil {
+		return Operation{}, err
+	}
+
+	tctx, cancel := context.WithTimeout(ctx, targetTimeout)
+	defer cancel()
+	accepted, err := s.target.Remove(tctx, d.Project, deleteData)
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrTargetUnavailable):
+		s.log.WarnContext(ctx, "deploy target unavailable at remove", slog.String("deployment", name), slog.Any("error", err))
+		if _, err := s.store.FinishOperation(context.WithoutCancel(ctx), op.ID, StatusFailed, StepPrepare, "deployer_unavailable"); err != nil {
+			return Operation{}, err
+		}
+		s.logEnd(ctx, name, op.ID, StatusFailed, StepPrepare, by.Subject)
+		return s.publishOperation(ctx, name, op.ID)
+	default:
+		if derr := s.store.DropOperation(context.WithoutCancel(ctx), op); derr != nil {
+			return Operation{}, errors.Join(err, derr)
+		}
+		if errors.Is(err, ErrTarget) {
+			s.log.ErrorContext(ctx, "deploy target refused api's call", slog.String("deployment", name), slog.Any("error", err))
+		}
+		return Operation{}, err
+	}
+	if err := s.store.AcceptOperation(ctx, op.ID, accepted.Id, accepted.BootID); err != nil {
+		return Operation{}, err
+	}
+	s.log.InfoContext(ctx, "operation started", slog.String("deployment", name), slog.String("operation", op.ID.String()),
+		slog.String("action", string(ActionRemove)), slog.Bool("delete_data", deleteData), slog.String("caller", by.Subject))
+	op.DeployerOperationID, op.DeployerBootID = accepted.Id, accepted.BootID
+	s.startPolling(RunningOperation{Operation: op, DeploymentName: name, Project: d.Project})
 	return s.publishOperation(ctx, name, op.ID)
 }
 
@@ -241,13 +303,11 @@ func (s *Service) View(ctx context.Context, name string) (View, error) {
 		return View{}, ErrNotFound
 	}
 	v := View{Deployment: d}
-	if op, ok, err := s.store.LatestSucceededApply(ctx, d.ID); err != nil {
+	if v.Graph, err = graphOf(s.store.LatestSucceededApply(ctx, d.ID)); err != nil {
 		return View{}, err
-	} else if ok {
-		var g contract.Graph
-		if err := json.Unmarshal(op.Graph, &g); err == nil {
-			v.Graph = &g
-		}
+	}
+	if v.LatestApplyGraph, err = graphOf(s.store.LatestApply(ctx, d.ID)); err != nil {
+		return View{}, err
 	}
 	if d.Latest != nil && d.Latest.RollbackOf != nil && d.State() == StateRolledBack {
 		if from, ok, err := s.store.Operation(ctx, *d.Latest.RollbackOf); err == nil && ok {
@@ -263,6 +323,18 @@ func (s *Service) View(ctx context.Context, name string) (View, error) {
 		v.Modules, v.StateError = nil, err.Error()
 	}
 	return v, nil
+}
+
+// graphOf decodes the graph of an apply a store read found; nil when it found none.
+func graphOf(op Operation, ok bool, err error) (*contract.Graph, error) {
+	if err != nil || !ok {
+		return nil, err
+	}
+	var g contract.Graph
+	if err := json.Unmarshal(op.Graph, &g); err != nil {
+		return nil, nil //nolint:nilerr // a stored graph always decodes; one that does not shows as none
+	}
+	return &g, nil
 }
 
 // Modules reads the live state of d's modules: one entry per instance of the latest apply that

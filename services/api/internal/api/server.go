@@ -198,6 +198,29 @@ func (s *Server) ApplyDeployment(ctx context.Context, req ApplyDeploymentRequest
 	return ApplyDeployment202JSONResponse(operation(op)), nil
 }
 
+// RemoveDeployment removes a deployment's containers, and with deleteData its data too.
+func (s *Server) RemoveDeployment(ctx context.Context, req RemoveDeploymentRequestObject) (RemoveDeploymentResponseObject, error) {
+	sess := sessionFrom(ctx)
+	by := deploy.Starter{Issuer: sess.Identity.Issuer, Subject: sess.Identity.Subject, Email: sess.Email}
+	op, err := s.deploy.Remove(ctx, by, req.Name, req.Body.DeleteData, req.Body.ConfirmName)
+	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
+		return RemoveDeployment422JSONResponse{Problems: refused.Problems}, nil
+	}
+	switch {
+	case errors.Is(err, deploy.ErrNotFound):
+		return RemoveDeployment404JSONResponse{NotFoundJSONResponse(notFound(req.Name))}, nil
+	case errors.Is(err, deploy.ErrBusy):
+		return RemoveDeployment409JSONResponse(problems("busy", "", "An operation of this deployment is still running.")), nil
+	case errors.Is(err, deploy.ErrAlreadyRemoved):
+		return RemoveDeployment409JSONResponse(problems("already_removed", "", "The deployment is removed already; choose Delete data too to delete its data.")), nil
+	case errors.Is(err, deploy.ErrTarget):
+		return RemoveDeployment502JSONResponse(problems("deployer_error", "", "The deployer refused api's call; see api's log.")), nil
+	case err != nil:
+		return nil, err
+	}
+	return RemoveDeployment202JSONResponse(operation(op)), nil
+}
+
 func (s *Server) plannerProblem(ctx context.Context, err error) contract.ProblemList {
 	s.log.WarnContext(ctx, "planner failed", slog.Any("error", err))
 	return problems("planner_error", "", "The planner did not answer as expected; try again.")

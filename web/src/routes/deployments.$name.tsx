@@ -1,13 +1,17 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo } from 'react'
-import { type Deployment, fetchDeployment, fetchOperations, type ModuleState } from '../api/platform'
+import { useMemo, useState } from 'react'
+import type { Graph } from '../api/client'
+import { type Deployment, fetchDeployment, fetchOperations, type ModuleState, type Operation } from '../api/platform'
 import { Failure } from '../components/Failure'
 import { useCatalog } from '../components/GraphScreen'
 import { GraphView } from '../components/GraphView'
+import { RemoveDialog } from '../components/RemoveDialog'
+import { ReviewDialog } from '../components/ReviewDialog'
 import { StateBadge } from '../components/StateBadge'
 import { useEvents } from '../hooks/useEvents'
 import { mode } from '../lib/config'
+import { deploymentNotice } from '../lib/notice'
 import { OnlyManaged } from './deployments.index'
 
 export const Route = createFileRoute('/deployments/$name')({ component: DeploymentRoute })
@@ -23,19 +27,24 @@ function DeploymentScreen({ name }: { name: string }) {
   const deployment = useQuery({ queryKey: ['deployment', name], queryFn: () => fetchDeployment(name) })
   const history = useQuery({ queryKey: ['operations', name], queryFn: () => fetchOperations(name) })
   const catalog = useCatalog()
+  const [removing, setRemoving] = useState<{ deleteData: boolean }>()
   useEvents(name)
   const states = useMemo(() => byInstance(deployment.data?.modules), [deployment.data?.modules])
 
   if (deployment.isError) return <Failure error={deployment.error} onRetry={() => void deployment.refetch()} />
   if (!deployment.data || !catalog.data) return <p className="screen">Loading {name}…</p>
   const d = deployment.data
+  const running = d.latestOperation?.status === 'running'
   return (
     <div className="screen">
       <div className="toolbar">
         <h1>{d.name}</h1>
         <StateBadge deployment={d.state} />
+        <button type="button" disabled={running} onClick={() => setRemoving({ deleteData: false })}>
+          Remove
+        </button>
       </div>
-      <Progress deployment={d} />
+      <Progress deployment={d} onRemoveAgain={(deleteData) => setRemoving({ deleteData })} />
       {d.stateError && (
         <p role="alert" className="banner banner--error">
           The live state could not be read: {d.stateError}
@@ -54,8 +63,8 @@ function DeploymentScreen({ name }: { name: string }) {
         {history.data && (
           <ol className="history">
             {history.data.map((op) => (
-              <li key={op.id}>
-                {new Date(op.startedAt).toLocaleString()}: {op.action} by {op.startedBy}, <strong>{op.status}</strong>
+              <li key={op.id} id={`operation-${op.id}`}>
+                {new Date(op.startedAt).toLocaleString()}: {operationLabel(op)} by {op.startedBy}, <strong>{op.status}</strong>
                 {op.step && ` at ${op.step}`}
                 {op.error && <pre className="history__error">{op.error}</pre>}
               </li>
@@ -63,31 +72,73 @@ function DeploymentScreen({ name }: { name: string }) {
           </ol>
         )}
       </section>
+      {removing && <RemoveDialog name={d.name} deleteData={removing.deleteData} onClose={() => setRemoving(undefined)} />}
     </div>
   )
 }
 
-/** The running operation's step in a live region, or why the last one failed. */
-function Progress({ deployment: d }: { deployment: Deployment }) {
+function operationLabel(op: Operation): string {
+  if (op.action === 'remove') return op.deleteData ? 'remove with its data' : 'remove'
+  return op.rollbackOf ? 'rollback' : 'apply'
+}
+
+/**
+ * The running operation's step in a live region, and the banner about the latest operation:
+ * why it failed or was rolled back, with *Apply again* and *Remove again* where they help.
+ */
+function Progress({ deployment: d, onRemoveAgain }: { deployment: Deployment; onRemoveAgain: (deleteData: boolean) => void }) {
+  const queryClient = useQueryClient()
+  const [reviewing, setReviewing] = useState<Graph>()
+  // Apply again reviews the newest apply's graph as it is now, never a copy another tab outdated
+  const applyAgain = useMutation({
+    mutationFn: () => fetchDeployment(d.name),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(['deployment', d.name], fresh)
+      if (fresh.latestApplyGraph) setReviewing(fresh.latestApplyGraph)
+    },
+  })
   const op = d.latestOperation
+  const notice = deploymentNotice(d)
   let text = ''
-  if (op?.status === 'running') text = `${op.action === 'apply' ? 'Applying' : 'Removing'}: step ${op.step ?? 'prepare'}.`
+  if (op?.status === 'running') {
+    const doing = op.action === 'remove' ? 'Removing' : op.rollbackOf ? 'Returning to the last version that worked' : 'Applying'
+    text = `${doing}: step ${op.step ?? 'prepare'}.`
+  }
   return (
     <>
       <p aria-live="polite" className="progress">
         {text}
       </p>
-      {op && (d.state === 'failed' || d.state === 'unknown') && (
-        <div role="alert" className="banner banner--error">
+      {notice && (
+        <div role={notice.tone === 'error' ? 'alert' : 'status'} className={notice.tone === 'error' ? 'banner banner--error' : 'banner'}>
           <p>
-            {d.state === 'failed'
-              ? `The last ${op.action} failed at step ${op.step ?? 'prepare'}.`
-              : `The outcome of the last ${op.action} is unknown: the platform lost track of it.`}
-            {d.state === 'failed' && (op.step === 'prepare' || op.step === 'pull') && ' The previous version keeps running.'}
+            {notice.text}
+            {d.rolledBackFrom && (
+              <>
+                {' '}
+                <a href={`#operation-${d.rolledBackFrom.id}`}>See what failed.</a>
+              </>
+            )}
           </p>
-          {op.error && <pre className="history__error">{op.error}</pre>}
+          {(d.rolledBackFrom?.error ?? op?.error) && <pre className="history__error">{d.rolledBackFrom?.error ?? op?.error}</pre>}
+          {(notice.applyAgain || notice.removeAgain) && (
+            <div className="review__actions">
+              {notice.removeAgain && (
+                <button type="button" onClick={() => onRemoveAgain(op?.deleteData ?? false)}>
+                  Remove again
+                </button>
+              )}
+              {notice.applyAgain && (
+                <button type="button" disabled={applyAgain.isPending} onClick={() => applyAgain.mutate()}>
+                  Apply again
+                </button>
+              )}
+            </div>
+          )}
+          {applyAgain.isError && <Failure error={applyAgain.error} onRetry={() => applyAgain.mutate()} />}
         </div>
       )}
+      {reviewing && <ReviewDialog graph={reviewing} onClose={() => setReviewing(undefined)} />}
     </>
   )
 }

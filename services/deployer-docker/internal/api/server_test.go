@@ -190,3 +190,25 @@ func TestApplyRefusesACraftedProject(t *testing.T) {
 		}
 	}
 }
+
+func TestRemove(t *testing.T) {
+	t.Parallel()
+	srv, _ := serve(t, false)
+	if resp, data := do(t, srv, http.MethodPost, "/v1/projects/mp-sample/remove", `{"deleteData":false}`); resp.StatusCode != http.StatusUnauthorized ||
+		!bytes.Contains(data, []byte("invalid_token")) {
+		t.Errorf("without a caller: status %d: %s", resp.StatusCode, data)
+	}
+	srv, e := serve(t, true)
+	if resp, data := do(t, srv, http.MethodPost, "/v1/projects/mp-sample/remove", `{"deleteData":false}`); resp.StatusCode != http.StatusNotFound ||
+		!bytes.Contains(data, []byte("not_found")) {
+		t.Errorf("nothing there: status %d: %s", resp.StatusCode, data)
+	}
+	if resp, _ := do(t, srv, http.MethodPost, "/v1/projects/mp-sample/apply", applyBody(t)); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("apply: status %d", resp.StatusCode)
+	}
+	e.Wait()
+	resp, data := do(t, srv, http.MethodPost, "/v1/projects/mp-sample/remove", `{"deleteData":true}`)
+	if resp.StatusCode != http.StatusAccepted || !bytes.Contains(data, []byte(`"action":"remove"`)) || resp.Header.Get(api.BootHeader) != e.BootID() {
+		t.Errorf("remove: status %d: %s", resp.StatusCode, data)
+	}
+}

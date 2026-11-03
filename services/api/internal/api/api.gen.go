@@ -211,8 +211,12 @@ type Deployment struct {
 	CreatedAt time.Time `json:"createdAt"`
 
 	// Graph The graph of the latest succeeded apply.
-	Graph           externalRef0.Graph `json:"graph,omitempty,omitzero"`
-	LatestOperation Operation          `json:"latestOperation,omitempty,omitzero"`
+	Graph externalRef0.Graph `json:"graph,omitempty,omitzero"`
+
+	// LatestApplyGraph The graph of the newest apply, whatever its status; *Apply again* reviews it. A
+	// rollback counts, so after a failed rollback it is the last good graph.
+	LatestApplyGraph externalRef0.Graph `json:"latestApplyGraph,omitempty,omitzero"`
+	LatestOperation  Operation          `json:"latestOperation,omitempty,omitzero"`
 
 	// Modules Sorted by instance; absent when `stateError` is set.
 	Modules []ModuleState `json:"modules,omitempty,omitzero"`
@@ -348,6 +352,15 @@ type PlacedInput struct {
 	Value string `json:"value"`
 }
 
+// RemoveRequest defines model for RemoveRequest.
+type RemoveRequest struct {
+	// ConfirmName Required with `deleteData`; must equal the deployment's name.
+	ConfirmName string `json:"confirmName,omitempty,omitzero"`
+
+	// DeleteData Also delete the volumes and secrets; the data is gone for good.
+	DeleteData bool `json:"deleteData"`
+}
+
 // Review defines model for Review.
 type Review struct {
 	Bindings       []externalRef0.Binding       `json:"bindings"`
@@ -416,6 +429,9 @@ type ListOperationsParams struct {
 // ApplyDeploymentJSONRequestBody defines body for ApplyDeployment for application/json ContentType.
 type ApplyDeploymentJSONRequestBody = ApplyRequest
 
+// RemoveDeploymentJSONRequestBody defines body for RemoveDeployment for application/json ContentType.
+type RemoveDeploymentJSONRequestBody = RemoveRequest
+
 // ReviewDeploymentJSONRequestBody defines body for ReviewDeployment for application/json ContentType.
 type ReviewDeploymentJSONRequestBody = ReviewRequest
 
@@ -442,6 +458,9 @@ type ServerInterface interface {
 	// ListOperations The deployment's history, newest first
 	// (GET /api/v1/deployments/{name}/operations)
 	ListOperations(w http.ResponseWriter, r *http.Request, name Name, params ListOperationsParams)
+	// RemoveDeployment Stop and remove a deployment's containers
+	// (POST /api/v1/deployments/{name}/remove)
+	RemoveDeployment(w http.ResponseWriter, r *http.Request, name Name)
 	// ReviewDeployment Show exactly what an apply of this graph would run
 	// (POST /api/v1/deployments/{name}/review)
 	ReviewDeployment(w http.ResponseWriter, r *http.Request, name Name)
@@ -623,6 +642,32 @@ func (siw *ServerInterfaceWrapper) ListOperations(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListOperations(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveDeployment operation middleware
+func (siw *ServerInterfaceWrapper) RemoveDeployment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name Name
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveDeployment(w, r, name)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -829,6 +874,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/deployments/{name}/operations", wrapper.ListOperations)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/deployments/{name}/review", wrapper.ReviewDeployment)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/deployments/{name}/apply", wrapper.ApplyDeployment)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/deployments/{name}/remove", wrapper.RemoveDeployment)
 
 	return m
 }
@@ -1180,6 +1226,127 @@ func (response ListOperations404JSONResponse) VisitListOperationsResponse(w http
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDeploymentRequestObject struct {
+	Name Name `json:"name"`
+	Body *RemoveDeploymentJSONRequestBody
+}
+
+type RemoveDeploymentResponseObject interface {
+	VisitRemoveDeploymentResponse(w http.ResponseWriter) error
+}
+
+type RemoveDeployment202JSONResponse Operation
+
+func (response RemoveDeployment202JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDeployment400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RemoveDeployment400JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDeployment401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RemoveDeployment401JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDeployment403JSONResponse struct{ BadOriginJSONResponse }
+
+func (response RemoveDeployment403JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDeployment404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RemoveDeployment404JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDeployment409JSONResponse externalRef0.ProblemList
+
+func (response RemoveDeployment409JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDeployment422JSONResponse externalRef0.ProblemList
+
+func (response RemoveDeployment422JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDeployment502JSONResponse externalRef0.ProblemList
+
+func (response RemoveDeployment502JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1569,6 +1736,9 @@ type StrictServerInterface interface {
 	// ListOperations The deployment's history, newest first
 	// (GET /api/v1/deployments/{name}/operations)
 	ListOperations(ctx context.Context, request ListOperationsRequestObject) (ListOperationsResponseObject, error)
+	// RemoveDeployment Stop and remove a deployment's containers
+	// (POST /api/v1/deployments/{name}/remove)
+	RemoveDeployment(ctx context.Context, request RemoveDeploymentRequestObject) (RemoveDeploymentResponseObject, error)
 	// ReviewDeployment Show exactly what an apply of this graph would run
 	// (POST /api/v1/deployments/{name}/review)
 	ReviewDeployment(ctx context.Context, request ReviewDeploymentRequestObject) (ReviewDeploymentResponseObject, error)
@@ -1751,6 +1921,39 @@ func (sh *strictHandler) ListOperations(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListOperationsResponseObject); ok {
 		if err := validResponse.VisitListOperationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveDeployment operation middleware
+func (sh *strictHandler) RemoveDeployment(w http.ResponseWriter, r *http.Request, name Name) {
+	var request RemoveDeploymentRequestObject
+
+	request.Name = name
+
+	var body RemoveDeploymentJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveDeployment(ctx, request.(RemoveDeploymentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveDeployment")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveDeploymentResponseObject); ok {
+		if err := validResponse.VisitRemoveDeploymentResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

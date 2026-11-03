@@ -62,6 +62,29 @@ func (s *Server) ApplyProject(ctx context.Context, req ApplyProjectRequestObject
 	return ApplyProject202JSONResponse{Body: operation(op)}, nil
 }
 
+// RemoveProject starts a remove. It needs an MP-Caller token, whose subject is logged.
+func (s *Server) RemoveProject(ctx context.Context, req RemoveProjectRequestObject) (RemoveProjectResponseObject, error) {
+	who, ok := sdk.CallerFrom(ctx)
+	if !ok {
+		return RemoveProject401JSONResponse{UnauthorizedJSONResponse{Body: problems("invalid_token", "", "Remove needs an MP-Caller token.")}}, nil
+	}
+	op, err := s.engine.Remove(ctx, deploy.RemoveRequest{Project: req.Project, DeleteData: req.Body.DeleteData, Caller: who.User})
+	if _, ok := errors.AsType[*deploy.RefusedError](err); ok {
+		return RemoveProject400JSONResponse{BadRequestJSONResponse{Body: badProject(req.Project)}}, nil
+	}
+	switch {
+	case errors.Is(err, deploy.ErrNotFound):
+		return RemoveProject404JSONResponse{Body: problems("not_found", "project", "The project has neither a folder nor a container.")}, nil
+	case errors.Is(err, deploy.ErrBusy):
+		return RemoveProject409JSONResponse{Body: problems("busy", "", "An operation of this project is still running.")}, nil
+	case errors.Is(err, deploy.ErrDocker):
+		return RemoveProject503JSONResponse{Body: problems("docker_unavailable", "", "Docker did not answer.")}, nil
+	case err != nil:
+		return nil, err
+	}
+	return RemoveProject202JSONResponse{Body: operation(op)}, nil
+}
+
 // GetOperation reads an operation this boot knows.
 func (s *Server) GetOperation(_ context.Context, req GetOperationRequestObject) (GetOperationResponseObject, error) {
 	op, ok := s.engine.Operation(req.Id)

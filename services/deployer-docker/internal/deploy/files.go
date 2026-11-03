@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -122,6 +123,40 @@ func fileExists(dir, rel string) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// readFile reads the file rel below dir, refusing a link on the way; nil when it does not exist.
+func readFile(dir, rel string) ([]byte, error) {
+	exists, err := fileExists(dir, rel)
+	if err != nil || !exists {
+		return nil, err
+	}
+	path := filepath.Join(dir, filepath.FromSlash(rel))
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0) //nolint:gosec // every part of rel was checked for links, and O_NOFOLLOW refuses the last
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", rel, err)
+	}
+	if data == nil {
+		data = []byte{} // an empty file exists: not nil
+	}
+	return data, nil
+}
+
+// removeFile deletes the file rel below dir, refusing a link on the way; a missing one is fine.
+func removeFile(dir, rel string) error {
+	if _, err := fileExists(dir, rel); err != nil {
+		return err
+	}
+	err := os.Remove(filepath.Join(dir, filepath.FromSlash(rel)))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 // Secrets lists the secret files of project that exist, as secrets/<instance>/<name>, sorted.

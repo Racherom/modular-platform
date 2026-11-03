@@ -61,6 +61,17 @@ func (q *Queries) BindAdmin(ctx context.Context, arg BindAdminParams) (BindAdmin
 	return i, err
 }
 
+const countRollbacks = `-- name: CountRollbacks :one
+SELECT count(*) FROM operations WHERE rollback_of = $1
+`
+
+func (q *Queries) CountRollbacks(ctx context.Context, rollbackOf *uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countRollbacks, rollbackOf)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createSession = `-- name: CreateSession :exec
 INSERT INTO sessions (token_hash, iss, sub, email, id_token, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -364,6 +375,40 @@ func (q *Queries) InsertOperation(ctx context.Context, arg InsertOperationParams
 	return i, err
 }
 
+const latestApply = `-- name: LatestApply :one
+SELECT id, deployment_id, action, status, step, graph, plan_digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations
+WHERE deployment_id = $1 AND action = 'apply'
+ORDER BY started_at DESC, id DESC
+LIMIT 1
+`
+
+// the graph Apply again reviews: the newest apply, whatever its status
+func (q *Queries) LatestApply(ctx context.Context, deploymentID uuid.UUID) (Operation, error) {
+	row := q.db.QueryRow(ctx, latestApply, deploymentID)
+	var i Operation
+	err := row.Scan(
+		&i.ID,
+		&i.DeploymentID,
+		&i.Action,
+		&i.Status,
+		&i.Step,
+		&i.Graph,
+		&i.PlanDigest,
+		&i.DeleteData,
+		&i.RollbackOf,
+		&i.PlacedSupplied,
+		&i.StartedByIss,
+		&i.StartedBySub,
+		&i.StartedByEmail,
+		&i.DeployerOperationID,
+		&i.DeployerBootID,
+		&i.Error,
+		&i.StartedAt,
+		&i.FinishedAt,
+	)
+	return i, err
+}
+
 const latestApplyReachedUp = `-- name: LatestApplyReachedUp :one
 SELECT id, deployment_id, action, status, step, graph, plan_digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations
 WHERE deployment_id = $1 AND action = 'apply' AND step IN ('up', 'done')
@@ -408,6 +453,46 @@ LIMIT 1
 // the graph the deployment runs now
 func (q *Queries) LatestSucceededApply(ctx context.Context, deploymentID uuid.UUID) (Operation, error) {
 	row := q.db.QueryRow(ctx, latestSucceededApply, deploymentID)
+	var i Operation
+	err := row.Scan(
+		&i.ID,
+		&i.DeploymentID,
+		&i.Action,
+		&i.Status,
+		&i.Step,
+		&i.Graph,
+		&i.PlanDigest,
+		&i.DeleteData,
+		&i.RollbackOf,
+		&i.PlacedSupplied,
+		&i.StartedByIss,
+		&i.StartedBySub,
+		&i.StartedByEmail,
+		&i.DeployerOperationID,
+		&i.DeployerBootID,
+		&i.Error,
+		&i.StartedAt,
+		&i.FinishedAt,
+	)
+	return i, err
+}
+
+const latestSucceededBefore = `-- name: LatestSucceededBefore :one
+SELECT o.id, o.deployment_id, o.action, o.status, o.step, o.graph, o.plan_digest, o.delete_data, o.rollback_of, o.placed_supplied, o.started_by_iss, o.started_by_sub, o.started_by_email, o.deployer_operation_id, o.deployer_boot_id, o.error, o.started_at, o.finished_at FROM operations o
+WHERE o.deployment_id = $1 AND o.status = 'succeeded'
+  AND (o.started_at, o.id) < (SELECT f.started_at, f.id FROM operations f WHERE f.id = $2)
+ORDER BY o.started_at DESC, o.id DESC
+LIMIT 1
+`
+
+type LatestSucceededBeforeParams struct {
+	DeploymentID uuid.UUID
+	Failed       uuid.UUID
+}
+
+// the version a rollback returns to: the newest succeeded operation before the failed apply
+func (q *Queries) LatestSucceededBefore(ctx context.Context, arg LatestSucceededBeforeParams) (Operation, error) {
+	row := q.db.QueryRow(ctx, latestSucceededBefore, arg.DeploymentID, arg.Failed)
 	var i Operation
 	err := row.Scan(
 		&i.ID,
@@ -523,6 +608,18 @@ func (q *Queries) ListOperations(ctx context.Context, arg ListOperationsParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockLatestOperation = `-- name: LockLatestOperation :one
+SELECT latest_operation_id FROM deployments WHERE id = $1 FOR UPDATE
+`
+
+// holds the deployment row, so its latest operation cannot change until the transaction ends
+func (q *Queries) LockLatestOperation(ctx context.Context, id uuid.UUID) (*uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockLatestOperation, id)
+	var latest_operation_id *uuid.UUID
+	err := row.Scan(&latest_operation_id)
+	return latest_operation_id, err
 }
 
 const progressOperation = `-- name: ProgressOperation :execrows
