@@ -16,5 +16,5 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/planner /planner
 USER nonroot:nonroot
-EXPOSE 8080
+EXPOSE 8080 8443
 ENTRYPOINT ["/planner"]

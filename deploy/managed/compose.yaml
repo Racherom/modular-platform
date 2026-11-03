@@ -34,6 +34,8 @@ services:
       PLATFORM_TLS: ${PLATFORM_TLS:-internal}
       PLATFORM_ACME_EMAIL: ${PLATFORM_ACME_EMAIL:-}
       MP_BASE_PATH: ${PLATFORM_BASE_PATH:-}
+    # the internal root: the ingress reaches api over TLS and trusts only this CA (child 0008)
+    secrets: [cert_issuer_root]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -89,6 +91,8 @@ services:
     environment:
       MP_INSTANCE: api
       MP_DOMAIN: modular-platform.internal
+      MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
+      MP_CA_FILE: /run/secrets/cert_issuer_root
       MP_OIDC_ISSUER: ${PLATFORM_ORIGIN:?run setup.sh first}${PLATFORM_BASE_PATH:-}/auth
       MP_OIDC_CLIENT_SECRET_FILE: /run/secrets/api_oidc_client_secret
       # Caddy's local root, while PLATFORM_TLS is internal (spec 0001)
@@ -99,9 +103,9 @@ services:
       MP_PROXY_HOPS: "1"
       MP_SESSION_IDLE: ${PLATFORM_SESSION_IDLE:-1h}
       MP_SESSION_MAX: ${PLATFORM_SESSION_MAX:-12h}
-      MP_PLANNER_URL: http://planner.modular-platform.internal:8080
+      MP_PLANNER_URL: https://planner.modular-platform.internal:8443
       MP_PLANNER_TOKEN_FILE: /run/secrets/uses/planner/token
-      MP_DEPLOY_TARGET_URL: http://deployer-docker.modular-platform.internal:8080
+      MP_DEPLOY_TARGET_URL: https://deployer-docker.modular-platform.internal:8443
       MP_DEPLOY_TARGET_TOKEN_FILE: /run/secrets/uses/deploy-target/token
       MP_DATABASE_URL: postgres://postgres:5432
       MP_DATABASE_NAME: platform_api
@@ -117,14 +121,22 @@ services:
       - api_oidc_client_secret
       - api_db_password
       - caller_signing_key
+      - cert_issuer_root
     volumes:
       - caddy_data:/caddy-data:ro
-    networks: [edge, internal]
+    networks:
+      # its host name on every network it joins: the ingress calls it on edge (child 0008)
+      edge:
+        aliases: [api.modular-platform.internal]
+      internal:
+        aliases: [api.modular-platform.internal]
     labels:
       <<: *platform-labels
       io.github.racherom.modular-platform.instance: api
       io.github.racherom.modular-platform.module: api
     depends_on:
+      cert-issuer:
+        condition: service_healthy
       db-init:
         condition: service_completed_successfully
       planner:
@@ -151,6 +163,8 @@ services:
     environment:
       MP_INSTANCE: planner
       MP_DOMAIN: modular-platform.internal
+      MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
+      MP_CA_FILE: /run/secrets/cert_issuer_root
       MP_PLANNER_MODE: internal
       MP_PLATFORM_HTTP_PORT: ${PLATFORM_HTTP_PORT:-80}
       MP_PLATFORM_HTTPS_PORT: ${PLATFORM_HTTPS_PORT:-443}
@@ -160,6 +174,7 @@ services:
       - source: api_uses_planner
         target: /run/secrets/clients/planner/api
       - caller_public_key
+      - cert_issuer_root
     networks:
       internal:
         aliases: [planner.modular-platform.internal]
@@ -167,6 +182,9 @@ services:
       <<: *platform-labels
       io.github.racherom.modular-platform.instance: planner
       io.github.racherom.modular-platform.module: planner
+    depends_on:
+      cert-issuer:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "/planner", "healthcheck"]
       interval: 5s
@@ -184,6 +202,8 @@ services:
     environment:
       MP_INSTANCE: deployer-docker
       MP_DOMAIN: modular-platform.internal
+      MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
+      MP_CA_FILE: /run/secrets/cert_issuer_root
       MP_DEPLOYMENTS_DIR: ${PLATFORM_DIR:?run setup.sh first}/deployments
       MP_PLATFORM_UID: ${PLATFORM_UID}
       MP_PLATFORM_GID: ${PLATFORM_GID}
@@ -195,6 +215,7 @@ services:
       - source: api_uses_deploy-target
         target: /run/secrets/clients/deploy-target/api
       - caller_public_key
+      - cert_issuer_root
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # the same absolute path as on the host: the host daemon resolves the deployed projects' paths
@@ -206,8 +227,50 @@ services:
       <<: *platform-labels
       io.github.racherom.modular-platform.instance: deployer-docker
       io.github.racherom.modular-platform.module: deployer-docker
+    depends_on:
+      cert-issuer:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "/deployer-docker", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+      start_interval: 1s
+
+  cert-issuer:
+    # the internal ACME issuer of the platform's own services (child 0008); only on internal, so
+    # the CA key stays away from the Docker socket and from deployed graphs
+    image: smallstep/step-ca:0.30.2
+    restart: unless-stopped
+    # the step-ca binary carries the bind capability as a file capability, like caddy
+    <<: *caddy-hardening
+    user: "${PLATFORM_UID}:${PLATFORM_GID}"
+    entrypoint: ["step-ca"]
+    # SDK modules answer tls-alpn-01 on 8443, not 443; --insecure only unlocks that port flag
+    command:
+      - /home/step/config/ca.json
+      - --password-file=/run/secrets/cert_issuer_password
+      - --insecure
+      - --acme-tls-port=8443
+    secrets:
+      - cert_issuer_root
+      - cert_issuer_intermediate
+      - cert_issuer_intermediate_key
+      - cert_issuer_password
+    volumes:
+      - ./config/cert-issuer/ca.json:/home/step/config/ca.json:ro
+      - cert_issuer_db:/home/step/db
+    networks:
+      internal:
+        aliases: [cert-issuer.modular-platform.internal]
+    labels:
+      <<: *platform-labels
+      io.github.racherom.modular-platform.instance: cert-issuer
+      io.github.racherom.modular-platform.module: cert-issuer
+    healthcheck:
+      # its own certificate names only its host name, never 127.0.0.1
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://cert-issuer.modular-platform.internal:9000", "--root", "/run/secrets/cert_issuer_root"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -309,6 +372,13 @@ volumes:
   pg_data: {}
   caddy_data: {}
   caddy_config: {}
+  # a folder setup.sh creates and you own: a fresh volume would be owned by root, and the issuer
+  # runs as you; losing it only drops ACME accounts, which the SDK registers again
+  cert_issuer_db:
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PLATFORM_DIR}/data/cert-issuer
 
 secrets:
   api_uses_planner:
@@ -323,6 +393,14 @@ secrets:
     file: ./secrets/api/caller_signing_key
   caller_public_key:
     file: ./secrets/api/caller_public_key
+  cert_issuer_root:
+    file: ./secrets/cert-issuer/root_ca.crt
+  cert_issuer_intermediate:
+    file: ./secrets/cert-issuer/intermediate_ca.crt
+  cert_issuer_intermediate_key:
+    file: ./secrets/cert-issuer/intermediate_ca_key
+  cert_issuer_password:
+    file: ./secrets/cert-issuer/password
   postgres_password:
     file: ./secrets/postgres/password
   authelia_db_password:

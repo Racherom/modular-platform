@@ -112,7 +112,7 @@ spec [0006](../specs/0006-managed-mode-control-plane/index.md) · [0007](../spec
    - [x] The thread runs: contracts, `api` with sign in, sessions and the four tables, the deployer applying the sample, the managed render and digest, `deploy/managed/` with `setup.sh`, the editor's deploy and live state, the `smoke-managed` CI job; platform services plain for now (AC-1, AC-2, AC-3, AC-5, AC-9, AC-11, AC-13, AC-18, AC-19)
    - [x] Review you can trust: the full review answer, `plan_changed`, the allow list guard in planner and deployer, placed credentials end to end (AC-7, AC-8, AC-10, AC-11)
    - [x] Lifecycle and recovery: remove with delete data, `busy` across processes, `unknown` and resumed polling, automatic rollback with one retry (AC-9, AC-14, AC-15, AC-16)
-   - [ ] TLS for the platform's own services: the step-ca spike, `cert-issuer`, TLS mode for `api`, `planner` and `deployer-docker` (AC-17)
+   - [x] TLS for the platform's own services: the step-ca spike, `cert-issuer`, TLS mode for `api`, `planner` and `deployer-docker` (AC-17)
    - [ ] Live state, sessions, the admin and the release: poll cadence and badges, sign out and `prompt=login`, `admin reset`, download zip, Docker restart, the zip on releases (AC-3, AC-4, AC-6, AC-12, AC-13, AC-19, AC-20)
 - [ ] Verify it: `/check verify managed mode control plane`
 - [ ] Test it: `/test managed mode control plane`

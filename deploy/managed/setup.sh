@@ -116,7 +116,33 @@ random_secret secrets/api/uses_planner
 random_secret secrets/api/uses_deploy-target
 random_secret secrets/api/oidc_client_secret
 
-# 4: the cert-issuer fragment: the key pair api signs MP-Caller tokens with
+# 4: the cert-issuer fragment: the internal CA the platform's own services get their TLS
+# certificates from (child 0008), its config and database folder, and the key pair api signs
+# MP-Caller tokens with
+random_secret secrets/cert-issuer/password
+if new_file secrets/cert-issuer/root_ca.crt; then
+	for f in intermediate_ca.crt intermediate_ca_key root_ca_key; do
+		new_file "secrets/cert-issuer/$f" ||
+			fail "secrets/cert-issuer/$f exists without root_ca.crt; move that folder away and run setup.sh again."
+	done
+	docker run --rm --network none --user "$(id -u):$(id -g)" -v "$PLATFORM_DIR/secrets/cert-issuer:/out" \
+		-e STEPPATH=/tmp/step --entrypoint sh "$STEP_IMAGE" -c \
+		'step ca init --pki --name "Modular Platform internal CA" --password-file /out/password &&
+		cp /tmp/step/certs/intermediate_ca.crt /tmp/step/secrets/intermediate_ca_key /tmp/step/secrets/root_ca_key /out/ &&
+		cp /tmp/step/certs/root_ca.crt /out/' </dev/null >/dev/null 2>&1 ||
+		fail "creating the internal CA failed."
+	chmod 600 secrets/cert-issuer/intermediate_ca.crt secrets/cert-issuer/intermediate_ca_key secrets/cert-issuer/root_ca_key
+	# public: every platform service reads it to trust the issuer, as you or as nonroot
+	chmod 644 secrets/cert-issuer/root_ca.crt
+fi
+if new_file config/cert-issuer/ca.json; then
+	mkdir -p config/cert-issuer
+	cp cert-issuer/ca.json config/cert-issuer/ca.json
+fi
+# the cert_issuer_db volume: its ACME accounts and orders; losing it only drops the accounts
+mkdir -p data/cert-issuer
+chmod 700 data/cert-issuer
+
 if new_file secrets/api/caller_signing_key; then
 	docker run --rm --network none --user "$(id -u):$(id -g)" -v "$PLATFORM_DIR/secrets/api:/out" \
 		--entrypoint step "$STEP_IMAGE" crypto keypair /out/caller_public_key /out/caller_signing_key \

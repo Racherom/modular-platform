@@ -36,7 +36,7 @@ printf 'platform.localhost\nadmin@example.com\nadmin\n%s\n' "$password" | sh "$p
 echo "== start"
 compose up -d
 deadline=$(($(date +%s) + 300))
-until [ "$(compose ps --format '{{.Service}} {{.Health}}' | grep -c ' healthy$')" -ge 7 ] &&
+until [ "$(compose ps --format '{{.Service}} {{.Health}}' | grep -c ' healthy$')" -ge 8 ] &&
 	[ "$(compose ps -a --format '{{.Service}} {{.State}} {{.ExitCode}}' | grep -c '^db-init exited 0$')" -eq 1 ]; do
 	if [ "$(date +%s)" -ge "$deadline" ]; then
 		compose ps -a
@@ -54,7 +54,9 @@ echo "== no secret value in any log"
 logs="$work/all.log"
 { compose logs --no-color; docker compose -p mp-whoami-postgres logs --no-color; } > "$logs" 2>&1
 leaks=0
-for f in $(find "$platform/secrets" "$platform/deployments" -path '*secrets/*' -type f); do
+# certificates are public and skipped: cert-issuer logs every leaf it issues, and a leaf repeats
+# its intermediate's name, so a line of intermediate_ca.crt can match by chance
+for f in $(find "$platform/secrets" "$platform/deployments" -path '*secrets/*' -type f ! -name '*.crt'); do
 	# every line of 16 characters or more that is not a PEM armour line
 	grep -v -e '^-----' "$f" | while IFS= read -r line; do
 		[ "${#line}" -ge 16 ] || continue
