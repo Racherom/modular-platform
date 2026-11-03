@@ -55,6 +55,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/render/managed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render a graph as the files the managed deployer applies
+         * @description Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+         *     service carries the platform labels and `restart: unless-stopped`. The answer lists every
+         *     secret file the project needs, never a value.
+         */
+        post: operations["renderManaged"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -232,6 +254,69 @@ export interface components {
             bindings: components["schemas"]["Binding"][];
             /** @description Sorted by path, then code. */
             problems: components["schemas"]["Problem"][];
+            /**
+             * @description `sha256:<hex>` over the canonical graph, the bindings and the catalog entries the graph
+             *     uses; set only when `ok` is true. Equal digests mean the same project is rendered.
+             */
+            digest?: string;
+        };
+        ManagedRenderRequest: {
+            graph: components["schemas"]["Graph"];
+            /**
+             * Format: uuid
+             * @description The deployment id, written into every service's `deployment` label.
+             */
+            deployment: string;
+        };
+        RenderedProject: {
+            /** @description The Compose project name, `mp-<graph name>`. */
+            project: string;
+            plan: components["schemas"]["PlanResult"];
+            /** @description One entry per instance, sorted by instance. */
+            images: components["schemas"]["ModuleImage"][];
+            /** @description Host ports the project publishes; always empty in `v0alpha1`. */
+            publishedPorts: components["schemas"]["PublishedPort"][];
+            /** @description Every secret file the project mounts, sorted by path. */
+            secrets: components["schemas"]["RenderedSecret"][];
+            /** @description The project's files, sorted by path. */
+            files: components["schemas"]["RenderedFile"][];
+        };
+        ModuleImage: {
+            instance: string;
+            module: string;
+            image: string;
+        };
+        PublishedPort: {
+            instance: string;
+            published: number;
+            target: number;
+        };
+        RenderedSecret: {
+            /** @description `secrets/<instance>/<name>`, relative to the project folder. */
+            path: string;
+            /**
+             * @description `generated`: the deployer creates it as 32 random bytes in hex. `placed`: you supply it.
+             * @enum {string}
+             */
+            kind: "generated" | "placed";
+            instance: string;
+            /** @description Placed only, the binding's capability. */
+            capability?: string;
+            /**
+             * @description Placed only, which credential of the binding it holds.
+             * @enum {string}
+             */
+            field?: "password" | "secret_key";
+        };
+        RenderedFile: {
+            path: string;
+            /** @description The file mode, like 420 for 0644. */
+            mode: number;
+            /**
+             * Format: byte
+             * @description The content, base64.
+             */
+            data: string;
         };
     };
     responses: {
@@ -382,6 +467,52 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
+            503: components["responses"]["TimedOut"];
+        };
+    };
+    renderManaged: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagedRenderRequest"];
+            };
+        };
+        responses: {
+            /** @description The rendered project. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderedProject"];
+                };
+            };
+            400: components["responses"]["BadGraph"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Public mode (`not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            413: components["responses"]["TooLarge"];
+            /** @description The plan has an error, so nothing was rendered. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanResult"];
+                };
+            };
             503: components["responses"]["TimedOut"];
         };
     };

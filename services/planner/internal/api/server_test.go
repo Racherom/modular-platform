@@ -129,7 +129,7 @@ func TestCatalogSorted(t *testing.T) {
 	for _, e := range cat.Entries {
 		names = append(names, e.Name)
 	}
-	if !slices.Equal(names, []string{"planner", "postgres", "whoami"}) {
+	if !slices.Equal(names, []string{"api", "deployer-docker", "planner", "postgres", "whoami"}) {
 		t.Errorf("entries = %q", names)
 	}
 }
@@ -382,5 +382,63 @@ uses:
 		if !strings.HasPrefix(lines[i], want[i]) {
 			t.Errorf("line %d = %q, want prefix %q", i, lines[i], want[i])
 		}
+	}
+}
+
+// TestRenderManaged covers spec 0006 AC-18: the managed render answers in internal mode only.
+func TestRenderManaged(t *testing.T) {
+	t.Parallel()
+	const deployment = "01960000-0000-7000-8000-000000000001"
+	body := `{"graph":` + sampleJSON + `,"deployment":"` + deployment + `"}`
+	token := strings.Repeat("a1", 16)
+	internal := start(t, map[string]string{
+		"MP_INSTANCE":            "planner",
+		"MP_PLANNER_MODE":        "internal",
+		"MP_PLANNER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
+	})
+	auth := http.Header{"Authorization": {"Bearer " + token}}
+
+	resp, data := internal.do(t, http.MethodPost, "/v1/render/managed", body, auth)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, data)
+	}
+	var got contract.RenderedProject
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Project != "mp-whoami-postgres" || !got.Plan.Ok || got.Plan.Digest == "" {
+		t.Errorf("project %q, ok %v, digest %q", got.Project, got.Plan.Ok, got.Plan.Digest)
+	}
+	if len(got.Images) != 2 || len(got.Secrets) != 1 || got.Secrets[0].Kind != contract.Generated {
+		t.Errorf("images %+v, secrets %+v", got.Images, got.Secrets)
+	}
+	var compose string
+	for _, f := range got.Files {
+		if f.Path == "docker-compose.yml" {
+			compose = string(f.Data)
+		}
+	}
+	if !strings.Contains(compose, "io.github.racherom.modular-platform.deployment: "+deployment) {
+		t.Errorf("docker-compose.yml lacks the deployment label:\n%s", compose)
+	}
+
+	for name, tc := range map[string]struct {
+		body string
+		want int
+	}{
+		"bare graph":       {sampleJSON, http.StatusBadRequest},
+		"extra key":        {`{"graph":` + sampleJSON + `,"deployment":"` + deployment + `","x":1}`, http.StatusBadRequest},
+		"bad uuid":         {`{"graph":` + sampleJSON + `,"deployment":"nope"}`, http.StatusBadRequest},
+		"graph extra key":  {`{"graph":{"apiVersion":"modular-platform/v0alpha1","kind":"Graph","name":"a","modules":{},"x":1},"deployment":"` + deployment + `"}`, http.StatusBadRequest},
+		"plan with errors": {`{"graph":{"apiVersion":"modular-platform/v0alpha1","kind":"Graph","name":"a","modules":{"w":{"module":"nope"}}},"deployment":"` + deployment + `"}`, http.StatusUnprocessableEntity},
+	} {
+		if resp, data := internal.do(t, http.MethodPost, "/v1/render/managed", tc.body, auth); resp.StatusCode != tc.want {
+			t.Errorf("%s: status %d, want %d: %s", name, resp.StatusCode, tc.want, data)
+		}
+	}
+
+	pub := start(t, public)
+	if resp, _ := pub.do(t, http.MethodPost, "/v1/render/managed", body, nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("public mode: status %d, want 404", resp.StatusCode)
 	}
 }

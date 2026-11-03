@@ -1,0 +1,10 @@
+# The client only; models live in libs/contract, dot imported so the generated code finds them.
+package: plannerclient
+generate:
+  client: true
+output-options:
+  prefer-skip-optional-pointer: true
+additional-imports:
+  - package: github.com/racherom/modular-platform/libs/contract
+    alias: .
+output: plannerclient.gen.go

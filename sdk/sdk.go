@@ -81,6 +81,7 @@ type Module[C, U any] struct {
 	anonymous bool
 	limiter   *httpkit.RateLimiter
 	hops      int
+	ready     []func() bool
 }
 
 // AllowAnonymous turns off the per binding token check for this run (logged once as a warning).
@@ -91,6 +92,20 @@ func (m *Module[C, U]) AllowAnonymous() { m.anonymous = true }
 // hops proxies from the right of X-Forwarded-For. Health probes are never limited.
 func (m *Module[C, U]) WithRateLimit(l *httpkit.RateLimiter, hops int) {
 	m.limiter, m.hops = l, hops
+}
+
+// AddReady adds a check /readyz waits for, beside the bindings: for example a provider the module
+// discovers on its own after start. check must be cheap and safe to call from any goroutine.
+func (m *Module[C, U]) AddReady(check func() bool) { m.ready = append(m.ready, check) }
+
+// moduleReady reports whether every check added with AddReady passes.
+func (m *Module[C, U]) moduleReady() bool {
+	for _, check := range m.ready {
+		if !check() {
+			return false
+		}
+	}
+	return true
 }
 
 // Setup builds the module's handler once the config is loaded. ctx ends at shutdown. A setup that
@@ -338,7 +353,7 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 		}
 	}
 	var cert *tlsacme.Manager
-	ready := func() bool { return r.ready() && app.Load() != nil }
+	ready := func() bool { return r.ready() && app.Load() != nil && m.moduleReady() }
 	if bs := res.Bootstrap; bs.TLS() {
 		issuer := o.issuer
 		if issuer == nil {
@@ -350,7 +365,7 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 			issuer = c
 		}
 		cert = tlsacme.New(issuer, bs.Host(), bs.Roots, log)
-		ready = func() bool { return r.ready() && app.Load() != nil && cert.Ready() }
+		ready = func() bool { return r.ready() && app.Load() != nil && m.moduleReady() && cert.Ready() }
 	}
 	health := http.NewServeMux()
 	httpkit.Health(health, ready)

@@ -3,7 +3,7 @@
 version: "3"
 
 vars:
-  GO_PACKAGES: ./catalog/... ./libs/... ./sdk/... ./services/planner/...
+  GO_PACKAGES: ./catalog/... ./libs/... ./sdk/... ./services/planner/... ./services/api/... ./services/deployer-docker/...
   IMAGE_PREFIX: ghcr.io/racherom/modular-platform
   IMAGE_TAG: dev
   GOLANGCI_LINT_VERSION: v2.15.0
@@ -37,11 +37,11 @@ tasks:
     desc: Generate Go and TypeScript code from contracts/openapi and the sdk getters from catalog entries (the output is committed)
     deps: [web:install]
     cmds:
-      - go generate ./libs/contract ./libs/render/... ./sdk/... ./services/planner/...
+      - go generate ./libs/contract ./libs/render/... ./libs/target/... ./sdk/... ./services/planner/... ./services/api/... ./services/deployer-docker/...
       - pnpm --dir web run generate
 
   build:
-    desc: Build the Go code, the editor, and the web and planner images
+    desc: Build the Go code, the editor, and the platform images
     cmds:
       - task: build:go
       - task: build:web
@@ -57,9 +57,11 @@ tasks:
       - pnpm --dir web run build
 
   images:
-    desc: Build the web and planner images, tagged {{.IMAGE_TAG}}
+    desc: Build the web, planner, api and deployer-docker images, tagged {{.IMAGE_TAG}}
     cmds:
       - docker build -f services/planner/Dockerfile -t {{.IMAGE_PREFIX}}/planner:{{.IMAGE_TAG}} .
+      - docker build -f services/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:{{.IMAGE_TAG}} .
+      - docker build -f services/deployer-docker/Dockerfile -t {{.IMAGE_PREFIX}}/deployer-docker:{{.IMAGE_TAG}} .
       - docker build -f web/Dockerfile -t {{.IMAGE_PREFIX}}/web:{{.IMAGE_TAG}} .
 
   test:
@@ -137,6 +139,48 @@ tasks:
       - defer: "{{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.dev.yaml down"
       - "{{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.dev.yaml up -d --build --wait --wait-timeout 120"
       - pnpm --dir web dev
+
+  dev:managed:
+    desc: Run the managed platform on https://platform.localhost with the editor served by the Vite dev server (binds 80 and 443)
+    deps: [web:install]
+    env:
+      MP_DEV_PROXY: "1"
+      MP_MODE: managed
+      MP_API_ROOT: /api
+    cmds:
+      - task: dev:managed:install
+      - defer: docker compose --project-directory .dev/managed -f .dev/managed/compose.yaml -f .dev/managed/compose.dev.yaml down
+      - docker compose --project-directory .dev/managed -f .dev/managed/compose.yaml -f .dev/managed/compose.dev.yaml up -d --build
+      - pnpm --dir web dev
+
+  dev:managed:install:
+    internal: true
+    # once: a copy of deploy/managed outside the tracked folder, so no secret lands in git
+    cmds:
+      - mkdir -p .dev
+      - cp -R deploy/managed .dev/managed
+      - |
+        password=$(od -An -tx1 -N12 /dev/urandom | tr -d ' \n')
+        printf 'platform.localhost\nadmin@platform.localhost\nadmin\n%s\n' "$password" | sh .dev/managed/setup.sh
+        echo "Sign in as admin with the password $password (kept nowhere else; delete .dev/managed to start over)."
+    status:
+      - test -f .dev/managed/.env
+
+  managed:zip:
+    desc: Pack deploy/managed into dist/modular-platform-<version>.zip; the same version gives the same bytes
+    vars:
+      VERSION:
+        sh: |
+          sed -n 's/.*"\.": "\(.*\)".*/\1/p' .release-please-manifest.json
+    cmds:
+      - mkdir -p dist
+      - python3 scripts/managed_zip.py deploy/managed "modular-platform-{{.VERSION}}" "dist/modular-platform-{{.VERSION}}.zip"
+
+  smoke:managed:
+    desc: Install the managed platform with setup.sh, sign in, deploy the sample and see it running (needs the images tagged ci and Chromium)
+    deps: [web:install]
+    cmds:
+      - sh scripts/smoke-managed.sh
 
   smoke:
     desc: Run the smoke job against freshly built images (needs Chromium for Playwright)

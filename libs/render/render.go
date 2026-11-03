@@ -53,6 +53,7 @@ type secret struct {
 	Instance, Name, Env string
 	Path                string // secrets/<instance>/<name>
 	Compose             string // <instance>_<name>
+	Capability, Field   string // placed only: the binding's capability and which credential
 }
 
 type templateData struct {
@@ -65,8 +66,21 @@ type templateData struct {
 
 // Render renders the resolved graph of an ok plan. catalog must hold every module the graph uses.
 func Render(plan contract.PlanResult, catalog []contract.CatalogEntry) (Output, error) {
+	r, err := render(plan, catalog, nil)
+	return r.out, err
+}
+
+// rendered is a render's output plus what the managed flavor reports beside it.
+type rendered struct {
+	out  Output
+	data templateData
+}
+
+// render renders plan; a non nil managed turns the project into its managed flavor before the
+// Compose file is written.
+func render(plan contract.PlanResult, catalog []contract.CatalogEntry, managed func(*types.Project)) (rendered, error) {
 	if !plan.Ok {
-		return Output{}, ErrPlanHasErrors
+		return rendered{}, ErrPlanHasErrors
 	}
 	entries := make(map[string]contract.CatalogEntry, len(catalog))
 	for _, e := range catalog {
@@ -88,7 +102,7 @@ func Render(plan contract.PlanResult, catalog []contract.CatalogEntry) (Output, 
 	for _, i := range instances {
 		entry, ok := entries[g.Modules[i].Module]
 		if !ok {
-			return Output{}, fmt.Errorf("render: module %q of instance %s is not in the catalog", g.Modules[i].Module, i)
+			return rendered{}, fmt.Errorf("render: module %q of instance %s is not in the catalog", g.Modules[i].Module, i)
 		}
 		svc := types.ServiceConfig{Name: i}
 		svc.Image = entry.Image
@@ -134,13 +148,16 @@ func Render(plan contract.PlanResult, catalog []contract.CatalogEntry) (Output, 
 	slices.SortFunc(data.Secrets, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
 	slices.SortFunc(data.Placed, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
 
+	if managed != nil {
+		managed(&project)
+	}
 	compose, err := composeYAML(project)
 	if err != nil {
-		return Output{}, err
+		return rendered{}, err
 	}
 	graphText, err := contract.MarshalGraph(g)
 	if err != nil {
-		return Output{}, fmt.Errorf("render: %w", err)
+		return rendered{}, fmt.Errorf("render: %w", err)
 	}
 	files := []File{
 		{Path: "docker-compose.yml", Mode: 0o644, Data: compose},
@@ -156,7 +173,7 @@ func Render(plan contract.PlanResult, catalog []contract.CatalogEntry) (Output, 
 	} {
 		var buf bytes.Buffer
 		if err := templates.ExecuteTemplate(&buf, t.template, data); err != nil {
-			return Output{}, fmt.Errorf("render %s: %w", t.path, err)
+			return rendered{}, fmt.Errorf("render %s: %w", t.path, err)
 		}
 		files = append(files, File{Path: t.path, Mode: t.mode, Data: buf.Bytes()})
 	}
@@ -166,7 +183,7 @@ func Render(plan contract.PlanResult, catalog []contract.CatalogEntry) (Output, 
 		}
 	}
 	slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
-	return Output{Name: g.Name, Files: files}, nil
+	return rendered{out: Output{Name: project.Name, Files: files}, data: data}, nil
 }
 
 // WriteZip writes the files as a zip, entries in path order with a fixed time, so the same

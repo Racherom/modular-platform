@@ -1,0 +1,356 @@
+openapi: 3.1.0
+info:
+  title: Modular Platform deploy target
+  version: 0.1.0
+  summary: Applies a rendered Compose project to one host and reports its state.
+  description: |
+    The deploy target holds the host's container engine, so it does as little as possible: it
+    takes a rendered project from `api`, checks it again, writes it into the deployment's folder,
+    creates missing secrets and runs `docker compose` (spec 0006, child 0007). It keeps running
+    operations in memory only; it never plans, never stores history and never decides a rollback.
+
+    Every call needs the consumer's binding token. Apply needs an `MP-Caller` token too
+    (401 `invalid_token` without one). Every answer, error answers included, carries the
+    `MP-Boot-Id` header: 16 random bytes, base64url, chosen at each start. A new value means the
+    deployer restarted and forgot its running operations.
+
+    Errors are a `ProblemList`.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+paths:
+  /v1/projects/{project}/apply:
+    post:
+      operationId: applyProject
+      summary: Write the project's files and start it
+      description: |
+        Answers at once with the running operation; poll `/v1/operations/{id}` for its outcome.
+        One operation per project at a time; different projects run in parallel.
+      parameters:
+        - $ref: "#/components/parameters/Project"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyRequest"
+      responses:
+        "202":
+          description: The operation started.
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: An operation of this project is still running (`busy`).
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+        "413":
+          description: The body is over 8 MB (`request_too_large`).
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+        "422":
+          description: |
+            The project is refused: `invalid_project`, `host_access`, `invalid_path`,
+            `placed_missing` or `placed_invalid`, one problem per finding.
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+  /v1/operations/{id}:
+    get:
+      operationId: getOperation
+      summary: Read one operation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The operation.
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/projects/{project}/state:
+    get:
+      operationId: getProjectState
+      summary: Read the state of each container of the project
+      parameters:
+        - $ref: "#/components/parameters/Project"
+      responses:
+        "200":
+          description: The project's services, sorted by instance.
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: The container engine did not answer (`docker_unavailable`).
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+  /v1/projects/{project}/secrets:
+    get:
+      operationId: getProjectSecrets
+      summary: List the secret files of the project that exist, never their content
+      parameters:
+        - $ref: "#/components/parameters/Project"
+      responses:
+        "200":
+          description: The paths, sorted.
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PresentSecrets"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: The consumer's binding token, one file per consumer in the deployer's clients directory (spec 0005).
+  parameters:
+    Project:
+      name: project
+      in: path
+      required: true
+      description: The Compose project, `mp-<deployment name>`.
+      schema:
+        type: string
+        pattern: "^mp-[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+  headers:
+    BootId:
+      description: Chosen at each start of the deployer; a change means it forgot its running operations.
+      required: true
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: The body or a parameter does not decode (`invalid_request`, `invalid_project`).
+      headers:
+        MP-Boot-Id:
+          $ref: "#/components/headers/BootId"
+      content:
+        application/json:
+          schema:
+            $ref: "./planner.yaml#/components/schemas/ProblemList"
+    Unauthorized:
+      description: The binding token is missing or wrong (`unauthorized`), or apply came without an `MP-Caller` token (`invalid_token`).
+      headers:
+        MP-Boot-Id:
+          $ref: "#/components/headers/BootId"
+      content:
+        application/json:
+          schema:
+            $ref: "./planner.yaml#/components/schemas/ProblemList"
+    NotFound:
+      description: Unknown under this boot id (`not_found`).
+      headers:
+        MP-Boot-Id:
+          $ref: "#/components/headers/BootId"
+      content:
+        application/json:
+          schema:
+            $ref: "./planner.yaml#/components/schemas/ProblemList"
+  schemas:
+    ApplyRequest:
+      type: object
+      additionalProperties: false
+      required: [deployment, files, secrets]
+      properties:
+        deployment:
+          type: string
+          format: uuid
+          description: Every service's `deployment` label must equal it.
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectFile"
+        secrets:
+          type: array
+          description: Every secret file the project mounts, as the managed render lists them.
+          items:
+            $ref: "#/components/schemas/ProjectSecret"
+        placed:
+          type: array
+          description: Values you supply for placed secrets; written once, replaced only with `replace`.
+          items:
+            $ref: "#/components/schemas/PlacedValue"
+    ProjectFile:
+      type: object
+      additionalProperties: false
+      required: [path, mode, data]
+      properties:
+        path:
+          type: string
+          description: "`docker-compose.yml`, `.env`, `graph.yaml`, `README.md`, `setup.sh` or `config/<instance>.env`."
+        mode:
+          type: integer
+        data:
+          type: string
+          format: byte
+    ProjectSecret:
+      type: object
+      additionalProperties: false
+      required: [path, kind, instance]
+      properties:
+        path:
+          type: string
+          description: "`secrets/<instance>/<name>`."
+        kind:
+          type: string
+          enum: [generated, placed]
+        instance:
+          type: string
+        capability:
+          type: string
+        field:
+          type: string
+          enum: [password, secret_key]
+    PlacedValue:
+      type: object
+      additionalProperties: false
+      required: [path, data]
+      properties:
+        path:
+          type: string
+        data:
+          type: string
+          format: byte
+          description: The value, base64; not empty, at most 4096 bytes, no NUL byte.
+        replace:
+          type: boolean
+          default: false
+    Operation:
+      type: object
+      additionalProperties: false
+      required: [id, project, action, status, step, startedAt]
+      properties:
+        id:
+          type: string
+        project:
+          type: string
+        action:
+          type: string
+          enum: [apply, remove]
+        status:
+          type: string
+          enum: [running, succeeded, failed]
+        step:
+          type: string
+          enum: [prepare, pull, up, down, done]
+          description: The last step reached.
+        error:
+          type: string
+          description: A problem code, then at most the last 16 KB of Compose's output.
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+    ProjectState:
+      type: object
+      additionalProperties: false
+      required: [present, services]
+      properties:
+        present:
+          type: boolean
+          description: False when the project has neither containers nor a folder.
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceState"
+    ServiceState:
+      type: object
+      additionalProperties: false
+      required: [instance, module, state, restartCount, image]
+      properties:
+        instance:
+          type: string
+        module:
+          type: string
+        state:
+          type: string
+          enum: [pending, starting, running, unhealthy, restarting, exited, paused]
+        health:
+          type: string
+          description: "`starting`, `healthy` or `unhealthy`; empty without a healthcheck."
+        exitCode:
+          type: integer
+          description: Set when `exited`.
+          # keep the pointer: exit code 0 is a value
+          x-go-type-skip-optional-pointer: false
+        lastExitCode:
+          type: integer
+          description: The exit code of the previous run, so a crash Docker restarted at once still shows.
+          # keep the pointer: exit code 0 is a value
+          x-go-type-skip-optional-pointer: false
+        restartCount:
+          type: integer
+        image:
+          type: string
+        since:
+          type: string
+          format: date-time
+          description: When the container entered its current state.
+    PresentSecrets:
+      type: object
+      additionalProperties: false
+      required: [present]
+      properties:
+        present:
+          type: array
+          items:
+            type: string

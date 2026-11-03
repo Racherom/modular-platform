@@ -1,0 +1,141 @@
+package api_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/racherom/modular-platform/libs/contract"
+	"github.com/racherom/modular-platform/libs/target/deploytarget"
+	"github.com/racherom/modular-platform/sdk"
+	"github.com/racherom/modular-platform/services/deployer-docker/internal/api"
+	"github.com/racherom/modular-platform/services/deployer-docker/internal/deploy"
+)
+
+type okCompose struct{}
+
+func (okCompose) Run(context.Context, string, string, ...string) ([]byte, error) { return nil, nil }
+
+type noDocker struct{}
+
+func (noDocker) Containers(context.Context, string) ([]deploy.Container, error) { return nil, nil }
+
+// serve runs the handler; withCaller stands in for a checked MP-Caller token.
+func serve(t *testing.T, withCaller bool) (*httptest.Server, *deploy.Engine) {
+	t.Helper()
+	e := deploy.New(t.Context(), deploy.Config{
+		Dir: t.TempDir(), UID: os.Getuid(), GID: os.Getgid(), PullTimeout: time.Minute, WaitTimeout: time.Minute,
+	}, okCompose{}, noDocker{}, slog.New(slog.DiscardHandler))
+	t.Cleanup(e.Wait)
+	h := api.NewHandler(e, slog.New(slog.DiscardHandler))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if withCaller {
+			r = r.WithContext(sdk.WithCaller(r.Context(), sdk.Caller{Issuer: "https://idp", User: "user-1"}))
+		}
+		h.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, e
+}
+
+func applyBody(t *testing.T) string {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{
+		"deployment": "01960000-0000-7000-8000-000000000001",
+		"files":      []map[string]any{{"path": "docker-compose.yml", "mode": 420, "data": base64.StdEncoding.EncodeToString([]byte("name: mp-sample\n"))}},
+		"secrets":    []map[string]any{{"path": "secrets/postgres/password", "kind": "generated", "instance": "postgres"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
+func do(t *testing.T, srv *httptest.Server, method, path, body string) (*http.Response, []byte) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), method, srv.URL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	return resp, data
+}
+
+func TestApplyNeedsACaller(t *testing.T) {
+	t.Parallel()
+	srv, e := serve(t, false)
+	resp, data := do(t, srv, http.MethodPost, "/v1/projects/mp-sample/apply", applyBody(t))
+	var problems contract.ProblemList
+	_ = json.Unmarshal(data, &problems)
+	if resp.StatusCode != http.StatusUnauthorized || len(problems.Problems) != 1 || problems.Problems[0].Code != "invalid_token" {
+		t.Errorf("status %d: %s", resp.StatusCode, data)
+	}
+	if resp.Header.Get(api.BootHeader) != e.BootID() {
+		t.Errorf("boot id %q on an error answer, want %q", resp.Header.Get(api.BootHeader), e.BootID())
+	}
+}
+
+func TestApplyAndPoll(t *testing.T) {
+	t.Parallel()
+	srv, e := serve(t, true)
+	resp, data := do(t, srv, http.MethodPost, "/v1/projects/mp-sample/apply", applyBody(t))
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status %d: %s", resp.StatusCode, data)
+	}
+	if resp.Header.Get(api.BootHeader) != e.BootID() {
+		t.Errorf("boot id %q", resp.Header.Get(api.BootHeader))
+	}
+	var op deploytarget.Operation
+	if err := json.Unmarshal(data, &op); err != nil {
+		t.Fatal(err)
+	}
+	if op.Status != deploytarget.OperationStatusRunning || op.Project != "mp-sample" || bytes.Contains(data, []byte("finishedAt")) {
+		t.Errorf("operation %s", data)
+	}
+	e.Wait()
+	resp, data = do(t, srv, http.MethodGet, "/v1/operations/"+op.Id, "")
+	if resp.StatusCode != http.StatusOK || !bytes.Contains(data, []byte(`"status":"succeeded"`)) {
+		t.Errorf("poll: status %d: %s", resp.StatusCode, data)
+	}
+	if resp, _ := do(t, srv, http.MethodGet, "/v1/operations/nope", ""); resp.StatusCode != http.StatusNotFound || resp.Header.Get(api.BootHeader) == "" {
+		t.Errorf("unknown operation: status %d, boot id %q", resp.StatusCode, resp.Header.Get(api.BootHeader))
+	}
+	resp, data = do(t, srv, http.MethodGet, "/v1/projects/mp-sample/secrets", "")
+	if resp.StatusCode != http.StatusOK || string(bytes.TrimSpace(data)) != `{"present":["secrets/postgres/password"]}` {
+		t.Errorf("secrets: status %d: %s", resp.StatusCode, data)
+	}
+}
+
+func TestBadRequests(t *testing.T) {
+	t.Parallel()
+	srv, _ := serve(t, true)
+	for name, tc := range map[string]struct {
+		method, path, body string
+		want               int
+	}{
+		"bad project on apply": {http.MethodPost, "/v1/projects/modular-platform/apply", applyBody(t), http.StatusUnprocessableEntity},
+		"bad project on state": {http.MethodGet, "/v1/projects/nope/state", "", http.StatusBadRequest},
+		"not json":             {http.MethodPost, "/v1/projects/mp-sample/apply", "{", http.StatusBadRequest},
+		"too large":            {http.MethodPost, "/v1/projects/mp-sample/apply", `{"files":"` + strings.Repeat("a", 9<<20) + `"}`, http.StatusRequestEntityTooLarge},
+		"refused path":         {http.MethodPost, "/v1/projects/mp-sample/apply", strings.Replace(applyBody(t), "docker-compose.yml", "../x", 1), http.StatusUnprocessableEntity},
+	} {
+		if resp, data := do(t, srv, tc.method, tc.path, tc.body); resp.StatusCode != tc.want {
+			t.Errorf("%s: status %d, want %d: %.200s", name, resp.StatusCode, tc.want, data)
+		}
+	}
+}

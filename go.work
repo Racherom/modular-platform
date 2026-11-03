@@ -6,5 +6,7 @@ use (
 	./catalog
 	./libs
 	./sdk
+	./services/api
+	./services/deployer-docker
 	./services/planner
 )

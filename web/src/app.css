@@ -238,3 +238,116 @@ a:focus-visible {
   padding: 0.5rem 1rem;
   margin-bottom: 1rem;
 }
+
+/* managed mode */
+.app__account {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-left: auto;
+}
+
+.button {
+  display: inline-block;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  text-decoration: none;
+}
+
+/* a state is text plus colour, never colour alone */
+.badge {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  border: 1px solid #555;
+  background: #eee;
+  color: #111;
+}
+
+.badge--running {
+  background: #d7f5dd;
+  border-color: #1b6b2c;
+}
+
+.badge--starting,
+.badge--pending,
+.badge--applying,
+.badge--rolling-back,
+.badge--removing {
+  background: #fff3c4;
+  border-color: #7a5d00;
+}
+
+.badge--unhealthy,
+.badge--restarting,
+.badge--exited,
+.badge--missing,
+.badge--failed,
+.badge--unknown {
+  background: #fde0e0;
+  border-color: #8a1c1c;
+}
+
+.module-node .badge {
+  margin-top: 0.2rem;
+}
+
+.banner {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #555;
+  border-radius: 4px;
+}
+
+.banner--error {
+  border-color: #8a1c1c;
+  background: #fde0e0;
+  color: #111;
+}
+
+.progress:empty {
+  display: none;
+}
+
+.deployments {
+  border-collapse: collapse;
+}
+
+.deployments th,
+.deployments td {
+  text-align: left;
+  padding: 0.3rem 0.75rem;
+  border-bottom: 1px solid #ccc;
+}
+
+.history__error {
+  white-space: pre-wrap;
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.review {
+  max-width: 40rem;
+  width: 90vw;
+}
+
+.review__list {
+  padding-left: 1.2rem;
+}
+
+.review__field {
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.review__actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.signed-out {
+  max-width: 32rem;
+}

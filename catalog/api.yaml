@@ -1,0 +1,88 @@
+apiVersion: modular-platform/v0alpha1
+kind: Module
+name: api
+description: The managed platform's control plane, with sign in, deployments and their history.
+# release-please bumps the version on this line
+image: ghcr.io/racherom/modular-platform/api:0.0.0 # x-release-please-version
+runtime: sdk
+healthcheck:
+  test: ["CMD", "/api", "healthcheck"]
+  interval: 5s
+  timeout: 3s
+  retries: 10
+  start_period: 60s
+uses:
+  planner:
+    client: http
+    env:
+      url: MP_PLANNER_URL
+      token_file: MP_PLANNER_TOKEN_FILE
+      ca_file: MP_PLANNER_CA_FILE
+  deploy-target:
+    client: http
+    env:
+      url: MP_DEPLOY_TARGET_URL
+      token_file: MP_DEPLOY_TARGET_TOKEN_FILE
+      ca_file: MP_DEPLOY_TARGET_CA_FILE
+  postgresql:
+    client: postgresql
+    env:
+      url: MP_DATABASE_URL
+      database: MP_DATABASE_NAME
+      user: MP_DATABASE_USER
+      password_file: MP_DATABASE_PASSWORD_FILE
+      sslmode: MP_DATABASE_SSLMODE
+config:
+  oidc-issuer:
+    env: MP_OIDC_ISSUER
+    type: url
+    description: Issuer URL of the identity provider that signs the admin in.
+  oidc-client-id:
+    env: MP_OIDC_CLIENT_ID
+    type: string
+    default: mp-api
+    description: Client id of the platform at the identity provider.
+  oidc-client-secret:
+    env: MP_OIDC_CLIENT_SECRET
+    type: secret
+    description: Client secret of the platform at the identity provider.
+  oidc-ca:
+    env: MP_OIDC_CA
+    type: string
+    optional: true
+    description: PEM CA bundle to trust the identity provider's TLS certificate with; usually given as a file through MP_OIDC_CA_FILE.
+  public-origin:
+    env: MP_PUBLIC_ORIGIN
+    type: url
+    description: Scheme, host and port the browser sees, like https://platform.example.com.
+  base-path:
+    env: MP_BASE_PATH
+    type: string
+    optional: true
+    pattern: "(/[A-Za-z0-9._~-]+)+"
+    description: Path the platform is served under, like /platform; unset at the site root.
+  admin-email:
+    env: MP_ADMIN_EMAIL
+    type: string
+    pattern: "[^@\\s]+@[^@\\s]+"
+    description: Email of the admin; the first verified sign in with it binds the admin.
+  proxy-hops:
+    env: MP_PROXY_HOPS
+    type: int
+    default: "1"
+    min: 0
+    description: Proxies in front of api that append X-Forwarded-For.
+  session-idle:
+    env: MP_SESSION_IDLE
+    type: duration
+    default: 1h
+    min: 5m
+    max: 24h
+    description: A session ends after this long without a request.
+  session-max:
+    env: MP_SESSION_MAX
+    type: duration
+    default: 12h
+    min: 5m
+    max: 720h
+    description: A session ends this long after sign in, whatever its activity.

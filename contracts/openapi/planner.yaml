@@ -10,6 +10,7 @@ info:
     Request bodies are decoded strictly: unknown keys and duplicate keys are rejected with 400.
 
     In public mode no credential is needed. In internal mode every call needs the bearer token.
+    `/v1/render/managed` exists in internal mode only (spec 0006).
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -100,6 +101,47 @@ paths:
                 $ref: "#/components/schemas/PlanResult"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/TimedOut"
+  /v1/render/managed:
+    post:
+      operationId: renderManaged
+      summary: Render a graph as the files the managed deployer applies
+      description: |
+        Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+        service carries the platform labels and `restart: unless-stopped`. The answer lists every
+        secret file the project needs, never a value.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManagedRenderRequest"
+      responses:
+        "200":
+          description: The rendered project.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderedProject"
+        "400":
+          $ref: "#/components/responses/BadGraph"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Public mode (`not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProblemList"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The plan has an error, so nothing was rendered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanResult"
         "503":
           $ref: "#/components/responses/TimedOut"
 components:
@@ -457,3 +499,106 @@ components:
           description: Sorted by path, then code.
           items:
             $ref: "#/components/schemas/Problem"
+        digest:
+          type: string
+          description: |
+            `sha256:<hex>` over the canonical graph, the bindings and the catalog entries the graph
+            uses; set only when `ok` is true. Equal digests mean the same project is rendered.
+    ManagedRenderRequest:
+      type: object
+      additionalProperties: false
+      required: [graph, deployment]
+      properties:
+        graph:
+          $ref: "#/components/schemas/Graph"
+        deployment:
+          type: string
+          format: uuid
+          description: The deployment id, written into every service's `deployment` label.
+    RenderedProject:
+      type: object
+      additionalProperties: false
+      required: [project, plan, images, publishedPorts, secrets, files]
+      properties:
+        project:
+          type: string
+          description: The Compose project name, `mp-<graph name>`.
+        plan:
+          $ref: "#/components/schemas/PlanResult"
+        images:
+          type: array
+          description: One entry per instance, sorted by instance.
+          items:
+            $ref: "#/components/schemas/ModuleImage"
+        publishedPorts:
+          type: array
+          description: Host ports the project publishes; always empty in `v0alpha1`.
+          items:
+            $ref: "#/components/schemas/PublishedPort"
+        secrets:
+          type: array
+          description: Every secret file the project mounts, sorted by path.
+          items:
+            $ref: "#/components/schemas/RenderedSecret"
+        files:
+          type: array
+          description: The project's files, sorted by path.
+          items:
+            $ref: "#/components/schemas/RenderedFile"
+    ModuleImage:
+      type: object
+      additionalProperties: false
+      required: [instance, module, image]
+      properties:
+        instance:
+          type: string
+        module:
+          type: string
+        image:
+          type: string
+    PublishedPort:
+      type: object
+      additionalProperties: false
+      required: [instance, published, target]
+      properties:
+        instance:
+          type: string
+        published:
+          type: integer
+        target:
+          type: integer
+    RenderedSecret:
+      type: object
+      additionalProperties: false
+      required: [path, kind, instance]
+      properties:
+        path:
+          type: string
+          description: "`secrets/<instance>/<name>`, relative to the project folder."
+        kind:
+          type: string
+          enum: [generated, placed]
+          description: "`generated`: the deployer creates it as 32 random bytes in hex. `placed`: you supply it."
+        instance:
+          type: string
+        capability:
+          type: string
+          description: Placed only, the binding's capability.
+        field:
+          type: string
+          enum: [password, secret_key]
+          description: Placed only, which credential of the binding it holds.
+    RenderedFile:
+      type: object
+      additionalProperties: false
+      required: [path, mode, data]
+      properties:
+        path:
+          type: string
+        mode:
+          type: integer
+          description: The file mode, like 420 for 0644.
+        data:
+          type: string
+          format: byte
+          description: The content, base64.

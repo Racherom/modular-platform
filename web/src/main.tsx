@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRouter, RouterProvider } from '@tanstack/react-router'
 import '@xyflow/react/dist/style.css'
 import { StrictMode } from 'react'
@@ -16,7 +16,14 @@ declare module '@tanstack/react-router' {
 }
 
 // one call per open and per download keeps the editor far below the public rate limit
-const queryClient = new QueryClient({
+// managed mode: any call that finds the session gone sends the editor back to the signed out view
+const queryClient: QueryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error, query) => {
+      const status = (error as { status?: number }).status
+      if (status === 401 && query.queryKey[0] !== 'session') void queryClient.invalidateQueries({ queryKey: ['session'] })
+    },
+  }),
   defaultOptions: {
     queries: { retry: false, staleTime: Infinity, refetchOnWindowFocus: false, refetchOnReconnect: false },
   },

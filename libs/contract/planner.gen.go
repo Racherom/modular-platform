@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for CatalogEntryRuntime.
@@ -84,6 +85,42 @@ const (
 func (e ProvideAuth) Valid() bool {
 	switch e {
 	case BindingToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RenderedSecretField.
+const (
+	Password  RenderedSecretField = "password"
+	SecretKey RenderedSecretField = "secret_key"
+)
+
+// Valid indicates whether the value is a known member of the RenderedSecretField enum.
+func (e RenderedSecretField) Valid() bool {
+	switch e {
+	case Password:
+		return true
+	case SecretKey:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RenderedSecretKind.
+const (
+	Generated RenderedSecretKind = "generated"
+	Placed    RenderedSecretKind = "placed"
+)
+
+// Valid indicates whether the value is a known member of the RenderedSecretKind enum.
+func (e RenderedSecretKind) Valid() bool {
+	switch e {
+	case Generated:
+		return true
+	case Placed:
 		return true
 	default:
 		return false
@@ -241,10 +278,30 @@ type Healthcheck struct {
 	Timeout string   `json:"timeout,omitempty"`
 }
 
+// ManagedRenderRequest defines model for ManagedRenderRequest.
+type ManagedRenderRequest struct {
+	// Deployment The deployment id, written into every service's `deployment` label.
+	Deployment openapi_types.UUID `json:"deployment"`
+
+	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
+	Graph Graph `json:"graph"`
+}
+
+// ModuleImage defines model for ModuleImage.
+type ModuleImage struct {
+	Image    string `json:"image"`
+	Instance string `json:"instance"`
+	Module   string `json:"module"`
+}
+
 // PlanResult defines model for PlanResult.
 type PlanResult struct {
 	// Bindings Explicit and automatic bindings, sorted by consumer then capability.
 	Bindings []Binding `json:"bindings"`
+
+	// Digest `sha256:<hex>` over the canonical graph, the bindings and the catalog entries the graph
+	// uses; set only when `ok` is true. Equal digests mean the same project is rendered.
+	Digest string `json:"digest,omitempty"`
 
 	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
 	Graph Graph `json:"graph"`
@@ -293,6 +350,64 @@ type ProvideEnv struct {
 	// ClientsDir Env var set to the directory holding one token file per consumer; required with `auth`.
 	ClientsDir string `json:"clients_dir,omitempty"`
 }
+
+// PublishedPort defines model for PublishedPort.
+type PublishedPort struct {
+	Instance  string `json:"instance"`
+	Published int    `json:"published"`
+	Target    int    `json:"target"`
+}
+
+// RenderedFile defines model for RenderedFile.
+type RenderedFile struct {
+	// Data The content, base64.
+	Data []byte `json:"data"`
+
+	// Mode The file mode, like 420 for 0644.
+	Mode int    `json:"mode"`
+	Path string `json:"path"`
+}
+
+// RenderedProject defines model for RenderedProject.
+type RenderedProject struct {
+	// Files The project's files, sorted by path.
+	Files []RenderedFile `json:"files"`
+
+	// Images One entry per instance, sorted by instance.
+	Images []ModuleImage `json:"images"`
+	Plan   PlanResult    `json:"plan"`
+
+	// Project The Compose project name, `mp-<graph name>`.
+	Project string `json:"project"`
+
+	// PublishedPorts Host ports the project publishes; always empty in `v0alpha1`.
+	PublishedPorts []PublishedPort `json:"publishedPorts"`
+
+	// Secrets Every secret file the project mounts, sorted by path.
+	Secrets []RenderedSecret `json:"secrets"`
+}
+
+// RenderedSecret defines model for RenderedSecret.
+type RenderedSecret struct {
+	// Capability Placed only, the binding's capability.
+	Capability string `json:"capability,omitempty"`
+
+	// Field Placed only, which credential of the binding it holds.
+	Field    RenderedSecretField `json:"field,omitempty"`
+	Instance string              `json:"instance"`
+
+	// Kind `generated`: the deployer creates it as 32 random bytes in hex. `placed`: you supply it.
+	Kind RenderedSecretKind `json:"kind"`
+
+	// Path `secrets/<instance>/<name>`, relative to the project folder.
+	Path string `json:"path"`
+}
+
+// RenderedSecretField Placed only, which credential of the binding it holds.
+type RenderedSecretField string
+
+// RenderedSecretKind `generated`: the deployer creates it as 32 random bytes in hex. `placed`: you supply it.
+type RenderedSecretKind string
 
 // Secret Created by `setup.sh` as `secrets/<instance>/<name>`, mounted as the Compose secret `<instance>_<name>`.
 type Secret struct {
@@ -361,6 +476,9 @@ type PlanJSONRequestBody = Graph
 
 // RenderJSONRequestBody defines body for Render for application/json ContentType.
 type RenderJSONRequestBody = Graph
+
+// RenderManagedJSONRequestBody defines body for RenderManaged for application/json ContentType.
+type RenderManagedJSONRequestBody = ManagedRenderRequest
 
 // AsConfigBound0 returns the union data inside the ConfigBound as a ConfigBound0
 func (t ConfigBound) AsConfigBound0() (ConfigBound0, error) {

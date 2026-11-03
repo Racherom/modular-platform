@@ -9,6 +9,9 @@
       "extra-files": [
         "deploy/online/versions.env",
         "catalog/planner.yaml",
+        "deploy/managed/compose.yaml",
+        "catalog/deployer-docker.yaml",
+        "catalog/api.yaml",
         {
           "type": "json",
           "path": "web/package.json",

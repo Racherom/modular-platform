@@ -1,0 +1,60 @@
+apiVersion: modular-platform/v0alpha1
+kind: Module
+name: deployer-docker
+description: Applies a rendered project to this host with Docker Compose and reports container state; holds the Docker socket.
+# release-please bumps the version on this line
+image: ghcr.io/racherom/modular-platform/deployer-docker:0.0.0 # x-release-please-version
+runtime: sdk
+healthcheck:
+  test: ["CMD", "/deployer-docker", "healthcheck"]
+  interval: 5s
+  timeout: 3s
+  retries: 10
+  start_period: 30s
+provides:
+  deploy-target:
+    auth: binding-token
+    env:
+      clients_dir: MP_DEPLOY_TARGET_CLIENTS_DIR
+config:
+  deployments-dir:
+    env: MP_DEPLOYMENTS_DIR
+    type: string
+    pattern: "/.+"
+    description: Absolute path of the deployments folder, the same path on the host and in the deployer.
+  platform-uid:
+    env: MP_PLATFORM_UID
+    type: int
+    min: 0
+    description: User id that owns deployed files and secrets and runs deployed sdk modules.
+  platform-gid:
+    env: MP_PLATFORM_GID
+    type: int
+    min: 0
+    description: Group id that owns deployed files and secrets and runs deployed sdk modules.
+  platform-http-port:
+    env: MP_PLATFORM_HTTP_PORT
+    type: int
+    default: "80"
+    min: 1
+    max: 65535
+    description: Host port of the platform's ingress for HTTP, which no deployed project may publish.
+  platform-https-port:
+    env: MP_PLATFORM_HTTPS_PORT
+    type: int
+    default: "443"
+    min: 1
+    max: 65535
+    description: Host port of the platform's ingress for HTTPS, which no deployed project may publish.
+  pull-timeout:
+    env: MP_PULL_TIMEOUT
+    type: duration
+    default: 10m
+    min: 1m
+    description: Longest time an apply may spend pulling images.
+  wait-timeout:
+    env: MP_WAIT_TIMEOUT
+    type: duration
+    default: 5m
+    min: 10s
+    description: Longest time an apply waits for every service to run and pass its healthcheck.

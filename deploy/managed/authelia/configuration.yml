@@ -1,0 +1,64 @@
+# The bundled identity provider (spec 0001, "Sign in"). Settings come from the environment
+# through Authelia's template filter; every secret is a file under /run/secrets, written by
+# setup.sh, and named by an AUTHELIA_*_FILE variable or read with the secret function below.
+server:
+  address: 'tcp://:9091{{ env "PLATFORM_BASE_PATH" }}/auth'
+
+log:
+  level: info
+
+theme: auto
+
+identity_validation:
+  reset_password:
+    # read from AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE
+    jwt_lifespan: 5m
+
+authentication_backend:
+  # one admin from setup.sh; password reset needs a mail server, so it is off
+  password_reset:
+    disable: true
+  file:
+    path: /run/secrets/authelia_users
+    watch: false
+
+access_control:
+  default_policy: one_factor
+
+session:
+  name: mp_authelia_session
+  cookies:
+    - domain: '{{ env "PLATFORM_DOMAIN" }}'
+      authelia_url: '{{ env "PLATFORM_ORIGIN" }}{{ env "PLATFORM_BASE_PATH" }}/auth'
+
+storage:
+  postgres:
+    address: 'tcp://postgres:5432'
+    database: authelia
+    username: authelia
+
+notifier:
+  # no mail server in the first thread; nothing is sent while password reset is off
+  filesystem:
+    filename: /tmp/notification.txt
+
+identity_providers:
+  oidc:
+    jwks:
+      - key: {{ secret "/run/secrets/authelia_oidc_key" | mindent 10 "|" | msquote }}
+    clients:
+      - client_id: mp-api
+        client_name: Modular Platform
+        client_secret: '{{ secret "/run/secrets/authelia_client_digest" }}'
+        public: false
+        # moves to two_factor with #14
+        authorization_policy: one_factor
+        consent_mode: implicit
+        require_pkce: true
+        pkce_challenge_method: S256
+        redirect_uris:
+          - '{{ env "PLATFORM_ORIGIN" }}{{ env "PLATFORM_BASE_PATH" }}/api/v1/auth/callback'
+        scopes: [openid, profile, email, groups]
+        response_types: [code]
+        grant_types: [authorization_code]
+        token_endpoint_auth_method: client_secret_basic

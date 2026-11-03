@@ -1,0 +1,11 @@
+# Types and the client; the planner's shared kernel types (ProblemList) come from libs/contract.
+package: deploytarget
+generate:
+  models: true
+  client: true
+output-options:
+  prefer-skip-optional-pointer: true
+  prefer-skip-optional-pointer-with-omitzero: true
+import-mapping:
+  ./planner.yaml: github.com/racherom/modular-platform/libs/contract
+output: deploytarget.gen.go

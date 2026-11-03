@@ -1,0 +1,696 @@
+openapi: 3.1.0
+info:
+  title: Modular Platform api
+  version: 0.1.0
+  summary: The managed platform's control plane, called by the editor.
+  description: |
+    `api` keeps the record (sessions, deployments, an append only history), asks the planner to
+    plan and render, and drives the deploy target (spec 0006). Paths sit under `<base>/api/v1`;
+    the base is empty in thread 1.
+
+    Every route except the auth routes needs the admin's session cookie. Every mutating route
+    also needs an `Origin` header exactly equal to the public origin (403 `bad_origin`). Errors
+    are a `ProblemList`.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: /
+security:
+  - sessionCookie: []
+paths:
+  /api/v1/auth/login:
+    get:
+      operationId: login
+      summary: Start a sign in at the identity provider
+      security: []
+      parameters:
+        - name: return_to
+          in: query
+          description: A path under `<base>/` to come back to; anything else becomes `<base>/`.
+          schema:
+            type: string
+      responses:
+        "302":
+          description: To the provider. Sets `__Host-mp_login` (state, PKCE verifier, nonce, return path; 10 minutes).
+          headers:
+            Location:
+              schema:
+                type: string
+        "503":
+          description: The provider has not answered discovery yet (`provider_unavailable`).
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+  /api/v1/auth/callback:
+    get:
+      operationId: callback
+      summary: Finish a sign in
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+      responses:
+        "302":
+          description: |
+            Signed in: sets the session cookie and goes to the return path. Refused: goes to
+            `<base>/?signed_out=<reason>`, reason `not_admin`, `email_unverified`,
+            `state_mismatch` or `provider_error`.
+          headers:
+            Location:
+              schema:
+                type: string
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      summary: Sign out
+      responses:
+        "200":
+          description: The session is gone and both cookies are cleared. Go to `redirect` next.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Logout"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/BadOrigin"
+  /api/v1/session:
+    get:
+      operationId: getSession
+      summary: Who is signed in, and until when
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+  /api/v1/catalog:
+    get:
+      operationId: getCatalog
+      summary: List the catalog, as the planner answers it
+      responses:
+        "200":
+          description: Every catalog entry, sorted by name.
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/Catalog"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "502":
+          $ref: "#/components/responses/PlannerError"
+  /api/v1/plan:
+    post:
+      operationId: plan
+      summary: Check a graph and fill in its automatic bindings, as the planner answers it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./planner.yaml#/components/schemas/Graph"
+      responses:
+        "200":
+          description: The plan.
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/PlanResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/BadOrigin"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "502":
+          $ref: "#/components/responses/PlannerError"
+  /api/v1/render:
+    post:
+      operationId: render
+      summary: Render a graph as the static zip, as the planner answers it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./planner.yaml#/components/schemas/Graph"
+      responses:
+        "200":
+          description: The zip, byte for byte what the online tool gives for the same graph.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            application/zip:
+              schema:
+                type: string
+                contentMediaType: application/zip
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/BadOrigin"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The plan has an error, so nothing was rendered.
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/PlanResult"
+        "502":
+          $ref: "#/components/responses/PlannerError"
+  /api/v1/deployments:
+    get:
+      operationId: listDeployments
+      summary: List the deployments, sorted by name
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: The last name of the previous page.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+  /api/v1/deployments/{name}:
+    get:
+      operationId: getDeployment
+      summary: Read a deployment with the live state of its modules
+      parameters:
+        - $ref: "#/components/parameters/Name"
+      responses:
+        "200":
+          description: The deployment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/deployments/{name}/operations:
+    get:
+      operationId: listOperations
+      summary: The deployment's history, newest first
+      parameters:
+        - $ref: "#/components/parameters/Name"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          description: The last operation id of the previous page.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: One page.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OperationPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/deployments/{name}/review:
+    post:
+      operationId: reviewDeployment
+      summary: Show exactly what an apply of this graph would run
+      description: Writes nothing and touches nothing on the host.
+      parameters:
+        - $ref: "#/components/parameters/Name"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewRequest"
+      responses:
+        "200":
+          description: The review.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Review"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/BadOrigin"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/Refused"
+        "502":
+          $ref: "#/components/responses/PlannerError"
+        "503":
+          $ref: "#/components/responses/DeployerUnavailable"
+  /api/v1/deployments/{name}/apply:
+    post:
+      operationId: applyDeployment
+      summary: Deploy a reviewed graph
+      parameters:
+        - $ref: "#/components/parameters/Name"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyRequest"
+      responses:
+        "202":
+          description: |
+            The operation, `running`; or `failed` with `deployer_unavailable` when the deploy
+            target did not answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/BadOrigin"
+        "409":
+          description: An operation of this deployment runs (`busy`), or the plan differs from the reviewed one (`plan_changed`).
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/Refused"
+        "502":
+          $ref: "#/components/responses/PlannerError"
+  /api/v1/events:
+    get:
+      operationId: events
+      summary: Live updates as server sent events
+      description: |
+        `snapshot` first, then `deployment`, `operation`, `modules` (only with the filter) and
+        `signed-out`; a `: ping` comment every 15 seconds. Each `data:` line is one JSON object:
+        `snapshot` is `EventSnapshotList` without the filter and a `Deployment` with it,
+        `deployment` a `DeploymentSummary`, `operation` an `EventOperation`, `modules` an
+        `EventModules`, `signed-out` an `EventSignedOut`. A reconnect gets a new `snapshot`;
+        nothing is replayed.
+      parameters:
+        - name: deployment
+          in: query
+          description: Follow one deployment, with the live state of its modules.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          description: More than 8 open streams for this session (`too_many_streams`).
+          content:
+            application/json:
+              schema:
+                $ref: "./planner.yaml#/components/schemas/ProblemList"
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-mp_session
+      description: HttpOnly, Secure, SameSite=Lax. Only the bound admin ever gets one.
+  parameters:
+    Name:
+      name: name
+      in: path
+      required: true
+      description: The deployment name, equal to its graph's `name`.
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: The body or a parameter does not decode (`invalid_request`, or the graph's own codes).
+      content:
+        application/json:
+          schema:
+            $ref: "./planner.yaml#/components/schemas/ProblemList"
+    Unauthenticated:
+      description: No valid session (`unauthenticated`).
+      content:
+        application/json:
+          schema:
+            $ref: "./planner.yaml#/components/schemas/ProblemList"
+    BadOrigin:
+      description: The `Origin` header is missing or not the public origin (`bad_origin`).
+      content:
+        application/json:
+          schema:
+            $ref: "./planner.yaml#/components/schemas/ProblemList"
+    NotFound:
+      description: No such deployment (`not_found`).
+      content:
+        application/json:
+          schema:
+            $ref: "./planner.yaml#/components/schemas/ProblemList"
+    TooLarge:
+      description: The body is over 1 MB (`request_too_large`).
+      content:
+        application/json:
+          schema:
+            $ref: "./planner.yaml#/components/schemas/ProblemList"
+    Refused:
+      description: |
+        Nothing happened: `name_mismatch`, `reserved_name`, the plan's own problems,
+        `host_access`, `invalid_project`, `placed_missing` or `placed_invalid`.
+      content:
+        application/json:
+          schema:
+            $ref: "./planner.yaml#/components/schemas/ProblemList"
+    PlannerError:
+      description: The planner did not answer as its contract says (`planner_error`).
+      content:
+        application/json:
+          schema:
+            $ref: "./planner.yaml#/components/schemas/ProblemList"
+    DeployerUnavailable:
+      description: The deploy target did not answer (`deployer_unavailable`).
+      content:
+        application/json:
+          schema:
+            $ref: "./planner.yaml#/components/schemas/ProblemList"
+  schemas:
+    Logout:
+      type: object
+      additionalProperties: false
+      required: [redirect]
+      properties:
+        redirect:
+          type: string
+          description: The provider's sign out page, or `<base>/`.
+    Session:
+      type: object
+      additionalProperties: false
+      required: [email, expiresAt, idleExpiresAt]
+      properties:
+        email:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        idleExpiresAt:
+          type: string
+          format: date-time
+    DeploymentState:
+      type: string
+      enum: [applying, rolling-back, removing, running, rolled-back, removed, failed, unknown]
+    DeploymentSummary:
+      type: object
+      additionalProperties: false
+      required: [name, state]
+      properties:
+        name:
+          type: string
+        state:
+          $ref: "#/components/schemas/DeploymentState"
+        latestOperation:
+          $ref: "#/components/schemas/Operation"
+    DeploymentPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeploymentSummary"
+        next:
+          type: string
+          description: The cursor of the next page; absent on the last one.
+    Deployment:
+      type: object
+      additionalProperties: false
+      required: [name, state, project, createdAt]
+      properties:
+        name:
+          type: string
+        state:
+          $ref: "#/components/schemas/DeploymentState"
+        latestOperation:
+          $ref: "#/components/schemas/Operation"
+        project:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        graph:
+          $ref: "./planner.yaml#/components/schemas/Graph"
+          description: The graph of the latest succeeded apply.
+        rolledBackFrom:
+          $ref: "#/components/schemas/Operation"
+          description: The failed operation, when `rolled-back`.
+        modules:
+          type: array
+          description: Sorted by instance; absent when `stateError` is set.
+          items:
+            $ref: "#/components/schemas/ModuleState"
+        stateError:
+          type: string
+          description: Why the live state could not be read.
+    Operation:
+      type: object
+      additionalProperties: false
+      required: [id, action, status, startedAt, startedBy, deleteData, placedSupplied]
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+          enum: [apply, remove]
+        status:
+          type: string
+          enum: [running, succeeded, failed, unknown]
+        step:
+          type: string
+          enum: [prepare, pull, up, down, done]
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        startedBy:
+          type: string
+          description: The email of who started it.
+        error:
+          type: string
+        rollbackOf:
+          type: string
+        deleteData:
+          type: boolean
+        placedSupplied:
+          type: array
+          description: Paths of the placed values this apply wrote; never the values.
+          items:
+            type: string
+        planDigest:
+          type: string
+    OperationPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Operation"
+        next:
+          type: string
+    ModuleState:
+      type: object
+      additionalProperties: false
+      required: [instance, module, state, restartCount]
+      properties:
+        instance:
+          type: string
+        module:
+          type: string
+        state:
+          type: string
+          enum: [pending, starting, running, unhealthy, restarting, exited, paused, missing]
+        exitCode:
+          type: integer
+          # keep the pointer: exit code 0 is a value
+          x-go-type-skip-optional-pointer: false
+        lastExitCode:
+          type: integer
+          # keep the pointer: exit code 0 is a value
+          x-go-type-skip-optional-pointer: false
+        health:
+          type: string
+        restartCount:
+          type: integer
+        image:
+          type: string
+        since:
+          type: string
+          format: date-time
+    ReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [graph]
+      properties:
+        graph:
+          $ref: "./planner.yaml#/components/schemas/Graph"
+    Review:
+      type: object
+      additionalProperties: false
+      required: [plan, modules, bindings, publishedPorts, placed]
+      properties:
+        plan:
+          $ref: "./planner.yaml#/components/schemas/PlanResult"
+        modules:
+          type: array
+          items:
+            $ref: "./planner.yaml#/components/schemas/ModuleImage"
+        bindings:
+          type: array
+          items:
+            $ref: "./planner.yaml#/components/schemas/Binding"
+        publishedPorts:
+          type: array
+          items:
+            $ref: "./planner.yaml#/components/schemas/PublishedPort"
+        placed:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlacedCredential"
+    PlacedCredential:
+      type: object
+      additionalProperties: false
+      required: [path, instance, capability, field, exists]
+      properties:
+        path:
+          type: string
+        instance:
+          type: string
+        capability:
+          type: string
+        field:
+          type: string
+          enum: [password, secret_key]
+        exists:
+          type: boolean
+    ApplyRequest:
+      type: object
+      additionalProperties: false
+      required: [graph, planDigest]
+      properties:
+        graph:
+          $ref: "./planner.yaml#/components/schemas/Graph"
+        planDigest:
+          type: string
+          description: The `plan.digest` of the review you confirmed.
+        placed:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlacedInput"
+    PlacedInput:
+      type: object
+      additionalProperties: false
+      required: [path, value]
+      properties:
+        path:
+          type: string
+        value:
+          type: string
+          description: Not empty, at most 4096 bytes, no NUL byte. Never stored, logged or sent back.
+        replace:
+          type: boolean
+          default: false
+    EventSnapshotList:
+      type: object
+      additionalProperties: false
+      required: [deployments]
+      properties:
+        deployments:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeploymentSummary"
+    EventOperation:
+      type: object
+      additionalProperties: false
+      required: [deployment, operation]
+      properties:
+        deployment:
+          type: string
+        operation:
+          $ref: "#/components/schemas/Operation"
+    EventModules:
+      type: object
+      additionalProperties: false
+      required: [deployment, modules]
+      properties:
+        deployment:
+          type: string
+        modules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModuleState"
+    EventSignedOut:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [expired, signed_out]

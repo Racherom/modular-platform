@@ -1,0 +1,31 @@
+# task dev:managed: the platform's own images are built from this checkout, and the ingress serves
+# the Vite dev server on the host instead of the web image, so hot reload runs on the real origin.
+services:
+  ingress:
+    environment:
+      MP_WEB_UPSTREAM: host.docker.internal:5173
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on: !reset {}
+
+  web:
+    # not started in dev; the Vite dev server takes its place
+    profiles: [web-image]
+
+  api:
+    image: ghcr.io/racherom/modular-platform/api:dev
+    build:
+      context: ../..
+      dockerfile: services/api/Dockerfile
+
+  planner:
+    image: ghcr.io/racherom/modular-platform/planner:dev
+    build:
+      context: ../..
+      dockerfile: services/planner/Dockerfile
+
+  deployer-docker:
+    image: ghcr.io/racherom/modular-platform/deployer-docker:dev
+    build:
+      context: ../..
+      dockerfile: services/deployer-docker/Dockerfile

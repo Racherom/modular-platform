@@ -29,7 +29,8 @@ const (
 )
 
 // Plan checks g against the catalog entries and fills in the automatic bindings. The returned
-// graph is a copy of g with those bindings written in and nothing else changed.
+// graph is a copy of g with those bindings written in and nothing else changed. An ok plan
+// carries its Digest.
 func Plan(g contract.Graph, catalog []contract.CatalogEntry) contract.PlanResult {
 	p := planning{
 		graph:   contract.CloneGraph(g),
@@ -48,12 +49,16 @@ func Plan(g contract.Graph, catalog []contract.CatalogEntry) contract.PlanResult
 		return cmp.Or(strings.Compare(a.Consumer, b.Consumer), strings.Compare(a.Capability, b.Capability))
 	})
 	ok := !slices.ContainsFunc(p.problems, func(pr contract.Problem) bool { return pr.Severity == contract.Error })
-	return contract.PlanResult{
+	result := contract.PlanResult{
 		Ok:       ok,
 		Graph:    p.graph,
 		Bindings: append([]contract.Binding{}, p.bindings...),
 		Problems: append([]contract.Problem{}, p.problems...),
 	}
+	if ok {
+		result.Digest = Digest(result, catalog)
+	}
+	return result
 }
 
 type planning struct {

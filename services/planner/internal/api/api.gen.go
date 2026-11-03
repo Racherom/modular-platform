@@ -28,6 +28,9 @@ type ServerInterface interface {
 	// Render Render a graph as a zip you run with Docker Compose
 	// (POST /v1/render)
 	Render(w http.ResponseWriter, r *http.Request)
+	// RenderManaged Render a graph as the files the managed deployer applies
+	// (POST /v1/render/managed)
+	RenderManaged(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -72,6 +75,20 @@ func (siw *ServerInterfaceWrapper) Render(w http.ResponseWriter, r *http.Request
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Render(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RenderManaged operation middleware
+func (siw *ServerInterfaceWrapper) RenderManaged(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RenderManaged(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -204,6 +221,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/catalog", wrapper.GetCatalog)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/plan", wrapper.Plan)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/render", wrapper.Render)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/render/managed", wrapper.RenderManaged)
 
 	return m
 }
@@ -501,6 +519,112 @@ func (response Render503JSONResponse) VisitRenderResponse(w http.ResponseWriter)
 	return err
 }
 
+type RenderManagedRequestObject struct {
+	Body *RenderManagedJSONRequestBody
+}
+
+type RenderManagedResponseObject interface {
+	VisitRenderManagedResponse(w http.ResponseWriter) error
+}
+
+type RenderManaged200JSONResponse RenderedProject
+
+func (response RenderManaged200JSONResponse) VisitRenderManagedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenderManaged400JSONResponse struct{ BadGraphJSONResponse }
+
+func (response RenderManaged400JSONResponse) VisitRenderManagedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenderManaged401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response RenderManaged401JSONResponse) VisitRenderManagedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenderManaged404JSONResponse ProblemList
+
+func (response RenderManaged404JSONResponse) VisitRenderManagedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenderManaged413JSONResponse struct{ TooLargeJSONResponse }
+
+func (response RenderManaged413JSONResponse) VisitRenderManagedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenderManaged422JSONResponse PlanResult
+
+func (response RenderManaged422JSONResponse) VisitRenderManagedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenderManaged503JSONResponse struct{ TimedOutJSONResponse }
+
+func (response RenderManaged503JSONResponse) VisitRenderManagedResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// GetCatalog List the built in catalog
@@ -512,6 +636,9 @@ type StrictServerInterface interface {
 	// Render Render a graph as a zip you run with Docker Compose
 	// (POST /v1/render)
 	Render(ctx context.Context, request RenderRequestObject) (RenderResponseObject, error)
+	// RenderManaged Render a graph as the files the managed deployer applies
+	// (POST /v1/render/managed)
+	RenderManaged(ctx context.Context, request RenderManagedRequestObject) (RenderManagedResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -632,6 +759,37 @@ func (sh *strictHandler) Render(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RenderResponseObject); ok {
 		if err := validResponse.VisitRenderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RenderManaged operation middleware
+func (sh *strictHandler) RenderManaged(w http.ResponseWriter, r *http.Request) {
+	var request RenderManagedRequestObject
+
+	var body RenderManagedJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RenderManaged(ctx, request.(RenderManagedRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RenderManaged")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RenderManagedResponseObject); ok {
+		if err := validResponse.VisitRenderManagedResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -1,0 +1,15 @@
+# Strict server on net/http. Models live in libs/target/deploytarget, dot imported so the generated
+# code finds them; the shared ProblemList comes from libs/contract.
+package: api
+generate:
+  std-http-server: true
+  strict-server: true
+output-options:
+  prefer-skip-optional-pointer: true
+  prefer-skip-optional-pointer-with-omitzero: true
+import-mapping:
+  ./planner.yaml: github.com/racherom/modular-platform/libs/contract
+additional-imports:
+  - package: github.com/racherom/modular-platform/libs/target/deploytarget
+    alias: .
+output: api.gen.go

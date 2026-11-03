@@ -16,3 +16,8 @@ secrets/
 
 # Task checksums
 .task/
+
+# task dev:managed installs the platform here, secrets included
+.dev/
+# task managed:zip
+/dist/

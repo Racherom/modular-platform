@@ -1,5 +1,6 @@
 import { Handle, type NodeProps, Position } from '@xyflow/react'
 import { type ModuleFlowNode, portY } from '../graph/flow'
+import { StateBadge } from './StateBadge'
 
 export function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
   return (
@@ -7,6 +8,7 @@ export function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
       <div className="module-node__head">
         <strong>{data.instance}</strong>
         <span>{data.known ? data.module : `${data.module} (not in catalog)`}</span>
+        {data.state && <StateBadge module={data.state} />}
       </div>
       {data.provides.map((c, i) => (
         <div key={`p-${c}`} className="port port--provides" style={{ top: portY(i) }}>

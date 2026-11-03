@@ -44,7 +44,7 @@ func sdkInstance(p *types.Project, svc *types.ServiceConfig, data *templateData,
 		if v.Type != contract.ConfigValueTypeSecret || !v.Generate {
 			continue
 		}
-		sec := secret{Path: "secrets/" + i + "/" + name, Compose: i + "_" + name}
+		sec := secret{Instance: i, Path: "secrets/" + i + "/" + name, Compose: i + "_" + name}
 		addSecret(p, svc, sec, "")
 		setEnv(svc, v.Env+"_FILE", "/run/secrets/"+sec.Compose)
 		data.Secrets = append(data.Secrets, sec)
@@ -73,7 +73,7 @@ func sdkBinding(p *types.Project, data *templateData, b contract.Binding, consum
 		setEnv(&svc, use.Env.Url, bindingURL(p.Name, provider, pv, cp, use.Client))
 	}
 	if provide := provider.Provides[cp]; provide.Auth == contract.BindingToken && use.Env.TokenFile != "" {
-		sec := secret{Path: "secrets/" + c + "/uses_" + cp, Compose: c + "_uses_" + cp}
+		sec := secret{Instance: c, Path: "secrets/" + c + "/uses_" + cp, Compose: c + "_uses_" + cp}
 		token := "/run/secrets/uses/" + cp + "/token"
 		addSecret(p, &svc, sec, token)
 		setEnv(&svc, use.Env.TokenFile, token)
@@ -94,7 +94,10 @@ func sdkBinding(p *types.Project, data *templateData, b contract.Binding, consum
 		if f.env == "" {
 			continue
 		}
-		sec := secret{Path: "secrets/" + c + "/uses_" + cp + f.suffix, Compose: c + "_uses_" + cp + f.suffix}
+		sec := secret{
+			Instance: c, Capability: cp, Field: f.file,
+			Path: "secrets/" + c + "/uses_" + cp + f.suffix, Compose: c + "_uses_" + cp + f.suffix,
+		}
 		target := "/run/secrets/uses/" + cp + "/" + f.file
 		addSecret(p, &svc, sec, target)
 		setEnv(&svc, f.env, target)

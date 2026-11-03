@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -676,4 +677,27 @@ func TestSetupError(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAddReady covers a module's own readiness check: /readyz waits for it beside the bindings.
+func TestAddReady(t *testing.T) {
+	t.Parallel()
+	var discovered atomic.Bool
+	h, err := sdk.Build(t.Context(), testmodule.Module, func(_ context.Context, m *tmModule) (http.Handler, error) {
+		m.AddReady(discovered.Load)
+		return http.NotFoundHandler(), nil
+	}, sdk.WithEnv(baseEnv(t)), sdk.WithLogger(slog.New(slog.DiscardHandler)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := func() int {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", nil))
+		return rec.Code
+	}
+	if got := status(); got != http.StatusServiceUnavailable {
+		t.Errorf("before the check passes: /readyz %d, want 503", got)
+	}
+	discovered.Store(true)
+	eventually(t, "/readyz 200 once the check passes", func() bool { return status() == http.StatusOK })
 }

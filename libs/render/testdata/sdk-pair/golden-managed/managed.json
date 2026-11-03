@@ -1,0 +1,30 @@
+{
+  "Images": [
+    {
+      "Instance": "consumer",
+      "Module": "pair-consumer",
+      "Image": "modular-platform/pair-consumer:test"
+    },
+    {
+      "Instance": "provider",
+      "Module": "pair-provider",
+      "Image": "modular-platform/pair-provider:test"
+    }
+  ],
+  "Secrets": [
+    {
+      "Path": "secrets/consumer/uses_greet",
+      "Kind": "generated",
+      "Instance": "consumer",
+      "Capability": "",
+      "Field": ""
+    },
+    {
+      "Path": "secrets/provider/signing-key",
+      "Kind": "generated",
+      "Instance": "provider",
+      "Capability": "",
+      "Field": ""
+    }
+  ]
+}

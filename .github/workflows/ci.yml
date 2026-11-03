@@ -79,3 +79,34 @@ jobs:
       - run: pnpm --dir web exec playwright install --with-deps chromium
       # the online tool answers on platform.localhost with Caddy's internal certificate authority
       - run: task smoke
+
+  smoke-managed:
+    name: Smoke (managed platform, install to running deployment)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.13.0"
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: 3.54.0
+      - run: pnpm --dir web install --frozen-lockfile
+      - run: pnpm --dir web exec playwright install --with-deps chromium
+      - run: task images IMAGE_TAG=ci
+      # setup.sh, sign in through Authelia, deploy the sample from the editor, every module running,
+      # and no secret value in any log
+      - run: task smoke:managed
+        env:
+          SMOKE_LOGS: ${{ runner.temp }}/smoke-managed-logs
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: smoke-managed-logs
+          path: ${{ runner.temp }}/smoke-managed-logs
+          if-no-files-found: ignore

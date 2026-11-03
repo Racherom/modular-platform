@@ -1,5 +1,6 @@
 import { type Edge, MarkerType, type Node, type NodeHandle, Position } from '@xyflow/react'
 import type { CatalogEntry, Graph, Problem } from '../api/client'
+import type { ModuleState } from '../api/platform'
 import { layout } from './layout'
 
 export const NODE_WIDTH = 220
@@ -14,6 +15,8 @@ export interface ModuleNodeData extends Record<string, unknown> {
   provides: string[]
   uses: { capability: string; optional: boolean }[]
   hasError: boolean
+  /** The module's live state on a deployment screen. */
+  state?: ModuleState
 }
 
 export type ModuleFlowNode = Node<ModuleNodeData, 'module'>
