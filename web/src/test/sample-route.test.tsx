@@ -73,6 +73,11 @@ describe('sample route', () => {
     expect(storage).not.toHaveBeenCalled()
   })
 
+  it('exposes the graph canvas as a region named after the graph', async () => {
+    renderAt('/samples/whoami-postgres')
+    expect(await screen.findByRole('region', { name: 'Graph whoami-postgres' })).toBeTruthy()
+  })
+
   it('names an unknown sample', async () => {
     renderAt('/samples/nope')
     expect(await screen.findByRole('heading', { name: 'No sample named nope' })).toBeTruthy()

@@ -3,9 +3,11 @@ package httpkit
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -313,6 +315,117 @@ func TestRateLimiterConcurrent(t *testing.T) {
 	wg.Wait()
 	if l.Len() > 50 {
 		t.Errorf("%d buckets, over the cap of 50", l.Len())
+	}
+}
+
+// freeAddr returns a loopback address nothing listens on.
+func freeAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	return addr
+}
+
+// TestHealthcheck covers the exit code of the healthcheck subcommand: 0 for a 2xx answer, 1 for
+// any other status, a refused connection, an untrusted certificate, or a url no request can be
+// built from.
+func TestHealthcheck(t *testing.T) {
+	t.Parallel()
+	status := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ok":
+			w.WriteHeader(http.StatusNoContent)
+		case "/down":
+			w.WriteHeader(http.StatusServiceUnavailable)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	plain := httptest.NewServer(status)
+	t.Cleanup(plain.Close)
+	secure := httptest.NewTLSServer(status)
+	t.Cleanup(secure.Close)
+	trusted := secure.Client().Transport.(*http.Transport).TLSClientConfig
+
+	tests := map[string]struct {
+		url  string
+		cfg  *tls.Config
+		want int
+	}{
+		"2xx answer":          {plain.URL + "/ok", nil, 0},
+		"5xx answer":          {plain.URL + "/down", nil, 1},
+		"4xx answer":          {plain.URL + "/missing", nil, 1},
+		"connection refused":  {"http://" + freeAddr(t) + "/healthz", nil, 1},
+		"malformed url":       {"http://[::1/healthz", nil, 1},
+		"https, trusted":      {secure.URL + "/ok", trusted, 0},
+		"https, no tls given": {secure.URL + "/ok", nil, 1},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := Healthcheck(tc.url, tc.cfg); got != tc.want {
+				t.Errorf("Healthcheck(%s) = %d, want %d", tc.url, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestServe covers Serve on a free address: it answers with handler until ctx ends, then shuts
+// down and returns nil.
+func TestServe(t *testing.T) {
+	t.Parallel()
+	addr := freeAddr(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	errc := make(chan error, 1)
+	go func() { errc <- Serve(ctx, slog.New(slog.DiscardHandler), addr, handler) }()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, err := http.Get("http://" + addr + "/")
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusTeapot {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusTeapot)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Serve never answered on %s: %v", addr, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cancel()
+	select {
+	case err := <-errc:
+		if err != nil {
+			t.Errorf("Serve after ctx ended = %v, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Serve did not return after ctx ended")
+	}
+}
+
+// TestServeAddrInUse covers Serve on an address another listener holds: it returns a serve error
+// at once instead of serving.
+func TestServeAddrInUse(t *testing.T) {
+	t.Parallel()
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = held.Close() })
+
+	err = Serve(t.Context(), slog.New(slog.DiscardHandler), held.Addr().String(), http.NotFoundHandler())
+
+	if err == nil || !strings.HasPrefix(err.Error(), "serve: ") {
+		t.Errorf("Serve on a held address = %v, want a serve: error", err)
 	}
 }
 

@@ -148,6 +148,23 @@ func TestLoadLaterEnvFileWins(t *testing.T) {
 	}
 }
 
+// TestLoadEnvFileSkipsEmptyPaths covers MP_ENV_FILE with a leading, a doubled and a trailing
+// colon: the empty paths between them are skipped, not read as files (covers: AC-2).
+func TestLoadEnvFileSkipsEmptyPaths(t *testing.T) {
+	t.Parallel()
+	files := map[string]string{"/etc/base.env": "TM_GREETING=base\n"}
+	env := map[string]string{"MP_INSTANCE": "tm", "MP_ENV_FILE": ":/etc/base.env::"}
+
+	res := load.Load(t.Context(), load.Input{Values: []load.ValueSpec{greeting}, LookupEnv: lookup(env), ReadFile: readFile(files)})
+
+	if len(res.Problems) > 0 {
+		t.Fatalf("problems = %v, want none", res.Problems)
+	}
+	if res.Values["greeting"] != "base" || res.Sources["greeting"] != "env-file:/etc/base.env:1" {
+		t.Errorf("greeting = %v from %q, want base from env-file:/etc/base.env:1", res.Values["greeting"], res.Sources["greeting"])
+	}
+}
+
 // TestSnapshotLabels covers the labels of a pushed snapshot: a pushed value shows push, a left
 // out value with a default shows default, a left out optional value shows unset and has no value
 // (covers: AC-5, AC-10).

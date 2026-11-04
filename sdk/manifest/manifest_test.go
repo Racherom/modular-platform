@@ -121,6 +121,22 @@ func TestRulesParse(t *testing.T) {
 	}
 }
 
+// TestIsBootstrap covers the bootstrap names: each one is known, and a declared value, a binding
+// key, a wrong case or the empty string is not.
+func TestIsBootstrap(t *testing.T) {
+	t.Parallel()
+	for _, name := range manifest.BootstrapNames {
+		if !manifest.IsBootstrap(name) {
+			t.Errorf("IsBootstrap(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"", "mp_instance", "MP_INSTANCE_FILE", "TM_GREETING", "MP_PORT"} {
+		if manifest.IsBootstrap(name) {
+			t.Errorf("IsBootstrap(%q) = true, want false", name)
+		}
+	}
+}
+
 func TestGoName(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]string{
