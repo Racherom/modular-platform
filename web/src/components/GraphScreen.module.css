@@ -1,6 +1,6 @@
 .file {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
   min-width: 0;
 }
@@ -13,9 +13,21 @@
   white-space: nowrap;
 }
 
-.edited {
+.note {
   color: var(--color-text-muted);
   font-size: var(--text-xs);
+}
+
+.note:empty {
+  display: none;
+}
+
+.history {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
 }
 
 .toolbar {
@@ -49,4 +61,23 @@
 .reason {
   color: var(--color-text-muted);
   font-size: var(--text-xs);
+}
+
+.notice {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.notice svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--color-accent);
 }

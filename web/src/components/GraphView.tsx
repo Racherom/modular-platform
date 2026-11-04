@@ -16,6 +16,7 @@ import type { ModuleState } from '../api/platform'
 import { bind, type Drop, isValidDrop, unbind } from '../graph/edit'
 import { emphasize, type ModuleFlowNode, type Positions, parseHandle, providesHandle, reuseNodes, toFlow, usesHandle } from '../graph/flow'
 import { layout } from '../graph/layout'
+import { isFormControl } from '../lib/keys'
 import { useEditor } from '../lib/store'
 import { useResolvedTheme } from '../lib/theme'
 import styles from './GraphView.module.css'
@@ -45,14 +46,6 @@ interface Props {
   states?: Record<string, ModuleState>
   /** Applies an edit. Without it the canvas only shows the graph (selection still works). */
   onEdit?: (edit: GraphEdit) => void
-}
-
-/** True for a text field, select or other form control, where Delete and Escape belong to the control. */
-export function isFormControl(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  return (
-    target.isContentEditable || target.closest('input, textarea, select, [role="combobox"], [role="listbox"], [role="textbox"]') !== null
-  )
 }
 
 /**

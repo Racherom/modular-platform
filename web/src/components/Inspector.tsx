@@ -1,4 +1,4 @@
-import { Unlink } from 'lucide-react'
+import { Search, Unlink } from 'lucide-react'
 import type { CatalogEntry, Graph, PlanResult, Problem } from '../api/client'
 import { bind, candidates, letPlannerChoose, unbind } from '../graph/edit'
 import { markOf, problemInstance } from '../graph/flow'
@@ -189,6 +189,12 @@ function NeedRow({ consumer, capability, optional, ...ctx }: Ctx & { consumer: s
         isDisabled={!ctx.onEdit}
         description={auto ? 'Bound by the planner' : undefined}
       />
+      <div>
+        <Button variant="ghost" size="sm" onPress={() => useEditor.getState().findProviders(capability)}>
+          <Search aria-hidden="true" />
+          Find providers<span className="visually-hidden"> of {capability}</span>
+        </Button>
+      </div>
     </div>
   )
 }

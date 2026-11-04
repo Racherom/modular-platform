@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { planGraph } from '../api/client'
 import { Failure } from '../components/Failure'
 import { GraphScreen, useCatalog } from '../components/GraphScreen'
+import { useReplaceGuard } from '../components/ReplaceDialog'
 import { Button } from '../components/ui/Button'
 import { MAX_FILE_BYTES, parseGraph } from '../graph/yaml'
 import { loadWorking, type WorkingGraph } from '../lib/storage'
@@ -16,7 +17,11 @@ function Editor() {
   const working = useEditor((s) => s.working)
   const planState = useEditor((s) => s.planState)
   const planError = useEditor((s) => s.planError)
-  const { restore, open: openWorking, edit, retry, saved } = useEditor.getState()
+  const storageFailed = useEditor((s) => s.storageFailed)
+  const canUndo = useEditor((s) => s.history.past.length > 0)
+  const canRedo = useEditor((s) => s.history.future.length > 0)
+  const { restore, open: openWorking, edit, retry, saved, undo, redo, tidy } = useEditor.getState()
+  const replace = useReplaceGuard()
   const catalog = useCatalog()
   const input = useRef<HTMLInputElement>(null)
   // counts opens, so reopening a file with the same names still starts a fresh screen
@@ -29,6 +34,14 @@ function Editor() {
       .then((w) => restore(w ?? null))
       .catch(() => restore(null))
   }, [working, restore])
+
+  // the sample copy brings its selection along; focus follows a module so the keyboard is not lost
+  useEffect(() => {
+    const { takeHandoff, focusModule, select } = useEditor.getState()
+    const handoff = takeHandoff()
+    if (handoff?.kind === 'module') focusModule(handoff.instance)
+    else if (handoff) select(handoff)
+  }, [])
 
   // one plan per open: it validates the file and writes the automatic bindings into the graph
   const open = useMutation({
@@ -56,7 +69,8 @@ function Editor() {
           e.target.value = ''
         }}
       />
-      <Button size="sm" onPress={() => input.current?.click()} isDisabled={open.isPending}>
+      {/* AC-18: an edited working graph asks first, before any file is read */}
+      <Button size="sm" onPress={() => replace.guard(() => input.current?.click())} isDisabled={open.isPending}>
         <FolderOpen aria-hidden="true" />
         {open.isPending ? 'Opening…' : 'Open file'}
       </Button>
@@ -66,6 +80,7 @@ function Editor() {
   if (working === undefined) return <p>Loading…</p>
   return (
     <>
+      {replace.dialog}
       {open.isError && <Failure error={open.error} onRetry={() => input.current?.click()} />}
       {working ? (
         <GraphScreen
@@ -82,6 +97,8 @@ function Editor() {
             onRetry: retry,
             onEdit: edit,
             onSaved: saved,
+            history: { canUndo, canRedo, onUndo: undo, onRedo: redo, onTidy: tidy },
+            storageFailed,
           }}
         />
       ) : (

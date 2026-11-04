@@ -4,6 +4,7 @@ import { type CSSProperties, memo } from 'react'
 import { HANDLE_SIZE, type Mark, type ModuleFlowNode, NODE_HEADER, NODE_WIDTH, PORT_ROW, providesHandle, usesHandle } from '../graph/flow'
 import styles from './ModuleNode.module.css'
 import { StateBadge } from './StateBadge'
+import { Badge } from './ui/Badge'
 
 // the geometry React Flow uses for the handles, handed to CSS so both agree
 const geometry = {
@@ -37,7 +38,10 @@ export const ModuleNode = memo(function ModuleNode({ data, isConnectable }: Node
           <span className={styles.instance}>{data.instance}</span>
           {data.mark && <ProblemMark mark={data.mark} />}
         </span>
-        <span className={styles.module}>{data.known ? data.module : `${data.module} (not in catalog)`}</span>
+        <span className={styles.subtitle}>
+          <span className={styles.module}>{data.module}</span>
+          {!data.known && <Badge tone="warning">not in catalog</Badge>}
+        </span>
         {data.state && <StateBadge module={data.state} />}
       </div>
       {Array.from({ length: rows }, (_, i) => {

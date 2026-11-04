@@ -1,26 +1,37 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ReactFlowProvider } from '@xyflow/react'
-import { Download, Rocket, Save } from 'lucide-react'
-import { type ReactNode, useId, useState } from 'react'
+import { Download, Info, LayoutGrid, Redo2, Rocket, Save, Undo2 } from 'lucide-react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { fetchCatalog, type Graph, type PlannerError, type PlanResult, renderGraph } from '../api/client'
 import type { Positions } from '../graph/flow'
-import { stringifyGraph } from '../graph/yaml'
 import { mode } from '../lib/config'
-import { download } from '../lib/download'
+import { download, saveGraphFile } from '../lib/download'
+import { historyKey, historyShortcut, isApple, isFormControl } from '../lib/keys'
 import type { PlanState } from '../lib/store'
 import { HeaderContent, Workspace } from './AppShell'
-import { CatalogList } from './CatalogList'
+import { CatalogPanel } from './CatalogPanel'
 import { Failure } from './Failure'
 import styles from './GraphScreen.module.css'
 import { type GraphEdit, GraphView } from './GraphView'
 import { Inspector } from './Inspector'
 import { ProblemsPanel } from './ProblemsPanel'
 import { ReviewDialog } from './ReviewDialog'
+import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
+import { IconButton } from './ui/IconButton'
 
 /** The catalog, fetched once per page. */
 export function useCatalog() {
   return useQuery({ queryKey: ['catalog'], queryFn: fetchCatalog })
+}
+
+/** Undo, redo and Tidy layout for the working graph (AC-15, AC-16). */
+export interface HistoryControls {
+  canUndo: boolean
+  canRedo: boolean
+  onUndo: () => void
+  onRedo: () => void
+  onTidy: () => void
 }
 
 /** What an editable screen adds: the working copy's state and its edit actions. */
@@ -34,6 +45,10 @@ export interface Editing {
   onEdit: (edit: GraphEdit) => void
   /** Called after Save as file. */
   onSaved: () => void
+  /** Undo, redo and Tidy layout; without them the buttons show disabled (the sample). */
+  history?: HistoryControls
+  /** Saving the working copy failed, so changes are not kept after a reload (AC-17). */
+  storageFailed?: boolean
 }
 
 interface Props {
@@ -43,6 +58,8 @@ interface Props {
   toolbar?: ReactNode
   /** Makes the canvas editable; without it the graph is only shown. */
   editing?: Editing
+  /** A hint above the canvas, such as the sample's "changes make a copy". */
+  notice?: ReactNode
 }
 
 /**
@@ -58,7 +75,7 @@ export function downloadBlocked(planState: PlanState, plan: PlanResult): string 
 }
 
 /** A planned graph in the editor: header toolbar, catalog, canvas, inspector and problems. */
-export function GraphScreen({ graph, plan, fileName, toolbar, editing }: Props) {
+export function GraphScreen({ graph, plan, fileName, toolbar, editing, notice }: Props) {
   const catalog = useCatalog()
   // a render that finds an error returns a newer plan to show, but only for the plan it came from
   const [rendered, setRendered] = useState<{ from: PlanResult; plan: PlanResult }>()
@@ -79,7 +96,7 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing }: Props) 
   const planState = editing?.planState ?? 'current'
   const blocked = downloadBlocked(planState, shownPlan)
   const save = () => {
-    download(new Blob([stringifyGraph(graph)], { type: 'application/yaml' }), fileName)
+    saveGraphFile(graph, fileName)
     editing?.onSaved()
   }
   return (
@@ -87,8 +104,12 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing }: Props) 
       <HeaderContent>
         <div className={styles.file}>
           <h1 className={styles.fileName}>{fileName}</h1>
-          {editing?.edited && <span className={styles.edited}>Edited</span>}
+          {editing?.edited && <Badge>Edited</Badge>}
+          <span role="status" className={styles.note}>
+            {editing?.storageFailed ? 'Changes are not kept after reload in this browser.' : ''}
+          </span>
         </div>
+        {editing && <HistoryButtons history={editing.history} />}
         <div className={styles.toolbar}>
           {toolbar}
           <Button size="sm" onPress={save}>
@@ -126,9 +147,15 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing }: Props) 
       {reviewing && <ReviewDialog graph={graph} onClose={() => setReviewing(false)} />}
       <ReactFlowProvider>
         <Workspace
-          catalog={<CatalogList entries={catalog.data} />}
+          catalog={<CatalogPanel entries={catalog.data} />}
           canvas={
             <div className={styles.canvas}>
+              {notice && (
+                <p className={styles.notice}>
+                  <Info aria-hidden="true" />
+                  <span>{notice}</span>
+                </p>
+              )}
               {zip.isError && <Failure error={zip.error} onRetry={() => zip.mutate()} />}
               <GraphView
                 graph={graph}
@@ -164,5 +191,61 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing }: Props) 
         />
       </ReactFlowProvider>
     </>
+  )
+}
+
+/**
+ * Undo, redo and Tidy layout, with the undo and redo shortcuts (AC-15). Without history (the
+ * sample) every button is disabled and the shortcuts do nothing. The shortcuts never act while
+ * focus is in a text field or select.
+ */
+function HistoryButtons({ history }: { history?: HistoryControls }) {
+  const apple = isApple()
+  const latest = useRef(history)
+  latest.current = history
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const h = latest.current
+      if (!h || e.defaultPrevented || isFormControl(e.target)) return
+      const step = historyKey(e, apple)
+      if (!step) return
+      e.preventDefault()
+      if (step === 'undo' && h.canUndo) h.onUndo()
+      if (step === 'redo' && h.canRedo) h.onRedo()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [apple])
+
+  const undo = historyShortcut('undo', apple)
+  const redo = historyShortcut('redo', apple)
+  return (
+    <div className={styles.history}>
+      <IconButton
+        label="Undo"
+        hint={undo.label}
+        aria-keyshortcuts={undo.aria}
+        size="sm"
+        isDisabled={!history?.canUndo}
+        onPress={history?.onUndo}
+      >
+        <Undo2 aria-hidden="true" />
+      </IconButton>
+      <IconButton
+        label="Redo"
+        hint={redo.label}
+        aria-keyshortcuts={redo.aria}
+        size="sm"
+        isDisabled={!history?.canRedo}
+        onPress={history?.onRedo}
+      >
+        <Redo2 aria-hidden="true" />
+      </IconButton>
+      <Button size="sm" variant="ghost" isDisabled={!history} onPress={history?.onTidy}>
+        <LayoutGrid aria-hidden="true" />
+        Tidy layout
+      </Button>
+    </div>
   )
 }

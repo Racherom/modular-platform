@@ -223,10 +223,10 @@ Tracer Bullet: the first task runs one thin strand through every layer of this f
 2. [x] Rebind by dragging an edge end, `unbind` through Delete or Backspace (nodes never deleted), unit tests for the edit functions, satisfies **AC-9**, **AC-10**
 3. [x] Selection model and highlight with dimming; the Inspector with Select, `candidates`, `letPlannerChoose`, Remove binding, who uses each offer and the auto note; keyboard flow in the browser check, satisfies **AC-8**, **AC-11**
 4. [x] Problem marks on ports and nodes, the ProblemsPanel with select and center, "checking" and "not checked", the Failure with Retry, the download gate with its reason, satisfies **AC-13**, **AC-14**
-5. [ ] Undo and redo (shortcuts and buttons), Tidy layout, the edited marker, the storage note, Dialog plus the replace prompt on Open file, satisfies **AC-15**, **AC-16**, **AC-17**, **AC-18**
-6. [ ] Sample route: hint, first edit copies and navigates, the replace prompt, satisfies **AC-18**
-7. [ ] CatalogPanel with SearchField filter, empty state and Find providers, satisfies **AC-19**
-8. [ ] Unknown module nodes and plain text rendering checks, satisfies **AC-20**
+5. [x] Undo and redo (shortcuts and buttons), Tidy layout, the edited marker, the storage note, Dialog plus the replace prompt on Open file, satisfies **AC-15**, **AC-16**, **AC-17**, **AC-18**
+6. [x] Sample route: hint, first edit copies and navigates, the replace prompt, satisfies **AC-18**
+7. [x] CatalogPanel with SearchField filter, empty state and Find providers, satisfies **AC-19**
+8. [x] Unknown module nodes and plain text rendering checks, satisfies **AC-20**
 9. [ ] Complete the component set (Badge, StatusBadge, Tooltip, IconButton, Toolbar, EmptyState, Failure restyle), the dev only `/design` route with its bundle marker test, the color literal test, remove `app.css`, write `web/design.md`, satisfies **AC-1**, **AC-4**, **AC-5**
 10. [ ] Finish the browser checks: axe on every listed state and `/design` in both themes, the latest wins and failure scenarios, the 50 module scale check; add the connect and disconnect pass to `task smoke`, satisfies **AC-3**, **AC-7**, **AC-12**, **AC-14**
 

@@ -1,0 +1,13 @@
+.tooltip {
+  z-index: var(--layer-popover);
+  max-width: 16rem;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--shadow-1);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+  pointer-events: none;
+}
