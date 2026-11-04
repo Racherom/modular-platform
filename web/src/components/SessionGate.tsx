@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { createContext, type ReactNode, useContext, useEffect } from 'react'
 import { fetchSession, isSignedOut, loginURL, type Session } from '../api/platform'
 import { basePath, signedOutView } from '../lib/config'
-import { Failure } from './Failure'
+import m from './Managed.module.css'
+import { Failure } from './ui/Failure'
 
 const SessionContext = createContext<Session | undefined>(undefined)
 
@@ -16,7 +17,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
   const session = useQuery({ queryKey: ['session'], queryFn: fetchSession })
   if (session.isError && isSignedOut(session.error)) return <SignedOut />
   if (session.isError) return <Failure error={session.error} onRetry={() => void session.refetch()} />
-  if (!session.data) return <p className="screen">Checking your session…</p>
+  if (!session.data) return <p className={m.loading}>Checking your session…</p>
   return <SessionContext.Provider value={session.data}>{children}</SessionContext.Provider>
 }
 
@@ -35,18 +36,18 @@ export function SignedOut() {
   useEffect(() => {
     if (straight) window.location.assign(loginURL(here))
   }, [straight, here])
-  if (straight) return <p className="screen">Taking you to sign in…</p>
+  if (straight) return <p className={m.loading}>Taking you to sign in…</p>
   return (
-    <div className="screen signed-out">
+    <div className={`${m.screen} ${m.narrow}`}>
       <h1>Modular Platform</h1>
       <p>Plan your stack and deploy it to this host. Sign in as the admin to continue.</p>
       {reasons[reason] && (
-        <p role="alert" className="banner banner--error">
+        <p role="alert" className={m.banner} data-tone="danger">
           {reasons[reason]}
         </p>
       )}
       <p>
-        <a className="button" href={loginURL(here)}>
+        <a className={m.linkButton} href={loginURL(here)}>
           Sign in
         </a>
       </p>

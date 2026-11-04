@@ -1,16 +1,22 @@
 import { useMutation } from '@tanstack/react-query'
 import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
+import { SearchX } from 'lucide-react'
 import { logout } from '../api/platform'
 import { AppShell } from '../components/AppShell'
+import m from '../components/Managed.module.css'
 import { SessionGate, useSession } from '../components/SessionGate'
+import { Button } from '../components/ui/Button'
+import { EmptyState } from '../components/ui/EmptyState'
 import { mode } from '../lib/config'
 
 export const Route = createRootRoute({
   component: Root,
   notFoundComponent: () => (
-    <p>
-      There is nothing here. <Link to="/">Go to the editor</Link>.
-    </p>
+    <EmptyState icon={SearchX} level={1} title="Page not found">
+      <p>
+        There is nothing here. <Link to="/">Go to the editor</Link>.
+      </p>
+    </EmptyState>
   ),
 })
 
@@ -49,11 +55,11 @@ function Account() {
   const session = useSession()
   const signOut = useMutation({ mutationFn: logout, onSuccess: (next) => window.location.assign(next) })
   return (
-    <div className="app__account">
+    <div className={m.account}>
       <span>{session?.email}</span>
-      <button type="button" onClick={() => signOut.mutate()} disabled={signOut.isPending}>
+      <Button size="sm" variant="ghost" onPress={() => signOut.mutate()} isDisabled={signOut.isPending}>
         Sign out
-      </button>
+      </Button>
     </div>
   )
 }

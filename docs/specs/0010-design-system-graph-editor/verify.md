@@ -122,3 +122,27 @@ Milestone 3, session (build plan tasks 5 to 8), added 2026-11-04.
 
 ## Acceptance criteria coverage
 - AC-15: buttons, shortcuts, form control guard, redo cleared, undo while checking · AC-16: Tidy without plan, positions never saved · AC-17: Edited after undo, cleared by save and open, storage note · AC-18: hint, disabled history, copy and navigate, dialog Cancel, Save as file, Replace, Open file prompt · AC-19: filter fields, empty state, Find providers focus and scroll · AC-20: badge, no ports, never a candidate, plain text
+
+Milestone 4, design system complete (build plan tasks 9 and 10), added 2026-11-04.
+
+## UI / manual
+- [ ] Run `pnpm --dir web dev` and open `/design` → every token group (color swatches with light and dark values, type, spacing, radius, shadow, layers, motion, layout) and every component of AC-4 in every listed state, with a theme switch on the page → AC-4, AC-5
+- [ ] On `/design`, focus Undo in the "History, example" toolbar and press the arrow keys → focus moves between Undo, Redo and Tidy layout; the next Tab leaves the toolbar → AC-4
+- [ ] On `/design`, open the Dialog and press Escape → it closes and focus returns to "Open the dialog"; Tab inside it never leaves it → AC-4
+- [ ] Hover or focus an IconButton → its Tooltip shows its accessible name; StatusBadge always shows a dot and a word, never color alone → AC-4
+- [ ] Tab through the editor in light and in dark, including a node and an edge → every element shows a visible focus ring (outline, or a thicker edge stroke in the focus color) → AC-3
+- [ ] Run `pnpm --dir web build && pnpm --dir web preview` and open `/design` → the "Page not found" screen → AC-5
+- [ ] Compare each token table in `web/design.md` with `web/src/styles/tokens.css` → every token is listed with its property name and its light and dark values; the canvas grammar section matches the canvas → AC-1, AC-7
+
+## Value sourcing
+- [ ] Colors: only from `web/src/styles/tokens.css`; put `color: #f00` in any other CSS file under `web/src/` → `color-literals.test.ts` fails → AC-1
+- [ ] Focus ring color: `--color-focus` from `tokens.css`; set it to the surface color → `focus-contrast.test.ts` fails in that theme → AC-3
+- [ ] `/design` availability: `import.meta.env.DEV`; in a production build the route throws `notFound()` and `dist/` holds no `mp-design-showcase` marker → AC-5
+
+## Commands
+- [ ] `pnpm --dir web test` → 176 tests pass, including `color-literals.test.ts`, `focus-contrast.test.ts` and `render-count.test.tsx` → AC-1, AC-3, AC-7
+- [ ] `pnpm --dir web a11y` → 53 checks pass: axe in both themes on the 9 states of `axe.spec.ts`, `preview/bundle.spec.ts` (marker search and not found), `preview/scale.spec.ts` (50 modules, 100 bindings, under 100 ms), `preview/policy.spec.ts`, `toolbar.spec.ts`, and the latest wins and failure flows in `connect.spec.ts` → AC-3, AC-4, AC-5, AC-7, AC-12, AC-14
+- [ ] `task smoke` (ports 80 and 443 free) → green, including "unbind and bind again on a sample copy" and "a stored Dark theme is on `<html>` before the app module runs, under the content policy" → AC-2, AC-9, AC-10, AC-12, AC-18
+
+## Acceptance criteria coverage
+- AC-1: token tables, color literal test · AC-3: axe on every listed state in both themes, focus contrast test, manual focus pass · AC-4: `/design`, toolbar arrows, Dialog focus, Tooltip, StatusBadge · AC-5: dev showcase, production not found, bundle marker · AC-7: scale check, render count, canvas grammar · AC-12 and AC-14: latest wins and failure flows, smoke

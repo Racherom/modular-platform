@@ -3,8 +3,10 @@ import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import type { Graph } from '../api/client'
 import { ApiError, applyDeployment, isRefusal, type PlacedInput, reviewDeployment } from '../api/platform'
-import { Failure } from './Failure'
+import m from './Managed.module.css'
 import { ProblemList } from './ProblemList'
+import { Button } from './ui/Button'
+import { Failure } from './ui/Failure'
 
 /**
  * Plan review (spec 0006): what an apply of graph would run, the modules with their images, the
@@ -43,104 +45,102 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
   const planChanged = apply.error instanceof ApiError && apply.error.code === 'plan_changed'
 
   return (
-    <dialog ref={dialog} className="review" aria-labelledby="review-title" onClose={onClose}>
-      <h2 id="review-title">Deploy {graph.name}</h2>
-      {notice && (
-        <p role="status" className="banner">
-          {notice}
-        </p>
-      )}
-      {review.isError &&
-        (isRefusal(review.error) ? (
-          <ProblemList problems={review.error.problems} />
-        ) : (
-          <Failure error={review.error} onRetry={() => void review.refetch()} />
-        ))}
-      {review.isPending && <p>Reviewing the plan…</p>}
-      {review.data && !review.data.plan.ok && <ProblemList problems={review.data.plan.problems} />}
-      {review.data?.plan.ok && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            apply.mutate()
-          }}
-        >
-          <h3>Modules</h3>
-          <ul className="review__list">
-            {review.data.modules.map((m) => (
-              <li key={m.instance}>
-                <strong>{m.instance}</strong> runs <code>{m.image}</code>
-              </li>
-            ))}
-          </ul>
-          <h3>Bindings</h3>
-          {review.data.bindings.length === 0 ? (
-            <p>None.</p>
+    <dialog ref={dialog} className={m.dialog} aria-labelledby="review-title" onClose={onClose}>
+      <div className={m.dialogBody}>
+        <h2 id="review-title">Deploy {graph.name}</h2>
+        {notice && (
+          <p role="status" className={m.banner}>
+            {notice}
+          </p>
+        )}
+        {review.isError &&
+          (isRefusal(review.error) ? (
+            <ProblemList problems={review.error.problems} />
           ) : (
-            <ul className="review__list">
-              {review.data.bindings.map((b) => (
-                <li key={`${b.consumer}.${b.capability}`}>
-                  {b.consumer} uses {b.capability} from {b.provider}
+            <Failure error={review.error} onRetry={() => void review.refetch()} />
+          ))}
+        {review.isPending && <p>Reviewing the plan…</p>}
+        {review.data && !review.data.plan.ok && <ProblemList problems={review.data.plan.problems} />}
+        {review.data?.plan.ok && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              apply.mutate()
+            }}
+          >
+            <h3>Modules</h3>
+            <ul className={m.list}>
+              {review.data.modules.map((m) => (
+                <li key={m.instance}>
+                  <strong>{m.instance}</strong> runs <code>{m.image}</code>
                 </li>
               ))}
             </ul>
-          )}
-          <h3>Published ports</h3>
-          <p>{review.data.publishedPorts.length === 0 ? 'None: nothing of this stack is reachable from outside the host.' : ''}</p>
-          {review.data.placed.length > 0 && <h3>Credentials you place</h3>}
-          {review.data.placed.map((p) => (
-            <div key={p.path} className="review__field">
-              <label htmlFor={`placed-${p.path}`}>
-                {p.instance}: {p.field === 'password' ? 'password' : 'secret key'} for {p.capability}
-                {p.exists && !replacing[p.path] && ' (already set)'}
-              </label>
-              {p.exists && (
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={replacing[p.path] ?? false}
-                    onChange={(e) => setReplacing({ ...replacing, [p.path]: e.target.checked })}
-                  />{' '}
-                  Replace
-                </label>
-              )}
-              {(!p.exists || replacing[p.path]) && (
-                <input
-                  id={`placed-${p.path}`}
-                  type="password"
-                  autoComplete="new-password"
-                  maxLength={4096}
-                  required
-                  value={values[p.path] ?? ''}
-                  onChange={(e) => setValues({ ...values, [p.path]: e.target.value })}
-                />
-              )}
-            </div>
-          ))}
-          {apply.isError &&
-            !planChanged &&
-            (isRefusal(apply.error) ? (
-              <ProblemList problems={apply.error.problems} />
+            <h3>Bindings</h3>
+            {review.data.bindings.length === 0 ? (
+              <p>None.</p>
             ) : (
-              <Failure error={apply.error} onRetry={() => apply.mutate()} />
+              <ul className={m.list}>
+                {review.data.bindings.map((b) => (
+                  <li key={`${b.consumer}.${b.capability}`}>
+                    {b.consumer} uses {b.capability} from {b.provider}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <h3>Published ports</h3>
+            <p>{review.data.publishedPorts.length === 0 ? 'None: nothing of this stack is reachable from outside the host.' : ''}</p>
+            {review.data.placed.length > 0 && <h3>Credentials you place</h3>}
+            {review.data.placed.map((p) => (
+              <div key={p.path} className={m.field}>
+                <label htmlFor={`placed-${p.path}`}>
+                  {p.instance}: {p.field === 'password' ? 'password' : 'secret key'} for {p.capability}
+                  {p.exists && !replacing[p.path] && ' (already set)'}
+                </label>
+                {p.exists && (
+                  <label className={m.check}>
+                    <input
+                      type="checkbox"
+                      checked={replacing[p.path] ?? false}
+                      onChange={(e) => setReplacing({ ...replacing, [p.path]: e.target.checked })}
+                    />{' '}
+                    Replace
+                  </label>
+                )}
+                {(!p.exists || replacing[p.path]) && (
+                  <input
+                    id={`placed-${p.path}`}
+                    type="password"
+                    autoComplete="new-password"
+                    maxLength={4096}
+                    required
+                    value={values[p.path] ?? ''}
+                    onChange={(e) => setValues({ ...values, [p.path]: e.target.value })}
+                  />
+                )}
+              </div>
             ))}
-          <div className="review__actions">
-            <button type="button" onClick={() => dialog.current?.close()}>
-              Cancel
-            </button>
-            <button type="submit" disabled={!complete || apply.isPending || review.isFetching}>
-              {apply.isPending ? 'Deploying…' : 'Deploy'}
-            </button>
+            {apply.isError &&
+              !planChanged &&
+              (isRefusal(apply.error) ? (
+                <ProblemList problems={apply.error.problems} />
+              ) : (
+                <Failure error={apply.error} onRetry={() => apply.mutate()} />
+              ))}
+            <div className={m.actions}>
+              <Button onPress={() => dialog.current?.close()}>Cancel</Button>
+              <Button type="submit" variant="primary" isDisabled={!complete || apply.isPending || review.isFetching}>
+                {apply.isPending ? 'Deploying…' : 'Deploy'}
+              </Button>
+            </div>
+          </form>
+        )}
+        {(review.isError || (review.data && !review.data.plan.ok)) && (
+          <div className={m.actions}>
+            <Button onPress={() => dialog.current?.close()}>Close</Button>
           </div>
-        </form>
-      )}
-      {(review.isError || (review.data && !review.data.plan.ok)) && (
-        <div className="review__actions">
-          <button type="button" onClick={() => dialog.current?.close()}>
-            Close
-          </button>
-        </div>
-      )}
+        )}
+      </div>
     </dialog>
   )
 }

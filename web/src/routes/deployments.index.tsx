@@ -1,8 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { Server } from 'lucide-react'
 import { type DeploymentSummary, fetchDeployments, type Page } from '../api/platform'
-import { Failure } from '../components/Failure'
+import m from '../components/Managed.module.css'
 import { StateBadge } from '../components/StateBadge'
+import { Button } from '../components/ui/Button'
+import { EmptyState } from '../components/ui/EmptyState'
+import { Failure } from '../components/ui/Failure'
 import { useEvents } from '../hooks/useEvents'
 import { mode } from '../lib/config'
 
@@ -15,12 +19,11 @@ function Deployments() {
 
 export function OnlyManaged() {
   return (
-    <div className="screen empty">
-      <h1>Deployments live in the managed platform</h1>
+    <EmptyState icon={Server} level={1} title="Deployments live in the managed platform">
       <p>
         The online tool stores nothing. <Link to="/">Go to the editor</Link> and download a zip instead.
       </p>
-    </div>
+    </EmptyState>
   )
 }
 
@@ -38,10 +41,10 @@ function DeploymentList() {
       })),
   })
   if (list.isError) return <Failure error={list.error} onRetry={() => void list.refetch()} />
-  if (!list.data) return <p className="screen">Loading the deployments…</p>
+  if (!list.data) return <p className={m.loading}>Loading the deployments…</p>
   return (
-    <div className="screen">
-      <div className="toolbar">
+    <div className={m.screen}>
+      <div className={m.heading}>
         <h1>Deployments</h1>
       </div>
       {list.data.items.length === 0 ? (
@@ -49,38 +52,40 @@ function DeploymentList() {
           Nothing is deployed yet. Open a graph in the <Link to="/">editor</Link> and choose Deploy.
         </p>
       ) : (
-        <table className="deployments">
-          <thead>
-            <tr>
-              <th scope="col">Name</th>
-              <th scope="col">State</th>
-              <th scope="col">Latest operation</th>
-              <th scope="col">Started</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list.data.items.map((d) => (
-              <tr key={d.name}>
-                <td>
-                  <Link to="/deployments/$name" params={{ name: d.name }}>
-                    {d.name}
-                  </Link>
-                </td>
-                <td>
-                  <StateBadge deployment={d.state} />
-                </td>
-                <td>{d.latestOperation ? `${d.latestOperation.action} ${d.latestOperation.status}` : 'none'}</td>
-                <td>{d.latestOperation ? new Date(d.latestOperation.startedAt).toLocaleString() : ''}</td>
+        <div className={m.tableWrap}>
+          <table className={m.table}>
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">State</th>
+                <th scope="col">Latest operation</th>
+                <th scope="col">Started</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {list.data.items.map((d) => (
+                <tr key={d.name}>
+                  <td>
+                    <Link to="/deployments/$name" params={{ name: d.name }}>
+                      {d.name}
+                    </Link>
+                  </td>
+                  <td>
+                    <StateBadge deployment={d.state} />
+                  </td>
+                  <td>{d.latestOperation ? `${d.latestOperation.action} ${d.latestOperation.status}` : 'none'}</td>
+                  <td>{d.latestOperation ? new Date(d.latestOperation.startedAt).toLocaleString() : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {list.data.next && (
         <p>
-          <button type="button" disabled={more.isPending} onClick={() => list.data.next && more.mutate(list.data.next)}>
+          <Button size="sm" isDisabled={more.isPending} onPress={() => list.data.next && more.mutate(list.data.next)}>
             {more.isPending ? 'Loading…' : 'Show more deployments'}
-          </button>
+          </Button>
         </p>
       )}
       {more.isError && <Failure error={more.error} onRetry={() => list.data.next && more.mutate(list.data.next)} />}

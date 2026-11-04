@@ -6,7 +6,6 @@ import { createRoot } from 'react-dom/client'
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/reactflow.css'
-import './app.css'
 import { basePath } from './lib/config'
 import { routeTree } from './routeTree.gen'
 

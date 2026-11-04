@@ -9,6 +9,8 @@
     <meta name="mp-signed-out" content="{{env `MP_SIGNED_OUT`}}" />
     <title>Modular Platform</title>
     <script src="{{env `MP_BASE_PATH`}}/theme.js"></script>
+    <!-- React Aria injects a <style> for pressable elements unless an element with this id exists; the content policy blocks injected styles, so its rule lives in src/styles/base.css -->
+    <meta id="react-aria-pressable-style" name="react-aria-pressable-style" content="src/styles/base.css" />
   </head>
   <body>
     <div id="root"></div>

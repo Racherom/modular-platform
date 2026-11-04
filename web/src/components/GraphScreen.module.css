@@ -22,21 +22,6 @@
   display: none;
 }
 
-.history {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding-right: var(--space-2);
-  border-right: 1px solid var(--color-border);
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 .canvas {
   display: flex;
   flex-direction: column;

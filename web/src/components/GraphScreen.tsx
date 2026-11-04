@@ -10,7 +10,6 @@ import { historyKey, historyShortcut, isApple, isFormControl } from '../lib/keys
 import type { PlanState } from '../lib/store'
 import { HeaderContent, Workspace } from './AppShell'
 import { CatalogPanel } from './CatalogPanel'
-import { Failure } from './Failure'
 import styles from './GraphScreen.module.css'
 import { type GraphEdit, GraphView } from './GraphView'
 import { Inspector } from './Inspector'
@@ -18,7 +17,9 @@ import { ProblemsPanel } from './ProblemsPanel'
 import { ReviewDialog } from './ReviewDialog'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
+import { Failure } from './ui/Failure'
 import { IconButton } from './ui/IconButton'
+import { Toolbar } from './ui/Toolbar'
 
 /** The catalog, fetched once per page. */
 export function useCatalog() {
@@ -110,7 +111,7 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing, notice }:
           </span>
         </div>
         {editing && <HistoryButtons history={editing.history} />}
-        <div className={styles.toolbar}>
+        <Toolbar label="File">
           {toolbar}
           <Button size="sm" onPress={save}>
             <Save aria-hidden="true" />
@@ -142,7 +143,7 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing, notice }:
               {blocked}
             </span>
           )}
-        </div>
+        </Toolbar>
       </HeaderContent>
       {reviewing && <ReviewDialog graph={graph} onClose={() => setReviewing(false)} />}
       <ReactFlowProvider>
@@ -221,7 +222,7 @@ function HistoryButtons({ history }: { history?: HistoryControls }) {
   const undo = historyShortcut('undo', apple)
   const redo = historyShortcut('redo', apple)
   return (
-    <div className={styles.history}>
+    <Toolbar label="History" divider>
       <IconButton
         label="Undo"
         hint={undo.label}
@@ -246,6 +247,6 @@ function HistoryButtons({ history }: { history?: HistoryControls }) {
         <LayoutGrid aria-hidden="true" />
         Tidy layout
       </Button>
-    </div>
+    </Toolbar>
   )
 }

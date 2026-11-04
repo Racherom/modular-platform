@@ -3,12 +3,14 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import type { Graph } from '../api/client'
 import { type Deployment, fetchDeployment, fetchOperations, type ModuleState, type Operation } from '../api/platform'
-import { Failure } from '../components/Failure'
 import { useCatalog } from '../components/GraphScreen'
 import { GraphView } from '../components/GraphView'
+import m from '../components/Managed.module.css'
 import { RemoveDialog } from '../components/RemoveDialog'
 import { ReviewDialog } from '../components/ReviewDialog'
 import { StateBadge } from '../components/StateBadge'
+import { Button } from '../components/ui/Button'
+import { Failure } from '../components/ui/Failure'
 import { useEvents } from '../hooks/useEvents'
 import { mode } from '../lib/config'
 import { deploymentNotice } from '../lib/notice'
@@ -37,27 +39,29 @@ function DeploymentScreen({ name }: { name: string }) {
   const states = useMemo(() => byInstance(deployment.data?.modules), [deployment.data?.modules])
 
   if (deployment.isError) return <Failure error={deployment.error} onRetry={() => void deployment.refetch()} />
-  if (!deployment.data || !catalog.data) return <p className="screen">Loading {name}…</p>
+  if (!deployment.data || !catalog.data) return <p className={m.loading}>Loading {name}…</p>
   const d = deployment.data
   const running = d.latestOperation?.status === 'running'
   return (
-    <div className="screen">
-      <div className="toolbar">
+    <div className={m.screen}>
+      <div className={m.heading}>
         <h1>{d.name}</h1>
         <StateBadge deployment={d.state} />
-        <button type="button" disabled={running} onClick={() => setRemoving({ deleteData: false })}>
+        <Button size="sm" variant="danger" isDisabled={running} onPress={() => setRemoving({ deleteData: false })}>
           Remove
-        </button>
+        </Button>
       </div>
       <Progress deployment={d} onRemoveAgain={(deleteData) => setRemoving({ deleteData })} />
       {d.stateError && (
-        <p role="alert" className="banner banner--error">
+        <p role="alert" className={m.banner} data-tone="danger">
           The live state could not be read: {d.stateError}
         </p>
       )}
       {d.graph ? (
-        <div className="workspace">
-          <GraphView graph={d.graph} catalog={catalog.data} problems={[]} states={states} />
+        <div className={m.workspace}>
+          <div className={m.graph}>
+            <GraphView graph={d.graph} catalog={catalog.data} problems={[]} states={states} />
+          </div>
           <ModuleList modules={d.modules ?? []} />
         </div>
       ) : (
@@ -66,22 +70,24 @@ function DeploymentScreen({ name }: { name: string }) {
       <section aria-labelledby="history-title">
         <h2 id="history-title">History</h2>
         {history.data && (
-          <ol className="history">
+          <ol className={m.history}>
             {history.data.pages
               .flatMap((p) => p.items)
               .map((op) => (
                 <li key={op.id} id={`operation-${op.id}`}>
                   {new Date(op.startedAt).toLocaleString()}: {operationLabel(op)} by {op.startedBy}, <strong>{op.status}</strong>
                   {op.step && ` at ${op.step}`}
-                  {op.error && <pre className="history__error">{op.error}</pre>}
+                  {op.error && <pre className={m.error}>{op.error}</pre>}
                 </li>
               ))}
           </ol>
         )}
         {history.hasNextPage && (
-          <button type="button" disabled={history.isFetchingNextPage} onClick={() => void history.fetchNextPage()}>
-            {history.isFetchingNextPage ? 'Loading…' : 'Show older operations'}
-          </button>
+          <p>
+            <Button size="sm" isDisabled={history.isFetchingNextPage} onPress={() => void history.fetchNextPage()}>
+              {history.isFetchingNextPage ? 'Loading…' : 'Show older operations'}
+            </Button>
+          </p>
         )}
         {history.isError && <Failure error={history.error} onRetry={() => void history.refetch()} />}
       </section>
@@ -119,11 +125,15 @@ function Progress({ deployment: d, onRemoveAgain }: { deployment: Deployment; on
   }
   return (
     <>
-      <p aria-live="polite" className="progress">
+      <p aria-live="polite" className={m.progress}>
         {text}
       </p>
       {notice && (
-        <div role={notice.tone === 'error' ? 'alert' : 'status'} className={notice.tone === 'error' ? 'banner banner--error' : 'banner'}>
+        <div
+          role={notice.tone === 'error' ? 'alert' : 'status'}
+          className={m.banner}
+          data-tone={notice.tone === 'error' ? 'danger' : undefined}
+        >
           <p>
             {notice.text}
             {d.rolledBackFrom && (
@@ -133,18 +143,18 @@ function Progress({ deployment: d, onRemoveAgain }: { deployment: Deployment; on
               </>
             )}
           </p>
-          {(d.rolledBackFrom?.error ?? op?.error) && <pre className="history__error">{d.rolledBackFrom?.error ?? op?.error}</pre>}
+          {(d.rolledBackFrom?.error ?? op?.error) && <pre className={m.error}>{d.rolledBackFrom?.error ?? op?.error}</pre>}
           {(notice.applyAgain || notice.removeAgain) && (
-            <div className="review__actions">
+            <div className={m.actions}>
               {notice.removeAgain && (
-                <button type="button" onClick={() => onRemoveAgain(op?.deleteData ?? false)}>
+                <Button size="sm" variant="danger" onPress={() => onRemoveAgain(op?.deleteData ?? false)}>
                   Remove again
-                </button>
+                </Button>
               )}
               {notice.applyAgain && (
-                <button type="button" disabled={applyAgain.isPending} onClick={() => applyAgain.mutate()}>
+                <Button size="sm" variant="primary" isDisabled={applyAgain.isPending} onPress={() => applyAgain.mutate()}>
                   Apply again
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -158,7 +168,7 @@ function Progress({ deployment: d, onRemoveAgain }: { deployment: Deployment; on
 
 function ModuleList({ modules }: { modules: ModuleState[] }) {
   return (
-    <aside className="catalog" aria-label="Modules">
+    <aside className={m.modules} aria-label="Modules">
       <h2>Modules</h2>
       <ul>
         {modules.map((m) => (

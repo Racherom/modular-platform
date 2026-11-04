@@ -1,11 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { SearchX } from 'lucide-react'
 import { useMemo, useRef } from 'react'
 import { planGraph } from '../api/client'
-import { Failure } from '../components/Failure'
 import { GraphScreen } from '../components/GraphScreen'
 import type { GraphEdit } from '../components/GraphView'
 import { useReplaceGuard } from '../components/ReplaceDialog'
+import { EmptyState } from '../components/ui/EmptyState'
+import { Failure } from '../components/ui/Failure'
 import { layout } from '../graph/layout'
 import { samples } from '../graph/samples'
 import { parseGraph } from '../graph/yaml'
@@ -20,12 +22,11 @@ function Sample() {
   const text = Object.hasOwn(samples, name) ? samples[name] : undefined
   if (text === undefined) {
     return (
-      <div className="empty">
-        <h1>No sample named {name}</h1>
+      <EmptyState icon={SearchX} level={1} title={`No sample named ${name}`}>
         <p>
           <Link to="/">Go to the editor</Link>
         </p>
-      </div>
+      </EmptyState>
     )
   }
   return <SampleGraph name={name} text={text} />

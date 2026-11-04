@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { drag, handle, openGraph } from './helpers'
-import { mockPlanner } from './mock-planner'
+import { mockPlanner, type PlanReply } from './mock-planner'
 
 const edges = '.react-flow__edge'
 
@@ -87,9 +87,10 @@ modules:
   expect(target).toBe('whoami uses postgresql from b')
 })
 
-test('a failed plan keeps the edit and offers Retry (AC-12)', async ({ page }) => {
+test('a failed plan keeps the edit and offers Retry: 503, then 429, then it recovers (AC-12, AC-14)', async ({ page }) => {
   let call = 0
-  const { plans } = await mockPlanner(page, () => (++call === 2 ? { status: 503 } : 'echo'))
+  const replies: PlanReply[] = ['echo', { status: 503 }, { status: 429 }, 'echo']
+  const { plans } = await mockPlanner(page, () => replies[call++] ?? 'echo')
   await openGraph(page)
   await drag(page, handle(page, 'whoami', 'uses:postgresql'), handle(page, 'postgres', 'provides:postgresql'))
   await expect(page.getByRole('alert')).toBeVisible()
@@ -98,8 +99,15 @@ test('a failed plan keeps the edit and offers Retry (AC-12)', async ({ page }) =
   await expect(page.getByRole('button', { name: 'Download zip' })).toBeDisabled()
   await expect(page.getByText('Not checked, retry first')).toBeVisible()
 
+  // the retry meets a busy planner: still not checked, the busy message, Retry offered again
+  await page.getByRole('button', { name: 'Retry' }).click()
+  await expect(page.getByRole('alert')).toContainText(/busy/i)
+  await expect(page.getByText('Not checked', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Download zip' })).toBeDisabled()
+  await expect(page.locator(edges)).toHaveCount(1)
+
   await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByRole('alert')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Download zip' })).toBeEnabled()
-  expect(plans).toHaveLength(3)
+  expect(plans).toHaveLength(4)
 })

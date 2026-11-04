@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { expect, type Page, test } from '@playwright/test'
 
 // SMOKE_BASE is '' for the site root or '/platform' for compose.subpath.yaml.
@@ -73,4 +74,69 @@ test('everything stays under the base path (AC-7, AC-12)', async ({ page }) => {
   const bare = await page.request.get(base, { maxRedirects: 0 })
   expect(bare.status()).toBe(308)
   expect(new URL(bare.headers().location ?? '', 'https://x').pathname).toBe(`${base}/`)
+})
+
+/** Drags from one canvas handle to another with the mouse. */
+async function drag(page: Page, from: string, to: string) {
+  const a = await page.locator(from).boundingBox()
+  const b = await page.locator(to).boundingBox()
+  if (!a || !b) throw new Error('a handle is not on screen')
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 12 })
+  await page.mouse.up()
+}
+
+test('unbind and bind again on a sample copy, each checked by the planner (spec 0010, AC-9, AC-10, AC-12, AC-18)', async ({ page }) => {
+  test.skip(base !== '', 'the edit pass runs once, at the site root')
+  const plans: number[] = []
+  page.on('response', (r) => {
+    if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/planner/v1/plan') plans.push(r.status())
+  })
+  await page.goto(sample)
+  await expectSampleGraph(page)
+  const planned = plans.length // the sample's own plan
+
+  // Delete on the selected binding makes the copy and unbinds; the editor moves to its root
+  await page.locator('.react-flow__edge[data-id="whoami.postgresql"]').click()
+  await page.keyboard.press('Delete')
+  await expect(page).toHaveURL(`${base}/`)
+  await expect(page.getByText('Edited', { exact: true })).toBeVisible()
+  await expect(page.locator('.react-flow__edge')).toHaveCount(0)
+  await expect(page.getByText('Checking the graph…')).toHaveCount(0)
+
+  // drag the need back to postgres
+  await drag(
+    page,
+    '.react-flow__handle[data-nodeid="whoami"][data-handleid="uses:postgresql"]',
+    '.react-flow__handle[data-nodeid="postgres"][data-handleid="provides:postgresql"]',
+  )
+  await expect(page.locator('.react-flow__edge[data-id="whoami.postgresql"]')).toHaveCount(1)
+  await expect(page.getByText('Checking the graph…')).toHaveCount(0)
+  expect(plans.slice(planned)).toEqual([200, 200])
+
+  // the saved file equals the sample, byte for byte (positions never reach the file)
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save as file' }).click()
+  const saved = await (await download).path()
+  const expected = readFileSync(new URL('../../samples/whoami-postgres/graph.yaml', import.meta.url), 'utf8')
+  expect(readFileSync(saved, 'utf8')).toBe(expected)
+})
+
+test('a stored Dark theme is on <html> before the app module runs, under the content policy (spec 0010, AC-2)', async ({ page }) => {
+  await page.goto(`${base}/`)
+  await page.getByRole('radio', { name: 'Dark theme' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+
+  // readyState turns interactive after parsing and before deferred and module scripts run
+  await page.addInitScript(() => {
+    document.addEventListener('readystatechange', () => {
+      if (document.readyState === 'interactive') {
+        ;(window as unknown as { __themeAtParse: string | null }).__themeAtParse = document.documentElement.getAttribute('data-theme')
+      }
+    })
+  })
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'No graph open' })).toBeVisible()
+  expect(await page.evaluate(() => (window as unknown as { __themeAtParse: string | null }).__themeAtParse)).toBe('dark')
 })
