@@ -44,3 +44,43 @@ Milestone 1, thin thread (build plan task 1). Later milestones append their step
 
 ## Acceptance criteria coverage
 - AC-2: theme steps, value sourcing (theme), build command · AC-3: axe step and browser check (sample, open graph, connect drag; selection, problems and `/design` come later) · AC-6: layout steps · AC-7: node look and no drag (scale timing and render count come in task 10) · AC-9: connect, drop elsewhere, provides start, value sourcing · AC-12: plan steps, latest wins, failure · AC-16: positions and reload · AC-17: partly (marker, reload, save; the storage note comes in task 5)
+
+---
+
+Milestone 2, editing (build plan tasks 2 to 4), added 2026-11-04.
+
+## UI / manual
+- [ ] Open a graph with postgres instances `a` and `b` and `whoami.uses.postgresql: a`; drag the arrow end of the edge to `b` → `b`'s port gets the accent ring during the drag; on drop the edge reads "whoami uses postgresql from b" and one `POST /v1/plan` is sent → AC-9
+- [ ] Drag the arrow end of an edge onto empty canvas → the edge snaps back unchanged and no plan call is sent; the consumer end of an edge cannot be grabbed → AC-9
+- [ ] Click an edge → it turns accent, both of its ports light up, the inspector shows "Binding"; press Delete (or Backspace) → the edge is gone, `whoami` is selected and has keyboard focus, every module is still there → AC-8, AC-10
+- [ ] With a module selected, press Delete or Backspace → nothing changes; type Backspace inside the "Bound to" select or any text field → nothing is unbound → AC-10
+- [ ] Select a binding and press the inspector's Remove binding → same result as Delete → AC-10
+- [ ] Click a module → 2px accent border, its edges and ports accent, unrelated edges thin and dimmed, unrelated node borders dimmed while every text stays readable; a node with an error keeps its red border → AC-8
+- [ ] Press Escape, or click empty canvas → the selection clears and nothing is dimmed → AC-8
+- [ ] Keyboard only: Tab to the `whoami` node, press Enter → the inspector lists the need `postgresql` with "optional", and Provides `http` with "Not used"; open "Bound to" with Enter → options `a`, `b`, "Not bound", "Let the planner choose"; choose "Not bound" then `b` → the edge goes away, then comes back from `b`, one plan call each → AC-8, AC-11
+- [ ] Select `b` → its Provides row says "Used by whoami" → AC-11
+- [ ] Choose "Let the planner choose" with one candidate → the select shows it only until the reply; then it shows the instance the planner chose with the note "Bound by the planner" → AC-11
+- [ ] Open a file where `whoami.uses.postgresql` names `whoami` itself → the select shows "whoami (invalid)" → AC-11
+- [ ] Open a graph where `test-app`'s required `postgresql` is `null` → a red circle mark sits on that port, its accessible name is the `unbound_required` message; Download zip is disabled with "Fix 1 error to download" beside it → AC-10, AC-13, AC-14
+- [ ] A problem whose path is `modules.<i>` (not a need), or a need problem on a module that is not in the catalog → the mark sits in the node header instead of a port; a graph level problem shows only in the panel → AC-13
+- [ ] Give one port a warning and an error → one red mark whose name lists both messages → AC-13
+- [ ] Click a problem in the problems panel → its module is selected, centered at the current zoom (at least 1), and focused; with reduced motion on, the canvas jumps without animating → AC-13
+- [ ] Make the plan call answer 400 → the edit stays, "Not checked", the planner's message, and no Retry button; answer 429 → "The planner is busy, try again in a minute." with Retry → AC-14
+- [ ] Watch the reason beside Download zip → "Checking the graph" while checking, "Not checked, retry first" after a failure, "Fix N errors to download" with errors only; warnings alone never disable it; in managed mode Deploy follows the same rule → AC-14
+
+## Value sourcing
+- [ ] Inspector "required" or "optional": from the catalog entry's `uses.<C>.optional`; flip it in the fixture catalog and the label follows → AC-11
+- [ ] "Bound to" options: from `candidates`; add a third postgres instance and it appears, sorted by name; an instance whose module is not in the catalog and the consumer itself never appear → AC-11
+- [ ] "Bound to" current value: a string in the candidates shows that name, a string outside shows "(invalid)", `null` shows "Not bound", a missing key shows "Let the planner choose" → AC-11
+- [ ] "Bound by the planner": only for a `plan.bindings` entry with `auto: true` while the plan is current; make the next plan call slow and the note disappears while checking → AC-11
+- [ ] "Used by": the instances whose need for that capability names this instance; rebind and the list follows → AC-11
+- [ ] Marks: from `plan.problems` by `path`; change a path in a mocked reply from `modules.app.uses.postgresql` to `modules.app` and the mark moves from the port to the header → AC-13
+- [ ] Download reason: N counts only `severity: error`; a reply with two errors and a warning says "Fix 2 errors to download" → AC-14
+- [ ] Retry shown: hidden only for `status === 400` → AC-14
+
+## Commands
+- [ ] `pnpm --dir web test` → 118 tests pass, including `edit.test.ts` (unbind, letPlannerChoose, candidates), `selection.test.ts` and `flow.test.ts` (marks, emphasis, download gate) → AC-8, AC-9, AC-10, AC-11, AC-13, AC-14
+- [ ] `pnpm --dir web a11y` → 36 checks pass, including `editing.spec.ts` and axe in both themes with a module selected, a binding selected with the select open, and problems shown → AC-3, AC-8 to AC-14
+
+## Acceptance criteria coverage
+- AC-8: click, Enter, Escape, pane click, dimming, selection after unbind · AC-9: reconnect, reconnect dropped elsewhere · AC-10: Delete, Backspace, Remove binding, never a module, required unbind · AC-11: inspector rows, options, invalid, auto note, keyboard flow · AC-13: port and node marks, error wins, panel navigation · AC-14: 400 without Retry, 429, download reason · AC-3: two more editor states (the connect drag and `/design` axe runs complete in task 10)
