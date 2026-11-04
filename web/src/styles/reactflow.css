@@ -45,18 +45,17 @@
   border-radius: var(--radius-md);
 }
 
-.react-flow__node-module:focus-visible {
+/*
+ * React Flow's .react-flow__node.selectable:focus-visible sets outline: none (specificity 0,3,0).
+ * Two classes here tie it, and this file loads later, so the ring wins (AC-3).
+ */
+.react-flow__node.react-flow__node-module:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 3px;
 }
 
 .react-flow__edge:focus-visible {
   outline: none;
-}
-
-.react-flow__edge:focus-visible .react-flow__edge-path {
-  stroke: var(--color-focus);
-  stroke-width: 3;
 }
 
 /* selection (AC-8): related edges get 2px accent, the rest 1px dimmed; width carries the dimming */
@@ -69,6 +68,16 @@
 .react-flow__edge.is-dimmed .react-flow__edge-path {
   stroke: var(--color-edge-dimmed);
   stroke-width: 1;
+}
+
+/*
+ * The focus stroke (AC-3) beats the selection rules above by specificity (0,4,0) and ties React
+ * Flow's .react-flow__edge.selectable:focus-visible .react-flow__edge-path, which paints the
+ * selected color; this file loads later, so the focus color wins. Keep it below the selection.
+ */
+.react-flow .react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: var(--color-focus);
+  stroke-width: 3;
 }
 
 .react-flow__controls-button svg {
