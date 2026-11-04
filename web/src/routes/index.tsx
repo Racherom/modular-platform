@@ -6,7 +6,6 @@ import { planGraph } from '../api/client'
 import { Failure } from '../components/Failure'
 import { GraphScreen, useCatalog } from '../components/GraphScreen'
 import { Button } from '../components/ui/Button'
-import { bind } from '../graph/edit'
 import { MAX_FILE_BYTES, parseGraph } from '../graph/yaml'
 import { loadWorking, type WorkingGraph } from '../lib/storage'
 import { useEditor } from '../lib/store'
@@ -81,7 +80,7 @@ function Editor() {
             planState,
             planError,
             onRetry: retry,
-            onBind: (consumer, capability, provider) => edit((g) => bind(g, consumer, capability, provider)),
+            onEdit: edit,
             onSaved: saved,
           }}
         />

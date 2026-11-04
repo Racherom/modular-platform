@@ -14,14 +14,29 @@ export const HANDLE_SIZE = 12
 /** An instance's place on the canvas. */
 export type Positions = Record<string, { x: number; y: number }>
 
+/** A problem mark on a port or a node: the worst severity, and every message for its name (AC-13). */
+export interface Mark {
+  severity: 'error' | 'warning'
+  messages: string[]
+}
+
+/** The selection, as the canvas needs it (mirrors the store's Selection). */
+export type CanvasSelection = null | { kind: 'module'; instance: string } | { kind: 'binding'; consumer: string; capability: string }
+
 /** Everything a module node draws. */
 export interface ModuleNodeData extends Record<string, unknown> {
   instance: string
   module: string
   known: boolean
   provides: string[]
-  uses: { capability: string; optional: boolean }[]
+  uses: { capability: string; optional: boolean; mark?: Mark }[]
   hasError: boolean
+  /** Problems of the module that no drawn port takes. */
+  mark?: Mark
+  /** Dimmed because something unrelated is selected (AC-8). */
+  dimmed?: boolean
+  /** Handle ids highlighted because they belong to the selection. */
+  highlight?: string[]
   /** The module's live state on a deployment screen. */
   state?: ModuleState
   /** Only during a connect drag: the provides capabilities of this node that accept the drop. */
@@ -58,6 +73,22 @@ export function problemInstance(p: Problem): string | undefined {
   return root === 'modules' ? instance : undefined
 }
 
+/** The need a problem is about, when its path is exactly modules.<i>.uses.<C>. */
+export function problemNeed(p: Problem): { instance: string; capability: string } | undefined {
+  const parts = p.path.split('.')
+  if (parts.length !== 4 || parts[0] !== 'modules' || parts[2] !== 'uses') return undefined
+  return { instance: parts[1]!, capability: parts[3]! }
+}
+
+/** Folds problems into one mark; an error wins over warnings, and every message is kept. */
+export function markOf(problems: Problem[]): Mark | undefined {
+  if (problems.length === 0) return undefined
+  return {
+    severity: problems.some((p) => p.severity === 'error') ? 'error' : 'warning',
+    messages: problems.map((p) => p.message),
+  }
+}
+
 /**
  * Builds the canvas: one node per instance with a handle per provides capability on the left
  * (provides:<c>) and per uses capability on the right (uses:<c>), and one smooth step edge per
@@ -69,14 +100,32 @@ export function toFlow(graph: Graph, catalog: CatalogEntry[], problems: Problem[
   const entries = new Map(catalog.map((e) => [e.name, e]))
   const failing = new Set(problems.filter((p) => p.severity === 'error').map(problemInstance))
   const names = Object.keys(graph.modules).sort()
+  // problems by instance; Maps, since a broken file may name an instance like constructor
+  const byInstance = new Map<string, Problem[]>()
+  for (const p of problems) {
+    const i = problemInstance(p)
+    if (i === undefined) continue
+    byInstance.set(i, [...(byInstance.get(i) ?? []), p])
+  }
 
   const nodes: ModuleFlowNode[] = names.map((instance) => {
     const m = graph.modules[instance]!
     const entry = entries.get(m.module)
     const provides = Object.keys(entry?.provides ?? {}).sort()
+    const own = byInstance.get(instance) ?? []
+    const drawn = new Set(Object.keys(entry?.uses ?? {}))
+    // a need problem marks its port when the port is drawn, else the node (AC-13)
+    const onPort = (p: Problem) => {
+      const need = problemNeed(p)
+      return need !== undefined && drawn.has(need.capability) ? need.capability : undefined
+    }
     const uses = Object.entries(entry?.uses ?? {})
-      .map(([capability, u]) => ({ capability, optional: u.optional ?? false }))
+      .map(([capability, u]) => {
+        const mark = markOf(own.filter((p) => onPort(p) === capability))
+        return { capability, optional: u.optional ?? false, ...(mark ? { mark } : {}) }
+      })
       .sort((a, b) => (a.capability < b.capability ? -1 : a.capability > b.capability ? 1 : 0))
+    const mark = markOf(own.filter((p) => onPort(p) === undefined))
     const height = NODE_HEADER + Math.max(provides.length, uses.length, 1) * PORT_ROW + 8
     const handles: NodeHandle[] = [
       ...provides.map((c, i) => handle(providesHandle(c), 'target', Position.Left, -HANDLE_SIZE / 2, portY(i))),
@@ -90,7 +139,15 @@ export function toFlow(graph: Graph, catalog: CatalogEntry[], problems: Problem[
       height,
       handles,
       ariaLabel: `${instance}, module ${m.module}`,
-      data: { instance, module: m.module, known: entry !== undefined, provides, uses, hasError: failing.has(instance) },
+      data: {
+        instance,
+        module: m.module,
+        known: entry !== undefined,
+        provides,
+        uses,
+        hasError: failing.has(instance),
+        ...(mark ? { mark } : {}),
+      },
     }
   })
 
@@ -113,10 +170,60 @@ export function toFlow(graph: Graph, catalog: CatalogEntry[], problems: Problem[
         targetHandle: providesHandle(capability),
         ariaLabel: `${consumer} uses ${capability} from ${provider}`,
         markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
+        // only the provider end moves; the consumer end belongs to the need (AC-9)
+        reconnectable: 'target',
       })
     }
   }
   return { nodes, edges }
+}
+
+/**
+ * Applies the selection to a derived canvas (AC-8): the selected node or edge is marked
+ * selected, the edges and ports that belong to the selection are highlighted, and every other
+ * edge and node border is dimmed. Without a selection nothing changes.
+ */
+export function emphasize(nodes: ModuleFlowNode[], edges: Edge[], selection: CanvasSelection) {
+  if (!selection) return { nodes, edges }
+  const related =
+    selection.kind === 'module'
+      ? edges.filter((e) => e.source === selection.instance || e.target === selection.instance)
+      : edges.filter((e) => e.id === `${selection.consumer}.${selection.capability}`)
+  const relatedIds = new Set(related.map((e) => e.id))
+  const lit = new Map<string, string[]>()
+  const light = (node: string, handleId: string | null | undefined) => {
+    if (handleId) lit.set(node, [...(lit.get(node) ?? []), handleId])
+  }
+  for (const e of related) {
+    light(e.source, e.sourceHandle)
+    light(e.target, e.targetHandle)
+  }
+  const near = new Set<string>(related.flatMap((e) => [e.source, e.target]))
+  if (selection.kind === 'module') near.add(selection.instance)
+
+  return {
+    nodes: nodes.map((n) => {
+      const selected = selection.kind === 'module' && n.id === selection.instance
+      const highlight = lit.get(n.id)
+      return {
+        ...n,
+        selected,
+        data: {
+          ...n.data,
+          ...(near.has(n.id) ? {} : { dimmed: true }),
+          ...(highlight ? { highlight: [...new Set(highlight)].sort() } : {}),
+        },
+      }
+    }),
+    edges: edges.map((e) => {
+      const isRelated = relatedIds.has(e.id)
+      return {
+        ...e,
+        selected: selection.kind === 'binding' && isRelated,
+        className: isRelated ? 'is-related' : 'is-dimmed',
+      }
+    }),
+  }
 }
 
 /**

@@ -1,0 +1,108 @@
+.select {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.label {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  height: var(--control-md);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.select[data-size="sm"] .trigger {
+  height: var(--control-sm);
+}
+
+.trigger[data-hovered] {
+  border-color: var(--color-text-muted);
+}
+
+.trigger[data-focus-visible] {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.select[data-disabled] .trigger {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.value {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.description {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.popover {
+  z-index: var(--layer-popover);
+  min-width: var(--trigger-width);
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-2);
+}
+
+.list {
+  padding: var(--space-1);
+  outline: none;
+}
+
+.option {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  cursor: default;
+  outline: none;
+}
+
+.option[data-focused] {
+  background: var(--color-surface);
+}
+
+.option[data-focus-visible] {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.option[data-selected] {
+  color: var(--color-accent);
+  font-weight: var(--weight-strong);
+}
+
+.option[data-disabled] {
+  color: var(--color-text-muted);
+}

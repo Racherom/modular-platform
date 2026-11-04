@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CatalogEntry, Graph } from '../api/client'
-import { bind, type Drop, isValidDrop } from '../graph/edit'
+import { bind, candidates, type Drop, isValidDrop, letPlannerChoose, unbind } from '../graph/edit'
 
 const entry = (name: string, more: Partial<CatalogEntry>): CatalogEntry => ({
   apiVersion: 'modular-platform/v0alpha1',
@@ -63,6 +63,70 @@ describe('bind', () => {
   it('stores a capability named __proto__ as a plain key', () => {
     const next = bind(graph, 'web', '__proto__', 'db')
     expect(Object.hasOwn(next.modules.web?.uses ?? {}, '__proto__')).toBe(true)
+  })
+
+  it('returns the same graph when the need already has that provider', () => {
+    const once = bind(graph, 'web', 'postgresql', 'db')
+    expect(bind(once, 'web', 'postgresql', 'db')).toBe(once)
+  })
+
+  it('adds a uses section to a module without one', () => {
+    expect(bind(graph, 'db', 'postgresql', 'db2').modules.db?.uses).toEqual({ postgresql: 'db2' })
+  })
+})
+
+describe('unbind', () => {
+  const bound = bind(graph, 'web', 'postgresql', 'db')
+
+  it('sets the need to null and never removes a module', () => {
+    const next = unbind(bound, 'web', 'postgresql')
+    expect(next.modules.web?.uses).toEqual({ postgresql: null })
+    expect(Object.keys(next.modules)).toEqual(Object.keys(bound.modules))
+    expect(bound.modules.web?.uses).toEqual({ postgresql: 'db' })
+  })
+
+  it('sets a missing need to null', () => {
+    const g = letPlannerChoose(bound, 'web', 'postgresql')
+    expect(unbind(g, 'web', 'postgresql').modules.web?.uses).toEqual({ postgresql: null })
+  })
+
+  it('returns the same graph when the need is already null, or the consumer is unknown', () => {
+    expect(unbind(graph, 'web', 'postgresql')).toBe(graph)
+    expect(unbind(graph, 'nope', 'postgresql')).toBe(graph)
+    expect(unbind(graph, 'constructor', 'postgresql')).toBe(graph)
+  })
+})
+
+describe('letPlannerChoose', () => {
+  it('removes the key and keeps the other needs', () => {
+    const g: Graph = { ...graph, modules: { ...graph.modules, web: { module: 'whoami', uses: { cache: 'x', postgresql: 'db' } } } }
+    const next = letPlannerChoose(g, 'web', 'postgresql')
+    expect(next.modules.web?.uses).toEqual({ cache: 'x' })
+    expect(Object.hasOwn(next.modules.web?.uses ?? {}, 'postgresql')).toBe(false)
+    expect(g.modules.web?.uses).toEqual({ cache: 'x', postgresql: 'db' })
+  })
+
+  it('returns the same graph when the key is already missing, or the consumer is unknown', () => {
+    const g = letPlannerChoose(graph, 'web', 'postgresql')
+    expect(letPlannerChoose(g, 'web', 'postgresql')).toBe(g)
+    expect(letPlannerChoose(graph, 'db', 'postgresql')).toBe(graph)
+    expect(letPlannerChoose(graph, 'constructor', 'postgresql')).toBe(graph)
+  })
+})
+
+describe('candidates', () => {
+  it('lists other known instances that provide the capability, sorted by name', () => {
+    expect(candidates(graph, catalog, 'web', 'postgresql')).toEqual(['db', 'db2'])
+  })
+
+  it('never lists the consumer itself or an instance not in the catalog', () => {
+    expect(candidates(graph, catalog, 'db', 'postgresql')).toEqual(['db2'])
+    expect(candidates(graph, catalog, 'web', 'mysql')).toEqual(['other'])
+    expect(candidates(graph, catalog, 'web', 'nothing')).toEqual([])
+  })
+
+  it('ignores a capability named like a prototype key', () => {
+    expect(candidates(graph, catalog, 'web', 'constructor')).toEqual([])
   })
 })
 

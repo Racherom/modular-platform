@@ -93,9 +93,10 @@ test('a failed plan keeps the edit and offers Retry (AC-12)', async ({ page }) =
   await openGraph(page)
   await drag(page, handle(page, 'whoami', 'uses:postgresql'), handle(page, 'postgres', 'provides:postgresql'))
   await expect(page.getByRole('alert')).toBeVisible()
-  await expect(page.getByText('Not checked')).toBeVisible()
+  await expect(page.getByText('Not checked', { exact: true })).toBeVisible()
   await expect(page.locator(edges)).toHaveCount(1)
   await expect(page.getByRole('button', { name: 'Download zip' })).toBeDisabled()
+  await expect(page.getByText('Not checked, retry first')).toBeVisible()
 
   await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByRole('alert')).toHaveCount(0)
