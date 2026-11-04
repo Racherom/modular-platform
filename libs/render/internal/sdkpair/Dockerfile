@@ -11,7 +11,7 @@ COPY go.work go.work.sum* ./
 COPY catalog/ catalog/
 COPY libs/ libs/
 COPY sdk/ sdk/
-COPY services/planner/ services/planner/
+COPY services/ services/
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     go build -ldflags="-s -w" -o /out/ ./libs/render/internal/sdkpair/cmd/...
 

@@ -20,7 +20,7 @@ var deployEnv = []byte("MP_UID=1000\nMP_GID=1000\n")
 // the project check accept it, so the allow list and the render cannot drift (spec 0006, AC-8).
 func TestGuardAcceptsEveryRender(t *testing.T) {
 	t.Parallel()
-	for name, plan := range map[string]func(*testing.T) (contract.PlanResult, []contract.CatalogEntry){
+	for name, plan := range map[string]func(*testing.T) (contract.PlanResult, contract.Catalog){
 		"whoami-postgres": samplePlan,
 		"sdk-pair":        pairPlan,
 	} {

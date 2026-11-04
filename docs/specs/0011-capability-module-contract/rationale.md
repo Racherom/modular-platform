@@ -46,7 +46,14 @@ Within Option 2, the sub decisions are argued in each child's short rationale. T
 
 ## Spike results
 
-To be filled by build tasks 1 and 20: Compose `up --wait` with jobs that exit 0 and non zero, and the fallback command if needed; `postgres` running as the setup user with its key file written by the certificate job, and its reload of a reissued certificate.
+**Build task 1, `up --wait` with jobs (2026-11-04, Docker Compose v5.6.1, Docker Engine 29.9.2).** CI does not pin a Compose version; it takes the one the `ubuntu-24.04` runner ships, so this ran on the newest local release. A project with a job (`restart: "no"`, `sleep 2; exit <n>`) and a long running service that depends on it with `service_completed_successfully`:
+
+- Job exits 0: `docker compose up -d --wait --wait-timeout 60` exits 0; the job is `exited 0`, the service `running`. A second `up` on the running project starts the job again, waits for it, and exits 0, so the provision job runs on every `up` as 0014 needs.
+- Job exits 1: `up` exits 1 with `service "job" didn't complete successfully: exit 1`; the service stays `created` and never starts.
+
+So `--wait` already gives 0014's *Waiting* rule. No fallback is needed, and the README, `scripts/smoke*.sh` and the deployer keep `up -d --wait`.
+
+To be filled by build task 20: `postgres` running as the setup user with its key file written by the certificate job, and its reload of a reissued certificate.
 
 ## References
 

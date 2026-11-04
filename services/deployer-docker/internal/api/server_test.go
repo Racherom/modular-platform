@@ -188,7 +188,7 @@ func TestApplyRefusesACraftedProject(t *testing.T) {
 	for _, p := range problems.Problems {
 		paths[p.Path] = p.Code
 	}
-	for _, want := range []string{"services.postgres.privileged", "services.postgres.volumes"} {
+	for _, want := range []string{"services.postgres.privileged", "services.postgres.volumes.0"} {
 		if paths[want] != "host_access" {
 			t.Errorf("problems %s lack host_access at %s", data, want)
 		}

@@ -28,6 +28,12 @@ const (
 	CodeUnknownBindingKey = "unknown_binding_key"
 	CodePortNotAllowed    = "port_not_allowed"
 	CodeTooManyProvides   = "too_many_provides"
+	// CodeUnknownCapability names a capability no capability file declares (spec 0013).
+	CodeUnknownCapability = "unknown_capability"
+	// CodeUnknownField names a field its capability does not have (spec 0013).
+	CodeUnknownField = "unknown_field"
+	// CodePerCallerNotAllowed is per_caller on an entry that is not runtime: sdk (spec 0012).
+	CodePerCallerNotAllowed = "per_caller_not_allowed"
 )
 
 // Value rule codes, shared by a default in the catalog and a value at start.
@@ -159,48 +165,37 @@ func RulesOf(v Value) Rules {
 
 var valueTypes = []string{TypeString, TypeInt, TypeBool, TypeDuration, TypeURL, TypeEnum, TypeSecret}
 
-// Check checks the rules of every field this package reads and returns each broken one. The
-// fields it does not read (name, image, healthcheck, secret names, provide ports of a non sdk
-// entry) are the catalog check's.
-func Check(e Entry) []Problem {
-	c := checker{env: map[string]string{}}
+// Check checks the rules of every field this package reads against the capabilities the entry
+// names, and returns each broken one. The fields it does not read (name, image, healthcheck,
+// versions, field sources, mounts, secret names, provide ports of a non sdk entry) are the
+// catalog check's.
+func Check(e Entry, caps map[string]Capability) []Problem {
+	c := checker{env: map[string]string{}, caps: caps}
 	sdk := e.Runtime == RuntimeSDK
 	if e.Runtime != "" && !sdk {
 		c.add("runtime", CodeInvalidRuntime, "runtime %q is not %s", e.Runtime, RuntimeSDK)
 	}
 
-	for _, capability := range sortedKeys(e.Provides) {
-		p, path := e.Provides[capability], "provides."+capability
-		if sdk && p.Port != nil {
-			c.add(path+".port", CodePortNotAllowed, "a runtime: sdk entry listens on 8080 or 8443 and must not set a port")
-		}
-		switch p.Auth {
-		case "":
-			if p.Env != nil && p.Env.ClientsDir != "" {
-				c.add(path+".env.clients_dir", CodeRuleNotAllowed, "clients_dir needs auth: %s", AuthBindingToken)
-			}
-		case AuthBindingToken:
-			if p.Env == nil || p.Env.ClientsDir == "" {
-				c.add(path+".env.clients_dir", CodeMissingField, "auth: %s needs env.clients_dir", AuthBindingToken)
-			} else {
-				c.sdkEnv(path+".env.clients_dir", p.Env.ClientsDir)
-			}
-		default:
-			c.add(path+".auth", CodeInvalidRule, "auth %q is not %s", p.Auth, AuthBindingToken)
-		}
+	for _, name := range sortedKeys(e.Provides) {
+		c.provide("provides."+name, e.Provides[name], sdk)
 	}
 	if sdk && len(e.Provides) > 1 {
-		c.add("provides", CodeTooManyProvides, "a runtime: sdk entry provides at most one capability")
+		c.add("provides", CodeTooManyProvides, "a runtime: sdk entry has at most one provide")
 	}
 
-	for _, capability := range sortedKeys(e.Uses) {
-		c.use("uses."+capability, e.Uses[capability], sdk)
+	for _, slot := range sortedKeys(e.Uses) {
+		c.use("uses."+slot, e.Uses[slot], sdk)
 	}
 
 	secretNames := map[string]bool{}
 	for i, s := range e.Secrets {
-		secretNames[s.Name] = true
-		c.envName(fmt.Sprintf("secrets.%d.env", i), s.Env)
+		secretNames[strings.TrimSuffix(s.Name, "/")] = true
+		if s.Env != "" {
+			c.envName(fmt.Sprintf("secrets.%d.env", i), s.Env)
+		}
+	}
+	for _, name := range sortedKeys(e.Environment) {
+		c.envName("environment."+name, name)
 	}
 
 	for _, name := range sortedKeys(e.Config) {
@@ -216,9 +211,58 @@ func Check(e Entry) []Problem {
 	return c.problems
 }
 
+// capability returns the capability a provide or slot names, or reports unknown_capability.
+func (c *checker) capability(path, name string) (Capability, bool) {
+	if name == "" {
+		c.add(path, CodeMissingField, "capability is required")
+		return Capability{}, false
+	}
+	capability, ok := c.caps[name]
+	if !ok {
+		c.add(path, CodeUnknownCapability, "capability %q is not in the catalog", name)
+	}
+	return capability, ok
+}
+
+func (c *checker) provide(path string, p Provide, sdk bool) {
+	if sdk && p.Port != nil {
+		c.add(path+".port", CodePortNotAllowed, "a runtime: sdk entry listens on 8080 or 8443 and must not set a port")
+	}
+	capability, known := c.capability(path+".capability", p.Capability)
+	for _, f := range sortedKeys(p.Env) {
+		fp := path + ".env." + f
+		if known {
+			field, ok := capability.Fields[f]
+			switch {
+			case !ok:
+				c.add(fp, CodeUnknownField, "capability %s has no field %s", p.Capability, f)
+				continue
+			case !field.ToProvider():
+				c.add(fp, CodeInvalidRule, "%s reaches the consumer, not the provider; only to_provider and both fields take a provider env", f)
+				continue
+			}
+		}
+		if sdk {
+			c.sdkEnv(fp, p.Env[f])
+		} else {
+			c.envName(fp, p.Env[f])
+		}
+	}
+	switch p.Auth {
+	case "":
+	case AuthBindingToken:
+		if p.Env["token"] == "" {
+			c.add(path+".env.token", CodeMissingField, "auth: %s needs env.token, the clients directory of the tokens", AuthBindingToken)
+		}
+	default:
+		c.add(path+".auth", CodeInvalidRule, "auth %q is not %s", p.Auth, AuthBindingToken)
+	}
+}
+
 type checker struct {
 	problems []Problem
-	env      map[string]string // env var name to the path that declared it first
+	env      map[string]string     // env var name to the path that declared it first
+	caps     map[string]Capability // the capabilities the entry may name
 }
 
 func (c *checker) add(path, code, format string, args ...any) {
@@ -274,26 +318,40 @@ func (c *checker) use(path string, u Use, sdk bool) {
 	if u.Client != "" && !sdk {
 		c.add(path+".client", CodeClientNotAllowed, "client needs runtime: %s", RuntimeSDK)
 	}
-	allowed := append(slices.Clone(BindingKeys[""]), BindingKeys[u.Client]...)
-	for _, key := range sortedKeys(u.Env) {
-		if !slices.Contains(allowed, key) {
-			c.add(path+".env."+key, CodeUnknownBindingKey, "%s is not a binding key of a %s binding", key, kindName(u.Client))
-			continue
+	if u.PerCaller && !sdk {
+		c.add(path+".per_caller", CodePerCallerNotAllowed, "per_caller needs runtime: %s", RuntimeSDK)
+	}
+	capability, known := c.capability(path+".capability", u.Capability)
+	for _, f := range sortedKeys(u.Env) {
+		fp := path + ".env." + f
+		if known {
+			field, ok := capability.Fields[f]
+			switch {
+			case !ok:
+				c.add(fp, CodeUnknownField, "capability %s has no field %s", u.Capability, f)
+				continue
+			case !field.ToConsumer():
+				c.add(fp, CodeInvalidRule, "%s is a to_provider field; the consumer fills it and does not receive it", f)
+				continue
+			}
 		}
-		c.envName(path+".env."+key, u.Env[key])
+		c.envName(fp, u.Env[f])
 	}
-	for _, key := range requiredBindingKeys[u.Client] {
-		if u.Env[key] == "" {
-			c.add(path+".env."+key, CodeMissingField, "a %s binding must map %s", u.Client, key)
+	if !known || u.Client == "" || u.Client != ClientHTTP && u.Client != ClientPostgreSQL && u.Client != ClientS3 {
+		return
+	}
+	required := slices.Clone(clientFields[u.Client])
+	if _, ok := capability.Fields["token"]; ok && u.Client == ClientHTTP {
+		required = append(required, "token")
+	}
+	for _, f := range required {
+		switch _, ok := capability.Fields[f]; {
+		case !ok:
+			c.add(path+".client", CodeInvalidRule, "a %s client needs field %s, which capability %s lacks", u.Client, f, u.Capability)
+		case u.Env[f] == "":
+			c.add(path+".env."+f, CodeMissingField, "a %s client must map %s", u.Client, f)
 		}
 	}
-}
-
-func kindName(client string) string {
-	if client == "" {
-		return "plain"
-	}
-	return client
 }
 
 func (c *checker) value(path string, v Value) {
@@ -371,13 +429,20 @@ func (c *checker) value(path string, v Value) {
 		ruleOK = c.enumValues(path, v.Values) && ruleOK
 	}
 
-	if v.Default != nil && ruleOK {
+	if v.Default != nil && ruleOK && !InstallToken(*v.Default) {
 		if *v.Default == "" {
 			c.add(path+".default", CodeInvalidDefault, "an empty default is no default; leave it out")
 		} else if _, err := RulesOf(v).Parse(*v.Default); err != nil {
 			c.add(path+".default", CodeInvalidDefault, "default %s", err.(*RuleError).Message) //nolint:errorlint // Parse returns only an unwrapped *RuleError
 		}
 	}
+}
+
+// InstallToken reports whether a default is one the render fills at install time (spec 0013):
+// exactly {uid} or {gid} (the setup user), or a path starting with {install}/ (the platform's
+// install folder). Its own rules apply to the value it becomes, not to the token.
+func InstallToken(s string) bool {
+	return s == "{uid}" || s == "{gid}" || strings.HasPrefix(s, "{install}/")
 }
 
 func (c *checker) enumValues(path string, values []string) bool {

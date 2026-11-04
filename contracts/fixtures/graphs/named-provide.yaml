@@ -1,0 +1,10 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  modern:
+    module: modern
+    uses:
+      db: pg.replica
+  pg:
+    module: replicated
+name: named-provide

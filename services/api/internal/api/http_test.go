@@ -66,7 +66,7 @@ func TestGuards(t *testing.T) {
 
 func TestCleanBody(t *testing.T) {
 	t.Parallel()
-	graph := `{"apiVersion":"modular-platform/v0alpha1","kind":"Graph","name":"s","modules":{}}`
+	graph := `{"apiVersion":"modular-platform/v1","kind":"Graph","name":"s","modules":{}}`
 	for name, tc := range map[string]struct {
 		path, body, wantCode string
 	}{

@@ -104,6 +104,11 @@
   white-space: nowrap;
 }
 
+/* the version a provide speaks (spec 0011, AC-19) */
+.version {
+  color: var(--color-text-muted);
+}
+
 /* handles: filled for provides and required needs, hollow dashed for optional needs */
 .handle:global(.react-flow__handle) {
   width: var(--handle-size);

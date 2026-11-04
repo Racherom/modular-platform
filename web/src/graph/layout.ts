@@ -1,4 +1,5 @@
 import type { Graph } from '../api/client'
+import { bindingText, splitText } from './model'
 
 export const COLUMN_GAP = 320
 export const ROW_GAP = 160
@@ -13,8 +14,10 @@ export function layout(graph: Graph): Record<string, { x: number; y: number }> {
   // Maps, not plain objects: a broken file may name an instance or provider like constructor
   const consumers = new Map<string, string[]>(names.map((n) => [n, []]))
   for (const name of names) {
-    for (const provider of Object.values(graph.modules[name]?.uses ?? {})) {
-      if (provider !== null && provider !== name) consumers.get(provider)?.push(name)
+    for (const b of Object.values(graph.modules[name]?.uses ?? {})) {
+      const text = bindingText(b)
+      const provider = text === undefined ? undefined : splitText(text).instance
+      if (provider !== undefined && provider !== name) consumers.get(provider)?.push(name)
     }
   }
 

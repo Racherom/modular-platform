@@ -1,0 +1,10 @@
+apiVersion: modular-platform/v0alpha1
+kind: Graph
+modules:
+  app:
+    module: app
+  db-a:
+    module: db
+  db-b:
+    module: db
+name: required-two

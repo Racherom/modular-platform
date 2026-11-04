@@ -1,9 +1,22 @@
 #!/bin/sh
-# Creates the secret files of the stack sdk-pair. Run it once before `docker compose up`.
-# It never changes a file that already exists, so running it again is safe.
+# Prepares the stack sdk-pair: the user it runs as, its secret files and its data folders. Run
+# it once before `docker compose up`. It never changes a file that already exists, so running it
+# again is safe.
 set -eu
 cd "$(dirname "$0")"
 umask 077
+
+# Every module runs as you, so it can read its secret files and write its data folders.
+set_id() {
+	if grep -q "^$1=" .env 2>/dev/null; then
+		echo "kept    $1 in .env"
+		return 0
+	fi
+	printf '%s=%s\n' "$1" "$2" >> .env
+	echo "added   $1 to .env"
+}
+set_id MP_UID "$(id -u)"
+set_id MP_GID "$(id -g)"
 
 new_secret() {
 	if [ -e "$1" ]; then
@@ -21,17 +34,5 @@ new_secret() {
 	echo "created $1"
 }
 
-new_secret secrets/consumer/uses_greet
+new_secret secrets/consumer/uses_greet_token
 new_secret secrets/provider/signing-key
-
-# The modules built on the module SDK run as you, so they can read the secret files above.
-set_id() {
-	if grep -q "^$1=" .env 2>/dev/null; then
-		echo "kept    $1 in .env"
-		return 0
-	fi
-	printf '%s=%s\n' "$1" "$2" >> .env
-	echo "added   $1 to .env"
-}
-set_id MP_UID "$(id -u)"
-set_id MP_GID "$(id -g)"

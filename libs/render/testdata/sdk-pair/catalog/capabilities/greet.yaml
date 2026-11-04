@@ -1,0 +1,7 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: greet
+description: The sdk end to end test's greeting, called with a token per binding.
+fields:
+  url: {type: url, description: Base URL of the provider.}
+  token: {type: secret, direction: both, description: Binding token the consumer sends and the provider checks.}

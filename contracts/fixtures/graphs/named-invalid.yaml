@@ -1,0 +1,12 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  postgres:
+    module: postgres
+  whoami:
+    module: whoami
+    uses:
+      postgresql:
+        database: Bad-Name
+        provider: postgres
+name: named-invalid

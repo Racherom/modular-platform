@@ -178,24 +178,6 @@ func (e OperationStep) Valid() bool {
 	}
 }
 
-// Defines values for PlacedCredentialField.
-const (
-	Password  PlacedCredentialField = "password"
-	SecretKey PlacedCredentialField = "secret_key"
-)
-
-// Valid indicates whether the value is a known member of the PlacedCredentialField enum.
-func (e PlacedCredentialField) Valid() bool {
-	switch e {
-	case Password:
-		return true
-	case SecretKey:
-		return true
-	default:
-		return false
-	}
-}
-
 // ApplyRequest defines model for ApplyRequest.
 type ApplyRequest struct {
 	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
@@ -336,15 +318,14 @@ type OperationPage struct {
 
 // PlacedCredential defines model for PlacedCredential.
 type PlacedCredential struct {
-	Capability string                `json:"capability"`
-	Exists     bool                  `json:"exists"`
-	Field      PlacedCredentialField `json:"field"`
-	Instance   string                `json:"instance"`
-	Path       string                `json:"path"`
-}
+	Capability string `json:"capability"`
+	Exists     bool   `json:"exists"`
 
-// PlacedCredentialField defines model for PlacedCredential.Field.
-type PlacedCredentialField string
+	// Field The capability field the placed file holds.
+	Field    string `json:"field"`
+	Instance string `json:"instance"`
+	Path     string `json:"path"`
+}
 
 // PlacedInput defines model for PlacedInput.
 type PlacedInput struct {

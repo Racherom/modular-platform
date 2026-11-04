@@ -1,0 +1,10 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  legacy:
+    module: pg14
+  modern:
+    module: modern
+    uses:
+      db: legacy
+name: range-mismatch-explicit

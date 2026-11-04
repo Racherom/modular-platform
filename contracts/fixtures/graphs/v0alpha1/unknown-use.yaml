@@ -1,0 +1,10 @@
+apiVersion: modular-platform/v0alpha1
+kind: Graph
+modules:
+  app:
+    module: app
+    uses:
+      queue: db
+  db:
+    module: db
+name: unknown-use

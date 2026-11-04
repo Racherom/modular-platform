@@ -1,8 +1,10 @@
-// Graph edits (spec 0010): pure functions, no React and no I/O. Each returns a new Graph and
-// leaves the one it was given untouched. Only the exact capability name match lives here; the
-// planner judges everything else (required needs, cycles, automatic binding).
-import type { CatalogEntry, Graph } from '../api/client'
+// Graph edits (spec 0010, on the v1 graph of spec 0012): pure functions, no React and no I/O.
+// Each returns a new Graph and leaves the one it was given untouched. Only the capability match
+// (or a provisioner that yields it) lives here; the planner judges everything else (versions,
+// required slots, cycles, automatic binding, named values).
+import type { Catalog, Graph, GraphBinding } from '../api/client'
 import { parseHandle } from './flow'
+import { bindingText, moduleOf, offersOf, serves, slotsOf, textFor } from './model'
 
 /** A drag from one handle to another, as React Flow reports it. */
 export interface Drop {
@@ -12,78 +14,80 @@ export interface Drop {
   targetHandle?: string | null
 }
 
-/** Sets the provider of one need, for connect and rebind. Binding the current provider again changes nothing. */
-export function bind(graph: Graph, consumer: string, capability: string, provider: string): Graph {
-  return setNeed(graph, consumer, capability, provider)
+/**
+ * Binds a slot to provider text (`instance` or `instance.provide`), for connect and rebind.
+ * Binding the same text again changes nothing, so named values stay; another provider writes the
+ * string form and the planner fills new names (editing names is #6).
+ */
+export function bind(graph: Graph, consumer: string, slot: string, provider: string): Graph {
+  const m = instanceOf(graph, consumer)
+  if (!m) return graph
+  if (m.uses && Object.hasOwn(m.uses, slot) && bindingText(m.uses[slot]) === provider) return graph
+  return setSlot(graph, consumer, slot, provider)
 }
 
-/** Marks a need as deliberately not bound (`null`). */
-export function unbind(graph: Graph, consumer: string, capability: string): Graph {
-  return setNeed(graph, consumer, capability, null)
+/** Marks a slot as deliberately not bound (`null`). */
+export function unbind(graph: Graph, consumer: string, slot: string): Graph {
+  const m = instanceOf(graph, consumer)
+  if (!m) return graph
+  if (m.uses && Object.hasOwn(m.uses, slot) && m.uses[slot] === null) return graph
+  return setSlot(graph, consumer, slot, null)
 }
 
-/** Removes a need's key, so the planner binds it automatically when it finds one candidate (spec 0002). */
-export function letPlannerChoose(graph: Graph, consumer: string, capability: string): Graph {
-  const m = moduleOf(graph, consumer)
-  if (!m?.uses || !Object.hasOwn(m.uses, capability)) return graph
+/** Removes a slot's key, so the planner binds it automatically when it finds one candidate. */
+export function letPlannerChoose(graph: Graph, consumer: string, slot: string): Graph {
+  const m = instanceOf(graph, consumer)
+  if (!m?.uses || !Object.hasOwn(m.uses, slot)) return graph
   const uses = { ...m.uses }
-  delete uses[capability]
+  delete uses[slot]
   return { ...graph, modules: { ...graph.modules, [consumer]: { ...m, uses } } }
 }
 
 /**
- * The instances that can provide a need: every other instance whose module is in the catalog
- * and provides the capability, sorted by name (the candidate rule of spec 0002).
+ * The provider text a slot can bind to: per other instance, every provide whose capability is
+ * the slot's or yields it, written as the instance alone when it has one such provide, sorted.
+ * Versions are the planner's to judge.
  */
-export function candidates(graph: Graph, catalog: CatalogEntry[], consumer: string, capability: string): string[] {
-  const entries = entryMap(catalog)
-  return Object.keys(graph.modules)
-    .filter((name) => {
-      if (name === consumer) return false
-      const provides = entries.get(graph.modules[name]!.module)?.provides
-      return provides !== undefined && Object.hasOwn(provides, capability)
-    })
-    .sort()
-}
-
-function setNeed(graph: Graph, consumer: string, capability: string, value: string | null): Graph {
-  const m = moduleOf(graph, consumer)
-  if (!m) return graph
-  if (m.uses && Object.hasOwn(m.uses, capability) && m.uses[capability] === value) return graph
-  return {
-    ...graph,
-    modules: { ...graph.modules, [consumer]: { ...m, uses: { ...m.uses, [capability]: value } } },
+export function candidates(graph: Graph, catalog: Catalog, consumer: string, slot: string): string[] {
+  const capability = slotsOf(moduleOf(graph, catalog, consumer))[slot]?.capability
+  if (capability === undefined) return []
+  const out: string[] = []
+  for (const name of Object.keys(graph.modules).sort()) {
+    if (name === consumer) continue
+    for (const o of offersOf(graph, catalog, name)) {
+      if (serves(catalog, o.capability, capability)) out.push(textFor(graph, catalog, name, o.provide, capability))
+    }
   }
+  return out
 }
 
-function moduleOf(graph: Graph, instance: string) {
+function setSlot(graph: Graph, consumer: string, slot: string, value: GraphBinding): Graph {
+  const m = instanceOf(graph, consumer)!
+  return { ...graph, modules: { ...graph.modules, [consumer]: { ...m, uses: { ...m.uses, [slot]: value } } } }
+}
+
+function instanceOf(graph: Graph, instance: string) {
   return Object.hasOwn(graph.modules, instance) ? graph.modules[instance] : undefined
 }
 
-function entryMap(catalog: CatalogEntry[]) {
-  return new Map(catalog.map((e) => [e.name, e]))
-}
-
 /**
- * True when a drop binds a need: the source handle is uses:<C> on a module whose catalog entry
- * uses C, and the target handle is provides:<C> on another instance whose catalog entry
- * provides C.
+ * The provider text a drop binds, or undefined when it binds nothing: the source handle is
+ * uses:<slot> on a module that has the slot, and the target handle is provides:<provide> on
+ * another instance whose provide serves the slot's capability.
  */
-export function isValidDrop(graph: Graph, catalog: CatalogEntry[], drop: Drop): boolean {
+export function dropText(graph: Graph, catalog: Catalog, drop: Drop): { slot: string; provider: string } | undefined {
   const from = parseHandle(drop.sourceHandle)
   const to = parseHandle(drop.targetHandle)
-  if (from?.side !== 'uses' || to?.side !== 'provides' || from.capability !== to.capability) return false
-  if (!drop.source || !drop.target || drop.source === drop.target) return false
-  const consumer = moduleOf(graph, drop.source)
-  const provider = moduleOf(graph, drop.target)
-  if (!consumer || !provider) return false
-  const entries = entryMap(catalog)
-  const consumerEntry = entries.get(consumer.module)
-  const providerEntry = entries.get(provider.module)
-  return (
-    consumerEntry?.uses !== undefined &&
-    Object.hasOwn(consumerEntry.uses, from.capability) &&
-    providerEntry?.provides !== undefined &&
-    Object.hasOwn(providerEntry.provides, to.capability)
-  )
+  if (from?.side !== 'uses' || to?.side !== 'provides') return undefined
+  if (!drop.source || !drop.target || drop.source === drop.target) return undefined
+  if (!instanceOf(graph, drop.source) || !instanceOf(graph, drop.target)) return undefined
+  const capability = slotsOf(moduleOf(graph, catalog, drop.source))[from.name]?.capability
+  const offer = offersOf(graph, catalog, drop.target).find((o) => o.provide === to.name)
+  if (capability === undefined || !offer || !serves(catalog, offer.capability, capability)) return undefined
+  return { slot: from.name, provider: textFor(graph, catalog, drop.target, offer.provide, capability) }
+}
+
+/** True when a drop binds a slot (see dropText). */
+export function isValidDrop(graph: Graph, catalog: Catalog, drop: Drop): boolean {
+  return dropText(graph, catalog, drop) !== undefined
 }

@@ -1,0 +1,73 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: deployer-docker
+description: Applies a rendered project to this host with Docker Compose and reports container state; holds the Docker socket.
+# release-please bumps the version on this line
+image: ghcr.io/racherom/modular-platform/deployer-docker:0.0.0 # x-release-please-version
+runtime: sdk
+healthcheck:
+  test: ["CMD", "/deployer-docker", "healthcheck"]
+  interval: 5s
+  timeout: 3s
+  retries: 10
+  start_period: 30s
+uses:
+  ingress:
+    capability: http-ingress
+    env:
+      http_port: MP_PLATFORM_HTTP_PORT
+      https_port: MP_PLATFORM_HTTPS_PORT
+provides:
+  deploy:
+    capability: deploy-target
+    version: "1.0"
+    auth: binding-token
+    fields:
+      url: {platform: url}
+      token: {generate: true}
+      ca: {platform: ca}
+    env:
+      token: MP_DEPLOY_TARGET_CLIENTS_DIR
+      caller_key: MP_CALLER_KEYS_DIR
+config:
+  deployments-dir:
+    env: MP_DEPLOYMENTS_DIR
+    type: string
+    pattern: "/.+"
+    default: "{install}/deployments"
+    description: Absolute path of the deployments folder, the same path on the host and in the deployer.
+  platform-uid:
+    env: MP_PLATFORM_UID
+    type: int
+    default: "{uid}"
+    min: 0
+    description: User id that owns deployed files and secrets and runs deployed sdk modules.
+  platform-gid:
+    env: MP_PLATFORM_GID
+    type: int
+    default: "{gid}"
+    min: 0
+    description: Group id that owns deployed files and secrets and runs deployed sdk modules.
+  pull-timeout:
+    env: MP_PULL_TIMEOUT
+    type: duration
+    default: 10m
+    min: 1m
+    description: Longest time an apply may spend pulling images.
+  wait-timeout:
+    env: MP_WAIT_TIMEOUT
+    type: duration
+    default: 5m
+    min: 10s
+    description: Longest time an apply waits for every service to run and pass its healthcheck.
+host_mounts:
+  - host: /var/run/docker.sock
+    path: /var/run/docker.sock
+    read_only: false
+  - host: {install: deployments}
+    path: {install: deployments}
+    read_only: false
+    create: true
+hardening:
+  user: root
+  tmpfs: [/tmp]

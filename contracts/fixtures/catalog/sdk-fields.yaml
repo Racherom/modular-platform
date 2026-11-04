@@ -1,8 +1,58 @@
-# Catalog entry fixtures for the sdk fields of spec 0005. sdk/manifest and libs/contract both run
-# every case and must report exactly `want` (dotted path, then code); an empty list means the
-# entry is accepted. Each entry is `header` followed by the case's `body`.
+# Module entry fixtures for the sdk fields of spec 0005, in the v1 shape of spec 0013. sdk/manifest
+# and libs/contract both run every case against the capabilities below and must report exactly
+# `want` (dotted path, then code); an empty list means the entry is accepted. A case marked
+# planner_only is a rule of the catalog check alone. Each entry is `header` followed by the case's
+# `body`.
+capabilities:
+  - |
+    apiVersion: modular-platform/v1
+    kind: Capability
+    name: api
+    description: A test REST service that checks a token per binding.
+    fields:
+      url: {type: url, description: Base URL.}
+      token: {type: secret, direction: both, description: Binding token.}
+      ca: {type: certificate, optional: true, description: Root CA.}
+  - |
+    apiVersion: modular-platform/v1
+    kind: Capability
+    name: pg
+    description: A test database and its login.
+    scheme: postgres
+    fields:
+      host: {type: string, description: Host name.}
+      port: {type: int, description: Port.}
+      url: {type: url, description: Server URL.}
+      database: {type: string, pattern: "[a-z_]+", description: Database.}
+      user: {type: string, pattern: "[a-z_]+", description: Login.}
+      password: {type: secret, description: Password.}
+      sslmode: {type: enum, values: [disable, verify-full], description: TLS mode.}
+      ca: {type: certificate, optional: true, description: Root CA.}
+  - |
+    apiVersion: modular-platform/v1
+    kind: Capability
+    name: s3
+    description: A test object store bucket and its keys.
+    scheme: https
+    fields:
+      url: {type: url, description: Endpoint.}
+      bucket: {type: string, description: Bucket.}
+      region: {type: string, optional: true, description: Region.}
+      access_key_id: {type: string, description: Key id.}
+      secret_access_key: {type: secret, description: Secret key.}
+      ca: {type: certificate, optional: true, description: Root CA.}
+  - |
+    apiVersion: modular-platform/v1
+    kind: Capability
+    name: web
+    description: A test web site.
+    scheme: http
+    fields:
+      host: {type: string, description: Host name.}
+      port: {type: int, description: Port.}
+      url: {type: url, description: Base URL.}
 header: |
-  apiVersion: modular-platform/v0alpha1
+  apiVersion: modular-platform/v1
   kind: Module
   name: svc
   description: A service.
@@ -14,19 +64,26 @@ cases:
       runtime: sdk
       provides:
         api:
+          capability: api
+          version: "1.0"
           auth: binding-token
+          fields:
+            url: {platform: url}
+            token: {generate: true}
           env:
-            clients_dir: SVC_CLIENTS_DIR
+            token: SVC_CLIENTS_DIR
       uses:
         db:
+          capability: pg
           client: postgresql
           env:
             url: DB_URL
             database: DB_NAME
             user: DB_USER
-            password_file: DB_PASSWORD_FILE
+            password: DB_PASSWORD_FILE
             sslmode: DB_SSLMODE
         files:
+          capability: s3
           optional: true
           client: s3
           env:
@@ -34,13 +91,14 @@ cases:
             bucket: FILES_BUCKET
             region: FILES_REGION
             access_key_id: FILES_KEY_ID
-            secret_access_key_file: FILES_SECRET_KEY_FILE
+            secret_access_key: FILES_SECRET_KEY_FILE
         search:
+          capability: api
           client: http
           env:
             url: SEARCH_URL
-            token_file: SEARCH_TOKEN_FILE
-            ca_file: SEARCH_CA_FILE
+            token: SEARCH_TOKEN_FILE
+            ca: SEARCH_CA_FILE
       config:
         mode:
           env: SVC_MODE
@@ -83,19 +141,27 @@ cases:
           type: secret
           generate: true
           description: The key callers send.
-  - name: accepted plain entry with the common binding keys
+  - name: accepted plain entry with env delivery
     want: []
     body: |
       provides:
         http:
+          capability: web
+          version: "1.0"
           port: 80
+          fields:
+            host: {platform: host}
+            port: {platform: port}
+            url: {platform: url}
       uses:
         db:
+          capability: pg
+          versions: ">=15"
           env:
             host: DB_HOST
             port: DB_PORT
             url: DB_URL
-            token_file: DB_TOKEN_FILE
+            password: DB_PASSWORD_FILE
   - name: runtime other than sdk
     want: [runtime invalid_runtime]
     body: |
@@ -142,6 +208,7 @@ cases:
       secrets:
         - name: token
           env: TOKEN_FILE
+          description: A secret.
       config:
         token:
           env: SVC_TOKEN
@@ -165,6 +232,7 @@ cases:
       secrets:
         - name: password
           env: SVC_TOKEN_FILE
+          description: A secret.
       config:
         token:
           env: SVC_TOKEN
@@ -175,6 +243,7 @@ cases:
     body: |
       uses:
         db:
+          capability: pg
           env:
             host: DB_HOST
       config:
@@ -382,88 +451,153 @@ cases:
     body: |
       uses:
         search:
+          capability: api
           client: http
           env:
             url: SEARCH_URL
+            token: SEARCH_TOKEN_FILE
   - name: unknown client
     want: [uses.search.client invalid_rule]
     body: |
       runtime: sdk
       uses:
         search:
+          capability: api
           client: grpc
-  - name: postgresql key on an http client
-    want: [uses.search.env.bucket unknown_binding_key]
+  - name: per_caller on an entry without runtime sdk
+    want: [uses.search.per_caller per_caller_not_allowed]
+    body: |
+      uses:
+        search:
+          capability: api
+          per_caller: true
+  - name: slot of an unknown capability
+    want: [uses.search.capability unknown_capability]
+    body: |
+      uses:
+        search:
+          capability: grpc
+  - name: env of a field the capability lacks
+    want: [uses.search.env.bucket unknown_field]
     body: |
       runtime: sdk
       uses:
         search:
+          capability: api
           client: http
           env:
             url: SEARCH_URL
+            token: SEARCH_TOKEN_FILE
             bucket: SEARCH_BUCKET
-  - name: postgresql client missing its keys
-    want: [uses.db.env.database missing_field, uses.db.env.password_file missing_field, uses.db.env.user missing_field]
+  - name: postgresql client missing its fields
+    want: [uses.db.env.database missing_field, uses.db.env.password missing_field, uses.db.env.user missing_field]
     body: |
       runtime: sdk
       uses:
         db:
+          capability: pg
           client: postgresql
           env:
             url: DB_URL
-  - name: http client without url
-    want: [uses.search.env.url missing_field]
+  - name: http client without url and token
+    want: [uses.search.env.token missing_field, uses.search.env.url missing_field]
     body: |
       runtime: sdk
       uses:
         search:
+          capability: api
           client: http
-  - name: unknown binding key
+  - name: postgresql client on a capability without its fields
+    want: [uses.db.client invalid_rule, uses.db.client invalid_rule, uses.db.client invalid_rule]
+    body: |
+      runtime: sdk
+      uses:
+        db:
+          capability: api
+          client: postgresql
+          env:
+            url: DB_URL
+  - name: unknown key in a slot
     want: [. invalid_entry]
     body: |
       uses:
         db:
-          env:
-            schema: DB_SCHEMA
+          capability: pg
+          schema: public
   - name: port on a runtime sdk provide
     want: [provides.api.port port_not_allowed]
     body: |
       runtime: sdk
       provides:
         api:
+          capability: web
+          version: "1.0"
           port: 8080
-  - name: runtime sdk providing two capabilities
+          fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}}
+  - name: runtime sdk with two provides
     want: [provides too_many_provides]
     body: |
       runtime: sdk
       provides:
-        api: {}
-        admin: {}
-  - name: auth without clients_dir
-    want: [provides.api.env.clients_dir missing_field]
+        api:
+          capability: web
+          version: "1.0"
+          fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}}
+        admin:
+          capability: web
+          version: "1.0"
+          fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}}
+  - name: provide of an unknown capability
+    want: [provides.api.capability unknown_capability]
     body: |
       runtime: sdk
       provides:
         api:
+          capability: grpc
+          version: "1.0"
+  - name: auth without the token clients env
+    want: [provides.api.env.token missing_field]
+    body: |
+      runtime: sdk
+      provides:
+        api:
+          capability: api
+          version: "1.0"
           auth: binding-token
-  - name: clients_dir without auth
-    want: [provides.api.env.clients_dir rule_not_allowed]
+          fields:
+            url: {platform: url}
+            token: {generate: true}
+  - name: provider env of a field that reaches the consumer
+    want: [provides.api.env.url invalid_rule]
     body: |
       runtime: sdk
       provides:
         api:
+          capability: api
+          version: "1.0"
+          fields:
+            url: {platform: url}
+            token: {generate: true}
           env:
-            clients_dir: SVC_CLIENTS_DIR
+            url: SVC_URL
   - name: unknown auth
     want: [provides.api.auth invalid_rule]
     body: |
       runtime: sdk
       provides:
         api:
+          capability: api
+          version: "1.0"
           auth: mtls
+          fields:
+            url: {platform: url}
+            token: {generate: true}
   - name: plain provide without port
     want: [provides.http.port invalid_port]
     planner_only: true
     body: |
       provides:
-        http: {}
+        http:
+          capability: web
+          version: "1.0"
+          fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}}

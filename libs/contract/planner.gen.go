@@ -10,15 +10,69 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-// Defines values for CatalogEntryRuntime.
+// Defines values for CapabilityFieldDirection.
 const (
-	Sdk CatalogEntryRuntime = "sdk"
+	Both       CapabilityFieldDirection = "both"
+	ToConsumer CapabilityFieldDirection = "to_consumer"
+	ToProvider CapabilityFieldDirection = "to_provider"
 )
 
-// Valid indicates whether the value is a known member of the CatalogEntryRuntime enum.
-func (e CatalogEntryRuntime) Valid() bool {
+// Valid indicates whether the value is a known member of the CapabilityFieldDirection enum.
+func (e CapabilityFieldDirection) Valid() bool {
 	switch e {
-	case Sdk:
+	case Both:
+		return true
+	case ToConsumer:
+		return true
+	case ToProvider:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CapabilityFieldType.
+const (
+	CapabilityFieldTypeBool        CapabilityFieldType = "bool"
+	CapabilityFieldTypeCertificate CapabilityFieldType = "certificate"
+	CapabilityFieldTypeEnum        CapabilityFieldType = "enum"
+	CapabilityFieldTypeInt         CapabilityFieldType = "int"
+	CapabilityFieldTypeSecret      CapabilityFieldType = "secret"
+	CapabilityFieldTypeString      CapabilityFieldType = "string"
+	CapabilityFieldTypeUrl         CapabilityFieldType = "url"
+)
+
+// Valid indicates whether the value is a known member of the CapabilityFieldType enum.
+func (e CapabilityFieldType) Valid() bool {
+	switch e {
+	case CapabilityFieldTypeBool:
+		return true
+	case CapabilityFieldTypeCertificate:
+		return true
+	case CapabilityFieldTypeEnum:
+		return true
+	case CapabilityFieldTypeInt:
+		return true
+	case CapabilityFieldTypeSecret:
+		return true
+	case CapabilityFieldTypeString:
+		return true
+	case CapabilityFieldTypeUrl:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConfigValueSetup.
+const (
+	ConfigValueSetupAsk ConfigValueSetup = "ask"
+)
+
+// Valid indicates whether the value is a known member of the ConfigValueSetup enum.
+func (e ConfigValueSetup) Valid() bool {
+	switch e {
+	case ConfigValueSetupAsk:
 		return true
 	default:
 		return false
@@ -58,6 +112,69 @@ func (e ConfigValueType) Valid() bool {
 	}
 }
 
+// Defines values for FieldSourcePlatform.
+const (
+	FieldSourcePlatformCa       FieldSourcePlatform = "ca"
+	FieldSourcePlatformConsumer FieldSourcePlatform = "consumer"
+	FieldSourcePlatformHost     FieldSourcePlatform = "host"
+	FieldSourcePlatformPort     FieldSourcePlatform = "port"
+	FieldSourcePlatformTls      FieldSourcePlatform = "tls"
+	FieldSourcePlatformUrl      FieldSourcePlatform = "url"
+)
+
+// Valid indicates whether the value is a known member of the FieldSourcePlatform enum.
+func (e FieldSourcePlatform) Valid() bool {
+	switch e {
+	case FieldSourcePlatformCa:
+		return true
+	case FieldSourcePlatformConsumer:
+		return true
+	case FieldSourcePlatformHost:
+		return true
+	case FieldSourcePlatformPort:
+		return true
+	case FieldSourcePlatformTls:
+		return true
+	case FieldSourcePlatformUrl:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HardeningUser.
+const (
+	Image HardeningUser = "image"
+	Root  HardeningUser = "root"
+)
+
+// Valid indicates whether the value is a known member of the HardeningUser enum.
+func (e HardeningUser) Valid() bool {
+	switch e {
+	case Image:
+		return true
+	case Root:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ModuleRuntime.
+const (
+	Sdk ModuleRuntime = "sdk"
+)
+
+// Valid indicates whether the value is a known member of the ModuleRuntime enum.
+func (e ModuleRuntime) Valid() bool {
+	switch e {
+	case Sdk:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProblemSeverity.
 const (
 	Error   ProblemSeverity = "error"
@@ -91,24 +208,6 @@ func (e ProvideAuth) Valid() bool {
 	}
 }
 
-// Defines values for RenderedSecretField.
-const (
-	Password  RenderedSecretField = "password"
-	SecretKey RenderedSecretField = "secret_key"
-)
-
-// Valid indicates whether the value is a known member of the RenderedSecretField enum.
-func (e RenderedSecretField) Valid() bool {
-	switch e {
-	case Password:
-		return true
-	case SecretKey:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for RenderedSecretKind.
 const (
 	Generated RenderedSecretKind = "generated"
@@ -127,15 +226,54 @@ func (e RenderedSecretKind) Valid() bool {
 	}
 }
 
-// Defines values for UseClient.
+// Defines values for SecretFrom.
 const (
-	Http       UseClient = "http"
-	Postgresql UseClient = "postgresql"
-	S3         UseClient = "s3"
+	SecretFromAsk      SecretFrom = "ask"
+	SecretFromGenerate SecretFrom = "generate"
+	SecretFromSetup    SecretFrom = "setup"
 )
 
-// Valid indicates whether the value is a known member of the UseClient enum.
-func (e UseClient) Valid() bool {
+// Valid indicates whether the value is a known member of the SecretFrom enum.
+func (e SecretFrom) Valid() bool {
+	switch e {
+	case SecretFromAsk:
+		return true
+	case SecretFromGenerate:
+		return true
+	case SecretFromSetup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetupWriteMode.
+const (
+	N0600 SetupWriteMode = "0600"
+	N0644 SetupWriteMode = "0644"
+)
+
+// Valid indicates whether the value is a known member of the SetupWriteMode enum.
+func (e SetupWriteMode) Valid() bool {
+	switch e {
+	case N0600:
+		return true
+	case N0644:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SlotClient.
+const (
+	Http       SlotClient = "http"
+	Postgresql SlotClient = "postgresql"
+	S3         SlotClient = "s3"
+)
+
+// Valid indicates whether the value is a known member of the SlotClient enum.
+func (e SlotClient) Valid() bool {
 	switch e {
 	case Http:
 		return true
@@ -151,53 +289,77 @@ func (e UseClient) Valid() bool {
 // Binding defines model for Binding.
 type Binding struct {
 	// Auto True when the planner made this binding, not the graph.
-	Auto       bool   `json:"auto"`
+	Auto bool `json:"auto"`
+
+	// Capability The slot's capability.
 	Capability string `json:"capability"`
 	Consumer   string `json:"consumer"`
-	Provider   string `json:"provider"`
+
+	// Named True when the planner wrote default named values into the graph.
+	Named bool `json:"named"`
+
+	// Provide The provide of the provider the slot is bound to.
+	Provide  string `json:"provide"`
+	Provider string `json:"provider"`
+
+	// Provisioned True when the provide's capability yields the slot's capability, so a provision job makes it.
+	Provisioned bool   `json:"provisioned"`
+	Slot        string `json:"slot"`
 }
+
+// Capability One protocol and the fields a binding of it carries (`catalog/capabilities/<name>.yaml`, spec 0012).
+type Capability struct {
+	// ApiVersion Exactly `modular-platform/v1`.
+	ApiVersion  string `json:"apiVersion"`
+	Description string `json:"description"`
+
+	// Fields Field name (snake case) to its declaration.
+	Fields        map[string]CapabilityField `json:"fields"`
+	FormatVersion string                     `json:"formatVersion,omitempty"`
+
+	// Kind Exactly `Capability`.
+	Kind string `json:"kind"`
+
+	// Name Equal to the file name without `.yaml`; unique among capabilities.
+	Name string `json:"name"`
+
+	// Scheme The url scheme the `platform: url` source writes.
+	Scheme string `json:"scheme,omitempty"`
+
+	// Yields What a provisioner makes per binding (spec 0014).
+	Yields *Yields `json:"yields,omitempty"`
+}
+
+// CapabilityField defines model for CapabilityField.
+type CapabilityField struct {
+	Description string                   `json:"description"`
+	Direction   CapabilityFieldDirection `json:"direction,omitempty"`
+	Optional    bool                     `json:"optional,omitempty"`
+
+	// Pattern RE2, matched against the whole value; string only.
+	Pattern string `json:"pattern,omitempty"`
+
+	// Type `secret` and `certificate` always travel as files; the others as text.
+	Type CapabilityFieldType `json:"type"`
+
+	// Values The allowed values; enum only, required there.
+	Values []string `json:"values,omitempty"`
+}
+
+// CapabilityFieldDirection defines model for CapabilityField.Direction.
+type CapabilityFieldDirection string
+
+// CapabilityFieldType `secret` and `certificate` always travel as files; the others as text.
+type CapabilityFieldType string
 
 // Catalog defines model for Catalog.
 type Catalog struct {
-	Entries []CatalogEntry `json:"entries"`
+	// Capabilities Sorted by name.
+	Capabilities []Capability `json:"capabilities"`
+
+	// Modules Sorted by name.
+	Modules []Module `json:"modules"`
 }
-
-// CatalogEntry One module of the built in catalog (`catalog/<name>.yaml`).
-type CatalogEntry struct {
-	// ApiVersion Exactly `modular-platform/v0alpha1`.
-	ApiVersion string `json:"apiVersion"`
-
-	// Config Value name to one declared config value, read by the SDK (spec 0005).
-	Config      map[string]ConfigValue `json:"config,omitempty"`
-	Description string                 `json:"description"`
-
-	// Healthcheck A Compose healthcheck, copied as is into the service.
-	Healthcheck *Healthcheck `json:"healthcheck,omitempty"`
-
-	// Image An image reference with a tag other than `latest`, optionally followed by a digest.
-	Image string `json:"image"`
-
-	// Kind Exactly `Module`.
-	Kind string `json:"kind"`
-
-	// Name Equal to the file name without `.yaml`; unique in the catalog.
-	Name string `json:"name"`
-
-	// Provides Capability to where a consumer reaches it.
-	Provides map[string]Provide `json:"provides,omitempty"`
-
-	// Runtime `sdk` when the image is built on the module SDK (spec 0005): the render gives it the
-	// bootstrap env and its env file, and it listens on 8080 (plain) or 8443 (TLS).
-	Runtime CatalogEntryRuntime `json:"runtime,omitempty"`
-	Secrets []Secret            `json:"secrets,omitempty"`
-
-	// Uses Capability to how this module consumes it.
-	Uses map[string]Use `json:"uses,omitempty"`
-}
-
-// CatalogEntryRuntime `sdk` when the image is built on the module SDK (spec 0005): the render gives it the
-// bootstrap env and its env file, and it listens on 8080 (plain) or 8443 (TLS).
-type CatalogEntryRuntime string
 
 // ConfigBound A whole number for an `int`, a duration like `10s` for a `duration`.
 type ConfigBound struct {
@@ -209,6 +371,11 @@ type ConfigBound0 = int
 
 // ConfigBound1 defines model for ConfigBound.1.
 type ConfigBound1 = string
+
+// ConfigRef defines model for ConfigRef.
+type ConfigRef struct {
+	Config string `json:"config"`
+}
 
 // ConfigValue One value a module built on the SDK reads at start (spec 0005).
 type ConfigValue struct {
@@ -232,40 +399,114 @@ type ConfigValue struct {
 	Optional bool         `json:"optional,omitempty"`
 
 	// Pattern RE2, matched against the whole value; string only.
-	Pattern string          `json:"pattern,omitempty"`
-	Type    ConfigValueType `json:"type"`
+	Pattern string `json:"pattern,omitempty"`
+
+	// Setup `ask`: `setup.sh` asks the value and writes it into `.env`.
+	Setup ConfigValueSetup `json:"setup,omitempty"`
+	Type  ConfigValueType  `json:"type"`
 
 	// Values The allowed values; enum only, required there.
 	Values []string `json:"values,omitempty"`
 }
 
+// ConfigValueSetup `ask`: `setup.sh` asks the value and writes it into `.env`.
+type ConfigValueSetup string
+
 // ConfigValueType defines model for ConfigValue.Type.
 type ConfigValueType string
 
+// ExternalInstance defines model for ExternalInstance.
+type ExternalInstance struct {
+	// Provides Provide name to what the external service offers.
+	Provides map[string]ExternalProvide `json:"provides"`
+}
+
+// ExternalProvide defines model for ExternalProvide.
+type ExternalProvide struct {
+	Capability string `json:"capability"`
+
+	// Fields Non secret field values, numbers as strings. A secret or certificate field is never
+	// written here; it is a file you place at `secrets/<instance>/<provide>_<field>`.
+	Fields map[string]string `json:"fields,omitempty"`
+
+	// Version The version it speaks, like `16.4`.
+	Version string `json:"version"`
+}
+
+// FieldSource Where one field's value comes from: exactly one of `platform`, `value`, `config`,
+// `secret`, `generate`, `uses` and `volume`, with the keys that kind takes (spec 0013).
+type FieldSource struct {
+	Config string `json:"config,omitempty"`
+
+	// Field With `uses`, the field of that binding to pass through.
+	Field string `json:"field,omitempty"`
+
+	// Format With `config`, `{}` stands for the value; with `uses`, `{<field>}` for a field.
+	Format   string `json:"format,omitempty"`
+	Generate bool   `json:"generate,omitempty"`
+
+	// Off With `platform: tls`, the value when it does not.
+	Off string `json:"off,omitempty"`
+
+	// On With `platform: tls`, the value when the provider serves TLS.
+	On string `json:"on,omitempty"`
+
+	// Path With `platform: url`, a path to append; with `volume`, the file in the folder.
+	Path     string              `json:"path,omitempty"`
+	Platform FieldSourcePlatform `json:"platform,omitempty"`
+
+	// Provide Consumer side `platform` sources only, the consumer's own provide.
+	Provide string `json:"provide,omitempty"`
+	Secret  string `json:"secret,omitempty"`
+	Uses    string `json:"uses,omitempty"`
+	Value   string `json:"value,omitempty"`
+	Volume  string `json:"volume,omitempty"`
+}
+
+// FieldSourcePlatform defines model for FieldSource.Platform.
+type FieldSourcePlatform string
+
 // Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
 type Graph struct {
-	// ApiVersion Exactly `modular-platform/v0alpha1`.
+	// ApiVersion `modular-platform/v1`. A `modular-platform/v0alpha1` graph is still read: the planner
+	// converts it to v1 and answers with warning `converted_from_v0alpha1`.
 	ApiVersion string `json:"apiVersion"`
+
+	// FormatVersion `1.<minor>`, default `1.0`; a writer leaves it out at `1.0`. A minor above what the planner reads is `format_too_new`.
+	FormatVersion string `json:"formatVersion,omitempty"`
 
 	// Kind Exactly `Graph`.
 	Kind string `json:"kind"`
 
-	// Modules One entry per placed module, keyed by instance name (also the Compose service name).
+	// Modules One entry per instance, keyed by instance name (also the Compose service name).
 	Modules map[string]GraphModule `json:"modules"`
 
 	// Name The stack's name and the Compose project name. A DNS label, not a reserved word.
 	Name string `json:"name"`
 }
 
-// GraphModule defines model for GraphModule.
+// GraphModule Exactly one of `module` (a catalog module) and `external` (a service outside the stack).
 type GraphModule struct {
-	// Module The catalog entry this instance runs.
-	Module string `json:"module"`
+	External *ExternalInstance `json:"external,omitempty"`
 
-	// Uses Capability to provider instance name. `null` leaves an optional need unbound on purpose.
-	// A missing key means not decided: the planner may bind a required need or warn about an optional one.
+	// Module The catalog module this instance runs.
+	Module string `json:"module,omitempty"`
+
+	// Uses Slot name to its binding. `null` leaves an optional slot unbound on purpose. A missing key
+	// means not decided: the planner may bind a required slot or warn about an optional one.
 	Uses *Uses `json:"uses,omitempty"`
 }
+
+// Hardening defines model for Hardening.
+type Hardening struct {
+	CapAdd       []string      `json:"cap_add,omitempty"`
+	Tmpfs        []string      `json:"tmpfs,omitempty"`
+	User         HardeningUser `json:"user,omitempty"`
+	WritableRoot bool          `json:"writable_root,omitempty"`
+}
+
+// HardeningUser defines model for Hardening.User.
+type HardeningUser string
 
 // Healthcheck A Compose healthcheck, copied as is into the service.
 type Healthcheck struct {
@@ -278,6 +519,36 @@ type Healthcheck struct {
 	Timeout string   `json:"timeout,omitempty"`
 }
 
+// HostMount defines model for HostMount.
+type HostMount struct {
+	Create bool `json:"create,omitempty"`
+
+	// Host An absolute path, `{config: <value>}` or `{install: <relative path>}`.
+	Host HostPath `json:"host"`
+
+	// Path An absolute path, `{config: <value>}` or `{install: <relative path>}`.
+	Path     HostPath `json:"path"`
+	ReadOnly *bool    `json:"read_only,omitempty"`
+}
+
+// HostPath An absolute path, `{config: <value>}` or `{install: <relative path>}`.
+type HostPath = HostPathRef
+
+// HostPort A host port number, or `{config: <int value>}`.
+type HostPort = HostPortRef
+
+// Job defines model for Job.
+type Job struct {
+	// Image A tagged image, never `latest`, with `/bin/sh`.
+	Image string `json:"image"`
+
+	// Provision POSIX sh script of the provision job, run once per binding on every `up`.
+	Provision string `json:"provision"`
+
+	// Revoke POSIX sh script of the revoke job; required exactly when `login` is set.
+	Revoke string `json:"revoke,omitempty"`
+}
+
 // ManagedRenderRequest defines model for ManagedRenderRequest.
 type ManagedRenderRequest struct {
 	// Deployment The deployment id, written into every service's `deployment` label.
@@ -287,6 +558,58 @@ type ManagedRenderRequest struct {
 	Graph Graph `json:"graph"`
 }
 
+// Module One module of the built in catalog (`catalog/modules/<name>/module.yaml`, spec 0013).
+type Module struct {
+	// ApiVersion Exactly `modular-platform/v1`.
+	ApiVersion string   `json:"apiVersion"`
+	Command    []string `json:"command,omitempty"`
+
+	// Config Value name to one declared config value (spec 0005).
+	Config      map[string]ConfigValue `json:"config,omitempty"`
+	Description string                 `json:"description"`
+	Entrypoint  []string               `json:"entrypoint,omitempty"`
+
+	// Environment Fixed env, with `{<slot>.<field>}`, `{config.<value>}`, `{uid}`, `{gid}` and `{install}` placeholders.
+	Environment   map[string]string `json:"environment,omitempty"`
+	FormatVersion string            `json:"formatVersion,omitempty"`
+	Hardening     *Hardening        `json:"hardening,omitempty"`
+
+	// Healthcheck A Compose healthcheck, copied as is into the service.
+	Healthcheck *Healthcheck `json:"healthcheck,omitempty"`
+	HostMounts  []HostMount  `json:"host_mounts,omitempty"`
+
+	// Image An image reference with a tag other than `latest`, optionally followed by a digest.
+	Image string `json:"image"`
+
+	// Kind Exactly `Module`.
+	Kind string `json:"kind"`
+
+	// Name Equal to the folder name; unique in the catalog.
+	Name    string   `json:"name"`
+	Network *Network `json:"network,omitempty"`
+
+	// Provides Provide name to what it offers.
+	Provides map[string]Provide `json:"provides,omitempty"`
+	Publish  []Publish          `json:"publish,omitempty"`
+
+	// Runtime `sdk` when the image is built on the module SDK (spec 0005): the render gives it the
+	// bootstrap env and its env file, and it listens on 8080 (plain) or 8443 (TLS).
+	Runtime   ModuleRuntime `json:"runtime,omitempty"`
+	Secrets   []Secret      `json:"secrets,omitempty"`
+	Setup     []SetupStep   `json:"setup,omitempty"`
+	Templates []Template    `json:"templates,omitempty"`
+
+	// Uses Slot name to one need.
+	Uses map[string]Slot `json:"uses,omitempty"`
+
+	// Volumes Data folder name to its absolute path in the container.
+	Volumes map[string]string `json:"volumes,omitempty"`
+}
+
+// ModuleRuntime `sdk` when the image is built on the module SDK (spec 0005): the render gives it the
+// bootstrap env and its env file, and it listens on 8080 (plain) or 8443 (TLS).
+type ModuleRuntime string
+
 // ModuleImage defines model for ModuleImage.
 type ModuleImage struct {
 	Image    string `json:"image"`
@@ -294,9 +617,15 @@ type ModuleImage struct {
 	Module   string `json:"module"`
 }
 
+// Network defines model for Network.
+type Network struct {
+	Aliases []ConfigRef `json:"aliases,omitempty"`
+	Egress  bool        `json:"egress,omitempty"`
+}
+
 // PlanResult defines model for PlanResult.
 type PlanResult struct {
-	// Bindings Explicit and automatic bindings, sorted by consumer then capability.
+	// Bindings Explicit and automatic bindings, sorted by consumer then slot.
 	Bindings []Binding `json:"bindings"`
 
 	// Digest `sha256:<hex>` over the canonical graph, the bindings and the catalog entries the graph
@@ -334,21 +663,31 @@ type ProblemList struct {
 
 // Provide defines model for Provide.
 type Provide struct {
-	// Auth `binding-token`: every consumer calls with its own per binding token.
-	Auth ProvideAuth `json:"auth,omitempty"`
-	Env  *ProvideEnv `json:"env,omitempty"`
+	// Auth `binding-token`: every consumer calls with its own per binding token (field `token`).
+	Auth       ProvideAuth `json:"auth,omitempty"`
+	Capability string      `json:"capability"`
 
-	// Port The port on the service's host name. Required, except on a `runtime: sdk` entry, which must not set it.
+	// Env `to_provider` and `both` fields to the env var that gets their clients directory.
+	Env map[string]string `json:"env,omitempty"`
+
+	// Fields Field of the capability to where its value comes from.
+	Fields map[string]FieldSource `json:"fields,omitempty"`
+
+	// Port Required, except on a `runtime: sdk` entry, which must not set it.
 	Port int `json:"port,omitempty"`
+
+	// Version The version it speaks, like `18.6`.
+	Version string `json:"version"`
 }
 
-// ProvideAuth `binding-token`: every consumer calls with its own per binding token.
+// ProvideAuth `binding-token`: every consumer calls with its own per binding token (field `token`).
 type ProvideAuth string
 
-// ProvideEnv defines model for ProvideEnv.
-type ProvideEnv struct {
-	// ClientsDir Env var set to the directory holding one token file per consumer; required with `auth`.
-	ClientsDir string `json:"clients_dir,omitempty"`
+// Publish defines model for Publish.
+type Publish struct {
+	// Host A host port number, or `{config: <int value>}`.
+	Host HostPort `json:"host"`
+	Port int      `json:"port"`
 }
 
 // PublishedPort defines model for PublishedPort.
@@ -380,7 +719,7 @@ type RenderedProject struct {
 	// Project The Compose project name, `mp-<graph name>`.
 	Project string `json:"project"`
 
-	// PublishedPorts Host ports the project publishes; always empty in `v0alpha1`.
+	// PublishedPorts Host ports the project publishes; always empty for a deployed graph, which never publishes (spec 0013).
 	PublishedPorts []PublishedPort `json:"publishedPorts"`
 
 	// Secrets Every secret file the project mounts, sorted by path.
@@ -389,12 +728,12 @@ type RenderedProject struct {
 
 // RenderedSecret defines model for RenderedSecret.
 type RenderedSecret struct {
-	// Capability Placed only, the binding's capability.
+	// Capability Placed only, the capability of the external provide.
 	Capability string `json:"capability,omitempty"`
 
-	// Field Placed only, which credential of the binding it holds.
-	Field    RenderedSecretField `json:"field,omitempty"`
-	Instance string              `json:"instance"`
+	// Field Placed only, the capability field the file holds.
+	Field    string `json:"field,omitempty"`
+	Instance string `json:"instance"`
 
 	// Kind `generated`: the deployer creates it as 32 random bytes in hex. `placed`: you supply it.
 	Kind RenderedSecretKind `json:"kind"`
@@ -403,58 +742,130 @@ type RenderedSecret struct {
 	Path string `json:"path"`
 }
 
-// RenderedSecretField Placed only, which credential of the binding it holds.
-type RenderedSecretField string
-
 // RenderedSecretKind `generated`: the deployer creates it as 32 random bytes in hex. `placed`: you supply it.
 type RenderedSecretKind string
 
-// Secret Created by `setup.sh` as `secrets/<instance>/<name>`, mounted as the Compose secret `<instance>_<name>`.
+// Secret A secret file of the instance, `secrets/<instance>/<name>`.
 type Secret struct {
+	Description string `json:"description"`
+
 	// Env Env var set to the secret file's path inside the container.
-	Env  string `json:"env"`
+	Env  string     `json:"env,omitempty"`
+	From SecretFrom `json:"from,omitempty"`
+
+	// Mount Absolute path to mount it at.
+	Mount string `json:"mount,omitempty"`
+
+	// Name A name ending in `/` is a folder a setup step writes.
 	Name string `json:"name"`
 }
 
-// Use defines model for Use.
-type Use struct {
+// SecretFrom defines model for Secret.From.
+type SecretFrom string
+
+// SetupAsk defines model for SetupAsk.
+type SetupAsk struct {
+	Description string `json:"description"`
+	Name        string `json:"name"`
+	Secret      bool   `json:"secret,omitempty"`
+}
+
+// SetupRead One of `{slot, field}`, `{provide, field}` or `{secret}`.
+type SetupRead struct {
+	Field   string `json:"field,omitempty"`
+	Provide string `json:"provide,omitempty"`
+	Secret  string `json:"secret,omitempty"`
+	Slot    string `json:"slot,omitempty"`
+}
+
+// SetupStep defines model for SetupStep.
+type SetupStep struct {
+	Asks       []SetupAsk        `json:"asks,omitempty"`
+	Command    []string          `json:"command"`
+	Entrypoint []string          `json:"entrypoint,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+
+	// ForEach A provide; the step runs once per binding to it.
+	ForEach string       `json:"for_each,omitempty"`
+	Name    string       `json:"name"`
+	Reads   []SetupRead  `json:"reads,omitempty"`
+	Writes  []SetupWrite `json:"writes,omitempty"`
+}
+
+// SetupWrite defines model for SetupWrite.
+type SetupWrite struct {
+	Mode SetupWriteMode `json:"mode,omitempty"`
+	Name string         `json:"name"`
+}
+
+// SetupWriteMode defines model for SetupWrite.Mode.
+type SetupWriteMode string
+
+// Slot defines model for Slot.
+type Slot struct {
+	Capability string `json:"capability"`
+
 	// Client The client the SDK builds for this binding; only on a `runtime: sdk` entry.
-	Client UseClient `json:"client,omitempty"`
+	Client SlotClient `json:"client,omitempty"`
 
-	// Env Env var names the consumer reads the binding from. An omitted key delivers nothing. Every
-	// binding takes host, port, url, token_file and ca_file; a postgresql client also database,
-	// user, password_file and sslmode; an s3 client also bucket, region, access_key_id and
-	// secret_access_key_file.
-	Env      UseEnv `json:"env,omitempty"`
-	Optional bool   `json:"optional,omitempty"`
+	// Env Field to the env var it arrives in; a secret or certificate field's env gets the file path.
+	Env map[string]string `json:"env,omitempty"`
+
+	// Fields `to_provider` field to where the consumer's value comes from.
+	Fields map[string]FieldSource `json:"fields,omitempty"`
+
+	// Files Secret or certificate field to the absolute path it is mounted at.
+	Files    map[string]string `json:"files,omitempty"`
+	Optional bool              `json:"optional,omitempty"`
+
+	// PerCaller Only on a `runtime: sdk` entry.
+	PerCaller bool `json:"per_caller,omitempty"`
+
+	// Versions A version range like `>=15, <19`; absent means any version.
+	Versions string `json:"versions,omitempty"`
 }
 
-// UseClient The client the SDK builds for this binding; only on a `runtime: sdk` entry.
-type UseClient string
+// SlotClient The client the SDK builds for this binding; only on a `runtime: sdk` entry.
+type SlotClient string
 
-// UseEnv Env var names the consumer reads the binding from. An omitted key delivers nothing. Every
-// binding takes host, port, url, token_file and ca_file; a postgresql client also database,
-// user, password_file and sslmode; an s3 client also bucket, region, access_key_id and
-// secret_access_key_file.
-type UseEnv struct {
-	AccessKeyId         string `json:"access_key_id,omitempty"`
-	Bucket              string `json:"bucket,omitempty"`
-	CaFile              string `json:"ca_file,omitempty"`
-	Database            string `json:"database,omitempty"`
-	Host                string `json:"host,omitempty"`
-	PasswordFile        string `json:"password_file,omitempty"`
-	Port                string `json:"port,omitempty"`
-	Region              string `json:"region,omitempty"`
-	SecretAccessKeyFile string `json:"secret_access_key_file,omitempty"`
-	Sslmode             string `json:"sslmode,omitempty"`
-	TokenFile           string `json:"token_file,omitempty"`
-	Url                 string `json:"url,omitempty"`
-	User                string `json:"user,omitempty"`
+// Template defines model for Template.
+type Template struct {
+	Delims []string `json:"delims,omitempty"`
+
+	// File A file in the module folder ending in `.tmpl`.
+	File string `json:"file"`
+
+	// Path The absolute path it is mounted at, read only.
+	Path string `json:"path"`
 }
 
-// Uses Capability to provider instance name. `null` leaves an optional need unbound on purpose.
-// A missing key means not decided: the planner may bind a required need or warn about an optional one.
-type Uses map[string]*string
+// UseBinding `instance` or `instance.provide`, or an object with that text as `provider` plus named
+// values (field name to value) for a binding to a provisioner. Written as a string when it
+// carries no named values.
+type UseBinding = GraphBinding
+
+// Uses Slot name to its binding. `null` leaves an optional slot unbound on purpose. A missing key
+// means not decided: the planner may bind a required slot or warn about an optional one.
+type Uses map[string]*UseBinding
+
+// YieldSource `named`, `generate`, `output`, or `{admin: <field of the provisioner>}`.
+type YieldSource = YieldFieldSource
+
+// Yields What a provisioner makes per binding (spec 0014).
+type Yields struct {
+	// Capability The capability each binding gets.
+	Capability string `json:"capability"`
+
+	// Fields Yielded field to where its value comes from.
+	Fields map[string]YieldSource `json:"fields"`
+	Job    Job                    `json:"job"`
+
+	// Login The named field the revoke job keeps; without it there is no revoke job.
+	Login string `json:"login,omitempty"`
+
+	// Named Fields of the yielded capability the graph names per binding.
+	Named []string `json:"named,omitempty"`
+}
 
 // BadGraph defines model for BadGraph.
 type BadGraph = ProblemList

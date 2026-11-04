@@ -7,13 +7,14 @@ import (
 	"github.com/racherom/modular-platform/libs/contract"
 )
 
-// TestBuiltInCatalog runs the same checks the planner runs at start (AC-11).
+// TestBuiltInCatalog runs the same checks the planner runs at start (AC-2).
 func TestBuiltInCatalog(t *testing.T) {
-	entries, problems := contract.LoadCatalog(catalog.FS)
+	t.Parallel()
+	c, problems := contract.LoadCatalog(catalog.FS)
 	for _, p := range problems {
 		t.Error(p)
 	}
-	if len(entries) == 0 {
+	if len(c.Modules) == 0 || len(c.Capabilities) == 0 {
 		t.Fatal("the built in catalog is empty")
 	}
 }

@@ -1,20 +1,21 @@
 // Package render turns a plan into the files of a runnable Compose project: docker-compose.yml,
 // graph.yaml, setup.sh, .env, README.md and a config/<instance>.env per module built on the sdk
-// (spec 0002, render rules; spec 0005, render additions). The zip download and the
-// managed deploy both use it, so they cannot drift.
+// (spec 0013, "Render"; spec 0014, "Jobs in the render"; spec 0005, render additions). The zip
+// download and the managed deploy both use it, so they cannot drift.
 package render
 
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"slices"
-	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -28,6 +29,9 @@ import (
 // ErrPlanHasErrors is returned for a plan that is not ok; such a plan is never rendered.
 var ErrPlanHasErrors = errors.New("render: the plan has errors")
 
+// ErrNotRendered is returned for a catalog field this release declares but does not render yet.
+var ErrNotRendered = errors.New("render: not rendered by this release")
+
 //go:embed templates/*.tmpl
 var templateFS embed.FS
 
@@ -35,6 +39,12 @@ var templates = template.Must(template.ParseFS(templateFS, "templates/*.tmpl"))
 
 // zipTime is the earliest time the zip format can hold, so the same graph gives the same bytes.
 var zipTime = time.Date(1980, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+// The networks of every project (spec 0013, "Host name and networks").
+const (
+	networkInternal = "internal" // every instance, no route out
+	runUser         = "${MP_UID}:${MP_GID}"
+)
 
 // File is one rendered file.
 type File struct {
@@ -50,112 +60,113 @@ type Output struct {
 }
 
 type secret struct {
-	Instance, Name, Env string
-	Path                string // secrets/<instance>/<name>
-	Compose             string // <instance>_<name>
-	Capability, Field   string // placed only: the binding's capability and which credential
+	Instance          string
+	Path              string // secrets/<instance>/<name>
+	Capability, Field string // placed only: the external provide's capability and field
 }
 
 type templateData struct {
 	Name     string
 	Secrets  []secret // the secret files setup.sh creates
-	Placed   []secret // the credential files you place
+	Placed   []secret // the files you place
 	EnvFiles []string // config/<instance>.env of each sdk instance
-	SDK      bool     // an instance runs on the sdk, so setup.sh writes MP_UID and MP_GID
+	Folders  []string // data/<instance>/<volume> folders setup.sh creates
 }
 
-// Render renders the resolved graph of an ok plan. catalog must hold every module the graph uses.
-func Render(plan contract.PlanResult, catalog []contract.CatalogEntry) (Output, error) {
-	r, err := render(plan, catalog, nil)
-	return r.out, err
+// Render renders the resolved graph of an ok plan. catalog must hold every module and
+// capability the graph uses.
+func Render(plan contract.PlanResult, catalog contract.Catalog) (Output, error) {
+	r, err := renderProject(plan, catalog, false, nil)
+	if err != nil {
+		return Output{}, err
+	}
+	return r.out, nil
 }
 
 // rendered is a render's output plus what the managed flavor reports beside it.
 type rendered struct {
 	out  Output
 	data templateData
+	jobs map[string]job // job service name to what it does
 }
 
-// render renders plan; a non nil managed turns the project into its managed flavor before the
-// Compose file is written.
-func render(plan contract.PlanResult, catalog []contract.CatalogEntry, managed func(*types.Project)) (rendered, error) {
+// job is a one shot service of the project (spec 0014).
+type job struct {
+	instance, module, kind string // the provisioner instance and module; provision or revoke
+}
+
+// renderer holds one render in progress.
+type renderer struct {
+	g        contract.Graph
+	managed  bool
+	modules  map[string]contract.Module
+	caps     map[string]contract.Capability
+	project  types.Project
+	data     templateData
+	jobs     map[string]job
+	declared map[string]bool // secret file paths already listed for setup.sh or as placed
+}
+
+// renderProject renders plan in the static flavor, or the managed one: restart: unless-stopped
+// on every long running service, and finish called on the project before it is written.
+func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed bool, finish func(*types.Project, map[string]job)) (rendered, error) {
 	if !plan.Ok {
 		return rendered{}, ErrPlanHasErrors
 	}
-	entries := make(map[string]contract.CatalogEntry, len(catalog))
-	for _, e := range catalog {
-		entries[e.Name] = e
+	r := renderer{
+		g:        plan.Graph,
+		managed:  managed,
+		modules:  make(map[string]contract.Module, len(catalog.Modules)),
+		caps:     make(map[string]contract.Capability, len(catalog.Capabilities)),
+		data:     templateData{Name: plan.Graph.Name},
+		jobs:     map[string]job{},
+		declared: map[string]bool{},
+		project: types.Project{
+			Name:     plan.Graph.Name,
+			Services: types.Services{},
+			Networks: types.Networks{networkInternal: types.NetworkConfig{Internal: true}},
+		},
 	}
-	g := plan.Graph
-	data := templateData{Name: g.Name}
+	for _, m := range catalog.Modules {
+		r.modules[m.Name] = m
+	}
+	for _, c := range catalog.Capabilities {
+		r.caps[c.Name] = c
+	}
 
-	instances := make([]string, 0, len(g.Modules))
-	for name := range g.Modules {
-		instances = append(instances, name)
-	}
-	slices.Sort(instances)
-
-	project := types.Project{
-		Name:     g.Name,
-		Services: types.Services{},
-	}
+	instances := sortedKeys(r.g.Modules)
 	for _, i := range instances {
-		entry, ok := entries[g.Modules[i].Module]
+		gm := r.g.Modules[i]
+		if gm.External != nil {
+			continue // a service outside the stack has no Compose service
+		}
+		m, ok := r.modules[gm.Module]
 		if !ok {
-			return rendered{}, fmt.Errorf("render: module %q of instance %s is not in the catalog", g.Modules[i].Module, i)
+			return rendered{}, fmt.Errorf("render: module %q of instance %s is not in the catalog", gm.Module, i)
 		}
-		svc := types.ServiceConfig{Name: i}
-		svc.Image = entry.Image
-		svc.HealthCheck = healthcheck(entry.Healthcheck)
-		for _, s := range entry.Secrets {
-			sec := secret{Instance: i, Name: s.Name, Env: s.Env, Path: "secrets/" + i + "/" + s.Name, Compose: i + "_" + s.Name}
-			if project.Secrets == nil {
-				project.Secrets = types.Secrets{}
-			}
-			project.Secrets[sec.Compose] = types.SecretConfig{File: "./" + sec.Path}
-			svc.Secrets = append(svc.Secrets, types.ServiceSecretConfig{Source: sec.Compose})
-			setEnv(&svc, s.Env, "/run/secrets/"+sec.Compose)
-			data.Secrets = append(data.Secrets, sec)
+		svc, err := r.service(i, m)
+		if err != nil {
+			return rendered{}, err
 		}
-		if entry.Runtime == contract.Sdk {
-			sdkInstance(&project, &svc, &data, i, entry)
-		}
-		project.Services[i] = svc
+		r.project.Services[i] = svc
 	}
-
 	for _, b := range plan.Bindings {
-		consumer := project.Services[b.Consumer]
-		providerEntry := entries[g.Modules[b.Provider].Module]
-		condition := types.ServiceConditionStarted
-		if providerEntry.Healthcheck != nil {
-			condition = types.ServiceConditionHealthy
+		if err := r.binding(b); err != nil {
+			return rendered{}, err
 		}
-		if consumer.DependsOn == nil {
-			consumer.DependsOn = types.DependsOnConfig{}
-		}
-		consumer.DependsOn[b.Provider] = types.ServiceDependency{Condition: condition, Required: true}
-
-		env := entries[g.Modules[b.Consumer].Module].Uses[b.Capability].Env
-		if env.Host != "" {
-			setEnv(&consumer, env.Host, b.Provider)
-		}
-		if env.Port != "" {
-			setEnv(&consumer, env.Port, strconv.Itoa(providePort(providerEntry, b.Capability)))
-		}
-		project.Services[b.Consumer] = consumer
-		sdkBinding(&project, &data, b, entries[g.Modules[b.Consumer].Module], providerEntry)
 	}
-	slices.SortFunc(data.Secrets, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
-	slices.SortFunc(data.Placed, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
+	slices.SortFunc(r.data.Secrets, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
+	slices.SortFunc(r.data.Placed, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
+	slices.Sort(r.data.Folders)
 
-	if managed != nil {
-		managed(&project)
+	if finish != nil {
+		finish(&r.project, r.jobs)
 	}
-	compose, err := composeYAML(project)
+	compose, err := composeYAML(r.project)
 	if err != nil {
 		return rendered{}, err
 	}
-	graphText, err := contract.MarshalGraph(g)
+	graphText, err := contract.MarshalGraph(r.g)
 	if err != nil {
 		return rendered{}, fmt.Errorf("render: %w", err)
 	}
@@ -172,18 +183,137 @@ func render(plan contract.PlanResult, catalog []contract.CatalogEntry, managed f
 		{"README.md", "README.md.tmpl", 0o644},
 	} {
 		var buf bytes.Buffer
-		if err := templates.ExecuteTemplate(&buf, t.template, data); err != nil {
+		if err := templates.ExecuteTemplate(&buf, t.template, r.data); err != nil {
 			return rendered{}, fmt.Errorf("render %s: %w", t.path, err)
 		}
 		files = append(files, File{Path: t.path, Mode: t.mode, Data: buf.Bytes()})
 	}
 	for _, i := range instances {
-		if entry := entries[g.Modules[i].Module]; entry.Runtime == contract.Sdk {
-			files = append(files, File{Path: envFilePath(i), Mode: 0o644, Data: envFile(i, entry, consumerBindings(plan.Bindings, i))})
+		if gm := r.g.Modules[i]; gm.External == nil && r.modules[gm.Module].Runtime == contract.Sdk {
+			files = append(files, File{Path: envFilePath(i), Mode: 0o644, Data: envFile(i, r.modules[gm.Module])})
 		}
 	}
 	slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
-	return rendered{out: Output{Name: project.Name, Files: files}, data: data}, nil
+	return rendered{out: Output{Name: r.project.Name, Files: files}, data: r.data, jobs: r.jobs}, nil
+}
+
+// service builds the Compose service of module instance i: image, command, healthcheck, host
+// name, hardening, its own secrets and data folders.
+func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, error) {
+	svc := types.ServiceConfig{Name: i}
+	svc.Image = m.Image
+	svc.HealthCheck = healthcheck(m.Healthcheck)
+	if len(m.Entrypoint) > 0 {
+		svc.Entrypoint = escapeAll(m.Entrypoint)
+	}
+	if len(m.Command) > 0 {
+		svc.Command = escapeAll(m.Command)
+	}
+	for _, name := range sortedKeys(m.Environment) {
+		v := m.Environment[name]
+		if strings.ContainsAny(v, "{}") {
+			return svc, fmt.Errorf("%w: environment placeholders of module %s", ErrNotRendered, m.Name)
+		}
+		setEnv(&svc, name, v)
+	}
+	if len(m.Templates) > 0 || len(m.Setup) > 0 || len(m.Publish) > 0 || len(m.HostMounts) > 0 ||
+		(m.Network != nil && (m.Network.Egress || len(m.Network.Aliases) > 0)) {
+		return svc, fmt.Errorf("%w: templates, setup steps, host access and egress of module %s", ErrNotRendered, m.Name)
+	}
+	svc.Networks = map[string]*types.ServiceNetworkConfig{networkInternal: {Aliases: []string{r.host(i)}}}
+	r.harden(&svc, m.Hardening)
+
+	for _, s := range m.Secrets {
+		if s.From != "" && s.From != contract.SecretFromGenerate {
+			return svc, fmt.Errorf("%w: secret %s of module %s comes from %s", ErrNotRendered, s.Name, m.Name, s.From)
+		}
+		path := "secrets/" + i + "/" + s.Name
+		target := s.Mount
+		if target == "" {
+			target = "/run/secrets/" + i + "_" + s.Name // spec 0002's rule
+		}
+		r.mountSecret(&svc, i+"_"+s.Name, path, target)
+		if s.Env != "" {
+			setEnv(&svc, s.Env, target)
+		}
+		r.generated(i, path)
+	}
+	for _, n := range sortedKeys(m.Volumes) {
+		folder := "data/" + i + "/" + n
+		svc.Volumes = append(svc.Volumes, types.ServiceVolumeConfig{Type: types.VolumeTypeBind, Source: "./" + folder, Target: m.Volumes[n]})
+		r.data.Folders = append(r.data.Folders, folder)
+	}
+	if m.Runtime == contract.Sdk {
+		r.sdkInstance(&svc, i, m)
+	}
+	if r.managed {
+		svc.Restart = types.RestartPolicyUnlessStopped
+	}
+	return svc, nil
+}
+
+// harden writes the hardening defaults and the entry's opt outs (spec 0013).
+func (r *renderer) harden(svc *types.ServiceConfig, h *contract.Hardening) {
+	svc.ReadOnly = true
+	svc.CapDrop = []string{"ALL"}
+	svc.SecurityOpt = []string{"no-new-privileges:true"}
+	svc.User = runUser
+	if h == nil {
+		return
+	}
+	switch h.User {
+	case contract.Root:
+		svc.User = "0:0"
+	case contract.Image:
+		svc.User = ""
+	}
+	if h.WritableRoot {
+		svc.ReadOnly = false
+	}
+	svc.CapAdd = slices.Clone(h.CapAdd)
+	svc.Tmpfs = slices.Clone(h.Tmpfs)
+}
+
+// host is the one name instance i goes by on every network: <i>.<graph>.internal.
+func (r *renderer) host(i string) string { return i + "." + domain(r.g.Name) }
+
+// domain is the MP_DOMAIN of every instance of graph: <graph>.internal, a name ICANN reserves
+// for private use.
+func domain(graph string) string { return graph + ".internal" }
+
+// marker is the role a provisioner marks what this stack made with (spec 0014):
+// mp_provisioned_ plus 8 hex digits of SHA-256 of the graph name.
+func marker(graph string) string {
+	sum := sha256.Sum256([]byte(graph))
+	return "mp_provisioned_" + hex.EncodeToString(sum[:])[:8]
+}
+
+// mountSecret declares the Compose secret name for the file at path once and mounts it on svc
+// at target.
+func (r *renderer) mountSecret(svc *types.ServiceConfig, name, path, target string) {
+	if r.project.Secrets == nil {
+		r.project.Secrets = types.Secrets{}
+	}
+	r.project.Secrets[name] = types.SecretConfig{File: "./" + path}
+	svc.Secrets = append(svc.Secrets, types.ServiceSecretConfig{Source: name, Target: target})
+}
+
+// generated lists path once as a file setup.sh (or the deployer) creates.
+func (r *renderer) generated(instance, path string) {
+	if r.declared[path] {
+		return
+	}
+	r.declared[path] = true
+	r.data.Secrets = append(r.data.Secrets, secret{Instance: instance, Path: path})
+}
+
+// placed lists path once as a file you place.
+func (r *renderer) placed(instance, path, capability, field string) {
+	if r.declared[path] {
+		return
+	}
+	r.declared[path] = true
+	r.data.Placed = append(r.data.Placed, secret{Instance: instance, Path: path, Capability: capability, Field: field})
 }
 
 // WriteZip writes the files as a zip, entries in path order with a fixed time, so the same
@@ -207,20 +337,28 @@ func (o Output) WriteZip(w io.Writer) error {
 	return nil
 }
 
+// setEnv sets a literal env value; a $ is escaped, so Compose never reads it as a variable.
 func setEnv(svc *types.ServiceConfig, name, value string) {
+	setEnvRaw(svc, name, escape(value))
+}
+
+// setEnvRaw sets an env value as written, for the Compose variables the render itself names.
+func setEnvRaw(svc *types.ServiceConfig, name, value string) {
 	if svc.Environment == nil {
 		svc.Environment = types.MappingWithEquals{}
 	}
 	svc.Environment[name] = &value
 }
 
-// providePort is the port a consumer reaches capability on: the entry's own, or 8080 for a module
-// built on the sdk, which declares none.
-func providePort(e contract.CatalogEntry, capability string) int {
-	if e.Runtime == contract.Sdk {
-		return sdkPort
+// escape doubles every $, Compose's escape for a literal dollar sign.
+func escape(s string) string { return strings.ReplaceAll(s, "$", "$$") }
+
+func escapeAll(list []string) []string {
+	out := make([]string, len(list))
+	for i, s := range list {
+		out[i] = escape(s)
 	}
-	return e.Provides[capability].Port
+	return out
 }
 
 // healthcheck copies a catalog healthcheck; the catalog rules already checked its durations.
@@ -228,7 +366,7 @@ func healthcheck(h *contract.Healthcheck) *types.HealthCheckConfig {
 	if h == nil {
 		return nil
 	}
-	out := &types.HealthCheckConfig{Test: types.HealthCheckTest(h.Test)}
+	out := &types.HealthCheckConfig{Test: types.HealthCheckTest(escapeAll(h.Test))}
 	duration := func(s string) *types.Duration {
 		if s == "" {
 			return nil
@@ -241,7 +379,7 @@ func healthcheck(h *contract.Healthcheck) *types.HealthCheckConfig {
 	out.Timeout = duration(h.Timeout)
 	out.StartPeriod = duration(h.StartPeriod)
 	if h.Retries != nil {
-		r := uint64(*h.Retries) //nolint:gosec // CheckEntry refuses retries below 1
+		r := uint64(*h.Retries) //nolint:gosec // CheckModule refuses retries below 1
 		out.Retries = &r
 	}
 	return out
@@ -249,7 +387,7 @@ func healthcheck(h *contract.Healthcheck) *types.HealthCheckConfig {
 
 // composeYAML writes the project from compose-go types with keys in sorted order. compose-go
 // writes unset command and entrypoint as null, which Compose could read as a reset, so every
-// null is dropped first.
+// null is dropped first; so is the empty ipam it writes on every network.
 func composeYAML(p types.Project) ([]byte, error) {
 	raw, err := json.Marshal(p)
 	if err != nil {
@@ -258,6 +396,15 @@ func composeYAML(p types.Project) ([]byte, error) {
 	var tree any
 	if err := json.Unmarshal(raw, &tree); err != nil {
 		return nil, fmt.Errorf("render compose: %w", err)
+	}
+	if networks, ok := tree.(map[string]any)["networks"].(map[string]any); ok {
+		for _, n := range networks {
+			if n, ok := n.(map[string]any); ok {
+				if ipam, ok := n["ipam"].(map[string]any); ok && len(ipam) == 0 {
+					delete(n, "ipam")
+				}
+			}
+		}
 	}
 	out, err := yaml.Marshal(dropNulls(tree))
 	if err != nil {
@@ -282,4 +429,13 @@ func dropNulls(v any) any {
 		}
 	}
 	return v
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
 }

@@ -4,7 +4,11 @@ import type { components, paths } from './planner.gen'
 
 export type Graph = components['schemas']['Graph']
 export type GraphModule = components['schemas']['GraphModule']
-export type CatalogEntry = components['schemas']['CatalogEntry']
+export type GraphBinding = components['schemas']['UseBinding']
+export type Catalog = components['schemas']['Catalog']
+export type Module = components['schemas']['Module']
+export type Capability = components['schemas']['Capability']
+export type Slot = components['schemas']['Slot']
 export type PlanResult = components['schemas']['PlanResult']
 export type Problem = components['schemas']['Problem']
 
@@ -27,10 +31,10 @@ function failure(status: number, problems?: Problem[]): PlannerError {
   return new PlannerError(message, status)
 }
 
-export async function fetchCatalog(): Promise<CatalogEntry[]> {
+export async function fetchCatalog(): Promise<Catalog> {
   const { data, error, response } = await client.GET('/v1/catalog')
   if (!data) throw failure(response.status, error?.problems)
-  return data.entries
+  return data
 }
 
 /** Plans a graph; the signal aborts the call when a newer edit replaces it. */

@@ -18,6 +18,7 @@ architecture lives in [docs/specs/0001-platform-stack-architecture](docs/specs/0
 | `web/` | The editor (React, Vite), and its `web` image |
 | `samples/` | The sample graph used by the editor and the smoke job |
 | `deploy/online/` | The online tool: ingress, web and planner on one origin |
+| `deploy/managed/` | The managed platform: its Compose stack, `setup.sh`, and its own README |
 
 ## Develop
 
@@ -42,6 +43,54 @@ Until the first release exists (it reads `0.0.0`), run the images you built your
 ```sh
 task images
 MP_VERSION=dev task online:up
+```
+
+## Start a managed platform
+
+In managed mode the platform runs on your own host. You sign in as the admin, plan a stack in the
+editor, deploy it to that host, and watch each module's state live. You need a Linux host with
+Docker Engine and the Docker Compose plugin.
+
+### From a release
+
+Each release carries `modular-platform-<version>.zip`. To install it, we recommend these steps:
+
+1. Unzip it where the platform should live, for example `/opt/modular-platform`, and open that
+   folder.
+2. Run `sh setup.sh`. It asks for the domain (default `platform.localhost`), the admin email, the
+   admin user name, and the admin password (at least 12 characters). It writes `.env` and every
+   secret in `secrets/`, and never prints a secret.
+3. Run `docker compose up -d`.
+4. Open `https://<your domain>/` and sign in with the admin user name and password.
+
+The platform makes its own certificate authority, so your browser warns about the certificate on
+first visit. [deploy/managed/README.md](deploy/managed/README.md) covers the rest: a public
+certificate, deploying a stack, changing the admin, backups, and upgrades.
+
+No release exists yet (the version still reads `0.0.0`), so for now you can start the platform from
+this checkout instead.
+
+### From this checkout
+
+```sh
+task dev:managed
+```
+
+This builds the `api`, `planner` and `deployer-docker` images from your checkout, starts the
+platform on `https://platform.localhost`, and serves the editor from the Vite dev server with hot
+reload. It binds ports 80 and 443. When the task ends, it stops the platform's containers again.
+
+The first run copies `deploy/managed` to `.dev/managed` (outside git, so no secret lands in a
+commit), runs `setup.sh` there, and prints the admin password once. Sign in as `admin` with that
+password. To set it up again with a new password, delete `.dev/managed` and run the task again.
+
+To check the whole install the way CI does, you can build the images tagged `ci` and run the
+managed smoke job (it needs Chromium). It installs with `setup.sh`, signs in, deploys the sample,
+sees every module running, and removes it with its data:
+
+```sh
+IMAGE_TAG=ci task images
+task smoke:managed
 ```
 
 ## Releases

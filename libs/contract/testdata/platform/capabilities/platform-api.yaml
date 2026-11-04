@@ -1,0 +1,7 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: platform-api
+description: "The platform's control plane API (contracts/openapi/api.yaml), behind the ingress."
+fields:
+  url: {type: url, description: Base URL of the API.}
+  ca: {type: certificate, optional: true, description: Root CA that signs the API's certificate.}

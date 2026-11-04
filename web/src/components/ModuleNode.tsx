@@ -39,7 +39,8 @@ export const ModuleNode = memo(function ModuleNode({ data, isConnectable }: Node
           {data.mark && <ProblemMark mark={data.mark} />}
         </span>
         <span className={styles.subtitle}>
-          <span className={styles.module}>{data.module}</span>
+          {!data.external && <span className={styles.module}>{data.module}</span>}
+          {data.external && <Badge>external</Badge>}
           {!data.known && <Badge tone="warning">not in catalog</Badge>}
         </span>
         {data.state && <StateBadge module={data.state} />}
@@ -48,22 +49,26 @@ export const ModuleNode = memo(function ModuleNode({ data, isConnectable }: Node
         const provides = data.provides[i]
         const uses = data.uses[i]
         return (
-          <div key={`${provides ?? ''}|${uses?.capability ?? ''}`} className={styles.row} style={{ top: NODE_HEADER + i * PORT_ROW }}>
+          <div key={`${provides?.name ?? ''}|${uses?.slot ?? ''}`} className={styles.row} style={{ top: NODE_HEADER + i * PORT_ROW }}>
             <span className={styles.provides}>
               {provides !== undefined && (
                 <>
                   <Handle
-                    id={providesHandle(provides)}
+                    id={providesHandle(provides.name)}
                     type="target"
                     position={Position.Left}
                     isConnectableStart={false}
                     isConnectableEnd={isConnectable}
                     className={styles.handle}
-                    data-drop={dragging ? (data.dropTargets?.includes(provides) ? 'valid' : 'invalid') : undefined}
-                    data-highlight={lit(providesHandle(provides))}
+                    data-drop={dragging ? (data.dropTargets?.includes(provides.name) ? 'valid' : 'invalid') : undefined}
+                    data-highlight={lit(providesHandle(provides.name))}
                     aria-hidden="true"
                   />
-                  <span className={styles.label}>{provides}</span>
+                  <span className={styles.label} title={`${provides.capability} ${provides.version}`}>
+                    {provides.name}
+                    <span className={styles.version}> {provides.version}</span>
+                    {provides.name !== provides.capability && <span className="visually-hidden">, {provides.capability}</span>}
+                  </span>
                 </>
               )}
             </span>
@@ -71,20 +76,23 @@ export const ModuleNode = memo(function ModuleNode({ data, isConnectable }: Node
               {uses !== undefined && (
                 <>
                   {uses.mark && <ProblemMark mark={uses.mark} />}
-                  <span className={styles.label}>
-                    {uses.capability}
-                    <span className="visually-hidden">{uses.optional ? ', optional' : ', required'}</span>
+                  <span className={styles.label} title={uses.capability}>
+                    {uses.slot}
+                    <span className="visually-hidden">
+                      {uses.slot !== uses.capability ? `, ${uses.capability}` : ''}
+                      {uses.optional ? ', optional' : ', required'}
+                    </span>
                   </span>
                   <Handle
-                    id={usesHandle(uses.capability)}
+                    id={usesHandle(uses.slot)}
                     type="source"
                     position={Position.Right}
                     isConnectableStart={isConnectable}
                     isConnectableEnd={false}
                     className={styles.handle}
                     data-need={uses.optional ? 'optional' : 'required'}
-                    data-drop={dragging ? (data.dragSource === uses.capability ? 'source' : 'invalid') : undefined}
-                    data-highlight={lit(usesHandle(uses.capability))}
+                    data-drop={dragging ? (data.dragSource === uses.slot ? 'source' : 'invalid') : undefined}
+                    data-highlight={lit(usesHandle(uses.slot))}
                     aria-hidden="true"
                   />
                 </>

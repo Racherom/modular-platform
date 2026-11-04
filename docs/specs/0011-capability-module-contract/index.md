@@ -1,7 +1,7 @@
 # 0011. Capability and module contract
 
 **Date**: 2026-11-04
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 
@@ -154,15 +154,15 @@ catalog/
 Tracer Bullet: milestone 1 runs the whole v1 thread (catalog, planner, render, `setup.sh`, compose, editor, SDK) on the sample with a real provisioned database; later milestones thicken one strand each, and the platform graph comes last because it needs all of them.
 
 **Milestone 1: v1 thread on the sample**
-1. Spike: on the Compose version CI pins, run `docker compose up -d --wait` on a project with one job (`restart: "no"`, exit 0) that a service depends on with `service_completed_successfully`, and once with the job exiting 1. Record the result in rationale.md. If `--wait` fails on the exit 0 job, switch the README, `scripts/smoke*.sh` and the deployer to the fallback written there (start, then `docker compose wait` on the job services, then `up -d --wait` on the long running ones), and keep AC-5's observable outcome, satisfies **AC-5**
-2. `contracts/openapi/planner.yaml`: `Capability`, `Module` v1, `Graph` v1 (string or object bindings, `external` instances), `Catalog {modules, capabilities}`, the grown `Binding`; `task generate`, satisfies **AC-2**, **AC-3**
-3. `libs/contract`: the new catalog layout and loader, capability rules, module rules needed by the sample (provides with versions and field sources, slots with ranges and env delivery), version grammar, `formatVersion`, v0alpha1 graph conversion, canonical v1 writer; move `catalog/` to the new layout with `capabilities/postgresql.yaml`, `capabilities/postgresql-provisioner.yaml`, `capabilities/http.yaml` and the `whoami` and `postgres` modules, satisfies **AC-2**, **AC-14**
-4. `libs/planner`: matching by capability or yields and version range, slots, named provides, automatic bindings, default named values written back, the new problem codes, digest over v1, satisfies **AC-3**, **AC-4**, **AC-7**
-5. `libs/render`: field sources and delivery, the provision job per provisioned binding, host names for every instance, the `data/` volume folders, `internal` network and hardening defaults for the sample's services; goldens move to v1, satisfies **AC-1**, **AC-5**, **AC-8**, **AC-12**
-6. The `postgresql-provisioner` job (image, provision script) and an end to end test (`e2e` tag) where a test module signs in to its provisioned database, and the sample `samples/whoami-postgres/graph.yaml` in v1, satisfies **AC-4**, **AC-5**
-7. `sdk/manifest` and `sdkgen` on v1 entries plus capability files; regenerate the three services' config, satisfies **AC-20**
-8. Editor: read the v1 catalog and graph, slot and provide handles, string and object form edges, version labels, the v1 YAML writer; shared fixtures in `contracts/fixtures/graphs/` move to v1 plus a `v0alpha1/` conversion set, satisfies **AC-19**, **AC-14**
-9. Paper platform: write the eight platform entries of 0015 (and their capabilities) as catalog fixtures under `libs/contract/testdata/platform/`, plus the platform graph, and make the catalog check and the planner accept them, no render yet. A field 0015 needs that v1 cannot say surfaces here, before milestone 2 builds on the format; route it back through `/architect` as a spec change, satisfies **AC-16**, **AC-2**
+1. [x] Spike: on the Compose version CI pins, run `docker compose up -d --wait` on a project with one job (`restart: "no"`, exit 0) that a service depends on with `service_completed_successfully`, and once with the job exiting 1. Record the result in rationale.md. If `--wait` fails on the exit 0 job, switch the README, `scripts/smoke*.sh` and the deployer to the fallback written there (start, then `docker compose wait` on the job services, then `up -d --wait` on the long running ones), and keep AC-5's observable outcome, satisfies **AC-5**
+2. [x] `contracts/openapi/planner.yaml`: `Capability`, `Module` v1, `Graph` v1 (string or object bindings, `external` instances), `Catalog {modules, capabilities}`, the grown `Binding`; `task generate`, satisfies **AC-2**, **AC-3**
+3. [x] `libs/contract`: the new catalog layout and loader, capability rules, module rules needed by the sample (provides with versions and field sources, slots with ranges and env delivery), version grammar, `formatVersion`, v0alpha1 graph conversion, canonical v1 writer; move `catalog/` to the new layout with `capabilities/postgresql.yaml`, `capabilities/postgresql-provisioner.yaml`, `capabilities/http.yaml` and the `whoami` and `postgres` modules, satisfies **AC-2**, **AC-14**
+4. [x] `libs/planner`: matching by capability or yields and version range, slots, named provides, automatic bindings, default named values written back, the new problem codes, digest over v1, satisfies **AC-3**, **AC-4**, **AC-7**
+5. [x] `libs/render`: field sources and delivery, the provision job per provisioned binding, host names for every instance, the `data/` volume folders, `internal` network and hardening defaults for the sample's services; goldens move to v1, satisfies **AC-1**, **AC-5**, **AC-8**, **AC-12**
+6. [x] The `postgresql-provisioner` job (image, provision script) and an end to end test (`e2e` tag) where a test module signs in to its provisioned database, and the sample `samples/whoami-postgres/graph.yaml` in v1, satisfies **AC-4**, **AC-5**
+7. [x] `sdk/manifest` and `sdkgen` on v1 entries plus capability files; regenerate the three services' config, satisfies **AC-20**
+8. [x] Editor: read the v1 catalog and graph, slot and provide handles, string and object form edges, version labels, the v1 YAML writer; shared fixtures in `contracts/fixtures/graphs/` move to v1 plus a `v0alpha1/` conversion set, satisfies **AC-19**, **AC-14**
+9. [x] Paper platform: write the eight platform entries of 0015 (and their capabilities) as catalog fixtures under `libs/contract/testdata/platform/`, plus the platform graph, and make the catalog check and the planner accept them, no render yet. A field 0015 needs that v1 cannot say surfaces here, before milestone 2 builds on the format; route it back through `/architect` as a spec change, satisfies **AC-16**, **AC-2**
 
 **Milestone 2: bindings in full**
 10. The revoke job for every provisioner provide with a `login` (empty `MP_KEEP` allowed), its per graph marker role, the `postgres` and `template1` connect revoke; e2e for unbind and rebind, including the last binding, satisfies **AC-6**, **AC-4**

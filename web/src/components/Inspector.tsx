@@ -1,7 +1,8 @@
 import { Search, Unlink } from 'lucide-react'
-import type { CatalogEntry, Graph, PlanResult, Problem } from '../api/client'
+import type { Catalog, Graph, PlanResult, Problem } from '../api/client'
 import { bind, candidates, letPlannerChoose, unbind } from '../graph/edit'
 import { markOf, problemInstance } from '../graph/flow'
+import { bindingText, boundProvide, isExternal, moduleOf, offersOf, slotsOf } from '../graph/model'
 import { useEditor } from '../lib/store'
 import type { GraphEdit } from './GraphView'
 import styles from './Inspector.module.css'
@@ -13,7 +14,7 @@ import { Select, type SelectOption } from './ui/Select'
 
 interface Props {
   graph: Graph
-  catalog: CatalogEntry[]
+  catalog: Catalog
   plan: PlanResult
   /** The plan belongs to exactly this graph (not checking, not failed). */
   planCurrent: boolean
@@ -35,52 +36,55 @@ export function Inspector({ graph, catalog, plan, planCurrent, onEdit }: Props) 
   if (selection?.kind === 'module' && Object.hasOwn(graph.modules, selection.instance)) {
     body = <ModuleDetails instance={selection.instance} {...ctx} />
   } else if (selection?.kind === 'binding' && Object.hasOwn(graph.modules, selection.consumer)) {
-    body = <BindingDetails consumer={selection.consumer} capability={selection.capability} {...ctx} />
+    body = <BindingDetails consumer={selection.consumer} slot={selection.slot} {...ctx} />
   }
   return <Panel title="Inspector">{body}</Panel>
 }
 
 type Ctx = Props
 
-function entryOf(ctx: Ctx, instance: string) {
-  const m = ctx.graph.modules[instance]
-  return m ? ctx.catalog.find((e) => e.name === m.module) : undefined
-}
-
 function ModuleDetails({ instance, ...ctx }: Ctx & { instance: string }) {
   const m = ctx.graph.modules[instance]!
-  const entry = entryOf(ctx, instance)
+  const external = isExternal(ctx.graph, instance)
+  const entry = moduleOf(ctx.graph, ctx.catalog, instance)
   const problems = ctx.plan.problems.filter((p) => problemInstance(p) === instance)
-  const needs = Object.entries(entry?.uses ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-  const offers = Object.keys(entry?.provides ?? {}).sort()
+  const slots = Object.entries(external ? {} : slotsOf(entry)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  const offers = offersOf(ctx.graph, ctx.catalog, instance)
   return (
     <div className={styles.details}>
       <header className={styles.header}>
         <h3 className={styles.name}>{instance}</h3>
-        <p className={styles.module}>
-          module <span className={styles.mono}>{m.module}</span>
-        </p>
-        {entry ? <p className={styles.description}>{entry.description}</p> : <Badge tone="warning">not in catalog</Badge>}
+        {external ? (
+          <p className={styles.module}>external service, outside the stack</p>
+        ) : (
+          <p className={styles.module}>
+            module <span className={styles.mono}>{m.module}</span>
+          </p>
+        )}
+        {entry && <p className={styles.description}>{entry.description}</p>}
+        {!external && !entry && <Badge tone="warning">not in catalog</Badge>}
       </header>
 
       {problems.length > 0 && <ProblemItems problems={problems} />}
 
-      <section aria-labelledby={`uses-${instance}`} className={styles.section}>
-        <h4 id={`uses-${instance}`} className={styles.heading}>
-          Uses
-        </h4>
-        {needs.length === 0 ? (
-          <p className={styles.muted}>No needs.</p>
-        ) : (
-          <ul className={styles.list}>
-            {needs.map(([capability, need]) => (
-              <li key={capability} className={styles.item}>
-                <NeedRow consumer={instance} capability={capability} optional={need.optional ?? false} {...ctx} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {!external && (
+        <section aria-labelledby={`uses-${instance}`} className={styles.section}>
+          <h4 id={`uses-${instance}`} className={styles.heading}>
+            Uses
+          </h4>
+          {slots.length === 0 ? (
+            <p className={styles.muted}>No needs.</p>
+          ) : (
+            <ul className={styles.list}>
+              {slots.map(([slot, s]) => (
+                <li key={slot} className={styles.item}>
+                  <SlotRow consumer={instance} slot={slot} capability={s.capability} optional={s.optional ?? false} {...ctx} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section aria-labelledby={`provides-${instance}`} className={styles.section}>
         <h4 id={`provides-${instance}`} className={styles.heading}>
@@ -90,11 +94,15 @@ function ModuleDetails({ instance, ...ctx }: Ctx & { instance: string }) {
           <p className={styles.muted}>No offers.</p>
         ) : (
           <ul className={styles.list}>
-            {offers.map((capability) => {
-              const users = usersOf(ctx.graph, instance, capability)
+            {offers.map((o) => {
+              const users = usersOf(ctx, instance, o.provide)
               return (
-                <li key={capability} className={styles.item}>
-                  <span className={styles.mono}>{capability}</span>
+                <li key={o.provide} className={styles.item}>
+                  <span>
+                    <span className={styles.mono}>{o.provide}</span>
+                    {o.provide !== o.capability && <span className={styles.muted}> {o.capability}</span>}
+                    <span className={styles.muted}> {o.version}</span>
+                  </span>
                   <span className={styles.muted}>{users.length > 0 ? `Used by ${users.join(', ')}` : 'Not used'}</span>
                 </li>
               )
@@ -106,24 +114,26 @@ function ModuleDetails({ instance, ...ctx }: Ctx & { instance: string }) {
   )
 }
 
-function BindingDetails({ consumer, capability, ...ctx }: Ctx & { consumer: string; capability: string }) {
-  const provider = ctx.graph.modules[consumer]?.uses?.[capability]
-  const optional = entryOf(ctx, consumer)?.uses?.[capability]?.optional ?? false
-  const problems = ctx.plan.problems.filter((p) => p.path === `modules.${consumer}.uses.${capability}`)
+function BindingDetails({ consumer, slot, ...ctx }: Ctx & { consumer: string; slot: string }) {
+  const text = bindingText(ctx.graph.modules[consumer]?.uses?.[slot])
+  const spec = slotsOf(moduleOf(ctx.graph, ctx.catalog, consumer))[slot]
+  const problems = ctx.plan.problems.filter(
+    (p) => p.path === `modules.${consumer}.uses.${slot}` || p.path.startsWith(`modules.${consumer}.uses.${slot}.`),
+  )
   return (
     <div className={styles.details}>
       <header className={styles.header}>
         <h3 className={styles.name}>Binding</h3>
         <p className={styles.description}>
-          <span className={styles.mono}>{consumer}</span> uses <span className={styles.mono}>{capability}</span> from{' '}
-          <span className={styles.mono}>{typeof provider === 'string' ? provider : 'nothing'}</span>
+          <span className={styles.mono}>{consumer}</span> uses <span className={styles.mono}>{slot}</span> from{' '}
+          <span className={styles.mono}>{text ?? 'nothing'}</span>
         </p>
       </header>
       {problems.length > 0 && <ProblemItems problems={problems} />}
-      <NeedRow consumer={consumer} capability={capability} optional={optional} {...ctx} />
+      <SlotRow consumer={consumer} slot={slot} capability={spec?.capability ?? ''} optional={spec?.optional ?? false} {...ctx} />
       {ctx.onEdit && (
         <div>
-          <Button variant="danger" size="sm" onPress={() => ctx.onEdit?.((g) => unbind(g, consumer, capability))}>
+          <Button variant="danger" size="sm" onPress={() => ctx.onEdit?.((g) => unbind(g, consumer, slot))}>
             <Unlink aria-hidden="true" />
             Remove binding
           </Button>
@@ -133,39 +143,43 @@ function BindingDetails({ consumer, capability, ...ctx }: Ctx & { consumer: stri
   )
 }
 
-/** One need: its capability, required or optional, and the "Bound to" select (AC-11). */
-function NeedRow({ consumer, capability, optional, ...ctx }: Ctx & { consumer: string; capability: string; optional: boolean }) {
+/** One slot: its name and capability, required or optional, and the "Bound to" select (AC-11). */
+function SlotRow({
+  consumer,
+  slot,
+  capability,
+  optional,
+  ...ctx
+}: Ctx & { consumer: string; slot: string; capability: string; optional: boolean }) {
   const uses = ctx.graph.modules[consumer]?.uses
-  const has = uses !== undefined && Object.hasOwn(uses, capability)
-  const current = has ? uses[capability] : undefined
-  const names = candidates(ctx.graph, ctx.catalog, consumer, capability)
+  const has = uses !== undefined && Object.hasOwn(uses, slot)
+  const current = has ? uses[slot] : undefined
+  const text = bindingText(current)
+  const names = candidates(ctx.graph, ctx.catalog, consumer, slot)
 
   const options: SelectOption[] = []
   let value: string
-  if (typeof current === 'string') {
-    if (names.includes(current)) value = instanceOption(current)
+  if (text !== undefined) {
+    if (names.includes(text)) value = instanceOption(text)
     else {
       value = INVALID
-      options.push({ id: INVALID, label: `${current} (invalid)`, isDisabled: true })
+      options.push({ id: INVALID, label: `${text} (invalid)`, isDisabled: true })
     }
   } else value = current === null ? NOT_BOUND : PLANNER
   options.push(...names.map((n) => ({ id: instanceOption(n), label: n })))
   options.push({ id: NOT_BOUND, label: 'Not bound' }, { id: PLANNER, label: 'Let the planner choose' })
 
-  const auto =
-    ctx.planCurrent &&
-    typeof current === 'string' &&
-    ctx.plan.bindings.some((b) => b.consumer === consumer && b.capability === capability && b.auto)
-  const mark = markOf(ctx.plan.problems.filter((p) => p.path === `modules.${consumer}.uses.${capability}`))
+  const auto = ctx.planCurrent && text !== undefined && ctx.plan.bindings.some((b) => b.consumer === consumer && b.slot === slot && b.auto)
+  const mark = markOf(ctx.plan.problems.filter((p) => p.path === `modules.${consumer}.uses.${slot}`))
 
   const choose = (id: string) => {
     const onEdit = ctx.onEdit
     if (!onEdit || id === value) return
-    if (id === NOT_BOUND) onEdit((g) => unbind(g, consumer, capability))
-    else if (id === PLANNER) onEdit((g) => letPlannerChoose(g, consumer, capability))
+    if (id === NOT_BOUND) onEdit((g) => unbind(g, consumer, slot))
+    else if (id === PLANNER) onEdit((g) => letPlannerChoose(g, consumer, slot))
     else if (id.startsWith('bind:')) {
       const provider = id.slice('bind:'.length)
-      onEdit((g) => bind(g, consumer, capability, provider))
+      onEdit((g) => bind(g, consumer, slot, provider))
     }
   }
 
@@ -173,13 +187,14 @@ function NeedRow({ consumer, capability, optional, ...ctx }: Ctx & { consumer: s
     <div className={styles.need}>
       <div className={styles.needHead}>
         {mark && <ProblemMark mark={mark} />}
-        <span className={styles.mono}>{capability}</span>
+        <span className={styles.mono}>{slot}</span>
+        {slot !== capability && <span className={styles.muted}>{capability}</span>}
         <Badge>{optional ? 'optional' : 'required'}</Badge>
       </div>
       <Select
         label={
           <>
-            <span className="visually-hidden">{capability} </span>Bound to
+            <span className="visually-hidden">{slot} </span>Bound to
           </>
         }
         size="sm"
@@ -213,12 +228,14 @@ function ProblemItems({ problems }: { problems: Problem[] }) {
   )
 }
 
-/** The instances whose need for this capability is bound to the given provider. */
-function usersOf(graph: Graph, provider: string, capability: string): string[] {
-  return Object.keys(graph.modules)
-    .filter((j) => {
-      const uses = graph.modules[j]?.uses
-      return uses !== undefined && Object.hasOwn(uses, capability) && uses[capability] === provider
-    })
-    .sort()
+/** The consumers, as instance.slot, whose binding reaches the given provide. */
+function usersOf(ctx: Ctx, provider: string, provide: string): string[] {
+  const out: string[] = []
+  for (const j of Object.keys(ctx.graph.modules).sort()) {
+    for (const slot of Object.keys(ctx.graph.modules[j]?.uses ?? {}).sort()) {
+      const b = boundProvide(ctx.graph, ctx.catalog, j, slot)
+      if (b?.provider === provider && b.provide === provide) out.push(slot === provide ? j : `${j}.${slot}`)
+    }
+  }
+  return out
 }

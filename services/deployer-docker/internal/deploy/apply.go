@@ -248,6 +248,9 @@ func (e *Engine) prepare(dir string, req ApplyRequest) (created []string, err er
 	if err := e.writeFile(dir, "deploy.env", e.deployEnv(), 0o644, false); err != nil {
 		return nil, err
 	}
+	if err := e.dataFolders(dir, req); err != nil {
+		return nil, err
+	}
 	create := func(path string, data []byte) error {
 		err := e.writeSecret(dir, path, data, false)
 		if err == nil {
@@ -275,6 +278,36 @@ func (e *Engine) prepare(dir string, req ApplyRequest) (created []string, err er
 		}
 	}
 	return created, nil
+}
+
+// dataFolders makes every data/<instance>/<volume> folder the project binds, mode 0700 and owned
+// by the platform user, so a module that runs as that user can write its data; Docker would make
+// a missing one as root.
+func (e *Engine) dataFolders(dir string, req ApplyRequest) error {
+	var compose, env []byte
+	for _, f := range req.Files {
+		switch f.Path {
+		case "docker-compose.yml":
+			compose = f.Data
+		case ".env":
+			env = f.Data
+		}
+	}
+	project, err := render.LoadProject(e.ctx, compose, env, e.deployEnv())
+	if err != nil {
+		return err
+	}
+	for _, folder := range render.DataFolders(project) {
+		parent := dir
+		for part := range strings.SplitSeq(folder, "/") {
+			next := filepath.Join(parent, part)
+			if err := e.ensureDir(parent, next, 0o700); err != nil {
+				return err
+			}
+			parent = next
+		}
+	}
+	return nil
 }
 
 // snapshot reads the current content of every file prepare will write; nil marks a file that

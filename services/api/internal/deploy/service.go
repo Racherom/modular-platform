@@ -96,7 +96,7 @@ func (s *Service) Review(ctx context.Context, name string, g contract.Graph) (Re
 	for _, sec := range project.Secrets {
 		if sec.Kind == contract.Placed {
 			r.Placed = append(r.Placed, PlacedCredential{
-				Path: sec.Path, Instance: sec.Instance, Capability: sec.Capability, Field: string(sec.Field),
+				Path: sec.Path, Instance: sec.Instance, Capability: sec.Capability, Field: sec.Field,
 				Exists: slices.Contains(present, sec.Path),
 			})
 		}
@@ -200,7 +200,7 @@ func applyRequest(deployment uuid.UUID, rendered contract.RenderedProject) deplo
 	for _, sec := range rendered.Secrets {
 		req.Secrets = append(req.Secrets, deploytarget.ProjectSecret{
 			Path: sec.Path, Kind: deploytarget.ProjectSecretKind(sec.Kind), Instance: sec.Instance,
-			Capability: sec.Capability, Field: deploytarget.ProjectSecretField(sec.Field),
+			Capability: sec.Capability, Field: sec.Field,
 		})
 	}
 	return req

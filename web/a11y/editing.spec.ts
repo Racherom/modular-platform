@@ -5,7 +5,7 @@ import { mockPlanner } from './mock-planner'
 const edges = '.react-flow__edge'
 
 /** whoami bound to a, with b as a second postgres. */
-const TWO = `apiVersion: modular-platform/v0alpha1
+const TWO = `apiVersion: modular-platform/v1
 kind: Graph
 name: two
 modules:
@@ -20,7 +20,7 @@ modules:
 `
 
 /** test-app needs postgresql (required) and it is not bound. */
-const REQUIRED = `apiVersion: modular-platform/v0alpha1
+const REQUIRED = `apiVersion: modular-platform/v1
 kind: Graph
 name: required
 modules:
@@ -149,7 +149,18 @@ test('Let the planner choose removes the key; the planner fills it and the note 
       json: {
         ok: true,
         graph,
-        bindings: [{ consumer: 'whoami', capability: 'postgresql', provider: graph.modules.whoami.uses.postgresql ?? 'a', auto }],
+        bindings: [
+          {
+            consumer: 'whoami',
+            slot: 'postgresql',
+            capability: 'postgresql',
+            provider: graph.modules.whoami.uses.postgresql ?? 'a',
+            provide: 'postgresql',
+            auto,
+            named: false,
+            provisioned: false,
+          },
+        ],
         problems: [],
       },
     })

@@ -5,15 +5,28 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/racherom/modular-platform/sdk/manifest"
 )
 
-const header = `apiVersion: modular-platform/v0alpha1
+const header = `apiVersion: modular-platform/v1
 kind: Module
 name: svc
 description: A service.
 image: example.test/svc:1.0.0
 runtime: sdk
 `
+
+// testCaps reads the sdk test module's capabilities: greet and echo (url, token, ca),
+// postgresql and s3.
+func testCaps(t *testing.T) map[string]manifest.Capability {
+	t.Helper()
+	caps, err := readCapabilities("../../internal/testmodule/capabilities")
+	if err != nil || len(caps) != 4 {
+		t.Fatalf("capabilities: %v %v", caps, err)
+	}
+	return caps
+}
 
 // TestTestModuleUpToDate keeps the checked in getters of the sdk's test modules equal to what
 // sdkgen writes from their entries.
@@ -28,7 +41,7 @@ func TestTestModuleUpToDate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, problems := Generate(pkg+".yaml", pkg, entry)
+		got, problems := Generate(pkg+".yaml", pkg, entry, testCaps(t))
 		if len(problems) > 0 {
 			t.Fatal(problems)
 		}
@@ -42,7 +55,7 @@ func TestTestModuleUpToDate(t *testing.T) {
 // getter, so the source imports no context and compiles.
 func TestGenerateNothing(t *testing.T) {
 	t.Parallel()
-	src, problems := Generate("catalog/svc.yaml", "config", []byte(header))
+	src, problems := Generate("catalog/svc.yaml", "config", []byte(header), testCaps(t))
 	if len(problems) > 0 {
 		t.Fatal(problems)
 	}
@@ -59,7 +72,7 @@ func TestGenerate(t *testing.T) {
     type: duration
     default: 5s
     description: How long to wait.
-`))
+`), testCaps(t))
 	if len(problems) > 0 {
 		t.Fatal(problems)
 	}
@@ -84,14 +97,16 @@ func TestGenerateUses(t *testing.T) {
 	t.Parallel()
 	src, problems := Generate("catalog/svc.yaml", "config", []byte(header+`uses:
   object-store:
+    capability: echo
     client: http
     env:
       url: STORE_URL
-      token_file: STORE_TOKEN_FILE
+      token: STORE_TOKEN_FILE
   cache:
+    capability: postgresql
     env:
       host: CACHE_HOST
-`))
+`), testCaps(t))
 	if len(problems) > 0 {
 		t.Fatal(problems)
 	}
@@ -116,20 +131,22 @@ func TestGenerateDataClients(t *testing.T) {
 	t.Parallel()
 	src, problems := Generate("catalog/svc.yaml", "config", []byte(header+`uses:
   postgresql:
+    capability: postgresql
     client: postgresql
     env:
       url: DB_URL
       database: DB_NAME
       user: DB_USER
-      password_file: DB_PASSWORD_FILE
+      password: DB_PASSWORD_FILE
   storage:
+    capability: s3
     client: s3
     env:
       url: S3_URL
       bucket: S3_BUCKET
       access_key_id: S3_ACCESS_KEY_ID
-      secret_access_key_file: S3_SECRET_KEY_FILE
-`))
+      secret_access_key: S3_SECRET_KEY_FILE
+`), testCaps(t))
 	if len(problems) > 0 {
 		t.Fatal(problems)
 	}
@@ -183,7 +200,7 @@ func TestGenerateRefuses(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			src, problems := Generate("../../catalog/svc.yaml", "config", []byte(header+tc.body))
+			src, problems := Generate("../../catalog/svc.yaml", "config", []byte(header+tc.body), testCaps(t))
 			if src != nil {
 				t.Error("source written for a refused entry")
 			}

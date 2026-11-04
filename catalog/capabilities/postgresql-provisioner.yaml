@@ -1,0 +1,92 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: postgresql-provisioner
+description: Admin access to a PostgreSQL server that creates a database and login per consumer.
+scheme: postgres
+fields:
+  host: {type: string, description: Host name of the server.}
+  port: {type: int, description: TCP port of the server.}
+  url: {type: url, description: "postgres://host:port, without credentials."}
+  admin_user: {type: string, description: Superuser login.}
+  admin_password: {type: secret, description: Superuser password.}
+  sslmode: {type: enum, values: [disable, verify-full], description: TLS mode to connect with.}
+  ca: {type: certificate, optional: true, description: Root CA that signs the server certificate.}
+yields:
+  capability: postgresql
+  named: [database, user]
+  login: user
+  fields:
+    host: {admin: host}
+    port: {admin: port}
+    url: {admin: url}
+    database: named
+    user: named
+    password: generate
+    sslmode: {admin: sslmode}
+    ca: {admin: ca}
+  job:
+    image: postgres:18.6
+    # Spec 0014, "postgresql-provisioner scripts". Every name reaches SQL through psql variables
+    # (:'v' literal, :"v" or format('%I') identifier) and \gexec, never through shell strings;
+    # the binding password is read inside psql, so it is never on a command line. An advisory
+    # lock runs the provision jobs of one server one after the other.
+    provision: |
+      PGPASSWORD=$(cat "$MP_ADMIN_ADMIN_PASSWORD_FILE")
+      export PGPASSWORD PGHOST="$MP_ADMIN_HOST" PGPORT="$MP_ADMIN_PORT" PGUSER="$MP_ADMIN_ADMIN_USER"
+      export PGDATABASE=postgres PGSSLMODE="$MP_ADMIN_SSLMODE" PGCONNECT_TIMEOUT=10 PGAPPNAME=mp-provision
+      if [ -n "${MP_ADMIN_CA_FILE:-}" ]; then export PGSSLROOTCERT="$MP_ADMIN_CA_FILE"; fi
+      echo "provision: database $MP_DATABASE and login $MP_USER for $MP_CONSUMER (slot $MP_SLOT)"
+      psql -X -q -v ON_ERROR_STOP=1 -v marker="$MP_MARKER" -v login="$MP_USER" -v db="$MP_DATABASE" <<'SQL'
+      \set pw `cat "$MP_PASSWORD_FILE"`
+      SELECT pg_advisory_lock(hashtext('modular-platform provisioner')) \g /dev/null
+      SELECT format('CREATE ROLE %I NOLOGIN', :'marker')
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'marker') \gexec
+      SELECT CASE
+          WHEN r.oid IS NULL THEN 'create'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = r.oid AND g.rolname = :'marker') THEN 'update'
+          ELSE 'foreign' END AS role_state
+        FROM (SELECT CAST(:'login' AS name) AS n) x LEFT JOIN pg_roles r ON r.rolname = x.n \gset
+      SELECT format('CREATE ROLE %I LOGIN PASSWORD %L IN ROLE %I', :'login', :'pw', :'marker')
+        WHERE :'role_state' = 'create' \gexec
+      SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', :'login', :'pw')
+        WHERE :'role_state' = 'update' \gexec
+      SELECT format('DO $mp$ BEGIN RAISE EXCEPTION %L; END $mp$',
+                    format('role %s exists and was not made by the platform', :'login'))
+        WHERE :'role_state' = 'foreign' \gexec
+      SELECT CASE
+          WHEN d.oid IS NULL THEN 'create'
+          WHEN o.rolname = :'login' THEN 'keep'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = d.datdba AND g.rolname = :'marker') THEN 'reown'
+          ELSE 'foreign' END AS db_state
+        FROM (SELECT CAST(:'db' AS name) AS n) x
+        LEFT JOIN pg_database d ON d.datname = x.n LEFT JOIN pg_roles o ON o.oid = d.datdba \gset
+      SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'login') WHERE :'db_state' = 'create' \gexec
+      SELECT format('ALTER DATABASE %I OWNER TO %I', :'db', :'login') WHERE :'db_state' = 'reown' \gexec
+      SELECT format('DO $mp$ BEGIN RAISE EXCEPTION %L; END $mp$',
+                    format('database %s exists and its owner was not made by the platform', :'db'))
+        WHERE :'db_state' = 'foreign' \gexec
+      SELECT format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', :'db') \gexec
+      SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'db', :'login') \gexec
+      REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+      REVOKE CONNECT ON DATABASE template1 FROM PUBLIC;
+      SELECT pg_reload_conf() \g /dev/null
+      SQL
+    revoke: |
+      PGPASSWORD=$(cat "$MP_ADMIN_ADMIN_PASSWORD_FILE")
+      export PGPASSWORD PGHOST="$MP_ADMIN_HOST" PGPORT="$MP_ADMIN_PORT" PGUSER="$MP_ADMIN_ADMIN_USER"
+      export PGDATABASE=postgres PGSSLMODE="$MP_ADMIN_SSLMODE" PGCONNECT_TIMEOUT=10 PGAPPNAME=mp-revoke
+      if [ -n "${MP_ADMIN_CA_FILE:-}" ]; then export PGSSLROOTCERT="$MP_ADMIN_CA_FILE"; fi
+      echo "revoke: logins made by the platform that no binding keeps lose sign in"
+      psql -X -q -v ON_ERROR_STOP=1 -v marker="$MP_MARKER" -v keep="$MP_KEEP" <<'SQL'
+      SELECT pg_advisory_lock(hashtext('modular-platform provisioner')) \g /dev/null
+      SELECT format('ALTER ROLE %I NOLOGIN', r.rolname)
+        FROM pg_roles r JOIN pg_auth_members m ON m.member = r.oid JOIN pg_roles g ON g.oid = m.roleid
+        WHERE g.rolname = :'marker' AND r.rolcanlogin
+          AND NOT r.rolname = ANY (string_to_array(:'keep', ',')) \gexec
+      SELECT pg_terminate_backend(a.pid)
+        FROM pg_stat_activity a JOIN pg_roles r ON r.oid = a.usesysid
+        JOIN pg_auth_members m ON m.member = r.oid JOIN pg_roles g ON g.oid = m.roleid
+        WHERE g.rolname = :'marker' AND NOT r.rolcanlogin \g /dev/null
+      SQL

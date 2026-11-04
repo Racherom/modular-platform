@@ -63,7 +63,7 @@ test('only the reply for the latest edit is used (AC-12)', async ({ page }) => {
   let call = 0
   // the open answers at once, the first edit's reply is held back past the second one's
   const { plans } = await mockPlanner(page, () => (++call === 2 ? { delayMs: 1500 } : 'echo'))
-  const two = `apiVersion: modular-platform/v0alpha1
+  const two = `apiVersion: modular-platform/v1
 kind: Graph
 name: two
 modules:

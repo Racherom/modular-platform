@@ -1,0 +1,11 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: db
+description: Test module db.
+image: example.test/db:1.0.0
+provides:
+  db:
+    capability: db
+    version: "1.0"
+    port: 5432
+    fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}}

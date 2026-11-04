@@ -1,0 +1,15 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: pg14
+description: Test PostgreSQL 14 server that hands out one fixed database directly.
+image: example.test/pg14:1.0.0
+provides:
+  db:
+    capability: postgresql
+    version: "14.2"
+    port: 5432
+    fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}, database: {value: legacy}, user: {value: legacy}, password: {secret: password}, sslmode: {value: disable}}
+secrets:
+  - name: password
+    env: PASSWORD_FILE
+    description: The fixed login's password.

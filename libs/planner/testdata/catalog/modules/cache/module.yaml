@@ -1,0 +1,11 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: cache
+description: Test module cache.
+image: example.test/cache:1.0.0
+provides:
+  cache:
+    capability: cache
+    version: "1.0"
+    port: 6379
+    fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}}

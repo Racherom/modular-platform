@@ -1,0 +1,14 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: postgresql
+description: One PostgreSQL database and a login for one consumer.
+scheme: postgres
+fields:
+  host: {type: string, description: Host name of the server.}
+  port: {type: int, description: TCP port of the server.}
+  url: {type: url, description: "postgres://host:port, without credentials."}
+  database: {type: string, pattern: "[a-z_][a-z0-9_]{0,62}", description: Database name.}
+  user: {type: string, pattern: "[a-z_][a-z0-9_]{0,62}", description: Login name.}
+  password: {type: secret, description: Password of the login.}
+  sslmode: {type: enum, values: [disable, verify-full], description: TLS mode to connect with.}
+  ca: {type: certificate, optional: true, description: Root CA that signs the server certificate.}

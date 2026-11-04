@@ -1,0 +1,8 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: tls-certificate
+description: One server certificate for the consumer's host name.
+fields:
+  cert: {type: certificate, description: The server certificate chain.}
+  key: {type: secret, description: The certificate's private key.}
+  ca: {type: certificate, description: Root CA that signs the certificate.}

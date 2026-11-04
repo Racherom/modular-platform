@@ -19,7 +19,7 @@ const testDeployment = "01960000-0000-7000-8000-000000000001"
 func TestRenderManagedGolden(t *testing.T) {
 	for _, c := range []struct {
 		dir  string
-		plan func(*testing.T) (contract.PlanResult, []contract.CatalogEntry)
+		plan func(*testing.T) (contract.PlanResult, contract.Catalog)
 	}{
 		{filepath.Join("testdata", "whoami-postgres-managed"), samplePlan},
 		{filepath.Join(pairDir, "golden-managed"), pairPlan},
@@ -83,14 +83,50 @@ func TestRenderManagedRules(t *testing.T) {
 	for _, s := range m.Secrets {
 		kinds[s.Path] = s.Kind
 	}
-	if kinds["secrets/consumer/uses_greet"] != render.SecretGenerated {
-		t.Errorf("binding token: %v, want generated", kinds["secrets/consumer/uses_greet"])
+	if kinds["secrets/consumer/uses_greet_token"] != render.SecretGenerated {
+		t.Errorf("binding token: %v, want generated", kinds["secrets/consumer/uses_greet_token"])
+	}
+}
+
+// TestRenderManagedJobLabels checks that a provision job carries its provisioner's instance and
+// module and the job label, and keeps restart "no" (spec 0013, "Labels").
+func TestRenderManagedJobLabels(t *testing.T) {
+	t.Parallel()
+	plan, catalog := samplePlan(t)
+	m, err := render.Managed(plan, catalog, testDeployment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var compose string
+	for _, f := range m.Files {
+		if f.Path == "docker-compose.yml" {
+			compose = string(f.Data)
+		}
+	}
+	job := from(t, compose, "  postgres_provision_whoami_postgresql:\n")
+	job, _, _ = strings.Cut(job, "\n  whoami:\n")
+	for _, want := range []string{
+		"      io.github.racherom.modular-platform.instance: postgres\n",
+		"      io.github.racherom.modular-platform.module: postgres\n",
+		"      io.github.racherom.modular-platform.job: provision\n",
+		"    restart: \"no\"\n",
+	} {
+		if !strings.Contains(job, want) {
+			t.Errorf("job lacks %q:\n%s", want, job)
+		}
+	}
+	kinds := map[string]render.SecretKind{}
+	for _, s := range m.Secrets {
+		kinds[s.Path] = s.Kind
+	}
+	if kinds["secrets/whoami/uses_postgresql_password"] != render.SecretGenerated {
+		t.Errorf("binding password: %v, want generated", kinds["secrets/whoami/uses_postgresql_password"])
 	}
 }
 
 func TestRenderManagedRefusesBadPlan(t *testing.T) {
 	t.Parallel()
-	if _, err := render.Managed(contract.PlanResult{}, nil, testDeployment); err != render.ErrPlanHasErrors { //nolint:errorlint // the sentinel is returned as is
+	if _, err := render.Managed(contract.PlanResult{}, contract.Catalog{}, testDeployment); err != render.ErrPlanHasErrors { //nolint:errorlint // the sentinel is returned as is
 		t.Fatalf("err = %v, want ErrPlanHasErrors", err)
 	}
 }

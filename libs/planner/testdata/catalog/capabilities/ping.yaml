@@ -1,0 +1,9 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: ping
+description: A test ping service.
+scheme: ping
+fields:
+  host: {type: string, description: Host name.}
+  port: {type: int, description: TCP port.}
+  url: {type: url, description: Base URL.}

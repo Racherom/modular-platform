@@ -1,0 +1,27 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: pg-pair
+description: Signs in to two provisioned databases through two slots of one capability, for the provision end to end test.
+image: postgres:18.6
+entrypoint: ["sh", "-c"]
+command: ["exec sleep infinity"]
+uses:
+  main-db:
+    capability: postgresql
+    env:
+      host: MAIN_HOST
+      database: MAIN_NAME
+      user: MAIN_USER
+      password: MAIN_PASSWORD_FILE
+  audit-db:
+    capability: postgresql
+    env:
+      host: AUDIT_HOST
+      database: AUDIT_NAME
+      user: AUDIT_USER
+      password: AUDIT_PASSWORD_FILE
+healthcheck:
+  test: ["CMD-SHELL", "PGPASSWORD=$(cat \"$MAIN_PASSWORD_FILE\") psql -h \"$MAIN_HOST\" -U \"$MAIN_USER\" -d \"$MAIN_NAME\" -tAc 'select 1' && PGPASSWORD=$(cat \"$AUDIT_PASSWORD_FILE\") psql -h \"$AUDIT_HOST\" -U \"$AUDIT_USER\" -d \"$AUDIT_NAME\" -tAc 'select 1'"]
+  interval: 2s
+  timeout: 5s
+  retries: 30

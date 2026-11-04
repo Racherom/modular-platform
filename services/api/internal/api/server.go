@@ -164,7 +164,7 @@ func (s *Server) ReviewDeployment(ctx context.Context, req ReviewDeploymentReque
 	}
 	for _, p := range r.Placed {
 		out.Placed = append(out.Placed, PlacedCredential{
-			Path: p.Path, Instance: p.Instance, Capability: p.Capability, Field: PlacedCredentialField(p.Field), Exists: p.Exists,
+			Path: p.Path, Instance: p.Instance, Capability: p.Capability, Field: p.Field, Exists: p.Exists,
 		})
 	}
 	return ReviewDeployment200JSONResponse(out), nil

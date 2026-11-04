@@ -1,0 +1,23 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: tls-certificate-provisioner
+description: A certificate authority that issues a server certificate per consumer.
+scheme: https
+fields:
+  url: {type: url, description: URL of the certificate authority.}
+  provisioner: {type: string, description: Name of the authority's provisioner for jobs.}
+  password: {type: secret, description: Password of that provisioner.}
+  ca: {type: certificate, description: Root CA of the authority.}
+yields:
+  capability: tls-certificate
+  fields:
+    cert: output
+    key: output
+    ca: {admin: ca}
+  job:
+    image: smallstep/step-cli:0.30.2
+    # spec 0014, "Certificate provisioner"; the real script lands with build task 21
+    provision: |
+      if [ -s /out/cert ] && ! step certificate needs-renewal /out/cert --expires-in 720h; then exit 0; fi
+      echo "paper platform: issuing is build task 21" >&2
+      exit 1

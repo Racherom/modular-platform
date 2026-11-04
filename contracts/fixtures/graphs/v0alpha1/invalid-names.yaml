@@ -1,0 +1,12 @@
+apiVersion: modular-platform/v0alpha1
+kind: Graph
+modules:
+  Web:
+    module: db
+  app:
+    module: app
+    uses:
+      db: Web
+  "yes":
+    module: cache
+name: invalid-names

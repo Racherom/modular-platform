@@ -1,14 +1,24 @@
 name: whoami-postgres
+networks:
+  internal:
+    internal: true
 secrets:
+  postgres_admin_server_admin_password:
+    file: ./secrets/postgres/password
   postgres_password:
     file: ./secrets/postgres/password
+  whoami_uses_postgresql_password:
+    file: ./secrets/whoami/uses_postgresql_password
 services:
   postgres:
+    cap_drop:
+    - ALL
     environment:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     healthcheck:
       interval: 5s
       retries: 10
+      start_period: 30s
       test:
       - CMD
       - pg_isready
@@ -18,14 +28,125 @@ services:
       - postgres
       timeout: 3s
     image: postgres:18.6
+    networks:
+      internal:
+        aliases:
+        - postgres.whoami-postgres.internal
+    read_only: true
     secrets:
     - source: postgres_password
-  whoami:
+      target: /run/secrets/postgres_password
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /var/run/postgresql
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - source: ./data/postgres/data
+      target: /var/lib/postgresql
+      type: bind
+  postgres_provision_whoami_postgresql:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      PGPASSWORD=$$(cat "$$MP_ADMIN_ADMIN_PASSWORD_FILE")
+      export PGPASSWORD PGHOST="$$MP_ADMIN_HOST" PGPORT="$$MP_ADMIN_PORT" PGUSER="$$MP_ADMIN_ADMIN_USER"
+      export PGDATABASE=postgres PGSSLMODE="$$MP_ADMIN_SSLMODE" PGCONNECT_TIMEOUT=10 PGAPPNAME=mp-provision
+      if [ -n "$${MP_ADMIN_CA_FILE:-}" ]; then export PGSSLROOTCERT="$$MP_ADMIN_CA_FILE"; fi
+      echo "provision: database $$MP_DATABASE and login $$MP_USER for $$MP_CONSUMER (slot $$MP_SLOT)"
+      psql -X -q -v ON_ERROR_STOP=1 -v marker="$$MP_MARKER" -v login="$$MP_USER" -v db="$$MP_DATABASE" <<'SQL'
+      \set pw `cat "$$MP_PASSWORD_FILE"`
+      SELECT pg_advisory_lock(hashtext('modular-platform provisioner')) \g /dev/null
+      SELECT format('CREATE ROLE %I NOLOGIN', :'marker')
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'marker') \gexec
+      SELECT CASE
+          WHEN r.oid IS NULL THEN 'create'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = r.oid AND g.rolname = :'marker') THEN 'update'
+          ELSE 'foreign' END AS role_state
+        FROM (SELECT CAST(:'login' AS name) AS n) x LEFT JOIN pg_roles r ON r.rolname = x.n \gset
+      SELECT format('CREATE ROLE %I LOGIN PASSWORD %L IN ROLE %I', :'login', :'pw', :'marker')
+        WHERE :'role_state' = 'create' \gexec
+      SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', :'login', :'pw')
+        WHERE :'role_state' = 'update' \gexec
+      SELECT format('DO $$mp$$ BEGIN RAISE EXCEPTION %L; END $$mp$$',
+                    format('role %s exists and was not made by the platform', :'login'))
+        WHERE :'role_state' = 'foreign' \gexec
+      SELECT CASE
+          WHEN d.oid IS NULL THEN 'create'
+          WHEN o.rolname = :'login' THEN 'keep'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = d.datdba AND g.rolname = :'marker') THEN 'reown'
+          ELSE 'foreign' END AS db_state
+        FROM (SELECT CAST(:'db' AS name) AS n) x
+        LEFT JOIN pg_database d ON d.datname = x.n LEFT JOIN pg_roles o ON o.oid = d.datdba \gset
+      SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'login') WHERE :'db_state' = 'create' \gexec
+      SELECT format('ALTER DATABASE %I OWNER TO %I', :'db', :'login') WHERE :'db_state' = 'reown' \gexec
+      SELECT format('DO $$mp$$ BEGIN RAISE EXCEPTION %L; END $$mp$$',
+                    format('database %s exists and its owner was not made by the platform', :'db'))
+        WHERE :'db_state' = 'foreign' \gexec
+      SELECT format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', :'db') \gexec
+      SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'db', :'login') \gexec
+      REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+      REVOKE CONNECT ON DATABASE template1 FROM PUBLIC;
+      SELECT pg_reload_conf() \g /dev/null
+      SQL
     depends_on:
       postgres:
         condition: service_healthy
         required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
     environment:
-      DEMO_POSTGRESQL_HOST: postgres
+      MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
+      MP_ADMIN_ADMIN_USER: postgres
+      MP_ADMIN_HOST: postgres.whoami-postgres.internal
+      MP_ADMIN_PORT: "5432"
+      MP_ADMIN_SSLMODE: disable
+      MP_ADMIN_URL: postgres://postgres.whoami-postgres.internal:5432
+      MP_CONSUMER: whoami
+      MP_CONSUMER_HOST: whoami.whoami-postgres.internal
+      MP_DATABASE: whoami_postgresql
+      MP_MARKER: mp_provisioned_66cfa81b
+      MP_PASSWORD_FILE: /run/secrets/bind/password
+      MP_SLOT: postgresql
+      MP_USER: whoami_postgresql
+    image: postgres:18.6
+    networks:
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: postgres_admin_server_admin_password
+      target: /run/secrets/admin/admin_password
+    - source: whoami_uses_postgresql_password
+      target: /run/secrets/bind/password
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  whoami:
+    cap_drop:
+    - ALL
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+      postgres_provision_whoami_postgresql:
+        condition: service_completed_successfully
+        required: true
+    environment:
+      DEMO_POSTGRESQL_HOST: postgres.whoami-postgres.internal
       DEMO_POSTGRESQL_PORT: "5432"
     image: traefik/whoami:v1.12.0
+    networks:
+      internal:
+        aliases:
+        - whoami.whoami-postgres.internal
+    read_only: true
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}

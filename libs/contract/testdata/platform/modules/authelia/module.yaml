@@ -1,0 +1,84 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: authelia
+description: The platform's identity provider, Authelia; owns the users and one OIDC client per binding.
+image: authelia/authelia:4.39.28
+provides:
+  oidc:
+    capability: oidc
+    version: "1.0"
+    port: 9091
+    fields:
+      issuer: {uses: public, format: "{origin}{base_path}/auth"}
+      client_id: {platform: consumer}
+      client_secret: {generate: true}
+      admin_email: {config: admin-email}
+      ca: {uses: public, field: ca}
+  site:
+    capability: http
+    version: "1.0"
+    port: 9091
+    fields:
+      host: {platform: host}
+      port: {platform: port}
+      url: {platform: url}
+uses:
+  public:
+    capability: http-ingress
+    fields:
+      route: {value: /auth}
+      upstream: {platform: url, provide: site}
+  db:
+    capability: postgresql
+    env:
+      host: X_DB_HOST
+      port: X_DB_PORT
+      database: X_DB_NAME
+      user: X_DB_USER
+      password: X_DB_PASSWORD_FILE
+    files:
+      ca: /run/secrets/db/ca.crt
+environment:
+  X_AUTHELIA_CONFIG_FILTERS: template
+  ORIGIN: "{public.origin}"
+  BASE_PATH: "{public.base_path}"
+  DOMAIN: "{public.domain}"
+config:
+  admin-email:
+    env: X_ADMIN_EMAIL
+    type: string
+    pattern: "[^@\\s]+@[^@\\s]+"
+    setup: ask
+    description: Email of the admin, who owns the users.
+secrets:
+  - {name: session-secret, mount: /run/secrets/session-secret, description: Session cookie key.}
+  - {name: storage-key, mount: /run/secrets/storage-key, description: Storage encryption key.}
+  - {name: jwt-secret, mount: /run/secrets/jwt-secret, description: Reset password JWT key.}
+  - {name: oidc-hmac, mount: /run/secrets/oidc-hmac, description: OIDC HMAC key.}
+  - {name: users, from: setup, mount: /config/users.yml, description: The users file with the admin.}
+  - {name: signing-key, from: setup, mount: /run/secrets/oidc-signing-key, description: OIDC token signing key.}
+  - {name: client-digests/, from: setup, mount: /run/secrets/client-digests, description: One client secret digest per OIDC client.}
+setup:
+  - name: users
+    entrypoint: [sh, -c]
+    command: ["IFS= read -r user; IFS= read -r pass; authelia crypto hash generate argon2 --password \"$pass\" ... > /out/users"]
+    asks:
+      - {name: admin-user, description: User name of the admin.}
+      - {name: admin-password, description: Password of the admin., secret: true}
+    writes: [{name: users}]
+  - name: signing-key
+    command: [crypto, pair, rsa, generate, --directory, /out]
+    writes: [{name: signing-key}]
+  - name: client-digest
+    entrypoint: [sh, -c]
+    command: ["authelia crypto hash generate pbkdf2 --password \"$(cat /in/oidc/client_secret)\" ... > /out/client-digests/$MP_CLIENT"]
+    for_each: oidc
+    reads: [{provide: oidc, field: client_secret}]
+    writes: [{name: client-digests/}]
+templates:
+  - file: configuration.yml.tmpl
+    path: /config/configuration.yml
+    delims: ["[[", "]]"]
+hardening:
+  writable_root: true
+  tmpfs: [/tmp]

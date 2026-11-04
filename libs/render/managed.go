@@ -15,9 +15,10 @@ const LabelPrefix = "io.github.racherom.modular-platform."
 // The platform labels on every service of a managed project.
 const (
 	LabelGraph      = LabelPrefix + "graph"      // the graph name
-	LabelInstance   = LabelPrefix + "instance"   // the instance name
-	LabelModule     = LabelPrefix + "module"     // the catalog module name
+	LabelInstance   = LabelPrefix + "instance"   // the instance name; a job's provisioner instance
+	LabelModule     = LabelPrefix + "module"     // the catalog module name; a job's provisioner module
 	LabelDeployment = LabelPrefix + "deployment" // the deployment id; "platform" on the platform's own services
+	LabelJob        = LabelPrefix + "job"        // provision or revoke, on a one shot job only (spec 0013)
 )
 
 // ProjectPrefix starts every managed project name, so a deployment can never be or clash with
@@ -42,7 +43,7 @@ type Secret struct {
 	Kind       SecretKind
 	Instance   string
 	Capability string
-	Field      string // password or secret_key
+	Field      string // the capability field the placed file holds
 }
 
 // Image is the image one instance runs.
@@ -58,27 +59,24 @@ type ManagedProject struct {
 	Secrets []Secret // sorted by path
 }
 
-// Managed renders an ok plan for the managed deployer (spec 0006): the static output plus
-// the platform labels and restart: unless-stopped on every service, and the project named
-// mp-<graph>. Host names stay <instance>.<graph>.internal. deployment is the deployment id
-// written into the deployment label.
-func Managed(plan contract.PlanResult, catalog []contract.CatalogEntry, deployment string) (ManagedProject, error) {
-	modules := map[string]string{}
-	for i, m := range plan.Graph.Modules {
-		modules[i] = m.Module
-	}
-	graph := plan.Graph.Name
-	r, err := render(plan, catalog, func(p *types.Project) {
+// Managed renders an ok plan for the managed deployer (spec 0006, grown by 0013): the static
+// output plus the platform labels on every service (and the job label on each one shot job),
+// restart: unless-stopped on every long running service, and the project named mp-<graph>.
+// Host names stay <instance>.<graph>.internal. deployment is the deployment id written into the
+// deployment label.
+func Managed(plan contract.PlanResult, catalog contract.Catalog, deployment string) (ManagedProject, error) {
+	r, err := renderProject(plan, catalog, true, func(p *types.Project, jobs map[string]job) {
+		graph := p.Name
 		p.Name = ProjectPrefix + graph
-		for i, svc := range p.Services {
-			svc.Labels = types.Labels{
-				LabelGraph:      graph,
-				LabelInstance:   i,
-				LabelModule:     modules[i],
-				LabelDeployment: deployment,
+		for name, svc := range p.Services {
+			labels := types.Labels{LabelGraph: graph, LabelDeployment: deployment}
+			if j, ok := jobs[name]; ok {
+				labels[LabelInstance], labels[LabelModule], labels[LabelJob] = j.instance, j.module, j.kind
+			} else {
+				labels[LabelInstance], labels[LabelModule] = name, plan.Graph.Modules[name].Module
 			}
-			svc.Restart = types.RestartPolicyUnlessStopped
-			p.Services[i] = svc
+			svc.Labels = labels
+			p.Services[name] = svc
 		}
 	})
 	if err != nil {
@@ -86,11 +84,13 @@ func Managed(plan contract.PlanResult, catalog []contract.CatalogEntry, deployme
 	}
 	m := ManagedProject{Output: r.out}
 	images := map[string]string{}
-	for _, e := range catalog {
+	for _, e := range catalog.Modules {
 		images[e.Name] = e.Image
 	}
-	for _, i := range sortedKeys(modules) {
-		m.Images = append(m.Images, Image{Instance: i, Module: modules[i], Image: images[modules[i]]})
+	for _, i := range sortedKeys(plan.Graph.Modules) {
+		if gm := plan.Graph.Modules[i]; gm.External == nil {
+			m.Images = append(m.Images, Image{Instance: i, Module: gm.Module, Image: images[gm.Module]})
+		}
 	}
 	for _, s := range r.data.Secrets {
 		m.Secrets = append(m.Secrets, Secret{Path: s.Path, Kind: SecretGenerated, Instance: s.Instance})
@@ -98,8 +98,6 @@ func Managed(plan contract.PlanResult, catalog []contract.CatalogEntry, deployme
 	for _, s := range r.data.Placed {
 		m.Secrets = append(m.Secrets, Secret{Path: s.Path, Kind: SecretPlaced, Instance: s.Instance, Capability: s.Capability, Field: s.Field})
 	}
-	// a token secret appears once per binding; keep the first
-	slices.SortStableFunc(m.Secrets, func(a, b Secret) int { return strings.Compare(a.Path, b.Path) })
-	m.Secrets = slices.CompactFunc(m.Secrets, func(a, b Secret) bool { return a.Path == b.Path })
+	slices.SortFunc(m.Secrets, func(a, b Secret) int { return strings.Compare(a.Path, b.Path) })
 	return m, nil
 }

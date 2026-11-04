@@ -1,4 +1,4 @@
-apiVersion: modular-platform/v0alpha1
+apiVersion: modular-platform/v1
 kind: Graph
 modules:
   consumer:

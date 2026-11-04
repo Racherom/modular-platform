@@ -105,21 +105,23 @@ test('unbind and bind again on a sample copy, each checked by the planner (spec 
   await expect(page.locator('.react-flow__edge')).toHaveCount(0)
   await expect(page.getByText('Checking the graph…')).toHaveCount(0)
 
-  // drag the need back to postgres
+  // drag the slot back to postgres, whose provide server makes the database (spec 0014)
   await drag(
     page,
     '.react-flow__handle[data-nodeid="whoami"][data-handleid="uses:postgresql"]',
-    '.react-flow__handle[data-nodeid="postgres"][data-handleid="provides:postgresql"]',
+    '.react-flow__handle[data-nodeid="postgres"][data-handleid="provides:server"]',
   )
   await expect(page.locator('.react-flow__edge[data-id="whoami.postgresql"]')).toHaveCount(1)
   await expect(page.getByText('Checking the graph…')).toHaveCount(0)
   expect(plans.slice(planned)).toEqual([200, 200])
 
-  // the saved file equals the sample, byte for byte (positions never reach the file)
+  // the saved file is the sample as the planner resolved it, byte for byte: the default database
+  // and login names written in (spec 0014, AC-7), as the render's golden graph.yaml pins them;
+  // positions never reach the file
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save as file' }).click()
   const saved = await (await download).path()
-  const expected = readFileSync(new URL('../../samples/whoami-postgres/graph.yaml', import.meta.url), 'utf8')
+  const expected = readFileSync(new URL('../../libs/render/testdata/whoami-postgres/graph.yaml', import.meta.url), 'utf8')
   expect(readFileSync(saved, 'utf8')).toBe(expected)
 })
 

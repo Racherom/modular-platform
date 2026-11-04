@@ -1,0 +1,19 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  billing-db:
+    external:
+      provides:
+        db:
+          capability: postgresql
+          fields:
+            database: billing
+            host: db.example.com
+            port: "5432"
+            sslmode: verify-full
+            url: postgres://db.example.com:5432
+            user: billing
+          version: "16.4"
+  modern:
+    module: modern
+name: external

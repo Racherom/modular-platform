@@ -3,10 +3,13 @@
 # setup.sh, start it, sign in as the admin, deploy the sample from the editor and see every module
 # running; restart Docker and see it running again without an apply (AC-12); remove it with
 # Delete data too; then check that no secret value reached a log. Needs the four platform images
-# tagged ci (IMAGE_TAG=ci task images) and Chromium for Playwright. SMOKE_LOGS, when set, keeps
+# tagged ci (task images IMAGE_TAG=ci, as a Task variable: an env var loses to the Taskfile's default) and Chromium for Playwright. SMOKE_LOGS, when set, keeps
 # the logs. SMOKE_DOCKER_RESTART=1 restarts the Docker daemon with sudo systemctl (CI sets it);
 # without it the restart is skipped, so a local run never restarts your Docker.
 set -eu
+# Nothing in this job may wait for an answer: a question on the terminal (like Compose asking to
+# recreate a volume) would hang the run forever. setup.sh still gets its answers through a pipe.
+exec </dev/null
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
@@ -31,6 +34,19 @@ cleanup() {
 	exit "$status"
 }
 trap cleanup EXIT
+# a killed run cleans up too, so it leaves no project behind for the next run to trip over
+trap 'exit 130' INT TERM HUP
+
+# A run killed earlier, or your own test install, leaves these Compose projects behind, and
+# Compose would then ask whether to recreate their volumes. Stop here instead and leave them alone.
+for project in modular-platform mp-whoami-postgres; do
+	if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=$project")$(docker volume ls -q --filter "label=com.docker.compose.project=$project")" ]; then
+		echo "smoke-managed: the Compose project $project already exists (containers or volumes). Remove it first:" >&2
+		echo "  docker rm -f \$(docker ps -aq --filter label=com.docker.compose.project=$project)" >&2
+		echo "  docker volume rm \$(docker volume ls -q --filter label=com.docker.compose.project=$project)" >&2
+		exit 1
+	fi
+done
 
 echo "== install with setup.sh"
 cp -R "$repo/deploy/managed" "$platform"

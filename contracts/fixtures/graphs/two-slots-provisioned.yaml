@@ -1,0 +1,8 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  postgres:
+    module: postgres
+  reports:
+    module: twodb
+name: two-slots-provisioned

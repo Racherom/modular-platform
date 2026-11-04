@@ -1,0 +1,9 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: http
+description: An HTTP service a consumer reaches by its host name and port.
+scheme: http
+fields:
+  host: {type: string, description: Host name of the service.}
+  port: {type: int, description: TCP port of the service.}
+  url: {type: url, description: "Base URL of the service, like http://host:port."}

@@ -267,7 +267,7 @@ func (p fakePlanner) RenderManaged(_ context.Context, g contract.Graph, _ uuid.U
 	return contract.RenderedProject{
 		Project: "mp-" + g.Name, Plan: contract.PlanResult{Ok: true, Graph: g, Digest: p.digest},
 		Images:  []contract.ModuleImage{{Instance: "web", Module: "whoami", Image: "traefik/whoami:v1.12.0"}},
-		Secrets: []contract.RenderedSecret{{Path: "secrets/app/uses_db_password", Kind: contract.Placed, Instance: "app", Capability: "db", Field: contract.Password}},
+		Secrets: []contract.RenderedSecret{{Path: "secrets/app/uses_db_password", Kind: contract.Placed, Instance: "app", Capability: "postgresql", Field: "password"}},
 		Files:   []contract.RenderedFile{{Path: "docker-compose.yml", Mode: 0o644, Data: []byte("name: x\n")}},
 	}, nil
 }

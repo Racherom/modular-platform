@@ -1,0 +1,9 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: deploy-target
+description: "A deploy target's REST contract (contracts/openapi/deploy-target.yaml): apply a rendered project and report its state."
+fields:
+  url: {type: url, description: Base URL of the service.}
+  token: {type: secret, direction: both, description: Binding token the consumer sends and the provider checks.}
+  ca: {type: certificate, optional: true, description: Root CA that signs the service's certificate.}
+  caller_key: {type: certificate, direction: to_provider, optional: true, description: Public key that signs the consumer's MP-Caller tokens.}

@@ -1,0 +1,10 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  modern:
+    module: modern
+    uses:
+      db: pg.nope
+  pg:
+    module: replicated
+name: unknown-provide

@@ -36,7 +36,7 @@ export async function drag(page: Page, from: Locator, to: Locator, during?: () =
 }
 
 /** whoami with its postgresql need unbound, next to postgres. */
-export const UNBOUND = `apiVersion: modular-platform/v0alpha1
+export const UNBOUND = `apiVersion: modular-platform/v1
 kind: Graph
 name: whoami-postgres
 modules:

@@ -1,0 +1,10 @@
+apiVersion: modular-platform/v0alpha1
+kind: Graph
+modules:
+  app:
+    module: app
+    uses:
+      cache: null
+  db:
+    module: db
+name: required-and-null

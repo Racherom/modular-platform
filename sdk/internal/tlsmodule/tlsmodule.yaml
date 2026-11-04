@@ -1,4 +1,4 @@
-apiVersion: modular-platform/v0alpha1
+apiVersion: modular-platform/v1
 kind: Module
 name: tls-module
 description: Answers GET /hello over TLS, for the sdk's tests against pebble.

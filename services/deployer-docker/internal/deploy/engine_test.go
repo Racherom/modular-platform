@@ -125,6 +125,10 @@ services:
     restart: unless-stopped
     secrets:
     - source: postgres_password
+    volumes:
+    - source: ./data/postgres/data
+      target: /var/lib/postgresql
+      type: bind
 `
 
 func sampleRequest() deploy.ApplyRequest {
@@ -183,6 +187,8 @@ func TestApplySucceeds(t *testing.T) {
 		"secrets/postgres":                     0o700 | fs.ModeDir,
 		"secrets/postgres/password":            0o600,
 		"secrets/app/uses_postgresql_password": 0o600,
+		"data":                                 0o700 | fs.ModeDir,
+		"data/postgres/data":                   0o700 | fs.ModeDir,
 	} {
 		info, err := os.Lstat(filepath.Join(project, path))
 		if err != nil {

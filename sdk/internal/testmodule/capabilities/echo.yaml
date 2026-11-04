@@ -1,0 +1,8 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: echo
+description: A test REST service that checks a token per binding.
+fields:
+  url: {type: url, description: Base URL.}
+  token: {type: secret, direction: both, description: Binding token.}
+  ca: {type: certificate, optional: true, description: Root CA.}

@@ -1,8 +1,0 @@
-apiVersion: modular-platform/v0alpha1
-kind: Module
-name: cache
-description: Test module cache.
-image: example.test/cache:1.0.0
-provides:
-  cache:
-    port: 6379
