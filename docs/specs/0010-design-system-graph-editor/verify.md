@@ -84,3 +84,41 @@ Milestone 2, editing (build plan tasks 2 to 4), added 2026-11-04.
 
 ## Acceptance criteria coverage
 - AC-8: click, Enter, Escape, pane click, dimming, selection after unbind · AC-9: reconnect, reconnect dropped elsewhere · AC-10: Delete, Backspace, Remove binding, never a module, required unbind · AC-11: inspector rows, options, invalid, auto note, keyboard flow · AC-13: port and node marks, error wins, panel navigation · AC-14: 400 without Retry, 429, download reason · AC-3: two more editor states (the connect drag and `/design` axe runs complete in task 10)
+
+Milestone 3, session (build plan tasks 5 to 8), added 2026-11-04.
+
+## UI / manual
+- [ ] Open a graph, bind by dragging, bind again from the inspector, then press Undo twice → each press steps back one edit, each sends one plan call, and the Edited marker stays on → AC-15, AC-17
+- [ ] Press Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y with focus on the canvas (Cmd+Z and Cmd+Shift+Z on macOS) → undo, redo, redo; the Undo and Redo buttons disable when there is nothing left → AC-15
+- [ ] Type in the catalog filter, or focus the inspector "Bound to" select, then press Ctrl+Z → the graph does not change → AC-15
+- [ ] Bind, then undo while the bind's plan call is still slow → the late reply is dropped and the graph stays as before the bind → AC-12, AC-15
+- [ ] Undo once, then make a new edit → Redo is disabled → AC-15
+- [ ] Open a file after some edits → Undo and Redo are disabled and the Edited marker is gone → AC-15, AC-17
+- [ ] Move a node's stored position (IndexedDB `modular-platform` / `working` / `graph`), reload, press Tidy layout → nodes go back to the auto layout, no plan call is sent, Edited shows; Undo moves them back → AC-15, AC-16
+- [ ] Save as file after edits → the file has no positions and the Edited marker clears; reload → the marker stays cleared → AC-16, AC-17
+- [ ] Block IndexedDB (or fill the quota) and open a graph → a quiet note says "Changes are not kept after reload in this browser." → AC-17
+- [ ] Visit `/samples/whoami-postgres` → a hint says the first change makes a copy; Undo, Redo and Tidy layout are disabled → AC-18
+- [ ] On the sample with no edited working graph, select the binding and press Delete → the editor root opens with file name `whoami-postgres.yaml`, Edited on, the binding gone, whoami selected and focused, one plan call; one Undo brings the binding back and disables Undo → AC-8, AC-18
+- [ ] On that copy, drag whoami's postgresql to postgres again and Save as file → the file is byte identical to `samples/whoami-postgres/graph.yaml`; the sample page still shows its binding → AC-16, AC-18
+- [ ] With an edited working graph, reload the sample and press Delete on its binding → the "Replace the edited graph?" dialog opens with Cancel focused and nothing on screen changed; Cancel (or Escape) keeps both graphs and the URL; an inspector choice cancelled the same way reverts the select → AC-18
+- [ ] In that dialog choose Save as file → the working graph downloads under its file name, then the copy is made; choose Replace → the copy is made without a download → AC-18
+- [ ] With an edited working graph press Open file → the dialog opens before any file chooser; Escape returns focus to Open file and no chooser opens; Replace opens the chooser → AC-18
+- [ ] Choose Find providers on a need in the inspector → the catalog filter holds that capability and has focus; below 1024px the stacked catalog panel scrolls into view → AC-19
+- [ ] Type `HTTP` in the filter → only entries whose name, description or capability contains "http" stay, the count says "2 of 4 modules"; type `redis` → "No module matches" with Clear the filter → AC-19
+- [ ] Open a graph with an instance whose module is not in the catalog → its node shows a "not in catalog" badge and no ports, it never lights up as a drop target and never appears as a "Bound to" option → AC-20
+- [ ] Look at the `test-hostile` catalog entry and a graph with an HTML module name → both show as literal text; no image, no alert → AC-20
+
+## Value sourcing
+- [ ] Undo step: from the `history.past` snapshot taken before the edit; after a plan reply fills in an automatic binding, undo of the next edit restores the filled in graph, not the file as typed → AC-15
+- [ ] Node positions: from `WorkingGraph.positions`, else `layout(graph)`; delete one instance's stored position and reload → the whole graph gets the auto layout → AC-16
+- [ ] Edited marker and the replace dialog: from `working.edited`; set it to false in IndexedDB, reload the sample and edit → no dialog → AC-17, AC-18
+- [ ] Sample copy file name: `` `${graph.name}.yaml` ``; change the sample graph's `name` and the copy's file name follows → AC-18
+- [ ] Catalog filter text: from `catalogFilter` in the store; it survives switching between selections and screens in one session → AC-19
+- [ ] Storage note: from `storageFailed`, set when `saveWorking` rejects; a later save that works clears the note → AC-17
+
+## Commands
+- [ ] `pnpm --dir web test` → 151 tests pass, including `history.test.ts` (undo, redo, Tidy, sample copy), `keys.test.ts` (shortcuts) and `catalog-panel.test.tsx` (filter, empty state, Find providers, hostile text) → AC-15 to AC-20
+- [ ] `pnpm --dir web a11y` → 44 checks pass, including `session.spec.ts` (8 flows) and the axe runs in both themes → AC-3, AC-15 to AC-20
+
+## Acceptance criteria coverage
+- AC-15: buttons, shortcuts, form control guard, redo cleared, undo while checking · AC-16: Tidy without plan, positions never saved · AC-17: Edited after undo, cleared by save and open, storage note · AC-18: hint, disabled history, copy and navigate, dialog Cancel, Save as file, Replace, Open file prompt · AC-19: filter fields, empty state, Find providers focus and scroll · AC-20: badge, no ports, never a candidate, plain text

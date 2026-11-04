@@ -18,6 +18,9 @@ class DOMMatrixStub {
 }
 globalThis.DOMMatrixReadOnly ??= DOMMatrixStub as unknown as typeof DOMMatrixReadOnly
 
+// jsdom does no layout, so it has no scrollIntoView
+Element.prototype.scrollIntoView ??= () => undefined
+
 /** Tests answer the editor's fetch calls by setting this. openapi-fetch keeps the fetch it saw at start. */
 export const fetchHandler: { current: (req: Request) => Promise<Response> } = {
   current: () => Promise.reject(new Error('no fetch handler set')),

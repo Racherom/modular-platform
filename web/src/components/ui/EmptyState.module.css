@@ -1,0 +1,32 @@
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.icon {
+  width: 24px;
+  height: 24px;
+  color: var(--color-text-muted);
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-strong);
+}
+
+.body {
+  max-width: 24rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}

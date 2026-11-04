@@ -1,3 +1,11 @@
+import type { Graph } from '../api/client'
+import { stringifyGraph } from '../graph/yaml'
+
+/** Save as file: exactly `stringifyGraph(graph)`, never a position or editor state (AC-16). */
+export function saveGraphFile(graph: Graph, fileName: string): void {
+  download(new Blob([stringifyGraph(graph)], { type: 'application/yaml' }), fileName)
+}
+
 /** Hands the browser a file to save. */
 export function download(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob)
