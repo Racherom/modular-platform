@@ -37,18 +37,22 @@ type Service struct {
 	ctx        context.Context
 	now        func() time.Time
 	every      time.Duration
+	watchEvery time.Duration
 	retryAfter time.Duration
 
-	mu      sync.Mutex
-	polling map[uuid.UUID]bool
-	wg      sync.WaitGroup
+	mu          sync.Mutex
+	polling     map[uuid.UUID]bool
+	watches     map[string]*watch // by deployment name
+	nextWatcher uint64
+	wg          sync.WaitGroup
 }
 
 // NewService returns the service; its pollers run until ctx ends.
 func NewService(ctx context.Context, store Store, planner Planner, target Target, hub *Hub, log *slog.Logger) *Service {
 	return &Service{
 		store: store, planner: planner, target: target, hub: hub, log: log, ctx: ctx,
-		now: time.Now, every: pollEvery, retryAfter: retryAfter, polling: map[uuid.UUID]bool{},
+		now: time.Now, every: pollEvery, watchEvery: watchEvery, retryAfter: retryAfter,
+		polling: map[uuid.UUID]bool{}, watches: map[string]*watch{},
 	}
 }
 

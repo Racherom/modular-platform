@@ -625,10 +625,14 @@ components:
           enum: [pending, starting, running, unhealthy, restarting, exited, paused, missing]
         exitCode:
           type: integer
+          description: Set when `exited`; the `exited <code>` badge reads it.
           # keep the pointer: exit code 0 is a value
           x-go-type-skip-optional-pointer: false
         lastExitCode:
           type: integer
+          description: >-
+            The code of the most recent exit, any cause; absent when unknown, never 0 for unknown.
+            Copied from the deploy target, which loses it when it restarts.
           # keep the pointer: exit code 0 is a value
           x-go-type-skip-optional-pointer: false
         health:

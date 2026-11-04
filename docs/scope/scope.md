@@ -108,12 +108,12 @@ You download the platform itself as a zip, run `setup.sh` and start it next to y
 **Done when:** you install the managed zip on a clean host, sign in, deploy a stack from the editor to that host, and the editor shows the running graph with each module's state.
 spec [0006](../specs/0006-managed-mode-control-plane/index.md) · [0007](../specs/0006-managed-mode-control-plane/0007-deploy-target-deployer.md) (deploy target and deployer) · [0008](../specs/0006-managed-mode-control-plane/0008-managed-tls-cert-issuer.md) (managed TLS and the certificate issuer) · [0009](../specs/0006-managed-mode-control-plane/0009-managed-zip-install-smoke.md) (managed zip, install and smoke job) · code in `contracts/openapi/`, `catalog/`, `libs/planner/`, `libs/render/`, `libs/target/deploytarget/`, `services/api/`, `services/deployer-docker/`, `services/planner/`, `deploy/managed/`, `web/`, `scripts/smoke-managed.sh`
 - [x] Design it (spec): `/architect managed mode control plane`
-- [ ] Build it: `/develop managed mode control plane`
+- [x] Build it: `/develop managed mode control plane`
    - [x] The thread runs: contracts, `api` with sign in, sessions and the four tables, the deployer applying the sample, the managed render and digest, `deploy/managed/` with `setup.sh`, the editor's deploy and live state, the `smoke-managed` CI job; platform services plain for now (AC-1, AC-2, AC-3, AC-5, AC-9, AC-11, AC-13, AC-18, AC-19)
    - [x] Review you can trust: the full review answer, `plan_changed`, the allow list guard in planner and deployer, placed credentials end to end (AC-7, AC-8, AC-10, AC-11)
    - [x] Lifecycle and recovery: remove with delete data, `busy` across processes, `unknown` and resumed polling, automatic rollback with one retry (AC-9, AC-14, AC-15, AC-16)
    - [x] TLS for the platform's own services: the step-ca spike, `cert-issuer`, TLS mode for `api`, `planner` and `deployer-docker` (AC-17)
-   - [ ] Live state, sessions, the admin and the release: poll cadence and badges, sign out and `prompt=login`, `admin reset`, download zip, Docker restart, the zip on releases (AC-3, AC-4, AC-6, AC-12, AC-13, AC-19, AC-20)
+   - [x] Live state, sessions, the admin and the release: poll cadence and badges, sign out and `prompt=login`, `admin reset`, download zip, Docker restart, the zip on releases (AC-3, AC-4, AC-6, AC-12, AC-13, AC-19, AC-20)
 - [ ] Verify it: `/check verify managed mode control plane`
 - [ ] Test it: `/test managed mode control plane`
 - [ ] Review it (fresh model): `/check review managed mode control plane`

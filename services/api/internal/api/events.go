@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -20,7 +19,6 @@ import (
 const (
 	pingEvery     = 15 * time.Second
 	sessionEvery  = 30 * time.Second
-	modulesEvery  = 2 * time.Second
 	writeDeadline = 30 * time.Second
 	maxStreams    = 8 // per session
 	snapshotPage  = 200
@@ -70,7 +68,7 @@ func (e *events) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// subscribe before the snapshot, so nothing between the two is lost
 	updates, unsubscribe := e.hub.Subscribe()
 	defer unsubscribe()
-	snapshot, lastModules, err := e.snapshot(r, filter)
+	snapshot, err := e.snapshot(r, filter)
 	if errors.Is(err, deploy.ErrNotFound) {
 		httpkit.WriteJSON(w, http.StatusNotFound, notFound(filter))
 		return
@@ -110,11 +108,10 @@ func (e *events) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer ping.Stop()
 	check := time.NewTicker(sessionEvery)
 	defer check.Stop()
-	var modules <-chan time.Time
 	if filter != "" {
-		t := time.NewTicker(modulesEvery)
-		defer t.Stop()
-		modules = t.C
+		// one poller per deployment, shared by every stream watching it (task 17)
+		by := deploy.Starter{Issuer: sess.Identity.Issuer, Subject: sess.Identity.Subject, Email: sess.Email}
+		defer e.deploy.Watch(filter, by)()
 	}
 	for {
 		var ok bool
@@ -125,7 +122,7 @@ func (e *events) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if !open {
 				return // fell behind; the reconnect gets a new snapshot
 			}
-			ok = filter != "" && ev.Deployment != filter || e.sendEvent(send, ev)
+			ok = filter != "" && ev.Deployment != filter || e.sendEvent(send, ev, filter != "")
 		case <-ping.C:
 			ok = send("", nil)
 		case <-check.C:
@@ -135,17 +132,6 @@ func (e *events) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			ok = true
-		case <-modules:
-			ok = true
-			v, err := e.deploy.View(ctx, filter)
-			if err != nil || v.StateError != "" {
-				continue
-			}
-			payload := EventModules{Deployment: filter, Modules: moduleStates(v.Modules)}
-			if current, _ := json.Marshal(payload.Modules); !bytes.Equal(current, lastModules) { //nolint:errchkjson // plain structs
-				lastModules = current
-				ok = send("modules", payload)
-			}
 		}
 		if !ok {
 			return
@@ -154,34 +140,38 @@ func (e *events) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // snapshot is the first event: every deployment without the filter, the full deployment with
-// it. It also returns the encoded modules, so the stream sends only changes.
-func (e *events) snapshot(r *http.Request, filter string) (any, []byte, error) {
+// it.
+func (e *events) snapshot(r *http.Request, filter string) (any, error) {
 	if filter == "" {
 		items, err := e.deploy.Deployments(r.Context(), "", snapshotPage)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		list := EventSnapshotList{Deployments: make([]DeploymentSummary, 0, len(items))}
 		for _, d := range items {
 			list.Deployments = append(list.Deployments, summary(d))
 		}
-		return list, nil, nil
+		return list, nil
 	}
 	v, err := e.deploy.View(r.Context(), filter)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	out := view(v)
-	modules, _ := json.Marshal(out.Modules) //nolint:errchkjson // plain structs
-	return out, modules, nil
+	return view(v), nil
 }
 
-func (e *events) sendEvent(send func(string, any) bool, ev deploy.Event) bool {
+func (e *events) sendEvent(send func(string, any) bool, ev deploy.Event, filtered bool) bool {
 	switch {
 	case ev.Kind == deploy.EventOperation && ev.Operation != nil:
 		return send("operation", EventOperation{Deployment: ev.Deployment, Operation: operation(*ev.Operation)})
 	case ev.Kind == deploy.EventDeployment && ev.Summary != nil:
 		return send("deployment", summary(*ev.Summary))
+	case ev.Kind == deploy.EventModules:
+		// only a stream with the filter gets modules; the caller skipped other deployments
+		if !filtered {
+			return true
+		}
+		return send("modules", EventModules{Deployment: ev.Deployment, Modules: moduleStates(ev.Modules)})
 	}
 	return true
 }

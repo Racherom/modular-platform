@@ -29,6 +29,10 @@ type noDocker struct{}
 
 func (noDocker) Containers(context.Context, string) ([]deploy.Container, error) { return nil, nil }
 
+func (noDocker) Events(context.Context, time.Time) (<-chan deploy.ExitEvent, <-chan error) {
+	return nil, make(chan error)
+}
+
 // serve runs the handler; withCaller stands in for a checked MP-Caller token.
 func serve(t *testing.T, withCaller bool) (*httptest.Server, *deploy.Engine) {
 	t.Helper()

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
 
 	"github.com/racherom/modular-platform/services/deployer-docker/internal/deploy"
@@ -92,7 +93,7 @@ func (e *Engine) Containers(ctx context.Context, project string) ([]deploy.Conta
 }
 
 func toContainer(s container.Summary, in container.InspectResponse) deploy.Container {
-	c := deploy.Container{Labels: s.Labels, Image: s.Image, Status: string(s.State), RestartCount: in.RestartCount}
+	c := deploy.Container{ID: s.ID, Labels: s.Labels, Image: s.Image, Status: string(s.State), RestartCount: in.RestartCount}
 	if st := in.State; st != nil {
 		c.Status = string(st.Status)
 		c.ExitCode = st.ExitCode
@@ -103,6 +104,46 @@ func toContainer(s container.Summary, in container.InspectResponse) deploy.Conta
 		}
 	}
 	return c
+}
+
+// labelDeployment marks a deployed container; the platform's own services carry it too, with
+// the value platform, but they are never in a deployed project's state read.
+const labelDeployment = "io.github.racherom.modular-platform.deployment"
+
+// Events streams the die and destroy events of containers that carry the deployment label, from
+// since on. The error channel gets one error when the stream ends, ctx's error when ctx ended.
+func (e *Engine) Events(ctx context.Context, since time.Time) (<-chan deploy.ExitEvent, <-chan error) {
+	res := e.c.Events(ctx, client.EventsListOptions{
+		Since: since.UTC().Format(time.RFC3339Nano),
+		Filters: client.Filters{}.
+			Add("type", string(events.ContainerEventType)).
+			Add("event", string(events.ActionDie), string(events.ActionDestroy)).
+			Add("label", labelDeployment),
+	})
+	out := make(chan deploy.ExitEvent)
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case m, ok := <-res.Messages:
+				if !ok {
+					return
+				}
+				ev := deploy.ExitEvent{
+					ID: m.Actor.ID, Action: string(m.Action), ExitCode: m.Actor.Attributes["exitCode"],
+					Time: time.Unix(0, m.TimeNano),
+				}
+				select {
+				case out <- ev:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out, res.Err
 }
 
 // parseTime reads Docker's RFC 3339 times; its zero value 0001-01-01 stays zero.

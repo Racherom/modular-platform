@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import type { Graph } from '../api/client'
@@ -25,7 +25,12 @@ function DeploymentRoute() {
 /** One deployment: its graph with a live badge per module, the running step, and the history. */
 function DeploymentScreen({ name }: { name: string }) {
   const deployment = useQuery({ queryKey: ['deployment', name], queryFn: () => fetchDeployment(name) })
-  const history = useQuery({ queryKey: ['operations', name], queryFn: () => fetchOperations(name) })
+  const history = useInfiniteQuery({
+    queryKey: ['operations', name],
+    queryFn: ({ pageParam }) => fetchOperations(name, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next,
+  })
   const catalog = useCatalog()
   const [removing, setRemoving] = useState<{ deleteData: boolean }>()
   useEvents(name)
@@ -62,15 +67,23 @@ function DeploymentScreen({ name }: { name: string }) {
         <h2 id="history-title">History</h2>
         {history.data && (
           <ol className="history">
-            {history.data.map((op) => (
-              <li key={op.id} id={`operation-${op.id}`}>
-                {new Date(op.startedAt).toLocaleString()}: {operationLabel(op)} by {op.startedBy}, <strong>{op.status}</strong>
-                {op.step && ` at ${op.step}`}
-                {op.error && <pre className="history__error">{op.error}</pre>}
-              </li>
-            ))}
+            {history.data.pages
+              .flatMap((p) => p.items)
+              .map((op) => (
+                <li key={op.id} id={`operation-${op.id}`}>
+                  {new Date(op.startedAt).toLocaleString()}: {operationLabel(op)} by {op.startedBy}, <strong>{op.status}</strong>
+                  {op.step && ` at ${op.step}`}
+                  {op.error && <pre className="history__error">{op.error}</pre>}
+                </li>
+              ))}
           </ol>
         )}
+        {history.hasNextPage && (
+          <button type="button" disabled={history.isFetchingNextPage} onClick={() => void history.fetchNextPage()}>
+            {history.isFetchingNextPage ? 'Loading…' : 'Show older operations'}
+          </button>
+        )}
+        {history.isError && <Failure error={history.error} onRetry={() => void history.refetch()} />}
       </section>
       {removing && <RemoveDialog name={d.name} deleteData={removing.deleteData} onClose={() => setRemoving(undefined)} />}
     </div>

@@ -285,6 +285,10 @@ type fakeTarget struct {
 	applied   []deploytarget.ApplyRequest
 	removed   []bool // deleteData of each remove
 	present   []string
+	// services, when set, is the state read's answer; stateCallers records each read's caller
+	services     []deploytarget.ServiceState
+	stateReads   int
+	stateCallers []string
 }
 
 func (f *fakeTarget) Apply(ctx context.Context, _ string, req deploytarget.ApplyRequest) (deploy.TargetOperation, error) {
@@ -333,7 +337,16 @@ func (f *fakeTarget) Operation(ctx context.Context, id string) (deploy.TargetOpe
 	return deploy.TargetOperation{Operation: deploytarget.Operation{Id: id, Status: status, Step: step}}, f.boot, nil
 }
 
-func (f *fakeTarget) State(context.Context, string) (deploytarget.ProjectState, error) {
+func (f *fakeTarget) State(ctx context.Context, _ string) (deploytarget.ProjectState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stateReads++
+	if c, ok := sdk.CallerFrom(ctx); ok {
+		f.stateCallers = append(f.stateCallers, c.User)
+	}
+	if f.services != nil {
+		return deploytarget.ProjectState{Present: true, Services: slices.Clone(f.services)}, nil
+	}
 	return deploytarget.ProjectState{Present: true, Services: []deploytarget.ServiceState{
 		{Instance: "web", Module: "whoami", State: deploytarget.ServiceStateStateRunning},
 	}}, nil

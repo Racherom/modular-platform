@@ -126,9 +126,11 @@ type Engine struct {
 	docker  Docker
 	log     *slog.Logger
 	//nolint:containedctx // the engine's lifetime: operations outlive their request and end with it
-	ctx    context.Context
-	bootID string
-	now    func() time.Time
+	ctx     context.Context
+	bootID  string
+	started time.Time
+	now     func() time.Time
+	exits   *exits
 
 	mu   sync.Mutex
 	ops  map[string]*Operation
@@ -141,7 +143,7 @@ type Engine struct {
 func New(ctx context.Context, cfg Config, compose Compose, docker Docker, log *slog.Logger) *Engine {
 	return &Engine{
 		cfg: cfg, compose: compose, docker: docker, log: log, ctx: ctx,
-		bootID: newBootID(), now: time.Now,
+		bootID: newBootID(), started: time.Now(), now: time.Now, exits: newExits(),
 		ops: map[string]*Operation{}, busy: map[string]bool{},
 	}
 }

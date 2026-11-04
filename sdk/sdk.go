@@ -126,6 +126,9 @@ type options struct {
 	push     PushSource
 	callers  CallerSource
 	resolver BindingResolver
+	// commands by name, each a Command of the module's own types
+	commands map[string]any
+
 	// the source limits; tests shorten them
 	sourceDeadline, pushWait, callerBudget, callerTTL time.Duration
 }
@@ -156,12 +159,14 @@ func newOptions(opts []Option) options {
 	return o
 }
 
-// Run is a module's main: `<binary> healthcheck` probes the running module's /readyz; otherwise
-// it starts the module and serves until SIGINT or SIGTERM. It exits 1 on a refused start.
+// Run is a module's main: `<binary> healthcheck` probes the running module's /readyz, and
+// `<binary> <name> [args...]` runs a command added with WithCommand; otherwise it starts the
+// module and serves until SIGINT or SIGTERM. It exits 1 on a refused start.
 func Run[C, U any](d Declaration[C, U], setup Setup[C, U], opts ...Option) {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(healthcheck(newOptions(opts)))
 	}
+	runCommand(d, opts)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	code := Main(ctx, d, setup, opts...)
 	stop()
@@ -265,7 +270,20 @@ type built struct {
 	first   <-chan error     // with a push source: the first snapshot's outcome; nil without one
 }
 
-func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], o options) (built, error) {
+// loaded is a module whose config is loaded and checked and whose binding clients are open.
+type loaded[C, U any] struct {
+	m        *Module[C, U]
+	res      load.Result
+	clients  auth.Clients
+	opened   map[string]Opened
+	values   *Values
+	bindings *Bindings
+}
+
+// loadModule loads and checks the config and opens the binding clients, which close when ctx
+// ends. On a refused start it logs one line per problem and returns ErrStart. quiet leaves out
+// the config loaded line and the start warnings, for a command that does not serve.
+func loadModule[C, U any](ctx context.Context, d Declaration[C, U], o options, quiet bool) (loaded[C, U], error) {
 	log := o.log
 	if o.source != nil && o.push != nil {
 		// a pushed snapshot is complete, so nothing may answer above it
@@ -273,7 +291,7 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 			Value: "module", Env: "module", Code: load.CodeSourceError,
 			Message: "WithSource and WithPushSource cannot be combined",
 		}})
-		return built{}, ErrStart
+		return loaded[C, U]{}, ErrStart
 	}
 	in := load.Input{
 		Values:         d.Values,
@@ -303,7 +321,7 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 	load.SortProblems(problems)
 	if refuse(ctx, log, problems) {
 		closeAll(opened)
-		return built{}, ErrStart
+		return loaded[C, U]{}, ErrStart
 	}
 	context.AfterFunc(ctx, func() { closeAll(opened) })
 
@@ -322,13 +340,27 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 	if o.push == nil {
 		if err := validate(ctx, cfg); err != nil {
 			refuse(ctx, log, []Problem{validateProblem(err)})
-			return built{}, ErrStart
+			return loaded[C, U]{}, ErrStart
 		}
-		configLoaded(ctx, log, d, res.Bootstrap, res.Sources)
+		if !quiet {
+			configLoaded(ctx, log, d, res.Bootstrap, res.Sources)
+		}
 	}
-	startWarnings(ctx, log, res)
+	if !quiet {
+		startWarnings(ctx, log, res)
+	}
 
 	m := &Module[C, U]{Config: cfg, Uses: uses, Log: log, Instance: res.Bootstrap.Instance}
+	return loaded[C, U]{m: m, res: res, clients: clients, opened: opened, values: values, bindings: bindings}, nil
+}
+
+func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], o options) (built, error) {
+	log := o.log
+	l, err := loadModule(ctx, d, o, false)
+	if err != nil {
+		return built{}, err
+	}
+	m, res, clients, opened, values, bindings := l.m, l.res, l.clients, l.opened, l.values, l.bindings
 	serve := func() (http.Handler, error) { return wrap(ctx, d, setup, m, clients, res.Bootstrap) }
 	var (
 		app   atomic.Pointer[http.Handler]

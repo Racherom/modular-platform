@@ -282,10 +282,13 @@ type Logout struct {
 
 // ModuleState defines model for ModuleState.
 type ModuleState struct {
-	ExitCode     *int             `json:"exitCode,omitempty"`
-	Health       string           `json:"health,omitempty,omitzero"`
-	Image        string           `json:"image,omitempty,omitzero"`
-	Instance     string           `json:"instance"`
+	// ExitCode Set when `exited`; the `exited <code>` badge reads it.
+	ExitCode *int   `json:"exitCode,omitempty"`
+	Health   string `json:"health,omitempty,omitzero"`
+	Image    string `json:"image,omitempty,omitzero"`
+	Instance string `json:"instance"`
+
+	// LastExitCode The code of the most recent exit, any cause; absent when unknown, never 0 for unknown. Copied from the deploy target, which loses it when it restarts.
 	LastExitCode *int             `json:"lastExitCode,omitempty"`
 	Module       string           `json:"module"`
 	RestartCount int              `json:"restartCount"`

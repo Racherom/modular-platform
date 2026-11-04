@@ -111,7 +111,7 @@ func (s *Server) GetProjectState(ctx context.Context, req GetProjectStateRequest
 		out.Services = append(out.Services, deploytarget.ServiceState{
 			Instance: svc.Instance, Module: svc.Module, Image: svc.Image,
 			State: deploytarget.ServiceStateState(svc.State), Health: svc.Health, ExitCode: svc.ExitCode,
-			RestartCount: svc.RestartCount, Since: svc.Since,
+			LastExitCode: svc.LastExitCode, RestartCount: svc.RestartCount, Since: svc.Since,
 		})
 	}
 	return GetProjectState200JSONResponse{Body: out}, nil
@@ -184,6 +184,8 @@ func Setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 		return nil, err
 	}
 	e := deploy.New(ctx, cfg, docker.Compose{}, engine, m.Log)
+	// before the server listens; shutdown ends ctx, and with it the stream and its reconnects
+	go e.WatchExits(ctx)
 	m.Log.InfoContext(ctx, "deployer starting", slog.String("deployments_dir", cfg.Dir))
 	return NewHandler(e, m.Log), nil
 }

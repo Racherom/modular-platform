@@ -9,14 +9,17 @@ type EventKind string
 const (
 	EventDeployment EventKind = "deployment"
 	EventOperation  EventKind = "operation"
+	// EventModules is a watched deployment's module state that changed.
+	EventModules EventKind = "modules"
 )
 
 // Event is one live update about a deployment.
 type Event struct {
 	Kind       EventKind
 	Deployment string
-	Operation  *Operation  // EventOperation
-	Summary    *Deployment // EventDeployment
+	Operation  *Operation    // EventOperation
+	Summary    *Deployment   // EventDeployment
+	Modules    []ModuleState // EventModules
 }
 
 // subscriberBuffer is how many events a slow stream may lag before it is dropped.

@@ -54,10 +54,34 @@ func (c *fakeCompose) subcommands() []string {
 type fakeDocker struct {
 	containers []deploy.Container
 	err        error
+	// streams hands one stream to each Events call; nil gives a stream that stays quiet
+	streams chan fakeStream
+}
+
+// fakeStream is one event stream; since gets the replay point it was opened from.
+type fakeStream struct {
+	since  chan time.Time
+	events chan deploy.ExitEvent
+	errs   chan error
 }
 
 func (d fakeDocker) Containers(context.Context, string) ([]deploy.Container, error) {
 	return d.containers, d.err
+}
+
+func (d fakeDocker) Events(ctx context.Context, since time.Time) (<-chan deploy.ExitEvent, <-chan error) {
+	quiet := make(chan error, 1)
+	if d.streams == nil {
+		return nil, quiet
+	}
+	select {
+	case s := <-d.streams:
+		s.since <- since
+		return s.events, s.errs
+	case <-ctx.Done():
+		quiet <- ctx.Err()
+		return nil, quiet
+	}
 }
 
 func newEngine(t *testing.T, c *fakeCompose, d fakeDocker) (*deploy.Engine, string, *bytes.Buffer) {

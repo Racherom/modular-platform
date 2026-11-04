@@ -65,10 +65,19 @@ export async function logout(): Promise<string> {
   return ((await response.json()) as { redirect: string }).redirect
 }
 
-export async function fetchDeployments(): Promise<DeploymentSummary[]> {
-  const { data, error, response } = await client.GET('/api/v1/deployments', { params: { query: { limit: 200 } } })
+/** One page of a list, and the cursor of the next one when there is more. */
+export type Page<T> = { items: T[]; next?: string }
+
+/** How many rows one page of the deployments list or a history holds. */
+export const pageSize = 50
+
+/** One page of deployments sorted by name, after the name cursor. */
+export async function fetchDeployments(cursor?: string): Promise<Page<DeploymentSummary>> {
+  const { data, error, response } = await client.GET('/api/v1/deployments', {
+    params: { query: { limit: pageSize, ...(cursor ? { cursor } : {}) } },
+  })
   if (!data) throw failure(response.status, error)
-  return data.items
+  return { items: data.items, ...(data.next ? { next: data.next } : {}) }
 }
 
 export async function fetchDeployment(name: string): Promise<Deployment> {
@@ -77,12 +86,13 @@ export async function fetchDeployment(name: string): Promise<Deployment> {
   return data
 }
 
-export async function fetchOperations(name: string): Promise<Operation[]> {
+/** One page of a deployment's history, newest first, older than the operation cursor. */
+export async function fetchOperations(name: string, cursor?: string): Promise<Page<Operation>> {
   const { data, error, response } = await client.GET('/api/v1/deployments/{name}/operations', {
-    params: { path: { name } },
+    params: { path: { name }, query: { limit: pageSize, ...(cursor ? { cursor } : {}) } },
   })
   if (!data) throw failure(response.status, error)
-  return data.items
+  return { items: data.items, ...(data.next ? { next: data.next } : {}) }
 }
 
 export async function reviewDeployment(graph: Graph): Promise<Review> {

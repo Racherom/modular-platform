@@ -18,6 +18,7 @@ const (
 
 // Container is one container of a project as the engine sees it.
 type Container struct {
+	ID           string
 	Labels       map[string]string
 	Image        string
 	Status       string // created, running, paused, restarting, removing, exited or dead
@@ -28,9 +29,13 @@ type Container struct {
 	FinishedAt   time.Time
 }
 
-// Docker lists the containers of a Compose project, stopped ones included.
+// Docker lists the containers of a Compose project, stopped ones included, and follows the die
+// and destroy events of deployed containers.
 type Docker interface {
 	Containers(ctx context.Context, project string) ([]Container, error)
+	// Events streams the die and destroy events of containers carrying the deployment label,
+	// from since on, until ctx ends or the stream fails; then the error channel gets one error.
+	Events(ctx context.Context, since time.Time) (<-chan ExitEvent, <-chan error)
 }
 
 // ModuleState is a module's state as the editor shows it.
@@ -53,6 +58,7 @@ type Service struct {
 	State                   ModuleState
 	Health                  string
 	ExitCode                *int // set when exited
+	LastExitCode            *int // the most recent exit, any cause; nil when unknown
 	RestartCount            int
 	Since                   time.Time
 }
@@ -69,7 +75,7 @@ func (e *Engine) State(ctx context.Context, project string) (bool, []Service, er
 	}
 	services := make([]Service, 0, len(containers))
 	for _, c := range containers {
-		services = append(services, service(c))
+		services = append(services, e.service(c))
 	}
 	slices.SortFunc(services, func(a, b Service) int { return strings.Compare(a.Instance, b.Instance) })
 	present := len(services) > 0
@@ -80,8 +86,9 @@ func (e *Engine) State(ctx context.Context, project string) (bool, []Service, er
 	return present, services, nil
 }
 
-// service maps a container onto a module state (child 0007, "Module state").
-func service(c Container) Service {
+// service maps a container onto a module state (child 0007, "Module state"), with its last exit
+// code: the current one while exited or restarting, else the latest die event seen.
+func (e *Engine) service(c Container) Service {
 	s := Service{
 		Instance: c.Labels[labelInstance], Module: c.Labels[labelModule], Image: c.Image,
 		Health: c.Health, RestartCount: c.RestartCount, Since: c.StartedAt,
@@ -99,12 +106,18 @@ func service(c Container) Service {
 			s.State = StateRunning
 		}
 	case "restarting":
-		s.State = StateRestarting
+		code := c.ExitCode
+		s.State, s.LastExitCode = StateRestarting, &code
 	case "paused":
 		s.State = StatePaused
 	default: // exited, dead, removing
 		code := c.ExitCode
-		s.State, s.ExitCode, s.Since = StateExited, &code, c.FinishedAt
+		s.State, s.ExitCode, s.LastExitCode, s.Since = StateExited, &code, &code, c.FinishedAt
+	}
+	if s.LastExitCode == nil && c.Status != "created" {
+		if code, ok := e.exits.last(c.ID); ok {
+			s.LastExitCode = &code
+		}
 	}
 	return s
 }

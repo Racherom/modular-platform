@@ -336,7 +336,9 @@ export interface components {
             module: string;
             /** @enum {string} */
             state: "pending" | "starting" | "running" | "unhealthy" | "restarting" | "exited" | "paused" | "missing";
+            /** @description Set when `exited`; the `exited <code>` badge reads it. */
             exitCode?: number;
+            /** @description The code of the most recent exit, any cause; absent when unknown, never 0 for unknown. Copied from the deploy target, which loses it when it restarts. */
             lastExitCode?: number;
             health?: string;
             restartCount: number;

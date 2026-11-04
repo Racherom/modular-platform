@@ -254,7 +254,7 @@ type ServiceState struct {
 	Image    string `json:"image"`
 	Instance string `json:"instance"`
 
-	// LastExitCode The exit code of the previous run, so a crash Docker restarted at once still shows.
+	// LastExitCode The code of the most recent exit, any cause (a `docker stop` counts too); absent when unknown, never 0 for unknown. For `exited`, `dead` and `restarting` it is the current exit code; otherwise it comes from the Docker `die` events the deployer has seen since it started, so a crash Docker restarted at once still shows.
 	LastExitCode *int   `json:"lastExitCode,omitempty"`
 	Module       string `json:"module"`
 	RestartCount int    `json:"restartCount"`

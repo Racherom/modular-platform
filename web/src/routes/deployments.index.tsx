@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { fetchDeployments } from '../api/platform'
+import { type DeploymentSummary, fetchDeployments, type Page } from '../api/platform'
 import { Failure } from '../components/Failure'
 import { StateBadge } from '../components/StateBadge'
 import { useEvents } from '../hooks/useEvents'
@@ -25,8 +25,18 @@ export function OnlyManaged() {
 }
 
 function DeploymentList() {
-  const list = useQuery({ queryKey: ['deployments'], queryFn: fetchDeployments })
+  const queryClient = useQueryClient()
+  const list = useQuery({ queryKey: ['deployments'], queryFn: () => fetchDeployments() })
   useEvents()
+  // the next page joins the loaded ones in the cache, which the event stream keeps current
+  const more = useMutation({
+    mutationFn: (cursor: string) => fetchDeployments(cursor),
+    onSuccess: (page) =>
+      queryClient.setQueryData<Page<DeploymentSummary>>(['deployments'], (list) => ({
+        items: [...(list?.items ?? []), ...page.items.filter((d) => !list?.items.some((l) => l.name === d.name))],
+        ...(page.next ? { next: page.next } : {}),
+      })),
+  })
   if (list.isError) return <Failure error={list.error} onRetry={() => void list.refetch()} />
   if (!list.data) return <p className="screen">Loading the deployments…</p>
   return (
@@ -34,7 +44,7 @@ function DeploymentList() {
       <div className="toolbar">
         <h1>Deployments</h1>
       </div>
-      {list.data.length === 0 ? (
+      {list.data.items.length === 0 ? (
         <p>
           Nothing is deployed yet. Open a graph in the <Link to="/">editor</Link> and choose Deploy.
         </p>
@@ -49,7 +59,7 @@ function DeploymentList() {
             </tr>
           </thead>
           <tbody>
-            {list.data.map((d) => (
+            {list.data.items.map((d) => (
               <tr key={d.name}>
                 <td>
                   <Link to="/deployments/$name" params={{ name: d.name }}>
@@ -66,6 +76,14 @@ function DeploymentList() {
           </tbody>
         </table>
       )}
+      {list.data.next && (
+        <p>
+          <button type="button" disabled={more.isPending} onClick={() => list.data.next && more.mutate(list.data.next)}>
+            {more.isPending ? 'Loading…' : 'Show more deployments'}
+          </button>
+        </p>
+      )}
+      {more.isError && <Failure error={more.error} onRetry={() => list.data.next && more.mutate(list.data.next)} />}
     </div>
   )
 }

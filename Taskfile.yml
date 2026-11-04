@@ -177,7 +177,7 @@ tasks:
       - python3 scripts/managed_zip.py deploy/managed "modular-platform-{{.VERSION}}" "dist/modular-platform-{{.VERSION}}.zip"
 
   smoke:managed:
-    desc: Install the managed platform with setup.sh, sign in, deploy the sample and see it running (needs the images tagged ci and Chromium)
+    desc: Install the managed platform with setup.sh, sign in, deploy the sample, see it running, remove it with its data (needs the images tagged ci and Chromium; SMOKE_DOCKER_RESTART=1 also restarts Docker in between)
     deps: [web:install]
     cmds:
       - sh scripts/smoke-managed.sh
