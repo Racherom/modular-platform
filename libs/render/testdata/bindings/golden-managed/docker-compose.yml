@@ -185,3 +185,58 @@ services:
     security_opt:
     - no-new-privileges:true
     user: ${MP_UID}:${MP_GID}
+  shared_revoke_admin:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      PGPASSWORD=$$(cat "$$MP_ADMIN_ADMIN_PASSWORD_FILE")
+      export PGPASSWORD PGHOST="$$MP_ADMIN_HOST" PGPORT="$$MP_ADMIN_PORT" PGUSER="$$MP_ADMIN_ADMIN_USER"
+      export PGDATABASE=postgres PGSSLMODE="$$MP_ADMIN_SSLMODE" PGCONNECT_TIMEOUT=10 PGAPPNAME=mp-revoke
+      if [ -n "$${MP_ADMIN_CA_FILE:-}" ]; then export PGSSLROOTCERT="$$MP_ADMIN_CA_FILE"; fi
+      echo "revoke: logins made by the platform that no binding keeps lose sign in"
+      psql -X -q -v ON_ERROR_STOP=1 -v marker="$$MP_MARKER" -v keep="$$MP_KEEP" <<'SQL'
+      SELECT pg_advisory_lock(hashtext('modular-platform provisioner')) \g /dev/null
+      SELECT format('ALTER ROLE %I NOLOGIN', r.rolname)
+        FROM pg_roles r JOIN pg_auth_members m ON m.member = r.oid JOIN pg_roles g ON g.oid = m.roleid
+        WHERE g.rolname = :'marker' AND r.rolcanlogin
+          AND NOT r.rolname = ANY (string_to_array(:'keep', ',')) \gexec
+      SELECT pg_terminate_backend(a.pid)
+        FROM pg_stat_activity a JOIN pg_roles r ON r.oid = a.usesysid
+        JOIN pg_auth_members m ON m.member = r.oid JOIN pg_roles g ON g.oid = m.roleid
+        WHERE g.rolname = :'marker' AND NOT r.rolcanlogin \g /dev/null
+      SQL
+    depends_on:
+      shared_provision_app_audit:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
+      MP_ADMIN_ADMIN_USER: admin
+      MP_ADMIN_HOST: pg.example.test
+      MP_ADMIN_PORT: "5432"
+      MP_ADMIN_SSLMODE: verify-full
+      MP_ADMIN_URL: postgres://pg.example.test:5432
+      MP_KEEP: app_audit
+      MP_MARKER: mp_provisioned_1f7378b5
+    image: postgres:18.6
+    labels:
+      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
+      io.github.racherom.modular-platform.graph: bindings
+      io.github.racherom.modular-platform.instance: shared
+      io.github.racherom.modular-platform.job: revoke
+    networks:
+      egress: {}
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: shared_admin_admin_admin_password
+      target: /run/secrets/admin/admin_password
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}

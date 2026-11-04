@@ -111,9 +111,11 @@ type renderer struct {
 	jobs     map[string]job
 	declared map[string]bool // secret file paths already listed for setup.sh or as placed
 
-	bound  map[string]map[string]map[string]value // consumer, slot, field to its value
-	admin  map[string]map[string]value            // provider.provide to its admin field values
-	egress bool                                   // some service joins the egress network
+	bound      map[string]map[string]map[string]value // consumer, slot, field to its value
+	admin      map[string]map[string]value            // provider.provide to its admin field values
+	keep       map[string][]string                    // provider.provide to the logins its bindings name
+	provisions map[string][]string                    // provider.provide to its provision jobs
+	egress     bool                                   // some service joins the egress network
 }
 
 // renderProject renders plan in the static flavor, or the managed one: restart: unless-stopped
@@ -123,15 +125,17 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed b
 		return rendered{}, ErrPlanHasErrors
 	}
 	r := renderer{
-		g:        plan.Graph,
-		managed:  managed,
-		modules:  make(map[string]contract.Module, len(catalog.Modules)),
-		caps:     make(map[string]contract.Capability, len(catalog.Capabilities)),
-		data:     templateData{Name: plan.Graph.Name},
-		jobs:     map[string]job{},
-		declared: map[string]bool{},
-		bound:    map[string]map[string]map[string]value{},
-		admin:    map[string]map[string]value{},
+		g:          plan.Graph,
+		managed:    managed,
+		modules:    make(map[string]contract.Module, len(catalog.Modules)),
+		caps:       make(map[string]contract.Capability, len(catalog.Capabilities)),
+		data:       templateData{Name: plan.Graph.Name},
+		jobs:       map[string]job{},
+		declared:   map[string]bool{},
+		bound:      map[string]map[string]map[string]value{},
+		admin:      map[string]map[string]value{},
+		keep:       map[string][]string{},
+		provisions: map[string][]string{},
 		project: types.Project{
 			Name:     plan.Graph.Name,
 			Services: types.Services{},
@@ -165,6 +169,9 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed b
 		if err := r.binding(b); err != nil {
 			return rendered{}, err
 		}
+	}
+	if err := r.revokeJobs(); err != nil {
+		return rendered{}, err
 	}
 	for _, i := range instances {
 		if gm := r.g.Modules[i]; gm.External == nil {
