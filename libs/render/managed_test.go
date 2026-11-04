@@ -23,6 +23,7 @@ func TestRenderManagedGolden(t *testing.T) {
 	}{
 		{filepath.Join("testdata", "whoami-postgres-managed"), samplePlan},
 		{filepath.Join(pairDir, "golden-managed"), pairPlan},
+		{filepath.Join("testdata", "bindings", "golden-managed"), bindingsPlan},
 	} {
 		t.Run(c.dir, func(t *testing.T) {
 			plan, catalog := c.plan(t)

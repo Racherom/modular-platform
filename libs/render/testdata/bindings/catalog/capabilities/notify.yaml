@@ -1,0 +1,11 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: notify
+description: Sends notifications for a consumer, for the bindings golden render.
+scheme: http
+fields:
+  url: {type: url, description: Base URL of the notifier.}
+  token: {type: secret, direction: both, description: Binding token both sides hold.}
+  key: {type: certificate, direction: to_provider, description: Public key the consumer signs its messages with.}
+  label: {type: string, direction: to_provider, optional: true, description: Label the notifier shows for the consumer.}
+  region: {type: string, optional: true, description: Region the notifier runs in.}

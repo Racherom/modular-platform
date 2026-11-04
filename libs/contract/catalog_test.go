@@ -1,6 +1,7 @@
 package contract_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -234,6 +235,10 @@ func TestModuleRules(t *testing.T) {
 		"healthcheck form":    one(`["CMD", "svc", "check"]`, `["svc", "check"]`, "healthcheck.test", contract.CodeInvalidHealthcheck),
 		"duration":            one("interval: 5s", "interval: soon", "healthcheck.interval", contract.CodeInvalidDuration),
 		"retries":             one("retries: 3", "retries: 0", "healthcheck.retries", contract.CodeInvalidRetries),
+		"env placeholder":     one("secrets:\n", "environment:\n  SVC_DB: \"{nope.host}\"\nsecrets:\n", "environment.SVC_DB", contract.CodeInvalidFieldSource),
+		"env file field":      one("secrets:\n", "environment:\n  SVC_DB: \"{db.password}\"\nsecrets:\n", "environment.SVC_DB", contract.CodeInvalidFieldSource),
+		"env no config":       one("secrets:\n", "environment:\n  SVC_DB: \"{config.nope}\"\nsecrets:\n", "environment.SVC_DB", contract.CodeInvalidFieldSource),
+		"alias no config":     one("secrets:\n", "network:\n  aliases: [{config: nope}]\nsecrets:\n", "network.aliases.0", contract.CodeInvalidRule),
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -361,5 +366,43 @@ func TestLoadCatalog(t *testing.T) {
 		!strings.HasPrefix(lines[0], "catalog/modules/bad/module.yaml: .: invalid_entry: ") ||
 		!strings.HasPrefix(lines[1], "catalog/modules/empty/module.yaml: .: invalid_entry: ") {
 		t.Errorf("lines = %q", lines)
+	}
+}
+
+// TestModuleEnvironmentAndClientFields accepts every placeholder form 0013 lists, and refuses a
+// slot that leaves a required to_provider field without a source.
+func TestModuleEnvironmentAndClientFields(t *testing.T) {
+	t.Parallel()
+	caps := testCaps(t)
+	text := edit(t, goodModule, [][2]string{{"secrets:\n", "environment:\n  SVC_DB: \"{db.host}:{db.port}/x\"\n  SVC_RUN_AS: \"{uid}:{gid}\"\n  SVC_LITERAL: \"{ not a placeholder }\"\nsecrets:\n"}})
+	if _, problems := contract.CheckModule("catalog/modules/svc/module.yaml", []byte(text), caps); len(problems) > 0 {
+		t.Errorf("placeholders refused: %v", problems)
+	}
+
+	required := edit(t, goodCapability, [][2]string{{"to_provider, optional: true", "to_provider"}})
+	k, problems := contract.CheckCapability("catalog/capabilities/store.yaml", []byte(required))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	caps["store"] = k
+	text = edit(t, goodModule, [][2]string{{"    fields:\n      owner: {value: svc}\n", ""}})
+	_, problems = contract.CheckModule("catalog/modules/svc/module.yaml", []byte(text), caps)
+	wantProblem(t, problems, "uses.db.fields.owner", contract.CodeMissingFieldSource)
+}
+
+// TestParseEnvironment splits literal text and placeholders.
+func TestParseEnvironment(t *testing.T) {
+	t.Parallel()
+	got := contract.ParseEnvironment("{public.base_path}/api?u={uid}&c={config.mode}{ x }")
+	want := []contract.EnvPart{
+		{Kind: contract.EnvUses, Text: "{public.base_path}", Name: "public", Field: "base_path"},
+		{Kind: contract.EnvLiteral, Text: "/api?u="},
+		{Kind: contract.EnvUID, Text: "{uid}"},
+		{Kind: contract.EnvLiteral, Text: "&c="},
+		{Kind: contract.EnvConfig, Text: "{config.mode}", Name: "mode"},
+		{Kind: contract.EnvLiteral, Text: "{ x }"},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("ParseEnvironment = %+v, want %+v", got, want)
 	}
 }

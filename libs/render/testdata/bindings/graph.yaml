@@ -1,0 +1,40 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  app:
+    module: app
+    uses:
+      audit:
+        database: app_audit
+        provider: shared
+        user: app_audit
+      db: billing
+      notify: notifier
+  billing:
+    external:
+      provides:
+        db:
+          capability: postgresql
+          fields:
+            database: billing
+            host: db.example.test
+            port: "5432"
+            sslmode: verify-full
+            url: postgres://db.example.test:5432
+            user: billing
+          version: "16.4"
+  notifier:
+    module: notifier
+  shared:
+    external:
+      provides:
+        admin:
+          capability: postgresql-provisioner
+          fields:
+            admin_user: admin
+            host: pg.example.test
+            port: "5432"
+            sslmode: verify-full
+            url: postgres://pg.example.test:5432
+          version: "17.2"
+name: bindings

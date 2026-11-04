@@ -89,6 +89,25 @@ func TestRenderSampleGolden(t *testing.T) {
 	checkGolden(t, filepath.Join("testdata", "whoami-postgres"), out)
 }
 
+// bindingsPlan plans the bindings case: an external provide and an external provisioner, both
+// and to_provider files, fixed path mounts, an optional field left out, environment
+// placeholders, egress and aliases, and every hardening opt out (spec 0011 build tasks 11 to 13).
+func bindingsPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
+	t.Helper()
+	catalog := loadCatalog(t, "../../catalog", "testdata/bindings/catalog")
+	return planFile(t, "testdata/bindings/graph.yaml", catalog), catalog
+}
+
+// TestRenderBindingsGolden pins every rendered file of the bindings case (AC-8, AC-12, AC-15).
+func TestRenderBindingsGolden(t *testing.T) {
+	plan, catalog := bindingsPlan(t)
+	out, err := render.Render(plan, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkGolden(t, filepath.Join("testdata", "bindings", "golden"), out)
+}
+
 // checkGolden compares each rendered file with its copy under dir, or rewrites it with -update.
 func checkGolden(t *testing.T, dir string, out render.Output) {
 	t.Helper()

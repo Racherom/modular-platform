@@ -13,8 +13,8 @@ import (
 // sdkPort is where a runtime: sdk module listens in plain mode.
 const sdkPort = 8080
 
-// jobProvision is the job label of a provision job (spec 0013, "Labels"); revoke jobs follow
-// with build task 10.
+// jobProvision is the job label of a provision job (spec 0013, "Labels"); the revoke job waits
+// on a spec change for how `up` waits on a job nothing depends on (build task 10).
 const jobProvision = "provision"
 
 // value is what one field of a binding resolves to: text (a literal, or a Compose variable
@@ -25,29 +25,37 @@ type value struct {
 	file string
 }
 
-// end is one side of a binding as the render sees it.
+// end is the provider side of a binding as the render sees it: one provide of a module instance
+// or of an external instance. b names the binding; for a provide's admin fields it names only
+// the provider and provide.
 type end struct {
 	b        contract.Binding
+	offered  string                    // the provide's capability
 	external *contract.ExternalProvide // set when the provider is an external instance
 	module   contract.Module           // the provider's module otherwise
 	provide  contract.Provide
+}
+
+// end returns provide q of instance p.
+func (r *renderer) end(p, q string) end {
+	e := end{b: contract.Binding{Provider: p, Provide: q}}
+	if pg := r.g.Modules[p]; pg.External != nil {
+		ep := pg.External.Provides[q]
+		e.external, e.offered = &ep, ep.Capability
+	} else {
+		e.module = r.modules[pg.Module]
+		e.provide = e.module.Provides[q]
+		e.offered = e.provide.Capability
+	}
+	return e
 }
 
 // binding delivers one binding (spec 0013, "Binding delivery"): every field the consumer maps,
 // the provider side files of both and to_provider fields, depends_on, and for a binding to a
 // provisioner its provision job (spec 0014).
 func (r *renderer) binding(b contract.Binding) error {
-	e := end{b: b}
-	pg := r.g.Modules[b.Provider]
-	offered := ""
-	if pg.External != nil {
-		ep := pg.External.Provides[b.Provide]
-		e.external, offered = &ep, ep.Capability
-	} else {
-		e.module = r.modules[pg.Module]
-		e.provide = e.module.Provides[b.Provide]
-		offered = e.provide.Capability
-	}
+	e := r.end(b.Provider, b.Provide)
+	e.b = b
 	k := r.caps[b.Capability]
 
 	var (
@@ -55,20 +63,24 @@ func (r *renderer) binding(b contract.Binding) error {
 		err    error
 	)
 	if b.Provisioned {
-		values, err = r.provisioned(e, offered)
+		values, err = r.provisioned(e)
 	} else {
 		values, err = r.values(e, k)
 	}
 	if err != nil {
 		return err
 	}
+	if r.bound[b.Consumer] == nil {
+		r.bound[b.Consumer] = map[string]map[string]value{}
+	}
+	r.bound[b.Consumer][b.Slot] = values
 
 	consumer := r.project.Services[b.Consumer]
 	slot := r.modules[r.g.Modules[b.Consumer].Module].Slots()[b.Slot]
 	for _, f := range sortedKeys(k.Fields) {
 		v, ok := values[f]
 		env, mount := slot.Env[f], slot.Files[f]
-		if !ok || (env == "" && mount == "") {
+		if !ok || !k.Fields[f].ToConsumer() || (env == "" && mount == "") {
 			continue // a field the consumer does not map is not delivered
 		}
 		switch {
@@ -88,19 +100,9 @@ func (r *renderer) binding(b contract.Binding) error {
 	}
 
 	if e.external == nil {
-		provider := r.project.Services[b.Provider]
-		for _, f := range sortedKeys(k.Fields) {
-			v, ok := values[f]
-			if !ok || k.Fields[f].Direction != contract.Both {
-				continue
-			}
-			dir := "/run/secrets/clients/" + b.Provide + "/" + f
-			r.mountSecret(&provider, b.Consumer+"_uses_"+b.Slot+"_"+f, v.file, dir+"/"+b.Consumer)
-			if env := e.provide.Env[f]; env != "" {
-				setEnv(&provider, env, dir)
-			}
+		if !b.Provisioned {
+			r.clientFiles(e, k, slot, values)
 		}
-		r.project.Services[b.Provider] = provider
 		dependOn(&consumer, b.Provider, condition(e.module))
 	}
 	if b.Provisioned {
@@ -110,14 +112,42 @@ func (r *renderer) binding(b contract.Binding) error {
 	return nil
 }
 
+// clientFiles mounts the file fields that reach the provider of binding e.b, one file per
+// consumer in the provide's clients directory /run/secrets/clients/<provide>/<field>/ (spec
+// 0013): a both field from the provider's own source, a to_provider field from the consumer's
+// secret. A to_provider text field reaches the provider only as template data. An external
+// provider is outside the stack, so nothing is mounted on it.
+func (r *renderer) clientFiles(e end, k contract.Capability, slot contract.Slot, values map[string]value) {
+	b := e.b
+	provider := r.project.Services[b.Provider]
+	for _, f := range sortedKeys(k.Fields) {
+		field := k.Fields[f]
+		if !field.ToProvider() || !field.IsFile() {
+			continue
+		}
+		var file string
+		if field.Direction == contract.Both {
+			file = values[f].file
+		} else if src, ok := slot.Fields[f]; ok {
+			file = "secrets/" + b.Consumer + "/" + src.Secret
+		}
+		if file == "" {
+			continue // an optional field the binding leaves out
+		}
+		dir := "/run/secrets/clients/" + b.Provide + "/" + f
+		r.mountSecret(&provider, b.Consumer+"_uses_"+b.Slot+"_"+f, file, dir+"/"+b.Consumer)
+		if env := e.provide.Env[f]; env != "" {
+			setEnv(&provider, env, dir)
+		}
+	}
+	r.project.Services[b.Provider] = provider
+}
+
 // provisioned resolves the fields a provisioner yields for binding e.b (spec 0014: admin
 // fields, named values, per binding files) and adds the binding's provision job.
-func (r *renderer) provisioned(e end, offered string) (map[string]value, error) {
-	admin := r.caps[offered]
-	if e.external != nil {
-		return nil, fmt.Errorf("%w: a binding to the external provisioner %s", ErrNotRendered, e.b.Provider)
-	}
-	adminValues, err := r.values(e, admin)
+func (r *renderer) provisioned(e end) (map[string]value, error) {
+	admin := r.caps[e.offered]
+	adminValues, err := r.adminValues(e.b.Provider, e.b.Provide)
 	if err != nil {
 		return nil, err
 	}
@@ -135,10 +165,27 @@ func (r *renderer) provisioned(e end, offered string) (map[string]value, error) 
 		case contract.YieldGenerate:
 			values[f] = value{file: r.perBinding(e.b, f)}
 		case contract.YieldOutput:
-			return nil, fmt.Errorf("%w: job outputs of %s", ErrNotRendered, offered)
+			return nil, fmt.Errorf("%w: job outputs of %s", ErrNotRendered, e.offered)
 		}
 	}
-	return values, r.provisionJob(e, admin, adminValues, named)
+	r.provisionJob(e, admin, adminValues, named)
+	return values, nil
+}
+
+// adminValues resolves the fields of provisioner provide q of instance p once; every provision
+// job of that provide shares them.
+func (r *renderer) adminValues(p, q string) (map[string]value, error) {
+	key := p + "." + q
+	if v, ok := r.admin[key]; ok {
+		return v, nil
+	}
+	e := r.end(p, q)
+	v, err := r.values(e, r.caps[e.offered])
+	if err != nil {
+		return nil, err
+	}
+	r.admin[key] = v
+	return v, nil
 }
 
 // values resolves every field of capability k that reaches the consumer from the provider's
@@ -156,7 +203,7 @@ func (r *renderer) values(e end, k contract.Capability) (map[string]value, error
 					continue
 				}
 				path := "secrets/" + e.b.Provider + "/" + e.b.Provide + "_" + f
-				r.placed(e.b.Provider, path, e.external.Capability, f)
+				r.placed(e.b.Provider, path, e.external.Capability, f, field.Description)
 				out[f] = value{file: path}
 			} else if v, ok := e.external.Fields[f]; ok {
 				out[f] = value{text: v}
@@ -185,6 +232,10 @@ func (r *renderer) source(e end, k contract.Capability, f string, src contract.F
 	port := e.provide.Port
 	if sdk {
 		port = sdkPort
+	}
+	perBinding := src.Generate || src.Platform == contract.FieldSourcePlatformConsumer
+	if perBinding && e.b.Consumer == "" {
+		return value{}, false, fmt.Errorf("render: field %s of %s.%s is per binding, but a provisioner's own fields are shared by all its bindings", f, p, e.b.Provide)
 	}
 	switch {
 	case src.Platform == contract.FieldSourcePlatformHost:
@@ -269,21 +320,45 @@ func provisionJobName(b contract.Binding) string {
 }
 
 // provisionJob adds the one shot service that makes what binding e.b names (spec 0014): the
-// capability's job image and script, the admin fields, the named values and the binding's
-// generated files.
-func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues map[string]value, named map[string]string) error {
+// admin fields, the binding's consumer, slot and named values, and its generated files.
+func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues map[string]value, named map[string]string) {
 	b, y := e.b, admin.Yields
 	name := provisionJobName(b)
-	svc := types.ServiceConfig{Name: name}
-	svc.Image = y.Job.Image
-	svc.Entrypoint = []string{"/bin/sh", "-eu", "-c"}
-	svc.Command = []string{escape(y.Job.Provision)}
-	svc.Restart = types.RestartPolicyNo
-	svc.Networks = map[string]*types.ServiceNetworkConfig{networkInternal: {}}
-	r.harden(&svc, nil)
+	svc := r.jobService(name, e, admin, adminValues, y.Job.Provision)
 	setEnv(&svc, "MP_CONSUMER", b.Consumer)
 	setEnv(&svc, "MP_SLOT", b.Slot)
 	setEnv(&svc, "MP_CONSUMER_HOST", r.host(b.Consumer))
+	for _, f := range y.Named {
+		setEnv(&svc, "MP_"+strings.ToUpper(f), named[f])
+	}
+	for _, f := range sortedKeys(y.Fields) {
+		if y.Fields[f].Kind != contract.YieldGenerate {
+			continue
+		}
+		target := "/run/secrets/bind/" + f
+		r.mountSecret(&svc, b.Consumer+"_uses_"+b.Slot+"_"+f, r.perBinding(b, f), target)
+		setEnv(&svc, "MP_"+strings.ToUpper(f)+"_FILE", target)
+	}
+	r.project.Services[name] = svc
+	r.jobs[name] = job{instance: b.Provider, module: e.module.Name, kind: jobProvision}
+}
+
+// jobService is what every job of provisioner provide e shares (spec 0014): the capability's job
+// image running script, hardening defaults, the internal network (plus egress to reach an
+// external provider), the stack's marker, the admin fields, and depends_on the provider.
+func (r *renderer) jobService(name string, e end, admin contract.Capability, adminValues map[string]value, script string) types.ServiceConfig {
+	b := e.b
+	svc := types.ServiceConfig{Name: name}
+	svc.Image = admin.Yields.Job.Image
+	svc.Entrypoint = []string{"/bin/sh", "-eu", "-c"}
+	svc.Command = []string{escape(script)}
+	svc.Restart = types.RestartPolicyNo
+	svc.Networks = map[string]*types.ServiceNetworkConfig{networkInternal: {}}
+	if e.external != nil {
+		svc.Networks[networkEgress] = &types.ServiceNetworkConfig{}
+		r.egress = true
+	}
+	r.harden(&svc, nil)
 	setEnv(&svc, "MP_MARKER", marker(r.g.Name))
 	for _, f := range sortedKeys(adminValues) {
 		v := adminValues[f]
@@ -299,21 +374,10 @@ func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues ma
 			setEnv(&svc, env, v.text)
 		}
 	}
-	for _, f := range y.Named {
-		setEnv(&svc, "MP_"+strings.ToUpper(f), named[f])
+	if e.external == nil {
+		dependOn(&svc, b.Provider, condition(e.module))
 	}
-	for _, f := range sortedKeys(y.Fields) {
-		if y.Fields[f].Kind != contract.YieldGenerate {
-			continue
-		}
-		target := "/run/secrets/bind/" + f
-		r.mountSecret(&svc, b.Consumer+"_uses_"+b.Slot+"_"+f, r.perBinding(b, f), target)
-		setEnv(&svc, "MP_"+strings.ToUpper(f)+"_FILE", target)
-	}
-	dependOn(&svc, b.Provider, condition(e.module))
-	r.project.Services[name] = svc
-	r.jobs[name] = job{instance: b.Provider, module: e.module.Name, kind: jobProvision}
-	return nil
+	return svc
 }
 
 // condition is what a dependant waits for: healthy when the module has a healthcheck, else

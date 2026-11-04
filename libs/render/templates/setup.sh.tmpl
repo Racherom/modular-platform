@@ -65,7 +65,7 @@ need() {
 	fi
 }
 {{range .Placed}}
-need {{.Path}} "{{.Field}} of the {{.Capability}} service {{.Instance}}"
+need {{.Path}} {{shellQuote (printf "%s of %s, a %s service. %s" .Field .Instance .Capability .Description)}}
 {{- end}}
 if [ "$missing" -ne 0 ]; then
 	echo "setup.sh: place the files above, then run it again" >&2

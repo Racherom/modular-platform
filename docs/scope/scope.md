@@ -128,7 +128,7 @@ spec [0011](../specs/0011-capability-module-contract/index.md) · [0012](../spec
 - [x] Design it (spec): `/architect capability and module contract`
 - [ ] Build it: `/develop capability and module contract`
    - [x] v1 thread on the sample: the `--wait` spike, v1 contract and catalog layout, matching with versions, slots and named provides, the provision job, the v0alpha1 converter, `sdkgen` and the editor on v1, the paper platform (AC-1, AC-2, AC-3, AC-4, AC-5, AC-7, AC-8, AC-12, AC-14, AC-16, AC-19, AC-20)
-   - [ ] Bindings in full: the revoke job, external instances, fixed path and `to_provider` fields, `per_caller`, networks, hardening, labels and `environment` (AC-1, AC-4, AC-6, AC-8, AC-12, AC-13, AC-14, AC-15, AC-18, AC-19)
+   - [ ] Bindings in full: the revoke job, external instances, fixed path and `to_provider` fields, `per_caller`, networks, hardening, labels and `environment` (AC-1, AC-4, AC-6, AC-8, AC-12, AC-13, AC-14, AC-15, AC-18, AC-19) · tasks 11 and 13 built; task 12 built except `.Clients` (template data, lands with task 15); task 10, the revoke job, is built on the local branch `feat/capability-module-contract-revoke-job` and waits on a spec change: `up -d --wait` cannot wait for a job nothing depends on
    - [ ] Install time: secrets, asked values, setup steps and the `setup.sh` assembly, templates, host access and the managed refusals (AC-9, AC-10, AC-11, AC-12)
    - [ ] The platform is a graph: the eight platform entries, per consumer caller keys, the platform render flavor, the release zip and `smoke-managed` on it (AC-16, AC-18)
    - [ ] TLS for unchanged providers: the postgres spike, the certificate provisioner, `api` with `verify-full` (AC-17)

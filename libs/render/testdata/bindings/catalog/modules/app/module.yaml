@@ -1,0 +1,45 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: app
+description: Uses an external database, a database an external server makes for it and a notifier, for the bindings golden render.
+image: example.test/app:1.0.0
+uses:
+  db:
+    capability: postgresql
+    versions: ">=15"
+    env:
+      host: APP_DB_HOST
+      port: APP_DB_PORT
+      database: APP_DB_NAME
+      user: APP_DB_USER
+      sslmode: APP_DB_SSLMODE
+    files:
+      password: /run/app/db-password
+      ca: /run/app/db-ca.pem
+  audit:
+    capability: postgresql
+    env:
+      host: APP_AUDIT_HOST
+      database: APP_AUDIT_NAME
+      user: APP_AUDIT_USER
+      password: APP_AUDIT_PASSWORD_FILE
+  notify:
+    capability: notify
+    env:
+      url: APP_NOTIFY_URL
+      token: APP_NOTIFY_TOKEN_FILE
+      region: APP_NOTIFY_REGION
+    fields:
+      key: {secret: notify-key}
+      label: {value: billing-app}
+secrets:
+  - name: notify-key
+    env: APP_NOTIFY_KEY_FILE
+    description: Key the app signs its notifications with.
+environment:
+  APP_DB_DSN: "postgres://{db.user}@{db.host}:{db.port}/{db.database}?sslmode={db.sslmode}"
+  APP_RUN_AS: "{uid}:{gid}"
+  APP_PRICE: "5$ a month"
+  APP_REGION: "region={notify.region}"
+hardening:
+  user: image

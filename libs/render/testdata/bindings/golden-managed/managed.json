@@ -1,0 +1,51 @@
+{
+  "Images": [
+    {
+      "Instance": "app",
+      "Module": "app",
+      "Image": "example.test/app:1.0.0"
+    },
+    {
+      "Instance": "notifier",
+      "Module": "notifier",
+      "Image": "example.test/notifier:2.1.0"
+    }
+  ],
+  "Secrets": [
+    {
+      "Path": "secrets/app/notify-key",
+      "Kind": "generated",
+      "Instance": "app",
+      "Capability": "",
+      "Field": ""
+    },
+    {
+      "Path": "secrets/app/uses_audit_password",
+      "Kind": "generated",
+      "Instance": "app",
+      "Capability": "",
+      "Field": ""
+    },
+    {
+      "Path": "secrets/app/uses_notify_token",
+      "Kind": "generated",
+      "Instance": "app",
+      "Capability": "",
+      "Field": ""
+    },
+    {
+      "Path": "secrets/billing/db_password",
+      "Kind": "placed",
+      "Instance": "billing",
+      "Capability": "postgresql",
+      "Field": "password"
+    },
+    {
+      "Path": "secrets/shared/admin_admin_password",
+      "Kind": "placed",
+      "Instance": "shared",
+      "Capability": "postgresql-provisioner",
+      "Field": "admin_password"
+    }
+  ]
+}
