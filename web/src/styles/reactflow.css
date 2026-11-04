@@ -1,0 +1,68 @@
+/*
+ * Maps React Flow's own variables to the tokens. Imported after @xyflow/react/dist/style.css.
+ * The canvas follows the resolved theme through ReactFlow's colorMode, which adds .light or
+ * .dark; both read the same tokens, so one block covers both.
+ */
+.react-flow.light,
+.react-flow.dark,
+.react-flow {
+  --xy-background-color: var(--color-canvas);
+  --xy-background-pattern-dots-color: var(--color-canvas-dot);
+  --xy-node-background-color: var(--color-surface-raised);
+  --xy-node-color: var(--color-text);
+  --xy-node-border: 1px solid var(--color-border-strong);
+  --xy-node-border-radius: var(--radius-md);
+  --xy-node-boxshadow-hover: var(--shadow-1);
+  --xy-node-boxshadow-selected: var(--shadow-1);
+  --xy-edge-stroke: var(--color-edge);
+  --xy-edge-stroke-selected: var(--color-accent);
+  --xy-edge-stroke-width: 1.5;
+  --xy-connectionline-stroke: var(--color-accent);
+  --xy-connectionline-stroke-width: 2;
+  --xy-handle-background-color: var(--color-border-strong);
+  --xy-handle-border-color: var(--color-surface-raised);
+  --xy-controls-button-background-color: var(--color-surface-raised);
+  --xy-controls-button-background-color-hover: var(--color-surface);
+  --xy-controls-button-color: var(--color-text);
+  --xy-controls-button-color-hover: var(--color-text);
+  --xy-controls-button-border-color: var(--color-border);
+  --xy-controls-box-shadow: var(--shadow-1);
+  --xy-attribution-background-color: var(--color-surface);
+  --xy-selection-background-color: transparent;
+  --xy-selection-border: 1px dashed var(--color-accent);
+  --xy-edge-label-background-color: var(--color-surface-raised);
+  --xy-edge-label-color: var(--color-text);
+
+  font-family: var(--font-sans);
+}
+
+.react-flow__attribution a {
+  color: var(--color-text-muted);
+}
+
+/* nodes draw their own box (ModuleNode); the wrapper only carries focus */
+.react-flow__node-module {
+  border-radius: var(--radius-md);
+}
+
+.react-flow__node-module:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
+.react-flow__edge:focus-visible {
+  outline: none;
+}
+
+.react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: var(--color-focus);
+  stroke-width: 3;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}

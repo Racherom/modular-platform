@@ -15,7 +15,7 @@ function Sample() {
   const text = Object.hasOwn(samples, name) ? samples[name] : undefined
   if (text === undefined) {
     return (
-      <div className="screen empty">
+      <div className="empty">
         <h1>No sample named {name}</h1>
         <p>
           <Link to="/">Go to the editor</Link>

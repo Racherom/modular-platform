@@ -1,0 +1,47 @@
+.file {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.fileName {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edited {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.canvas {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.canvas > :last-child {
+  flex: 1;
+  min-height: 0;
+}
+
+.muted {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.status {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}

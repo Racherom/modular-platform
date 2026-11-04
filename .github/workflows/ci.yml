@@ -40,6 +40,10 @@ jobs:
           git diff --exit-code || { echo "::error::run task generate and commit the result"; exit 1; }
       - run: task lint
       - run: task test
+      - name: Browser check (Playwright, axe)
+        run: |
+          pnpm --dir web exec playwright install --with-deps chromium
+          task test:browser
       - name: Build
         run: |
           task build:go build:web

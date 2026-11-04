@@ -1,0 +1,142 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+.header {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-6);
+  min-height: var(--header-height);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.name {
+  font-weight: var(--weight-strong);
+  white-space: nowrap;
+}
+
+.header nav {
+  display: flex;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.slot {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+}
+
+.slot:empty {
+  display: none;
+}
+
+.end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-6) var(--space-4);
+}
+
+.main:has(> [data-workspace]) {
+  overflow: hidden;
+  padding: 0;
+}
+
+/* AC-6: the four regions from 1024px wide */
+.workspace {
+  display: grid;
+  height: 100%;
+  grid-template-columns: var(--catalog-width) minmax(0, 1fr) var(--inspector-width);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "catalog canvas inspector"
+    "catalog problems inspector";
+}
+
+.catalog {
+  grid-area: catalog;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border);
+}
+
+.canvas {
+  grid-area: canvas;
+  min-width: 0;
+  min-height: 0;
+}
+
+.problems {
+  grid-area: problems;
+  max-height: var(--problems-height);
+  border-top: 1px solid var(--color-border);
+}
+
+.inspector {
+  grid-area: inspector;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border-left: 1px solid var(--color-border);
+}
+
+.catalog > *,
+.inspector > * {
+  flex: 1;
+}
+
+/* below 1024px the panels stack under the canvas, and the page scrolls */
+@media (max-width: 1023.98px) {
+  .app {
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .main:has(> [data-workspace]) {
+    overflow: visible;
+  }
+
+  .workspace {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas:
+      "canvas"
+      "problems"
+      "inspector"
+      "catalog";
+  }
+
+  .canvas {
+    height: 60vh;
+    min-height: 320px;
+  }
+
+  .catalog,
+  .inspector {
+    border: 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .problems {
+    max-height: none;
+  }
+}

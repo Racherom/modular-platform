@@ -1,0 +1,73 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-strong);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.button[data-size="sm"] {
+  height: var(--control-sm);
+  padding: 0 var(--space-3);
+}
+
+.button[data-hovered] {
+  background: var(--color-surface);
+}
+
+.button[data-variant="primary"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.button[data-variant="primary"][data-hovered] {
+  border-color: var(--color-accent-hover);
+  background: var(--color-accent-hover);
+}
+
+.button[data-variant="ghost"] {
+  border-color: transparent;
+  background: transparent;
+}
+
+.button[data-variant="ghost"][data-hovered] {
+  background: var(--color-surface);
+}
+
+.button[data-variant="danger"] {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.button[data-variant="danger"][data-hovered] {
+  background: var(--color-danger-surface);
+}
+
+.button[data-focus-visible] {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.button[data-disabled] {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.button svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}

@@ -71,6 +71,12 @@ tasks:
       - go test -race {{.GO_PACKAGES}}
       - pnpm --dir web test
 
+  test:browser:
+    desc: Run the editor's browser check (Playwright and axe against the dev server, planner mocked; needs Chromium)
+    deps: [web:install]
+    cmds:
+      - pnpm --dir web a11y
+
   test:integration:
     desc: Run the Go tests that need Docker (build tags integration and e2e; they build test images)
     # Two runs: testcontainers shares one session, and one reaper, across every package of a go

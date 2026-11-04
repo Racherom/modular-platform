@@ -1,0 +1,126 @@
+.node {
+  position: relative;
+  width: var(--node-width);
+  height: 100%;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--shadow-1);
+  font-size: var(--text-xs);
+}
+
+:global(.react-flow__node.selected) .node {
+  border: 2px solid var(--color-accent);
+}
+
+.node[data-error] {
+  border: 2px solid var(--color-danger);
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: var(--node-header);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.instance {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.module {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* one port row: provides on the left half, uses on the right half; handles sit on the edges */
+.row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  height: var(--port-row);
+  align-items: center;
+}
+
+.provides,
+.uses {
+  display: flex;
+  flex: 1 1 50%;
+  min-width: 0;
+  align-items: center;
+}
+
+.provides {
+  padding-left: var(--space-3);
+}
+
+.uses {
+  justify-content: flex-end;
+  padding-right: var(--space-3);
+}
+
+.label {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* handles: filled for provides and required needs, hollow dashed for optional needs */
+.handle:global(.react-flow__handle) {
+  width: var(--handle-size);
+  height: var(--handle-size);
+  min-width: 0;
+  min-height: 0;
+  border: 2px solid var(--color-edge);
+  border-radius: var(--radius-full);
+  background: var(--color-edge);
+}
+
+.handle[data-need="optional"]:global(.react-flow__handle) {
+  border-style: dashed;
+  background: var(--color-surface-raised);
+}
+
+.handle:global(.react-flow__handle.connectingfrom),
+.handle[data-drop="source"]:global(.react-flow__handle) {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+
+/* during a connect drag: valid drop targets get an accent ring, the other ports dim */
+.handle[data-drop="valid"]:global(.react-flow__handle) {
+  border-color: var(--color-accent);
+  background: var(--color-surface-raised);
+  box-shadow: 0 0 0 3px var(--color-accent);
+}
+
+.handle[data-drop="valid"]:global(.react-flow__handle.connectingto) {
+  background: var(--color-accent);
+}
+
+.handle[data-drop="invalid"]:global(.react-flow__handle) {
+  border-color: var(--color-edge-dimmed);
+  background: var(--color-edge-dimmed);
+}
+
+.handle[data-drop="invalid"][data-need="optional"]:global(.react-flow__handle) {
+  background: var(--color-surface-raised);
+}
+
+.handle:global(.react-flow__handle.connectionindicator) {
+  cursor: crosshair;
+}

@@ -76,7 +76,7 @@ Visual language, layout primitives and the base graph canvas (modules as nodes, 
 spec [0010](../specs/0010-design-system-graph-editor/index.md) · code in `web/src/styles/`, `web/src/components/`, `web/src/graph/`, `web/src/lib/`, `web/a11y/`, `web/design.md`
 - [x] Design it (spec): `/architect design system & graph editor foundation`
 - [ ] Build it: `/develop design system & graph editor foundation`
-   - [ ] Thin thread: tokens and themes, the app shell, drag connect through the planner into the working copy, the browser check harness (AC-2, AC-3, AC-6, AC-7, AC-9, AC-12, AC-16)
+   - [x] Thin thread: tokens and themes, the app shell, drag connect through the planner into the working copy, the browser check harness (AC-2, AC-3, AC-6, AC-7, AC-9, AC-12, AC-16)
    - [ ] Editing: rebind and unbind, selection and the inspector, problem marks and panel, plan failures and the download gate (AC-8, AC-9, AC-10, AC-11, AC-13, AC-14)
    - [ ] Session: undo and redo, Tidy layout, the edited flag and replace Dialog, the sample copy, the catalog filter, unknown modules (AC-15, AC-16, AC-17, AC-18, AC-19, AC-20)
    - [ ] Design system complete: the component set, the dev only `/design` route, `web/design.md`, the full axe and scale checks, the smoke additions (AC-1, AC-3, AC-4, AC-5, AC-7)

@@ -34,6 +34,10 @@
 			file_server
 		}
 
+		# the theme script is not hashed, so the browser checks for a new one on every load
+		@theme path /theme.js
+		header @theme Cache-Control "no-cache"
+
 		@file {
 			file {path}
 			not path /index.html */

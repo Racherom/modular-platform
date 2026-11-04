@@ -1,0 +1,39 @@
+.group {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-sm);
+  height: calc(var(--control-sm) - 6px);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.button[data-hovered] {
+  color: var(--color-text);
+}
+
+.button[data-selected] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.button[data-focus-visible] {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.button svg {
+  width: 16px;
+  height: 16px;
+}

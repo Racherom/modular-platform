@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Graph } from '../api/client'
 import { COLUMN_GAP, layout, ROW_GAP } from '../graph/layout'
+import { withPositions } from '../lib/storage'
 
 const graph = (modules: Graph['modules']): Graph => ({ apiVersion: 'modular-platform/v0alpha1', kind: 'Graph', name: 'g', modules })
 
@@ -34,5 +35,33 @@ describe('layout', () => {
   it('does not loop on a cycle', () => {
     const pos = layout(graph({ a: { module: 'm', uses: { x: 'b' } }, b: { module: 'm', uses: { x: 'a' } } }))
     expect(Object.keys(pos)).toEqual(['a', 'b'])
+  })
+})
+
+describe('withPositions (AC-16)', () => {
+  const g: Graph = {
+    apiVersion: 'modular-platform/v0alpha1',
+    kind: 'Graph',
+    name: 'g',
+    modules: { a: { module: 'x' }, b: { module: 'x', uses: { c: 'a' } } },
+  }
+  const w = { fileName: 'g.yaml', graph: g, plan: { ok: true, graph: g, bindings: [], problems: [] } }
+
+  it('keeps stored positions when every instance has one', () => {
+    const positions = { a: { x: 7, y: 7 }, b: { x: 9, y: 9 } }
+    expect(withPositions({ ...w, positions }).positions).toBe(positions)
+  })
+
+  it('lays out the whole graph when one instance has none', () => {
+    expect(withPositions({ ...w, positions: { a: { x: 7, y: 7 } } }).positions).toEqual(layout(g))
+  })
+
+  it('lays out a stored entry from before positions existed', () => {
+    expect(withPositions(w).positions).toEqual(layout(g))
+  })
+
+  it('drops positions of instances the graph no longer has', () => {
+    const positions = { a: { x: 1, y: 1 }, b: { x: 2, y: 2 }, gone: { x: 3, y: 3 } }
+    expect(withPositions({ ...w, positions }).positions).toEqual({ a: { x: 1, y: 1 }, b: { x: 2, y: 2 } })
   })
 })

@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
 import { logout } from '../api/platform'
+import { AppShell } from '../components/AppShell'
 import { SessionGate, useSession } from '../components/SessionGate'
 import { mode } from '../lib/config'
 
@@ -26,9 +27,8 @@ function Root() {
 
 function Shell() {
   return (
-    <div className="app">
-      <header className="app__header">
-        <span className="app__name">Modular Platform</span>
+    <AppShell
+      nav={
         <nav aria-label="Main">
           <Link to="/">Editor</Link>
           <Link to="/samples/$name" params={{ name: 'whoami-postgres' }}>
@@ -36,12 +36,11 @@ function Shell() {
           </Link>
           {mode === 'managed' && <Link to="/deployments">Deployments</Link>}
         </nav>
-        {mode === 'managed' && <Account />}
-      </header>
-      <main>
-        <Outlet />
-      </main>
-    </div>
+      }
+      account={mode === 'managed' ? <Account /> : undefined}
+    >
+      <Outlet />
+    </AppShell>
   )
 }
 

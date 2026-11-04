@@ -33,8 +33,9 @@ export async function fetchCatalog(): Promise<CatalogEntry[]> {
   return data.entries
 }
 
-export async function planGraph(graph: Graph): Promise<PlanResult> {
-  const { data, error, response } = await client.POST('/v1/plan', { body: graph })
+/** Plans a graph; the signal aborts the call when a newer edit replaces it. */
+export async function planGraph(graph: Graph, signal?: AbortSignal): Promise<PlanResult> {
+  const { data, error, response } = await client.POST('/v1/plan', { body: graph, signal })
   if (!data) throw failure(response.status, error?.problems)
   return data
 }

@@ -2,6 +2,7 @@
 node_modules/
 web/dist/
 web/smoke/results/
+web/a11y/results/
 web/test-results/
 web/playwright-report/
 *.test
