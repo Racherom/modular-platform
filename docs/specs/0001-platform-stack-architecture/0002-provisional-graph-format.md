@@ -2,6 +2,7 @@
 
 **Date**: 2026-10-29 (updated 2026-10-30: collision free Compose secret names)
 **Parent**: [0001. Platform stack and architecture](index.md)
+**Status**: Superseded in part by [0011](../0011-capability-module-contract/index.md) (catalog entry, matching and binding render rules); the graph file part stays in force until #4.
 
 > Extended by [0005. Module SDK](../0005-module-sdk/index.md): the catalog entry gains `runtime`, `config`, `uses.<cap>.client` with more `env` keys, and `provides.<cap>.auth` with `env.clients_dir`; the planner gains the rule `missing_token_mapping`; the render gains per instance env files, per binding token secrets and credential file secrets. Those definitions live in 0005, not here.
 
@@ -278,7 +279,7 @@ Round trip (**AC-9**): a shared fixtures folder read by both a Go test and an ed
 
 ## Follow-up
 
-- [ ] Spec #3 must replace `v0alpha1` catalog entries: capability versions, named need slots (one module using `postgresql` twice), per binding credentials, provisioning, and whether the `uses.*.env` mapping stays. It keeps Compose secret names collision free (the `_` rule above, or a new one if names may contain `_`).
+- [x] (answered by spec [0011](../0011-capability-module-contract/index.md), 2026-11-04: v1 with capability files, versions and ranges, named slots and provides, per binding credentials, provisioners; `uses.<slot>.env` stays, secret names stay collision free because names still never contain `_`) Spec #3 must replace `v0alpha1` catalog entries: capability versions, named need slots (one module using `postgresql` twice), per binding credentials, provisioning, and whether the `uses.*.env` mapping stays. It keeps Compose secret names collision free (the `_` rule above, or a new one if names may contain `_`).
 - [ ] Spec #4 must replace the `v0alpha1` graph file and decide whether positions get stored after all, and how a `v0alpha1` file is handled (refuse, or convert once).
 - [ ] Spec #6 must extend the matching rules (versions, preferences between several providers, external providers) without changing the results pinned here.
 - [ ] Verify at scaffold: the current `traefik/whoami` and `postgres` tags to pin.
