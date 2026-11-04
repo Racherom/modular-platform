@@ -1,0 +1,8 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: acme
+description: An ACME directory that issues server certificates to the modules of the stack.
+scheme: https
+fields:
+  url: {type: url, description: URL of the ACME directory.}
+  ca: {type: certificate, description: Root CA that signs the certificates it issues.}

@@ -1,6 +1,6 @@
 import { Inbox, Plus, Redo2, Trash2, Undo2 } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useState } from 'react'
-import type { CatalogEntry, Graph, Problem } from '../api/client'
+import type { Catalog, Graph, Problem } from '../api/client'
 import { GraphView } from '../components/GraphView'
 import { Badge, type BadgeTone } from '../components/ui/Badge'
 import { Button, type ButtonVariant } from '../components/ui/Button'
@@ -513,28 +513,31 @@ function DialogDemo() {
   )
 }
 
-const canvasCatalog = [
-  {
-    apiVersion: 'modular-platform/v0alpha1',
-    kind: 'Module',
-    name: 'postgres',
-    description: 'A database.',
-    image: 'postgres:18.6',
-    provides: { postgresql: { port: 5432 } },
-  },
-  {
-    apiVersion: 'modular-platform/v0alpha1',
-    kind: 'Module',
-    name: 'app',
-    description: 'An app with a required and an optional need.',
-    image: 'example.test/app:1',
-    provides: { http: { port: 8080 } },
-    uses: { postgresql: {}, cache: { optional: true } },
-  },
-] as unknown as CatalogEntry[]
+const canvasCatalog = {
+  modules: [
+    {
+      apiVersion: 'modular-platform/v1',
+      kind: 'Module',
+      name: 'postgres',
+      description: 'A database.',
+      image: 'postgres:18.6',
+      provides: { postgresql: { capability: 'postgresql', version: '18.6', port: 5432 } },
+    },
+    {
+      apiVersion: 'modular-platform/v1',
+      kind: 'Module',
+      name: 'app',
+      description: 'An app with a required and an optional need.',
+      image: 'example.test/app:1',
+      provides: { http: { capability: 'http', version: '1.0', port: 8080 } },
+      uses: { postgresql: { capability: 'postgresql' }, cache: { capability: 'cache', optional: true } },
+    },
+  ],
+  capabilities: [],
+} as unknown as Catalog
 
 const canvasGraph: Graph = {
-  apiVersion: 'modular-platform/v0alpha1',
+  apiVersion: 'modular-platform/v1',
   kind: 'Graph',
   name: 'showcase',
   modules: {

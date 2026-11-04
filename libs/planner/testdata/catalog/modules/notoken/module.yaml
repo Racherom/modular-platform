@@ -1,0 +1,11 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: notoken
+description: Test module that calls greeter without mapping its token.
+image: example.test/notoken:1.0.0
+runtime: sdk
+uses:
+  greet:
+    capability: greet
+    env:
+      url: GREET_URL

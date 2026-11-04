@@ -148,7 +148,7 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing, notice }:
       {reviewing && <ReviewDialog graph={graph} onClose={() => setReviewing(false)} />}
       <ReactFlowProvider>
         <Workspace
-          catalog={<CatalogPanel entries={catalog.data} />}
+          catalog={<CatalogPanel entries={catalog.data.modules} />}
           canvas={
             <div className={styles.canvas}>
               {notice && (

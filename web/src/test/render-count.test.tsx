@@ -1,11 +1,12 @@
 import { render } from '@testing-library/react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { CatalogEntry, Graph, Problem } from '../api/client'
+import type { Graph, Problem } from '../api/client'
 import { GraphView } from '../components/GraphView'
 import { bind } from '../graph/edit'
 import { toFlow } from '../graph/flow'
 import { layout } from '../graph/layout'
+import { testCatalog, testModule } from './fixtures'
 
 // Every render of a node, by instance. The stand in is memoized like the real ModuleNode, so it
 // renders again only when React Flow hands it a new node object.
@@ -22,17 +23,12 @@ vi.mock('../components/ModuleNode', async () => {
 })
 
 const entry = (name: string, provides: string[], uses: string[]) =>
-  ({
-    apiVersion: 'modular-platform/v0alpha1',
-    kind: 'Module',
-    name,
-    description: name,
-    image: `example.test/${name}:1`,
+  testModule(name, {
     provides: Object.fromEntries(provides.map((c) => [c, { port: 80 }])),
     uses: Object.fromEntries(uses.map((c) => [c, {}])),
-  }) as unknown as CatalogEntry
+  })
 
-const catalog = [entry('db', ['postgresql'], []), entry('app', ['http'], ['postgresql']), entry('proxy', [], ['http'])]
+const catalog = testCatalog([entry('db', ['postgresql'], []), entry('app', ['http'], ['postgresql']), entry('proxy', [], ['http'])])
 
 /** Ten apps with their own database each, and a proxy in front of the first. */
 function graph(): Graph {
@@ -41,7 +37,7 @@ function graph(): Graph {
     modules[`db${i}`] = { module: 'db' }
     modules[`app${i}`] = { module: 'app', uses: { postgresql: i === 3 ? null : `db${i}` } }
   }
-  return { apiVersion: 'modular-platform/v0alpha1', kind: 'Graph', name: 'scale', modules }
+  return { apiVersion: 'modular-platform/v1', kind: 'Graph', name: 'scale', modules }
 }
 
 function view(g: Graph, positions: ReturnType<typeof layout>, problems: Problem[] = []) {

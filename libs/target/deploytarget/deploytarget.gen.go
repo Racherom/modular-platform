@@ -85,24 +85,6 @@ func (e OperationStep) Valid() bool {
 	}
 }
 
-// Defines values for ProjectSecretField.
-const (
-	Password  ProjectSecretField = "password"
-	SecretKey ProjectSecretField = "secret_key"
-)
-
-// Valid indicates whether the value is a known member of the ProjectSecretField enum.
-func (e ProjectSecretField) Valid() bool {
-	switch e {
-	case Password:
-		return true
-	case SecretKey:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for ProjectSecretKind.
 const (
 	Generated ProjectSecretKind = "generated"
@@ -216,17 +198,16 @@ type ProjectFile struct {
 
 // ProjectSecret defines model for ProjectSecret.
 type ProjectSecret struct {
-	Capability string             `json:"capability,omitempty,omitzero"`
-	Field      ProjectSecretField `json:"field,omitempty,omitzero"`
-	Instance   string             `json:"instance"`
-	Kind       ProjectSecretKind  `json:"kind"`
+	Capability string `json:"capability,omitempty,omitzero"`
+
+	// Field The capability field the placed file holds.
+	Field    string            `json:"field,omitempty,omitzero"`
+	Instance string            `json:"instance"`
+	Kind     ProjectSecretKind `json:"kind"`
 
 	// Path `secrets/<instance>/<name>`.
 	Path string `json:"path"`
 }
-
-// ProjectSecretField defines model for ProjectSecret.Field.
-type ProjectSecretField string
 
 // ProjectSecretKind defines model for ProjectSecret.Kind.
 type ProjectSecretKind string

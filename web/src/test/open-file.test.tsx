@@ -2,17 +2,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { CatalogEntry, Graph, PlanResult } from '../api/client'
+import type { Graph, PlanResult } from '../api/client'
 import { routeTree } from '../routeTree.gen'
+import { testCatalog, testModule } from './fixtures'
 import { fetchHandler } from './setup'
 
-const catalog: CatalogEntry[] = [
-  { apiVersion: 'modular-platform/v0alpha1', kind: 'Module', name: 'whoami', description: 'test', image: 'traefik/whoami:v1.12.0' },
-]
+const catalog = testCatalog([testModule('whoami', { description: 'test', image: 'traefik/whoami:v1.12.0' })])
 
 // two versions of one file: same file name, same graph name, only the module differs
 const file = (module: string) =>
-  new File([`apiVersion: modular-platform/v0alpha1\nkind: Graph\nname: g\nmodules:\n  web:\n    module: ${module}\n`], 'graph.yaml', {
+  new File([`apiVersion: modular-platform/v1\nkind: Graph\nname: g\nmodules:\n  web:\n    module: ${module}\n`], 'graph.yaml', {
     type: 'application/yaml',
   })
 
@@ -30,7 +29,7 @@ describe('open file', () => {
   beforeEach(() => {
     fetchHandler.current = async (req) => {
       const url = new URL(req.url)
-      if (url.pathname === '/planner/v1/catalog') return Response.json({ entries: catalog })
+      if (url.pathname === '/planner/v1/catalog') return Response.json(catalog)
       if (url.pathname === '/planner/v1/plan') {
         const graph = (await req.json()) as Graph
         const known = graph.modules.web?.module === 'whoami'

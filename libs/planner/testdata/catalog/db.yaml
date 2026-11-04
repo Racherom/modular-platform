@@ -1,8 +1,0 @@
-apiVersion: modular-platform/v0alpha1
-kind: Module
-name: db
-description: Test module db.
-image: example.test/db:1.0.0
-provides:
-  db:
-    port: 5432

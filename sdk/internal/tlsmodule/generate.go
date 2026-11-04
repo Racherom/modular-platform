@@ -2,4 +2,4 @@
 // declares nothing, so it starts on the bootstrap names alone.
 package tlsmodule
 
-//go:generate go run ../../cmd/sdkgen -entry tlsmodule.yaml -package tlsmodule -out config.gen.go
+//go:generate go run ../../cmd/sdkgen -entry tlsmodule.yaml -capabilities . -package tlsmodule -out config.gen.go

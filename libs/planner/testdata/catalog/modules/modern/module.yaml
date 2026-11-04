@@ -1,0 +1,11 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: modern
+description: Test consumer that needs PostgreSQL 15 or newer.
+image: example.test/modern:1.0.0
+uses:
+  db:
+    capability: postgresql
+    versions: ">=15"
+    env:
+      url: DB_URL

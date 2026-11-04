@@ -6,7 +6,7 @@ import { mockPlanner } from './mock-planner'
 // color when it has keyboard focus. React Flow's own stylesheet removes the outline from
 // focused nodes and paints focused edges in the selected color, so the editor's rules must win.
 
-const BOUND = `apiVersion: modular-platform/v0alpha1
+const BOUND = `apiVersion: modular-platform/v1
 kind: Graph
 name: bound
 modules:
@@ -19,7 +19,7 @@ modules:
 `
 
 /** whoami bound to a, with b as a second postgres. */
-const TWO = `apiVersion: modular-platform/v0alpha1
+const TWO = `apiVersion: modular-platform/v1
 kind: Graph
 name: two
 modules:

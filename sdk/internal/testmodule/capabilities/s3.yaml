@@ -1,0 +1,12 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: s3
+description: A test object store bucket and its keys.
+scheme: https
+fields:
+  url: {type: url, description: Endpoint.}
+  bucket: {type: string, description: Bucket.}
+  region: {type: string, optional: true, description: Region.}
+  access_key_id: {type: string, description: Key id.}
+  secret_access_key: {type: secret, description: Secret key.}
+  ca: {type: certificate, optional: true, description: Root CA.}

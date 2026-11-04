@@ -83,39 +83,141 @@ export interface components {
     schemas: {
         /** @description A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value. */
         Graph: {
-            /** @description Exactly `modular-platform/v0alpha1`. */
+            /**
+             * @description `modular-platform/v1`. A `modular-platform/v0alpha1` graph is still read: the planner
+             *     converts it to v1 and answers with warning `converted_from_v0alpha1`.
+             */
             apiVersion: string;
             /** @description Exactly `Graph`. */
             kind: string;
+            /** @description `1.<minor>`, default `1.0`; a writer leaves it out at `1.0`. A minor above what the planner reads is `format_too_new`. */
+            formatVersion?: string;
             /** @description The stack's name and the Compose project name. A DNS label, not a reserved word. */
             name: string;
-            /** @description One entry per placed module, keyed by instance name (also the Compose service name). */
+            /** @description One entry per instance, keyed by instance name (also the Compose service name). */
             modules: {
                 [key: string]: components["schemas"]["GraphModule"];
             };
         };
+        /** @description Exactly one of `module` (a catalog module) and `external` (a service outside the stack). */
         GraphModule: {
-            /** @description The catalog entry this instance runs. */
-            module: string;
+            /** @description The catalog module this instance runs. */
+            module?: string;
+            external?: components["schemas"]["ExternalInstance"];
             uses?: components["schemas"]["Uses"];
         };
         /**
-         * @description Capability to provider instance name. `null` leaves an optional need unbound on purpose.
-         *     A missing key means not decided: the planner may bind a required need or warn about an optional one.
+         * @description Slot name to its binding. `null` leaves an optional slot unbound on purpose. A missing key
+         *     means not decided: the planner may bind a required slot or warn about an optional one.
          */
         Uses: {
-            [key: string]: string | null;
+            [key: string]: components["schemas"]["UseBinding"];
+        };
+        /**
+         * @description `instance` or `instance.provide`, or an object with that text as `provider` plus named
+         *     values (field name to value) for a binding to a provisioner. Written as a string when it
+         *     carries no named values.
+         */
+        UseBinding: string | ({
+            provider: string;
+        } & {
+            [key: string]: string;
+        }) | null;
+        ExternalInstance: {
+            /** @description Provide name to what the external service offers. */
+            provides: {
+                [key: string]: components["schemas"]["ExternalProvide"];
+            };
+        };
+        ExternalProvide: {
+            capability: string;
+            /** @description The version it speaks, like `16.4`. */
+            version: string;
+            /**
+             * @description Non secret field values, numbers as strings. A secret or certificate field is never
+             *     written here; it is a file you place at `secrets/<instance>/<provide>_<field>`.
+             */
+            fields?: {
+                [key: string]: string;
+            };
         };
         Catalog: {
-            entries: components["schemas"]["CatalogEntry"][];
+            /** @description Sorted by name. */
+            modules: components["schemas"]["Module"][];
+            /** @description Sorted by name. */
+            capabilities: components["schemas"]["Capability"][];
         };
-        /** @description One module of the built in catalog (`catalog/<name>.yaml`). */
-        CatalogEntry: {
-            /** @description Exactly `modular-platform/v0alpha1`. */
+        /** @description One protocol and the fields a binding of it carries (`catalog/capabilities/<name>.yaml`, spec 0012). */
+        Capability: {
+            /** @description Exactly `modular-platform/v1`. */
+            apiVersion: string;
+            /** @description Exactly `Capability`. */
+            kind: string;
+            formatVersion?: string;
+            /** @description Equal to the file name without `.yaml`; unique among capabilities. */
+            name: string;
+            description: string;
+            /** @description The url scheme the `platform: url` source writes. */
+            scheme?: string;
+            /** @description Field name (snake case) to its declaration. */
+            fields: {
+                [key: string]: components["schemas"]["CapabilityField"];
+            };
+            yields?: components["schemas"]["Yields"];
+        };
+        CapabilityField: {
+            /**
+             * @description `secret` and `certificate` always travel as files; the others as text.
+             * @enum {string}
+             */
+            type: "string" | "int" | "bool" | "url" | "enum" | "secret" | "certificate";
+            description: string;
+            /** @default false */
+            optional: boolean;
+            /** @description RE2, matched against the whole value; string only. */
+            pattern?: string;
+            /** @description The allowed values; enum only, required there. */
+            values?: string[];
+            /**
+             * @default to_consumer
+             * @enum {string}
+             */
+            direction: "to_consumer" | "to_provider" | "both";
+        };
+        /** @description What a provisioner makes per binding (spec 0014). */
+        Yields: {
+            /** @description The capability each binding gets. */
+            capability: string;
+            /** @description Fields of the yielded capability the graph names per binding. */
+            named?: string[];
+            /** @description The named field the revoke job keeps; without it there is no revoke job. */
+            login?: string;
+            /** @description Yielded field to where its value comes from. */
+            fields: {
+                [key: string]: components["schemas"]["YieldSource"];
+            };
+            job: components["schemas"]["Job"];
+        };
+        /** @description `named`, `generate`, `output`, or `{admin: <field of the provisioner>}`. */
+        YieldSource: ("named" | "generate" | "output") | {
+            admin: string;
+        };
+        Job: {
+            /** @description A tagged image, never `latest`, with `/bin/sh`. */
+            image: string;
+            /** @description POSIX sh script of the provision job, run once per binding on every `up`. */
+            provision: string;
+            /** @description POSIX sh script of the revoke job; required exactly when `login` is set. */
+            revoke?: string;
+        };
+        /** @description One module of the built in catalog (`catalog/modules/<name>/module.yaml`, spec 0013). */
+        Module: {
+            /** @description Exactly `modular-platform/v1`. */
             apiVersion: string;
             /** @description Exactly `Module`. */
             kind: string;
-            /** @description Equal to the file name without `.yaml`; unique in the catalog. */
+            formatVersion?: string;
+            /** @description Equal to the folder name; unique in the catalog. */
             name: string;
             description: string;
             /** @description An image reference with a tag other than `latest`, optionally followed by a digest. */
@@ -126,65 +228,204 @@ export interface components {
              * @enum {string}
              */
             runtime?: "sdk";
-            /** @description Value name to one declared config value, read by the SDK (spec 0005). */
+            command?: string[];
+            entrypoint?: string[];
+            /** @description Fixed env, with `{<slot>.<field>}`, `{config.<value>}`, `{uid}`, `{gid}` and `{install}` placeholders. */
+            environment?: {
+                [key: string]: string;
+            };
+            /** @description Value name to one declared config value (spec 0005). */
             config?: {
                 [key: string]: components["schemas"]["ConfigValue"];
             };
-            /** @description Capability to where a consumer reaches it. */
+            /** @description Provide name to what it offers. */
             provides?: {
                 [key: string]: components["schemas"]["Provide"];
             };
-            /** @description Capability to how this module consumes it. */
+            /** @description Slot name to one need. */
             uses?: {
-                [key: string]: components["schemas"]["Use"];
+                [key: string]: components["schemas"]["Slot"];
             };
             secrets?: components["schemas"]["Secret"][];
+            setup?: components["schemas"]["SetupStep"][];
+            templates?: components["schemas"]["Template"][];
+            /** @description Data folder name to its absolute path in the container. */
+            volumes?: {
+                [key: string]: string;
+            };
+            publish?: components["schemas"]["Publish"][];
+            host_mounts?: components["schemas"]["HostMount"][];
+            network?: components["schemas"]["Network"];
+            hardening?: components["schemas"]["Hardening"];
             healthcheck?: components["schemas"]["Healthcheck"];
         };
         Provide: {
-            /** @description The port on the service's host name. Required, except on a `runtime: sdk` entry, which must not set it. */
+            capability: string;
+            /** @description The version it speaks, like `18.6`. */
+            version: string;
+            /** @description Required, except on a `runtime: sdk` entry, which must not set it. */
             port?: number;
             /**
-             * @description `binding-token`: every consumer calls with its own per binding token.
+             * @description `binding-token`: every consumer calls with its own per binding token (field `token`).
              * @enum {string}
              */
             auth?: "binding-token";
-            env?: components["schemas"]["ProvideEnv"];
+            /** @description Field of the capability to where its value comes from. */
+            fields?: {
+                [key: string]: components["schemas"]["FieldSource"];
+            };
+            /** @description `to_provider` and `both` fields to the env var that gets their clients directory. */
+            env?: {
+                [key: string]: string;
+            };
         };
-        ProvideEnv: {
-            /** @description Env var set to the directory holding one token file per consumer; required with `auth`. */
-            clients_dir?: string;
-        };
-        Use: {
+        Slot: {
+            capability: string;
+            /** @description A version range like `>=15, <19`; absent means any version. */
+            versions?: string;
             /** @default false */
             optional: boolean;
+            /**
+             * @description Only on a `runtime: sdk` entry.
+             * @default false
+             */
+            per_caller: boolean;
             /**
              * @description The client the SDK builds for this binding; only on a `runtime: sdk` entry.
              * @enum {string}
              */
             client?: "http" | "postgresql" | "s3";
-            env?: components["schemas"]["UseEnv"];
+            /** @description Field to the env var it arrives in; a secret or certificate field's env gets the file path. */
+            env?: {
+                [key: string]: string;
+            };
+            /** @description Secret or certificate field to the absolute path it is mounted at. */
+            files?: {
+                [key: string]: string;
+            };
+            /** @description `to_provider` field to where the consumer's value comes from. */
+            fields?: {
+                [key: string]: components["schemas"]["FieldSource"];
+            };
         };
         /**
-         * @description Env var names the consumer reads the binding from. An omitted key delivers nothing. Every
-         *     binding takes host, port, url, token_file and ca_file; a postgresql client also database,
-         *     user, password_file and sslmode; an s3 client also bucket, region, access_key_id and
-         *     secret_access_key_file.
+         * @description Where one field's value comes from: exactly one of `platform`, `value`, `config`,
+         *     `secret`, `generate`, `uses` and `volume`, with the keys that kind takes (spec 0013).
          */
-        UseEnv: {
-            host?: string;
-            port?: string;
-            url?: string;
-            token_file?: string;
-            ca_file?: string;
-            database?: string;
-            user?: string;
-            password_file?: string;
-            sslmode?: string;
-            bucket?: string;
-            region?: string;
-            access_key_id?: string;
-            secret_access_key_file?: string;
+        FieldSource: {
+            /** @enum {string} */
+            platform?: "host" | "port" | "url" | "ca" | "tls" | "consumer";
+            /** @description With `platform: url`, a path to append; with `volume`, the file in the folder. */
+            path?: string;
+            /** @description With `platform: tls`, the value when the provider serves TLS. */
+            on?: string;
+            /** @description With `platform: tls`, the value when it does not. */
+            off?: string;
+            /** @description Consumer side `platform` sources only, the consumer's own provide. */
+            provide?: string;
+            value?: string;
+            config?: string;
+            /** @description With `config`, `{}` stands for the value; with `uses`, `{<field>}` for a field. */
+            format?: string;
+            secret?: string;
+            generate?: boolean;
+            uses?: string;
+            /** @description With `uses`, the field of that binding to pass through. */
+            field?: string;
+            volume?: string;
+        };
+        /** @description A secret file of the instance, `secrets/<instance>/<name>`. */
+        Secret: {
+            /** @description A name ending in `/` is a folder a setup step writes. */
+            name: string;
+            description: string;
+            /**
+             * @default generate
+             * @enum {string}
+             */
+            from: "generate" | "ask" | "setup";
+            /** @description Env var set to the secret file's path inside the container. */
+            env?: string;
+            /** @description Absolute path to mount it at. */
+            mount?: string;
+        };
+        SetupStep: {
+            name: string;
+            entrypoint?: string[];
+            command: string[];
+            env?: {
+                [key: string]: string;
+            };
+            /** @description A provide; the step runs once per binding to it. */
+            for_each?: string;
+            asks?: components["schemas"]["SetupAsk"][];
+            reads?: components["schemas"]["SetupRead"][];
+            writes?: components["schemas"]["SetupWrite"][];
+        };
+        SetupAsk: {
+            name: string;
+            description: string;
+            /** @default false */
+            secret: boolean;
+        };
+        /** @description One of `{slot, field}`, `{provide, field}` or `{secret}`. */
+        SetupRead: {
+            slot?: string;
+            provide?: string;
+            field?: string;
+            secret?: string;
+        };
+        SetupWrite: {
+            name: string;
+            /**
+             * @default 0600
+             * @enum {string}
+             */
+            mode: "0600" | "0644";
+        };
+        Template: {
+            /** @description A file in the module folder ending in `.tmpl`. */
+            file: string;
+            /** @description The absolute path it is mounted at, read only. */
+            path: string;
+            delims?: string[];
+        };
+        Publish: {
+            port: number;
+            host: components["schemas"]["HostPort"];
+        };
+        /** @description A host port number, or `{config: <int value>}`. */
+        HostPort: number | {
+            config: string;
+        };
+        HostMount: {
+            host: components["schemas"]["HostPath"];
+            path: components["schemas"]["HostPath"];
+            /** @default true */
+            read_only: boolean;
+            /** @default false */
+            create: boolean;
+        };
+        /** @description An absolute path, `{config: <value>}` or `{install: <relative path>}`. */
+        HostPath: string | {
+            config?: string;
+            install?: string;
+        };
+        Network: {
+            /** @default false */
+            egress: boolean;
+            aliases?: components["schemas"]["ConfigRef"][];
+        };
+        ConfigRef: {
+            config: string;
+        };
+        Hardening: {
+            /** @enum {string} */
+            user?: "root" | "image";
+            /** @default false */
+            writable_root: boolean;
+            cap_add?: string[];
+            tmpfs?: string[];
         };
         /** @description One value a module built on the SDK reads at start (spec 0005). */
         ConfigValue: {
@@ -209,15 +450,14 @@ export interface components {
              * @default false
              */
             generate: boolean;
+            /**
+             * @description `ask`: `setup.sh` asks the value and writes it into `.env`.
+             * @enum {string}
+             */
+            setup?: "ask";
         };
         /** @description A whole number for an `int`, a duration like `10s` for a `duration`. */
         ConfigBound: number | string;
-        /** @description Created by `setup.sh` as `secrets/<instance>/<name>`, mounted as the Compose secret `<instance>_<name>`. */
-        Secret: {
-            name: string;
-            /** @description Env var set to the secret file's path inside the container. */
-            env: string;
-        };
         /** @description A Compose healthcheck, copied as is into the service. */
         Healthcheck: {
             /** @description First item is `CMD` or `CMD-SHELL`. */
@@ -229,10 +469,18 @@ export interface components {
         };
         Binding: {
             consumer: string;
+            slot: string;
+            /** @description The slot's capability. */
             capability: string;
             provider: string;
+            /** @description The provide of the provider the slot is bound to. */
+            provide: string;
             /** @description True when the planner made this binding, not the graph. */
             auto: boolean;
+            /** @description True when the planner wrote default named values into the graph. */
+            named: boolean;
+            /** @description True when the provide's capability yields the slot's capability, so a provision job makes it. */
+            provisioned: boolean;
         };
         Problem: {
             /** @enum {string} */
@@ -250,7 +498,7 @@ export interface components {
         PlanResult: {
             ok: boolean;
             graph: components["schemas"]["Graph"];
-            /** @description Explicit and automatic bindings, sorted by consumer then capability. */
+            /** @description Explicit and automatic bindings, sorted by consumer then slot. */
             bindings: components["schemas"]["Binding"][];
             /** @description Sorted by path, then code. */
             problems: components["schemas"]["Problem"][];
@@ -274,7 +522,7 @@ export interface components {
             plan: components["schemas"]["PlanResult"];
             /** @description One entry per instance, sorted by instance. */
             images: components["schemas"]["ModuleImage"][];
-            /** @description Host ports the project publishes; always empty in `v0alpha1`. */
+            /** @description Host ports the project publishes; always empty for a deployed graph, which never publishes (spec 0013). */
             publishedPorts: components["schemas"]["PublishedPort"][];
             /** @description Every secret file the project mounts, sorted by path. */
             secrets: components["schemas"]["RenderedSecret"][];
@@ -300,13 +548,10 @@ export interface components {
              */
             kind: "generated" | "placed";
             instance: string;
-            /** @description Placed only, the binding's capability. */
+            /** @description Placed only, the capability of the external provide. */
             capability?: string;
-            /**
-             * @description Placed only, which credential of the binding it holds.
-             * @enum {string}
-             */
-            field?: "password" | "secret_key";
+            /** @description Placed only, the capability field the file holds. */
+            field?: string;
         };
         RenderedFile: {
             path: string;
@@ -321,8 +566,9 @@ export interface components {
     };
     responses: {
         /**
-         * @description The body does not decode strictly (`invalid_graph`), or names another `apiVersion`
-         *     (`unsupported_version`) or `kind` (`wrong_kind`). Exactly one problem.
+         * @description The body does not decode strictly (`invalid_graph`), names another `apiVersion`
+         *     (`unsupported_version`) or `kind` (`wrong_kind`), or a `formatVersion` newer than this
+         *     planner reads (`format_too_new`). Exactly one problem.
          */
         BadGraph: {
             headers: {
@@ -387,7 +633,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Every catalog entry, sorted by name. */
+            /** @description Every module and capability of the catalog, each sorted by name. Template bodies are not served. */
             200: {
                 headers: {
                     [name: string]: unknown;

@@ -1,24 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import type { CatalogEntry, Graph } from '../api/client'
+import type { Graph } from '../api/client'
 import { bind, candidates, type Drop, isValidDrop, letPlannerChoose, unbind } from '../graph/edit'
+import { testCatalog, testModule } from './fixtures'
 
-const entry = (name: string, more: Partial<CatalogEntry>): CatalogEntry => ({
-  apiVersion: 'modular-platform/v0alpha1',
-  kind: 'Module',
-  name,
-  description: name,
-  image: `${name}:1`,
-  ...more,
-})
-
-const catalog: CatalogEntry[] = [
-  entry('postgres', { provides: { postgresql: { port: 5432 } } }),
-  entry('mysql', { provides: { mysql: { port: 3306 } } }),
-  entry('whoami', { provides: { http: { port: 80 } }, uses: { postgresql: { optional: true } } }),
-]
+const catalog = testCatalog([
+  testModule('postgres', { provides: { postgresql: { port: 5432 } } }),
+  testModule('mysql', { provides: { mysql: { port: 3306 } } }),
+  testModule('whoami', { provides: { http: { port: 80 } }, uses: { postgresql: { optional: true } } }),
+])
 
 const graph: Graph = {
-  apiVersion: 'modular-platform/v0alpha1',
+  apiVersion: 'modular-platform/v1',
   kind: 'Graph',
   name: 'g',
   modules: {
@@ -119,10 +111,10 @@ describe('candidates', () => {
     expect(candidates(graph, catalog, 'web', 'postgresql')).toEqual(['db', 'db2'])
   })
 
-  it('never lists the consumer itself or an instance not in the catalog', () => {
-    expect(candidates(graph, catalog, 'db', 'postgresql')).toEqual(['db2'])
-    expect(candidates(graph, catalog, 'web', 'mysql')).toEqual(['other'])
-    expect(candidates(graph, catalog, 'web', 'nothing')).toEqual([])
+  it('lists nothing for a slot the consumer module does not have', () => {
+    expect(candidates(graph, catalog, 'db', 'postgresql')).toEqual([])
+    expect(candidates(graph, catalog, 'web', 'mysql')).toEqual([])
+    expect(candidates(graph, catalog, 'ghost', 'postgresql')).toEqual([])
   })
 
   it('ignores a capability named like a prototype key', () => {

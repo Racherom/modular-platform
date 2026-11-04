@@ -33,14 +33,14 @@ var _ StrictServerInterface = (*Server)(nil)
 
 // Server implements the planner contract over the built in catalog.
 type Server struct {
-	catalog  []contract.CatalogEntry
+	catalog  contract.Catalog
 	managed  bool  // internal mode: /v1/render/managed answers
 	reserved []int // host ports of the platform's ingress, which no managed project may publish
 }
 
-// GetCatalog lists the catalog, sorted by name.
+// GetCatalog lists the catalog: its modules and capabilities, each sorted by name.
 func (s *Server) GetCatalog(context.Context, GetCatalogRequestObject) (GetCatalogResponseObject, error) {
-	return GetCatalog200JSONResponse{Entries: s.catalog}, nil
+	return GetCatalog200JSONResponse(s.catalog), nil
 }
 
 // Plan checks the graph and fills in its automatic bindings.
@@ -134,7 +134,7 @@ func renderedProject(plan contract.PlanResult, m render.ManagedProject) contract
 	for _, s := range m.Secrets {
 		out.Secrets = append(out.Secrets, contract.RenderedSecret{
 			Path: s.Path, Kind: contract.RenderedSecretKind(s.Kind), Instance: s.Instance,
-			Capability: s.Capability, Field: contract.RenderedSecretField(s.Field),
+			Capability: s.Capability, Field: s.Field,
 		})
 	}
 	for _, f := range m.Files {
@@ -185,7 +185,7 @@ func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
 			go limiter.SweepEvery(ctx, time.Minute, m.Log)
 			m.WithRateLimit(limiter, hops)
 		}
-		m.Log.InfoContext(ctx, "planner starting", slog.String("mode", string(mode)), slog.Int("catalog_entries", len(entries)))
+		m.Log.InfoContext(ctx, "planner starting", slog.String("mode", string(mode)), slog.Int("catalog_modules", len(entries.Modules)), slog.Int("catalog_capabilities", len(entries.Capabilities)))
 		return newHandler(&Server{catalog: entries, managed: mode == config.PlannerModeInternal, reserved: reserved}, m.Log), nil
 	}
 }

@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test'
 import { stringify } from 'yaml'
-import type { CatalogEntry, Graph } from '../../src/api/client'
+import type { Catalog, Graph } from '../../src/api/client'
 import { drag, handle } from '../helpers'
 import { graphFile, mockPlanner } from '../mock-planner'
 
@@ -11,15 +11,16 @@ const BUDGET_MS = 100
 const RUNS = 5
 
 /** Ten entries: scale-k provides cap-k and uses the next two capabilities, cap-(k+1) and cap-(k+2). */
-const entries: CatalogEntry[] = Array.from({ length: 10 }, (_, k) => ({
-  apiVersion: 'modular-platform/v0alpha1',
+const modules = Array.from({ length: 10 }, (_, k) => ({
+  apiVersion: 'modular-platform/v1',
   kind: 'Module',
   name: `scale-${k}`,
   description: `Scale test entry ${k}.`,
   image: `example.test/scale-${k}:1`,
-  provides: { [`cap-${k}`]: { port: 8000 + k } },
-  uses: { [`cap-${(k + 1) % 10}`]: {}, [`cap-${(k + 2) % 10}`]: {} },
-})) as unknown as CatalogEntry[]
+  provides: { [`cap-${k}`]: { capability: `cap-${k}`, version: '1.0', port: 8000 + k } },
+  uses: { [`cap-${(k + 1) % 10}`]: { capability: `cap-${(k + 1) % 10}` }, [`cap-${(k + 2) % 10}`]: { capability: `cap-${(k + 2) % 10}` } },
+}))
+const entries = { modules, capabilities: [] } as unknown as Catalog
 
 /** Five instances per entry (s<k>-<j>), each binding both needs to the instances of the same j: 50 modules, 100 bindings. */
 function scaleGraph(): Graph {
@@ -31,7 +32,7 @@ function scaleGraph(): Graph {
       modules[`s${k}-${j}`] = { module: `scale-${k}`, uses: { [`cap-${a}`]: `s${a}-${j}`, [`cap-${b}`]: `s${b}-${j}` } }
     }
   }
-  return { apiVersion: 'modular-platform/v0alpha1', kind: 'Graph', name: 'scale', modules }
+  return { apiVersion: 'modular-platform/v1', kind: 'Graph', name: 'scale', modules }
 }
 
 /**

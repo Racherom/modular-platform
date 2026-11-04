@@ -1,0 +1,13 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  a:
+    module: pg14
+  reports:
+    module: twodb
+    uses:
+      audit-db: null
+      main-db:
+        database: reports
+        provider: a
+name: named-direct

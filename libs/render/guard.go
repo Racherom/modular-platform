@@ -27,8 +27,9 @@ const (
 var (
 	secretFile = regexp.MustCompile(`^\./secrets/[a-z0-9-]+/[A-Za-z0-9._-]+$`)
 	configFile = regexp.MustCompile(`^\./config/[a-z0-9]([a-z0-9-]*[a-z0-9])?\.env$`)
-	// platformLabels are the only labels a managed service carries.
-	platformLabels = []string{LabelDeployment, LabelGraph, LabelInstance, LabelModule}
+	dataFolder = regexp.MustCompile(`^\./data/([a-z0-9-]+)/[a-z0-9-]+$`)
+	// platformLabels are the only labels a managed service carries; LabelJob only on a job.
+	platformLabels = []string{LabelDeployment, LabelGraph, LabelInstance, LabelJob, LabelModule}
 )
 
 // Project is a Compose file as docker compose reads it: interpolated with its env files and in
@@ -73,7 +74,8 @@ func LoadProject(ctx context.Context, compose []byte, envFiles ...[]byte) (Proje
 	return Project{model: model, env: names}, nil
 }
 
-// Guard checks p against an allow list of exactly the shape Managed emits (spec 0006, AC-8):
+// Guard checks p against an allow list of exactly the shape Managed emits (spec 0006 AC-8, grown
+// by spec 0013 with hardening, data folders and one shot jobs):
 // anything else is one host_access problem per instance and key. reservedPorts are the host
 // ports of the platform's ingress, which no project may publish. Guard is the last line between
 // an imported graph and the host, so a key the render does not emit is refused even when it
@@ -218,7 +220,25 @@ func (g *guard) services(model map[string]any, v any) {
 			case "image", "user":
 				g.want(path, isString(v) && v != "")
 			case "restart":
-				g.want(path, v == string(types.RestartPolicyUnlessStopped))
+				labels, _ := svc["labels"].(map[string]any)
+				_, isJob := labels[LabelJob]
+				g.want(path, v == string(types.RestartPolicyUnlessStopped) || (isJob && v == types.RestartPolicyNo))
+			case "read_only":
+				_, ok := v.(bool)
+				g.want(path, ok)
+			case "cap_drop":
+				g.want(path, equalStrings(v, "ALL"))
+			case "security_opt":
+				g.want(path, equalStrings(v, "no-new-privileges:true"))
+			case "entrypoint", "command", "tmpfs":
+				g.want(path, isStrings(v))
+			case "volumes":
+				g.list(path, v, func(p string, vol map[string]any) {
+					g.only(p, vol, "type", "source", "target")
+					source, _ := vol["source"].(string)
+					m := dataFolder.FindStringSubmatch(source)
+					g.want(p, vol["type"] == types.VolumeTypeBind && m != nil && m[1] == i && isString(vol["target"]))
+				})
 			case "environment":
 				_, ok := v.(map[string]any)
 				g.want(path, ok)
@@ -332,6 +352,35 @@ func (g *guard) socket(path string, v any) {
 	}
 }
 
+// isStrings reports whether v is a list of strings.
+func isStrings(v any) bool {
+	items, ok := v.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if !isString(item) {
+			return false
+		}
+	}
+	return true
+}
+
+// equalStrings reports whether v is exactly the list want.
+func equalStrings(v any, want ...string) bool {
+	items, ok := v.([]any)
+	if !ok {
+		return false
+	}
+	got := make([]string, len(items))
+	for n, item := range items {
+		if got[n], ok = item.(string); !ok {
+			return false
+		}
+	}
+	return slices.Equal(got, want)
+}
+
 func isString(v any) bool {
 	_, ok := v.(string)
 	return ok
@@ -340,4 +389,25 @@ func isString(v any) bool {
 func hasKey(m map[string]any, k string) bool {
 	_, ok := m[k]
 	return ok
+}
+
+// DataFolders lists, sorted, the data/<instance>/<volume> folders the services of p bind (spec
+// 0013, "Volumes"), so the deployer can make them as the platform user before up. Run Guard
+// first: it refuses every other bind.
+func DataFolders(p Project) []string {
+	var out []string
+	services, _ := p.model["services"].(map[string]any)
+	for _, i := range sortedKeys(services) {
+		svc, _ := services[i].(map[string]any)
+		vols, _ := svc["volumes"].([]any)
+		for _, v := range vols {
+			vol, _ := v.(map[string]any)
+			source, _ := vol["source"].(string)
+			if m := dataFolder.FindStringSubmatch(source); m != nil && m[1] == i {
+				out = append(out, strings.TrimPrefix(source, "./"))
+			}
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }

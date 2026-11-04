@@ -1,0 +1,17 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: app
+description: Test module app.
+image: example.test/app:1.0.0
+provides:
+  http:
+    capability: http
+    version: "1.0"
+    port: 8080
+    fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}}
+uses:
+  cache:
+    capability: cache
+    optional: true
+  db:
+    capability: db

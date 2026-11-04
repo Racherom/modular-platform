@@ -1,0 +1,15 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  postgres:
+    module: postgres
+  reports:
+    module: twodb
+    uses:
+      audit-db:
+        database: shared
+        provider: postgres
+      main-db:
+        database: shared
+        provider: postgres
+name: named-duplicate

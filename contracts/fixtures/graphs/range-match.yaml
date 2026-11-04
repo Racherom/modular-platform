@@ -1,0 +1,8 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  modern:
+    module: modern
+  postgres:
+    module: postgres
+name: range-match

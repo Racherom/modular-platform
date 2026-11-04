@@ -1,0 +1,16 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: greeter
+description: Test module that checks a token per binding.
+image: example.test/greeter:1.0.0
+runtime: sdk
+provides:
+  greet:
+    capability: greet
+    version: "1.0"
+    auth: binding-token
+    fields:
+      url: {platform: url}
+      token: {generate: true}
+    env:
+      token: GREETER_CLIENTS_DIR

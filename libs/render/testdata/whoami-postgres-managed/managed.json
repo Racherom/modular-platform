@@ -18,6 +18,13 @@
       "Instance": "postgres",
       "Capability": "",
       "Field": ""
+    },
+    {
+      "Path": "secrets/whoami/uses_postgresql_password",
+      "Kind": "generated",
+      "Instance": "whoami",
+      "Capability": "",
+      "Field": ""
     }
   ]
 }

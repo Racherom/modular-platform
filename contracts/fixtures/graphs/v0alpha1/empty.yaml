@@ -1,0 +1,4 @@
+apiVersion: modular-platform/v0alpha1
+kind: Graph
+modules: {}
+name: empty

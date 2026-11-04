@@ -9,14 +9,14 @@ import { saveWorking, type WorkingGraph, withPositions } from './storage'
 /** Whether the shown plan belongs to the shown graph. */
 export type PlanState = 'current' | 'checking' | 'failed'
 
-/** The need a connect drag started from. */
+/** The slot a connect drag started from. */
 export interface DragFrom {
   instance: string
-  capability: string
+  slot: string
 }
 
-/** What the inspector shows: nothing, one module, or one binding (a need of a consumer). */
-export type Selection = null | { kind: 'module'; instance: string } | { kind: 'binding'; consumer: string; capability: string }
+/** What the inspector shows: nothing, one module, or one binding (a slot of a consumer). */
+export type Selection = null | { kind: 'module'; instance: string } | { kind: 'binding'; consumer: string; slot: string }
 
 /** The working graph and positions just before a user edit; one undo step (AC-15). */
 export interface Snapshot {
@@ -32,10 +32,10 @@ export interface History {
 
 const emptyHistory: History = { past: [], future: [] }
 
-/** True when the graph still binds this need to an instance. */
-export function bindingExists(graph: Graph, consumer: string, capability: string): boolean {
+/** True when the graph still binds this slot to an instance (string or object form). */
+export function bindingExists(graph: Graph, consumer: string, slot: string): boolean {
   const uses = Object.hasOwn(graph.modules, consumer) ? graph.modules[consumer]?.uses : undefined
-  return uses !== undefined && Object.hasOwn(uses, capability) && typeof uses[capability] === 'string'
+  return uses !== undefined && Object.hasOwn(uses, slot) && uses[slot] !== null && uses[slot] !== undefined
 }
 
 /**
@@ -44,7 +44,7 @@ export function bindingExists(graph: Graph, consumer: string, capability: string
  * selection moved, so focus follows it.
  */
 export function followSelection(graph: Graph, selection: Selection): { selection: Selection; moved: boolean } {
-  if (selection?.kind === 'binding' && !bindingExists(graph, selection.consumer, selection.capability)) {
+  if (selection?.kind === 'binding' && !bindingExists(graph, selection.consumer, selection.slot)) {
     if (!Object.hasOwn(graph.modules, selection.consumer)) return { selection: null, moved: true }
     return { selection: { kind: 'module', instance: selection.consumer }, moved: true }
   }

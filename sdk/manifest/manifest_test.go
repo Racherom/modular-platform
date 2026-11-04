@@ -15,8 +15,9 @@ import (
 
 // fixtures are shared with libs/contract, which runs the same cases through the catalog check.
 type fixtures struct {
-	Header string `json:"header"`
-	Cases  []struct {
+	Capabilities []string `json:"capabilities"`
+	Header       string   `json:"header"`
+	Cases        []struct {
 		Name        string   `json:"name"`
 		Want        []string `json:"want"`
 		PlannerOnly bool     `json:"planner_only"`
@@ -34,6 +35,14 @@ func TestCheckFixtures(t *testing.T) {
 	if err := yaml.UnmarshalStrict(data, &f); err != nil {
 		t.Fatal(err)
 	}
+	caps := map[string]manifest.Capability{}
+	for _, text := range f.Capabilities {
+		c, err := manifest.ParseCapability([]byte(text))
+		if err != nil {
+			t.Fatal(err)
+		}
+		caps[c.Name] = c
+	}
 	for _, tc := range f.Cases {
 		t.Run(tc.Name, func(t *testing.T) {
 			t.Parallel()
@@ -46,7 +55,7 @@ func TestCheckFixtures(t *testing.T) {
 			if err != nil {
 				got = []string{". invalid_entry"}
 			} else {
-				for _, p := range manifest.Check(e) {
+				for _, p := range manifest.Check(e, caps) {
 					got = append(got, p.Path+" "+p.Code)
 				}
 			}

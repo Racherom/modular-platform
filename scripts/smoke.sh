@@ -3,6 +3,9 @@
 # editor, run it with setup.sh and docker compose, then check the editor under a sub path.
 # Needs the web and planner images tagged dev (task images) and Chromium for Playwright.
 set -eu
+# Nothing in this job may wait for an answer: a question on the terminal (like Compose asking to
+# recreate a volume) would hang the run forever.
+exec </dev/null
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
@@ -23,6 +26,8 @@ cleanup() {
 	rm -rf "$work"
 }
 trap cleanup EXIT
+# a killed run cleans up too, so it leaves no project behind for the next run to trip over
+trap 'exit 130' INT TERM HUP
 
 [ -f "$online/.env" ] || cp "$online/.env.example" "$online/.env"
 

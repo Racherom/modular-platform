@@ -1,0 +1,14 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: ping
+description: Test module ping.
+image: example.test/ping:1.0.0
+provides:
+  ping:
+    capability: ping
+    version: "1.0"
+    port: 1
+    fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}}
+uses:
+  pong:
+    capability: pong

@@ -5,7 +5,7 @@ info:
   summary: Plans a graph of modules against the built in catalog and renders it as a runnable zip.
   description: |
     The planner is stateless. Every request carries the whole graph; nothing is stored.
-    Formats are the provisional `modular-platform/v0alpha1` shapes (spec 0002), replaced by `v1` later.
+    Formats are `modular-platform/v1` (spec 0011). A `v0alpha1` graph is still read and converted.
 
     Request bodies are decoded strictly: unknown keys and duplicate keys are rejected with 400.
 
@@ -26,7 +26,7 @@ paths:
       summary: List the built in catalog
       responses:
         "200":
-          description: Every catalog entry, sorted by name.
+          description: Every module and capability of the catalog, each sorted by name. Template bodies are not served.
           content:
             application/json:
               schema:
@@ -153,8 +153,9 @@ components:
   responses:
     BadGraph:
       description: |
-        The body does not decode strictly (`invalid_graph`), or names another `apiVersion`
-        (`unsupported_version`) or `kind` (`wrong_kind`). Exactly one problem.
+        The body does not decode strictly (`invalid_graph`), names another `apiVersion`
+        (`unsupported_version`) or `kind` (`wrong_kind`), or a `formatVersion` newer than this
+        planner reads (`format_too_new`). Exactly one problem.
       content:
         application/json:
           schema:
@@ -197,26 +198,35 @@ components:
       properties:
         apiVersion:
           type: string
-          description: Exactly `modular-platform/v0alpha1`.
+          description: |
+            `modular-platform/v1`. A `modular-platform/v0alpha1` graph is still read: the planner
+            converts it to v1 and answers with warning `converted_from_v0alpha1`.
         kind:
           type: string
           description: Exactly `Graph`.
+        formatVersion:
+          type: string
+          description: "`1.<minor>`, default `1.0`; a writer leaves it out at `1.0`. A minor above what the planner reads is `format_too_new`."
         name:
           type: string
           description: The stack's name and the Compose project name. A DNS label, not a reserved word.
         modules:
           type: object
-          description: One entry per placed module, keyed by instance name (also the Compose service name).
+          description: One entry per instance, keyed by instance name (also the Compose service name).
           additionalProperties:
             $ref: "#/components/schemas/GraphModule"
     GraphModule:
       type: object
+      description: Exactly one of `module` (a catalog module) and `external` (a service outside the stack).
       additionalProperties: false
-      required: [module]
       properties:
         module:
           type: string
-          description: The catalog entry this instance runs.
+          description: The catalog module this instance runs.
+        external:
+          $ref: "#/components/schemas/ExternalInstance"
+          # keep the pointer: an instance without external writes none
+          x-go-type-skip-optional-pointer: false
         uses:
           $ref: "#/components/schemas/Uses"
           # keep the pointer: `uses: {}` and no `uses` must write back differently
@@ -224,34 +234,192 @@ components:
     Uses:
       type: object
       description: |
-        Capability to provider instance name. `null` leaves an optional need unbound on purpose.
-        A missing key means not decided: the planner may bind a required need or warn about an optional one.
+        Slot name to its binding. `null` leaves an optional slot unbound on purpose. A missing key
+        means not decided: the planner may bind a required slot or warn about an optional one.
       additionalProperties:
-        type: [string, "null"]
+        $ref: "#/components/schemas/UseBinding"
+    UseBinding:
+      x-go-type: GraphBinding
+      description: |
+        `instance` or `instance.provide`, or an object with that text as `provider` plus named
+        values (field name to value) for a binding to a provisioner. Written as a string when it
+        carries no named values.
+      oneOf:
+        - type: string
+        - type: object
+          required: [provider]
+          properties:
+            provider:
+              type: string
+          additionalProperties:
+            type: string
+        - type: "null"
+    ExternalInstance:
+      type: object
+      additionalProperties: false
+      required: [provides]
+      properties:
+        provides:
+          type: object
+          description: Provide name to what the external service offers.
+          additionalProperties:
+            $ref: "#/components/schemas/ExternalProvide"
+    ExternalProvide:
+      type: object
+      additionalProperties: false
+      required: [capability, version]
+      properties:
+        capability:
+          type: string
+        version:
+          type: string
+          description: The version it speaks, like `16.4`.
+        fields:
+          type: object
+          description: |
+            Non secret field values, numbers as strings. A secret or certificate field is never
+            written here; it is a file you place at `secrets/<instance>/<provide>_<field>`.
+          additionalProperties:
+            type: string
     Catalog:
       type: object
       additionalProperties: false
-      required: [entries]
+      required: [modules, capabilities]
       properties:
-        entries:
+        modules:
+          type: array
+          description: Sorted by name.
+          items:
+            $ref: "#/components/schemas/Module"
+        capabilities:
+          type: array
+          description: Sorted by name.
+          items:
+            $ref: "#/components/schemas/Capability"
+    Capability:
+      type: object
+      description: One protocol and the fields a binding of it carries (`catalog/capabilities/<name>.yaml`, spec 0012).
+      additionalProperties: false
+      required: [apiVersion, kind, name, description, fields]
+      properties:
+        apiVersion:
+          type: string
+          description: Exactly `modular-platform/v1`.
+        kind:
+          type: string
+          description: Exactly `Capability`.
+        formatVersion:
+          type: string
+        name:
+          type: string
+          description: Equal to the file name without `.yaml`; unique among capabilities.
+        description:
+          type: string
+        scheme:
+          type: string
+          description: "The url scheme the `platform: url` source writes."
+        fields:
+          type: object
+          description: Field name (snake case) to its declaration.
+          additionalProperties:
+            $ref: "#/components/schemas/CapabilityField"
+        yields:
+          $ref: "#/components/schemas/Yields"
+          # keep the pointer: only a provisioner yields
+          x-go-type-skip-optional-pointer: false
+    CapabilityField:
+      type: object
+      additionalProperties: false
+      required: [type, description]
+      properties:
+        type:
+          type: string
+          enum: [string, int, bool, url, enum, secret, certificate]
+          description: "`secret` and `certificate` always travel as files; the others as text."
+        description:
+          type: string
+        optional:
+          type: boolean
+          default: false
+        pattern:
+          type: string
+          description: RE2, matched against the whole value; string only.
+        values:
           type: array
           items:
-            $ref: "#/components/schemas/CatalogEntry"
-    CatalogEntry:
+            type: string
+          description: The allowed values; enum only, required there.
+        direction:
+          type: string
+          enum: [to_consumer, to_provider, both]
+          default: to_consumer
+    Yields:
       type: object
-      description: One module of the built in catalog (`catalog/<name>.yaml`).
+      description: What a provisioner makes per binding (spec 0014).
+      additionalProperties: false
+      required: [capability, fields, job]
+      properties:
+        capability:
+          type: string
+          description: The capability each binding gets.
+        named:
+          type: array
+          items:
+            type: string
+          description: Fields of the yielded capability the graph names per binding.
+        login:
+          type: string
+          description: The named field the revoke job keeps; without it there is no revoke job.
+        fields:
+          type: object
+          description: Yielded field to where its value comes from.
+          additionalProperties:
+            $ref: "#/components/schemas/YieldSource"
+        job:
+          $ref: "#/components/schemas/Job"
+    YieldSource:
+      x-go-type: YieldFieldSource
+      description: "`named`, `generate`, `output`, or `{admin: <field of the provisioner>}`."
+      oneOf:
+        - type: string
+          enum: [named, generate, output]
+        - type: object
+          additionalProperties: false
+          required: [admin]
+          properties:
+            admin:
+              type: string
+    Job:
+      type: object
+      additionalProperties: false
+      required: [image, provision]
+      properties:
+        image:
+          type: string
+          description: A tagged image, never `latest`, with `/bin/sh`.
+        provision:
+          type: string
+          description: POSIX sh script of the provision job, run once per binding on every `up`.
+        revoke:
+          type: string
+          description: POSIX sh script of the revoke job; required exactly when `login` is set.
+    Module:
+      type: object
+      description: One module of the built in catalog (`catalog/modules/<name>/module.yaml`, spec 0013).
       additionalProperties: false
       required: [apiVersion, kind, name, description, image]
       properties:
         apiVersion:
           type: string
-          description: Exactly `modular-platform/v0alpha1`.
+          description: Exactly `modular-platform/v1`.
         kind:
           type: string
           description: Exactly `Module`.
+        formatVersion:
+          type: string
         name:
           type: string
-          description: Equal to the file name without `.yaml`; unique in the catalog.
+          description: Equal to the folder name; unique in the catalog.
         description:
           type: string
         image:
@@ -263,25 +431,67 @@ components:
           description: |
             `sdk` when the image is built on the module SDK (spec 0005): the render gives it the
             bootstrap env and its env file, and it listens on 8080 (plain) or 8443 (TLS).
+        command:
+          type: array
+          items:
+            type: string
+        entrypoint:
+          type: array
+          items:
+            type: string
+        environment:
+          type: object
+          description: Fixed env, with `{<slot>.<field>}`, `{config.<value>}`, `{uid}`, `{gid}` and `{install}` placeholders.
+          additionalProperties:
+            type: string
         config:
           type: object
-          description: Value name to one declared config value, read by the SDK (spec 0005).
+          description: Value name to one declared config value (spec 0005).
           additionalProperties:
             $ref: "#/components/schemas/ConfigValue"
         provides:
           type: object
-          description: Capability to where a consumer reaches it.
+          description: Provide name to what it offers.
           additionalProperties:
             $ref: "#/components/schemas/Provide"
         uses:
           type: object
-          description: Capability to how this module consumes it.
+          description: Slot name to one need.
           additionalProperties:
-            $ref: "#/components/schemas/Use"
+            $ref: "#/components/schemas/Slot"
         secrets:
           type: array
           items:
             $ref: "#/components/schemas/Secret"
+        setup:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetupStep"
+        templates:
+          type: array
+          items:
+            $ref: "#/components/schemas/Template"
+        volumes:
+          type: object
+          description: Data folder name to its absolute path in the container.
+          additionalProperties:
+            type: string
+        publish:
+          type: array
+          items:
+            $ref: "#/components/schemas/Publish"
+        host_mounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostMount"
+        network:
+          $ref: "#/components/schemas/Network"
+          # keep the pointer: most entries declare none
+          x-go-type-skip-optional-pointer: false
+        hardening:
+          $ref: "#/components/schemas/Hardening"
+          # keep the pointer: most entries declare none
+          x-go-type-skip-optional-pointer: false
         healthcheck:
           $ref: "#/components/schemas/Healthcheck"
           # keep the pointer: render tells a missing healthcheck from an empty one
@@ -289,75 +499,305 @@ components:
     Provide:
       type: object
       additionalProperties: false
+      required: [capability, version]
       properties:
+        capability:
+          type: string
+        version:
+          type: string
+          description: The version it speaks, like `18.6`.
         port:
           type: integer
           minimum: 1
           maximum: 65535
-          description: "The port on the service's host name. Required, except on a `runtime: sdk` entry, which must not set it."
+          description: "Required, except on a `runtime: sdk` entry, which must not set it."
         auth:
           type: string
           enum: [binding-token]
-          description: "`binding-token`: every consumer calls with its own per binding token."
+          description: "`binding-token`: every consumer calls with its own per binding token (field `token`)."
+        fields:
+          type: object
+          description: Field of the capability to where its value comes from.
+          additionalProperties:
+            $ref: "#/components/schemas/FieldSource"
         env:
-          $ref: "#/components/schemas/ProvideEnv"
-          # keep the pointer: a provide without env stays without it in the catalog answer
-          x-go-type-skip-optional-pointer: false
-    ProvideEnv:
+          type: object
+          description: "`to_provider` and `both` fields to the env var that gets their clients directory."
+          additionalProperties:
+            type: string
+    Slot:
       type: object
       additionalProperties: false
+      required: [capability]
       properties:
-        clients_dir:
+        capability:
           type: string
-          description: Env var set to the directory holding one token file per consumer; required with `auth`.
-    Use:
-      type: object
-      additionalProperties: false
-      properties:
+        versions:
+          type: string
+          description: A version range like `>=15, <19`; absent means any version.
         optional:
           type: boolean
           default: false
+        per_caller:
+          type: boolean
+          default: false
+          description: "Only on a `runtime: sdk` entry."
         client:
           type: string
           enum: [http, postgresql, s3]
           description: "The client the SDK builds for this binding; only on a `runtime: sdk` entry."
         env:
-          $ref: "#/components/schemas/UseEnv"
-    UseEnv:
+          type: object
+          description: Field to the env var it arrives in; a secret or certificate field's env gets the file path.
+          additionalProperties:
+            type: string
+        files:
+          type: object
+          description: Secret or certificate field to the absolute path it is mounted at.
+          additionalProperties:
+            type: string
+        fields:
+          type: object
+          description: "`to_provider` field to where the consumer's value comes from."
+          additionalProperties:
+            $ref: "#/components/schemas/FieldSource"
+    FieldSource:
       type: object
       description: |
-        Env var names the consumer reads the binding from. An omitted key delivers nothing. Every
-        binding takes host, port, url, token_file and ca_file; a postgresql client also database,
-        user, password_file and sslmode; an s3 client also bucket, region, access_key_id and
-        secret_access_key_file.
+        Where one field's value comes from: exactly one of `platform`, `value`, `config`,
+        `secret`, `generate`, `uses` and `volume`, with the keys that kind takes (spec 0013).
       additionalProperties: false
       properties:
-        host:
+        platform:
           type: string
+          enum: [host, port, url, ca, tls, consumer]
+        path:
+          type: string
+          description: "With `platform: url`, a path to append; with `volume`, the file in the folder."
+        "on":
+          type: string
+          description: "With `platform: tls`, the value when the provider serves TLS."
+        "off":
+          type: string
+          description: "With `platform: tls`, the value when it does not."
+        provide:
+          type: string
+          description: Consumer side `platform` sources only, the consumer's own provide.
+        value:
+          type: string
+        config:
+          type: string
+        format:
+          type: string
+          description: With `config`, `{}` stands for the value; with `uses`, `{<field>}` for a field.
+        secret:
+          type: string
+        generate:
+          type: boolean
+        uses:
+          type: string
+        field:
+          type: string
+          description: With `uses`, the field of that binding to pass through.
+        volume:
+          type: string
+    Secret:
+      type: object
+      description: A secret file of the instance, `secrets/<instance>/<name>`.
+      additionalProperties: false
+      required: [name, description]
+      properties:
+        name:
+          type: string
+          description: A name ending in `/` is a folder a setup step writes.
+        description:
+          type: string
+        from:
+          type: string
+          enum: [generate, ask, setup]
+          default: generate
+        env:
+          type: string
+          description: Env var set to the secret file's path inside the container.
+        mount:
+          type: string
+          description: Absolute path to mount it at.
+    SetupStep:
+      type: object
+      additionalProperties: false
+      required: [name, command]
+      properties:
+        name:
+          type: string
+        entrypoint:
+          type: array
+          items:
+            type: string
+        command:
+          type: array
+          items:
+            type: string
+        env:
+          type: object
+          additionalProperties:
+            type: string
+        for_each:
+          type: string
+          description: A provide; the step runs once per binding to it.
+        asks:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetupAsk"
+        reads:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetupRead"
+        writes:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetupWrite"
+    SetupAsk:
+      type: object
+      additionalProperties: false
+      required: [name, description]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        secret:
+          type: boolean
+          default: false
+    SetupRead:
+      type: object
+      description: One of `{slot, field}`, `{provide, field}` or `{secret}`.
+      additionalProperties: false
+      properties:
+        slot:
+          type: string
+        provide:
+          type: string
+        field:
+          type: string
+        secret:
+          type: string
+    SetupWrite:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        mode:
+          type: string
+          enum: ["0600", "0644"]
+          default: "0600"
+    Template:
+      type: object
+      additionalProperties: false
+      required: [file, path]
+      properties:
+        file:
+          type: string
+          description: A file in the module folder ending in `.tmpl`.
+        path:
+          type: string
+          description: The absolute path it is mounted at, read only.
+        delims:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+    Publish:
+      type: object
+      additionalProperties: false
+      required: [port, host]
+      properties:
         port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        host:
+          $ref: "#/components/schemas/HostPort"
+    HostPort:
+      x-go-type: HostPortRef
+      description: "A host port number, or `{config: <int value>}`."
+      oneOf:
+        - type: integer
+          minimum: 1
+          maximum: 65535
+        - type: object
+          additionalProperties: false
+          required: [config]
+          properties:
+            config:
+              type: string
+    HostMount:
+      type: object
+      additionalProperties: false
+      required: [host, path]
+      properties:
+        host:
+          $ref: "#/components/schemas/HostPath"
+        path:
+          $ref: "#/components/schemas/HostPath"
+        read_only:
+          type: boolean
+          default: true
+          # keep the pointer: unset means true
+          x-go-type-skip-optional-pointer: false
+        create:
+          type: boolean
+          default: false
+    HostPath:
+      x-go-type: HostPathRef
+      description: "An absolute path, `{config: <value>}` or `{install: <relative path>}`."
+      oneOf:
+        - type: string
+        - type: object
+          additionalProperties: false
+          properties:
+            config:
+              type: string
+            install:
+              type: string
+    Network:
+      type: object
+      additionalProperties: false
+      properties:
+        egress:
+          type: boolean
+          default: false
+        aliases:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigRef"
+    ConfigRef:
+      type: object
+      additionalProperties: false
+      required: [config]
+      properties:
+        config:
           type: string
-        url:
-          type: string
-        token_file:
-          type: string
-        ca_file:
-          type: string
-        database:
-          type: string
+    Hardening:
+      type: object
+      additionalProperties: false
+      properties:
         user:
           type: string
-        password_file:
-          type: string
-        sslmode:
-          type: string
-        bucket:
-          type: string
-        region:
-          type: string
-        access_key_id:
-          type: string
-        secret_access_key_file:
-          type: string
+          enum: [root, image]
+        writable_root:
+          type: boolean
+          default: false
+        cap_add:
+          type: array
+          items:
+            type: string
+        tmpfs:
+          type: array
+          items:
+            type: string
     ConfigValue:
       type: object
       description: One value a module built on the SDK reads at start (spec 0005).
@@ -399,22 +839,15 @@ components:
           type: boolean
           default: false
           description: The render creates the secret as 32 random bytes in hex; secret only.
+        setup:
+          type: string
+          enum: [ask]
+          description: "`ask`: `setup.sh` asks the value and writes it into `.env`."
     ConfigBound:
       description: A whole number for an `int`, a duration like `10s` for a `duration`.
       oneOf:
         - type: integer
         - type: string
-    Secret:
-      type: object
-      description: Created by `setup.sh` as `secrets/<instance>/<name>`, mounted as the Compose secret `<instance>_<name>`.
-      additionalProperties: false
-      required: [name, env]
-      properties:
-        name:
-          type: string
-        env:
-          type: string
-          description: Env var set to the secret file's path inside the container.
     Healthcheck:
       type: object
       description: A Compose healthcheck, copied as is into the service.
@@ -440,17 +873,29 @@ components:
     Binding:
       type: object
       additionalProperties: false
-      required: [consumer, capability, provider, auto]
+      required: [consumer, slot, capability, provider, provide, auto, named, provisioned]
       properties:
         consumer:
           type: string
+        slot:
+          type: string
         capability:
           type: string
+          description: The slot's capability.
         provider:
           type: string
+        provide:
+          type: string
+          description: The provide of the provider the slot is bound to.
         auto:
           type: boolean
           description: True when the planner made this binding, not the graph.
+        named:
+          type: boolean
+          description: True when the planner wrote default named values into the graph.
+        provisioned:
+          type: boolean
+          description: True when the provide's capability yields the slot's capability, so a provision job makes it.
     Problem:
       type: object
       additionalProperties: false
@@ -491,7 +936,7 @@ components:
           $ref: "#/components/schemas/Graph"
         bindings:
           type: array
-          description: Explicit and automatic bindings, sorted by consumer then capability.
+          description: Explicit and automatic bindings, sorted by consumer then slot.
           items:
             $ref: "#/components/schemas/Binding"
         problems:
@@ -532,7 +977,7 @@ components:
             $ref: "#/components/schemas/ModuleImage"
         publishedPorts:
           type: array
-          description: Host ports the project publishes; always empty in `v0alpha1`.
+          description: Host ports the project publishes; always empty for a deployed graph, which never publishes (spec 0013).
           items:
             $ref: "#/components/schemas/PublishedPort"
         secrets:
@@ -583,11 +1028,10 @@ components:
           type: string
         capability:
           type: string
-          description: Placed only, the binding's capability.
+          description: Placed only, the capability of the external provide.
         field:
           type: string
-          enum: [password, secret_key]
-          description: Placed only, which credential of the binding it holds.
+          description: Placed only, the capability field the file holds.
     RenderedFile:
       type: object
       additionalProperties: false

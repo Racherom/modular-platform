@@ -11,9 +11,9 @@ import {
   ReactFlow,
 } from '@xyflow/react'
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef } from 'react'
-import type { CatalogEntry, Graph, Problem } from '../api/client'
+import type { Catalog, Graph, Problem } from '../api/client'
 import type { ModuleState } from '../api/platform'
-import { bind, type Drop, isValidDrop, unbind } from '../graph/edit'
+import { bind, type Drop, dropText, isValidDrop, unbind } from '../graph/edit'
 import { emphasize, type ModuleFlowNode, type Positions, parseHandle, providesHandle, reuseNodes, toFlow, usesHandle } from '../graph/flow'
 import { layout } from '../graph/layout'
 import { isFormControl } from '../lib/keys'
@@ -38,7 +38,7 @@ export type GraphEdit = (graph: Graph) => Graph
 
 interface Props {
   graph: Graph
-  catalog: CatalogEntry[]
+  catalog: Catalog
   problems: Problem[]
   /** Stored positions; without them the graph gets the auto layout. */
   positions?: Positions
@@ -77,15 +77,17 @@ export function GraphView({ graph, catalog, problems, positions, states, onEdit 
           ...n,
           data: {
             ...n.data,
-            dropTargets: n.data.provides.filter((c) =>
-              isValidDrop(graph, catalog, {
-                source: dragFrom.instance,
-                sourceHandle: usesHandle(dragFrom.capability),
-                target: n.id,
-                targetHandle: providesHandle(c),
-              }),
-            ),
-            dragSource: n.id === dragFrom.instance ? dragFrom.capability : undefined,
+            dropTargets: n.data.provides
+              .map((p) => p.name)
+              .filter((provide) =>
+                isValidDrop(graph, catalog, {
+                  source: dragFrom.instance,
+                  sourceHandle: usesHandle(dragFrom.slot),
+                  target: n.id,
+                  targetHandle: providesHandle(provide),
+                }),
+              ),
+            dragSource: n.id === dragFrom.instance ? dragFrom.slot : undefined,
           },
         }))
       : shown.nodes
@@ -100,22 +102,22 @@ export function GraphView({ graph, catalog, problems, positions, states, onEdit 
   const isValidConnection = useCallback((c: Drop) => isValidDrop(current.current.graph, current.current.catalog, c), [])
   const onConnect = useCallback((c: Connection) => {
     const { graph, catalog, onEdit } = current.current
-    const need = parseHandle(c.sourceHandle)
-    if (!onEdit || !need || !isValidDrop(graph, catalog, c)) return
-    onEdit((g) => bind(g, c.source, need.capability, c.target))
+    const drop = dropText(graph, catalog, c)
+    if (!onEdit || !drop) return
+    onEdit((g) => bind(g, c.source, drop.slot, drop.provider))
   }, [])
-  // only the provider end moves (reconnectable 'target'), so the new connection keeps the need
+  // only the provider end moves (reconnectable 'target'), so the new connection keeps the slot
   const onReconnect = useCallback((_: Edge, c: Connection) => {
     const { graph, catalog, onEdit } = current.current
-    const need = parseHandle(c.sourceHandle)
-    if (!onEdit || !need || !isValidDrop(graph, catalog, c)) return
-    onEdit((g) => bind(g, c.source, need.capability, c.target))
+    const drop = dropText(graph, catalog, c)
+    if (!onEdit || !drop) return
+    onEdit((g) => bind(g, c.source, drop.slot, drop.provider))
   }, [])
   const onConnectStart = useCallback<OnConnectStart>(
     (_, { nodeId, handleId, handleType }) => {
       const need = parseHandle(handleId)
       if (handleType !== 'source' || !nodeId || need?.side !== 'uses') return
-      setDragFrom({ instance: nodeId, capability: need.capability })
+      setDragFrom({ instance: nodeId, slot: need.name })
     },
     [setDragFrom],
   )
@@ -134,7 +136,7 @@ export function GraphView({ graph, catalog, problems, positions, states, onEdit 
         if (c.type !== 'select' || !c.selected) continue
         const edge = current.current.edges.find((e) => e.id === c.id)
         const need = parseHandle(edge?.sourceHandle)
-        if (edge && need) select({ kind: 'binding', consumer: edge.source, capability: need.capability })
+        if (edge && need) select({ kind: 'binding', consumer: edge.source, slot: need.name })
       }
     },
     [select],
@@ -151,7 +153,7 @@ export function GraphView({ graph, catalog, problems, positions, states, onEdit 
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && selection?.kind === 'binding' && onEdit) {
       e.preventDefault()
-      onEdit((g) => unbind(g, selection.consumer, selection.capability))
+      onEdit((g) => unbind(g, selection.consumer, selection.slot))
     }
   }
 

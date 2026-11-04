@@ -1,0 +1,13 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: caller
+description: Test module that calls greeter with its token.
+image: example.test/caller:1.0.0
+runtime: sdk
+uses:
+  greet:
+    capability: greet
+    client: http
+    env:
+      url: GREET_URL
+      token: GREET_TOKEN_FILE

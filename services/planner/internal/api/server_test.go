@@ -26,7 +26,7 @@ import (
 	"github.com/racherom/modular-platform/services/planner/internal/config"
 )
 
-const sampleJSON = `{"apiVersion":"modular-platform/v0alpha1","kind":"Graph","name":"whoami-postgres",
+const sampleJSON = `{"apiVersion":"modular-platform/v1","kind":"Graph","name":"whoami-postgres",
 "modules":{"postgres":{"module":"postgres"},"whoami":{"module":"whoami","uses":{"postgresql":"postgres"}}}}`
 
 type planner struct {
@@ -125,12 +125,40 @@ func TestCatalogSorted(t *testing.T) {
 	if err := json.Unmarshal(body, &cat); err != nil {
 		t.Fatal(err)
 	}
-	var names []string
-	for _, e := range cat.Entries {
-		names = append(names, e.Name)
+	var modules, capabilities []string
+	for _, m := range cat.Modules {
+		modules = append(modules, m.Name)
 	}
-	if !slices.Equal(names, []string{"api", "deployer-docker", "planner", "postgres", "whoami"}) {
-		t.Errorf("entries = %q", names)
+	for _, c := range cat.Capabilities {
+		capabilities = append(capabilities, c.Name)
+	}
+	if !slices.Equal(modules, []string{"api", "deployer-docker", "planner", "postgres", "whoami"}) {
+		t.Errorf("modules = %q", modules)
+	}
+	if !slices.IsSorted(capabilities) || !slices.Contains(capabilities, "postgresql-provisioner") {
+		t.Errorf("capabilities = %q", capabilities)
+	}
+}
+
+// TestPlanConvertsV0alpha1 covers AC-14: a v0alpha1 graph is answered in v1 with a warning.
+func TestPlanConvertsV0alpha1(t *testing.T) {
+	t.Parallel()
+	p := start(t, public)
+	resp, body := p.do(t, http.MethodPost, "/v1/plan", strings.Replace(sampleJSON, "modular-platform/v1", "modular-platform/v0alpha1", 1), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	var plan contract.PlanResult
+	if err := json.Unmarshal(body, &plan); err != nil {
+		t.Fatal(err)
+	}
+	if !plan.Ok || plan.Graph.ApiVersion != contract.APIVersion || len(plan.Problems) != 1 || plan.Problems[0].Code != contract.CodeConvertedFromV0alpha1 {
+		t.Errorf("plan = %+v, want an ok v1 plan with the converted warning", plan)
+	}
+	newer := strings.Replace(sampleJSON, `"kind"`, `"formatVersion":"1.7","later":1,"kind"`, 1)
+	if resp, body := p.do(t, http.MethodPost, "/v1/plan", newer, nil); resp.StatusCode != http.StatusBadRequest ||
+		!strings.Contains(string(body), `"code":"`+contract.CodeFormatTooNew+`"`) {
+		t.Errorf("newer format: status %d body %s, want 400 format_too_new", resp.StatusCode, body)
 	}
 }
 
@@ -160,7 +188,7 @@ func TestPlanBadRequests(t *testing.T) {
 	for name, tc := range map[string]struct{ body, code string }{
 		"unknown key":   {strings.Replace(sampleJSON, `"kind"`, `"extra":1,"kind"`, 1), contract.CodeInvalidGraph},
 		"duplicate key": {strings.Replace(sampleJSON, `"kind":"Graph"`, `"kind":"Graph","kind":"Graph"`, 1), contract.CodeInvalidGraph},
-		"v1":            {strings.Replace(sampleJSON, "v0alpha1", "v1", 1), contract.CodeUnsupportedVersion},
+		"v2":            {strings.Replace(sampleJSON, "modular-platform/v1", "modular-platform/v2", 1), contract.CodeUnsupportedVersion},
 		"kind":          {strings.Replace(sampleJSON, `"Graph"`, `"Module"`, 1), contract.CodeWrongKind},
 		"not json":      {"{", contract.CodeInvalidGraph},
 	} {
@@ -350,18 +378,26 @@ func TestStartRefused(t *testing.T) {
 	}
 }
 
-// TestBadCatalogStopsStart covers AC-11 of spec 0002: a refused start and one log line per
+// TestBadCatalogStopsStart covers AC-11 of spec 0002 and AC-2 of spec 0011: a refused start and one log line per
 // problem, and nothing else at error level.
 func TestBadCatalogStopsStart(t *testing.T) {
 	t.Parallel()
 	bad := fstest.MapFS{
-		"whoami.yaml": {Data: []byte(`apiVersion: modular-platform/v0alpha1
+		"capabilities/postgresql.yaml": {Data: []byte(`apiVersion: modular-platform/v1
+kind: Capability
+name: postgresql
+description: A database.
+fields:
+  host: {type: string, description: Host.}
+`)},
+		"modules/whoami/module.yaml": {Data: []byte(`apiVersion: modular-platform/v1
 kind: Module
 name: whoami
 description: Demo.
 image: traefik/whoami:latest
 uses:
   postgresql:
+    capability: postgresql
     env:
       host: DEMO-HOST
 `)},
@@ -372,8 +408,8 @@ uses:
 	}
 	lines := errorLines(t, logs)
 	want := []string{
-		"catalog/whoami.yaml: image: image_latest: ",
-		"catalog/whoami.yaml: uses.postgresql.env.host: invalid_env_name: ",
+		"catalog/modules/whoami/module.yaml: image: image_latest: ",
+		"catalog/modules/whoami/module.yaml: uses.postgresql.env.host: invalid_env_name: ",
 	}
 	if len(lines) != len(want) {
 		t.Fatalf("error lines = %q, want %d", lines, len(want))
@@ -409,7 +445,8 @@ func TestRenderManaged(t *testing.T) {
 	if got.Project != "mp-whoami-postgres" || !got.Plan.Ok || got.Plan.Digest == "" {
 		t.Errorf("project %q, ok %v, digest %q", got.Project, got.Plan.Ok, got.Plan.Digest)
 	}
-	if len(got.Images) != 2 || len(got.Secrets) != 1 || got.Secrets[0].Kind != contract.Generated {
+	// the postgres password and the provisioned binding's password, both made by the deployer
+	if len(got.Images) != 2 || len(got.Secrets) != 2 || got.Secrets[0].Kind != contract.Generated || got.Secrets[1].Kind != contract.Generated {
 		t.Errorf("images %+v, secrets %+v", got.Images, got.Secrets)
 	}
 	var compose string
@@ -429,8 +466,8 @@ func TestRenderManaged(t *testing.T) {
 		"bare graph":       {sampleJSON, http.StatusBadRequest},
 		"extra key":        {`{"graph":` + sampleJSON + `,"deployment":"` + deployment + `","x":1}`, http.StatusBadRequest},
 		"bad uuid":         {`{"graph":` + sampleJSON + `,"deployment":"nope"}`, http.StatusBadRequest},
-		"graph extra key":  {`{"graph":{"apiVersion":"modular-platform/v0alpha1","kind":"Graph","name":"a","modules":{},"x":1},"deployment":"` + deployment + `"}`, http.StatusBadRequest},
-		"plan with errors": {`{"graph":{"apiVersion":"modular-platform/v0alpha1","kind":"Graph","name":"a","modules":{"w":{"module":"nope"}}},"deployment":"` + deployment + `"}`, http.StatusUnprocessableEntity},
+		"graph extra key":  {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{},"x":1},"deployment":"` + deployment + `"}`, http.StatusBadRequest},
+		"plan with errors": {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{"w":{"module":"nope"}}},"deployment":"` + deployment + `"}`, http.StatusUnprocessableEntity},
 	} {
 		if resp, data := internal.do(t, http.MethodPost, "/v1/render/managed", tc.body, auth); resp.StatusCode != tc.want {
 			t.Errorf("%s: status %d, want %d: %s", name, resp.StatusCode, tc.want, data)

@@ -1,7 +1,6 @@
 package render_test
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,25 +13,10 @@ import (
 const pairDir = "testdata/sdk-pair"
 
 // pairPlan plans the graph of the two sdk test modules, a consumer bound to a provider.
-func pairPlan(t *testing.T) (contract.PlanResult, []contract.CatalogEntry) {
+func pairPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
 	t.Helper()
-	catalog, problems := contract.LoadCatalog(os.DirFS(filepath.Join(pairDir, "catalog")))
-	if len(problems) > 0 {
-		t.Fatal(problems)
-	}
-	data, err := os.ReadFile(filepath.Join(pairDir, "graph.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	g, p := contract.DecodeGraph(data)
-	if p != nil {
-		t.Fatal(p.Message)
-	}
-	plan := planner.Plan(g, catalog)
-	if !plan.Ok {
-		t.Fatalf("plan: %+v", plan.Problems)
-	}
-	return plan, catalog
+	catalog := loadCatalog(t, filepath.Join(pairDir, "catalog"))
+	return planFile(t, filepath.Join(pairDir, "graph.yaml"), catalog), catalog
 }
 
 func renderPair(t *testing.T) map[string]render.File {
@@ -70,24 +54,24 @@ func TestRenderSDKRules(t *testing.T) {
 	consumer, provider := services[:split], services[split:]
 	for _, c := range []struct{ where, in, want string }{
 		{"top level", compose, "configs:\n  consumer_env:\n    file: ./config/consumer.env\n  provider_env:\n    file: ./config/provider.env\n"},
-		{"top level", compose, "  consumer_uses_greet:\n    file: ./secrets/consumer/uses_greet\n"},
+		{"top level", compose, "  consumer_uses_greet_token:\n    file: ./secrets/consumer/uses_greet_token\n"},
 		{"top level", compose, "  provider_signing-key:\n    file: ./secrets/provider/signing-key\n"},
 		{"consumer", consumer, "    configs:\n    - source: consumer_env\n      target: /etc/modular-platform/module.env\n"},
 		{"consumer", consumer, "      MP_ENV_FILE: /etc/modular-platform/module.env\n"},
 		{"consumer", consumer, "      MP_INSTANCE: consumer\n"},
 		{"consumer", consumer, "      MP_DOMAIN: sdk-pair.internal\n"},
-		{"consumer", consumer, "    networks:\n      default:\n        aliases:\n        - consumer.sdk-pair.internal\n"},
+		{"consumer", consumer, "    networks:\n      internal:\n        aliases:\n        - consumer.sdk-pair.internal\n"},
 		{"consumer", consumer, "      PAIR_GREET_URL: http://provider.sdk-pair.internal:8080\n"},
 		{"consumer", consumer, "      PAIR_GREET_TOKEN_FILE: /run/secrets/uses/greet/token\n"},
-		{"consumer", consumer, "    - source: consumer_uses_greet\n      target: /run/secrets/uses/greet/token\n"},
+		{"consumer", consumer, "    - source: consumer_uses_greet_token\n      target: /run/secrets/uses/greet/token\n"},
 		{"consumer", consumer, "    user: ${MP_UID}:${MP_GID}\n"},
 		{"provider", provider, "      MP_INSTANCE: provider\n"},
 		{"provider", provider, "      MP_DOMAIN: sdk-pair.internal\n"},
-		{"provider", provider, "    networks:\n      default:\n        aliases:\n        - provider.sdk-pair.internal\n"},
-		{"provider", provider, "      PAIR_CLIENTS_DIR: /run/secrets/clients/greet\n"},
+		{"provider", provider, "    networks:\n      internal:\n        aliases:\n        - provider.sdk-pair.internal\n"},
+		{"provider", provider, "      PAIR_CLIENTS_DIR: /run/secrets/clients/greet/token\n"},
 		{"provider", provider, "      PAIR_SIGNING_KEY_FILE: /run/secrets/provider_signing-key\n"},
-		{"provider", provider, "    - source: consumer_uses_greet\n      target: /run/secrets/clients/greet/consumer\n"},
-		{"provider", provider, "    - source: provider_signing-key\n"},
+		{"provider", provider, "    - source: consumer_uses_greet_token\n      target: /run/secrets/clients/greet/token/consumer\n"},
+		{"provider", provider, "    - source: provider_signing-key\n      target: /run/secrets/provider_signing-key\n"},
 		{"provider", provider, "    user: ${MP_UID}:${MP_GID}\n"},
 	} {
 		if !strings.Contains(c.in, c.want) {
@@ -123,7 +107,7 @@ PAIR_GREETING=
 
 	setup := string(files["setup.sh"].Data)
 	for _, w := range []string{
-		"new_secret secrets/consumer/uses_greet\nnew_secret secrets/provider/signing-key\n",
+		"new_secret secrets/consumer/uses_greet_token\nnew_secret secrets/provider/signing-key\n",
 		"set_id MP_UID \"$(id -u)\"\nset_id MP_GID \"$(id -g)\"\n",
 	} {
 		if !strings.Contains(setup, w) {
@@ -131,38 +115,36 @@ PAIR_GREETING=
 		}
 	}
 	readme := string(files["README.md"].Data)
-	for _, w := range []string{"- `config/consumer.env`\n- `config/provider.env`\n", "- `secrets/consumer/uses_greet`\n"} {
+	for _, w := range []string{"- `config/consumer.env`\n- `config/provider.env`\n", "- `secrets/consumer/uses_greet_token`\n"} {
 		if !strings.Contains(readme, w) {
 			t.Errorf("README.md lacks %q:\n%s", w, readme)
 		}
 	}
 }
 
-// TestRenderSDKCredentials covers a postgresql and an s3 binding: the url scheme by client kind,
-// the credential files you place, sslmode, and the env file lines you fill.
-func TestRenderSDKCredentials(t *testing.T) {
+// TestRenderExternal covers a binding to an external instance (AC-15): text fields from the
+// graph, a secret field as a file you place that setup.sh checks, and no service for it.
+func TestRenderExternal(t *testing.T) {
 	t.Parallel()
-	catalog := []contract.CatalogEntry{
-		{Name: "pg", Image: "example.test/pg:1.0.0", Provides: map[string]contract.Provide{"postgresql": {Port: 5432}}},
-		{Name: "minio", Image: "example.test/minio:1.0.0", Provides: map[string]contract.Provide{"s3": {Port: 9000}}},
-		{Name: "app", Image: "example.test/app:1.0.0", Runtime: contract.Sdk, Uses: map[string]contract.Use{
-			"postgresql": {Client: contract.Postgresql, Env: contract.UseEnv{
-				Url: "DB_URL", Database: "DB_NAME", User: "DB_USER", PasswordFile: "DB_PASSWORD_FILE", Sslmode: "DB_SSLMODE",
-			}},
-			"s3": {Client: contract.S3, Env: contract.UseEnv{
-				Url: "S3_URL", Bucket: "S3_BUCKET", Region: "S3_REGION", AccessKeyId: "S3_KEY_ID", SecretAccessKeyFile: "S3_SECRET_FILE",
-			}},
-		}},
-	}
-	plan := contract.PlanResult{
-		Ok: true,
-		Graph: contract.Graph{Name: "creds", Modules: map[string]contract.GraphModule{
-			"app": {Module: "app"}, "db": {Module: "pg"}, "store": {Module: "minio"},
-		}},
-		Bindings: []contract.Binding{
-			{Consumer: "app", Capability: "postgresql", Provider: "db"},
-			{Consumer: "app", Capability: "s3", Provider: "store"},
-		},
+	catalog := loadCatalog(t, "../../catalog")
+	catalog.Modules = append(catalog.Modules, contract.Module{
+		Name: "app", Image: "example.test/app:1.0.0", Runtime: contract.Sdk,
+		Uses: map[string]contract.Slot{"db": {Capability: "postgresql", Client: contract.Postgresql, Env: map[string]string{
+			"url": "DB_URL", "database": "DB_NAME", "user": "DB_USER", "password": "DB_PASSWORD_FILE", "sslmode": "DB_SSLMODE",
+		}}},
+	})
+	g := contract.Graph{ApiVersion: contract.APIVersion, Kind: contract.KindGraph, Name: "ext", Modules: map[string]contract.GraphModule{
+		"app": {Module: "app"},
+		"billing-db": {External: &contract.ExternalInstance{Provides: map[string]contract.ExternalProvide{"db": {
+			Capability: "postgresql", Version: "16.4", Fields: map[string]string{
+				"host": "db.example.com", "port": "5432", "url": "postgres://db.example.com:5432",
+				"database": "billing", "user": "billing", "sslmode": "verify-full",
+			},
+		}}}},
+	}}
+	plan := planner.Plan(g, catalog)
+	if !plan.Ok {
+		t.Fatalf("plan: %+v", plan.Problems)
 	}
 	out, err := render.Render(plan, catalog)
 	if err != nil {
@@ -172,38 +154,26 @@ func TestRenderSDKCredentials(t *testing.T) {
 	for _, f := range out.Files {
 		files[f.Path] = string(f.Data)
 	}
+	compose := files["docker-compose.yml"]
 	for _, w := range []string{
-		"      DB_URL: postgres://db:5432\n",
-		"      DB_PASSWORD_FILE: /run/secrets/uses/postgresql/password\n",
-		"      DB_SSLMODE: disable\n",
-		"      S3_URL: http://store:9000\n",
-		"      S3_SECRET_FILE: /run/secrets/uses/s3/secret_key\n",
-		"  app_uses_postgresql_password:\n    file: ./secrets/app/uses_postgresql_password\n",
-		"  app_uses_s3_secret_key:\n    file: ./secrets/app/uses_s3_secret_key\n",
+		"      DB_URL: postgres://db.example.com:5432\n",
+		"      DB_NAME: billing\n",
+		"      DB_PASSWORD_FILE: /run/secrets/uses/db/password\n",
+		"      DB_SSLMODE: verify-full\n",
+		"  app_uses_db_password:\n    file: ./secrets/billing-db/db_password\n",
 	} {
-		if !strings.Contains(files["docker-compose.yml"], w) {
-			t.Errorf("docker-compose.yml lacks %q:\n%s", w, files["docker-compose.yml"])
+		if !strings.Contains(compose, w) {
+			t.Errorf("docker-compose.yml lacks %q:\n%s", w, compose)
 		}
 	}
-	if strings.Contains(files["setup.sh"], "uses_postgresql_password") || strings.Contains(files["setup.sh"], "uses_s3_secret_key") {
-		t.Error("setup.sh creates a credential file you place")
+	if strings.Contains(compose, "  billing-db:\n") || strings.Contains(compose, "depends_on") {
+		t.Error("an external instance has no service and nothing waits for it")
 	}
-	if !strings.Contains(files["README.md"], "- `secrets/app/uses_postgresql_password`\n- `secrets/app/uses_s3_secret_key`\n") {
-		t.Errorf("README.md does not list the files you place:\n%s", files["README.md"])
+	if strings.Contains(files["setup.sh"], "new_secret secrets/billing-db/db_password") ||
+		!strings.Contains(files["setup.sh"], "need secrets/billing-db/db_password \"password of the postgresql service billing-db\"") {
+		t.Errorf("setup.sh must check, not create, the placed password:\n%s", files["setup.sh"])
 	}
-	wantEnv := `# Settings for app (module app). Edit and restart the module to apply.
-# Lines starting with # are defaults or optional values; remove the # to set one.
-
-# Binding uses.postgresql to db: required, from your db setup
-DB_NAME=
-DB_USER=
-
-# Binding uses.s3 to store: required, from your store setup
-S3_BUCKET=
-S3_REGION=
-S3_KEY_ID=
-`
-	if files["config/app.env"] != wantEnv {
-		t.Errorf("config/app.env =\n%s\nwant\n%s", files["config/app.env"], wantEnv)
+	if !strings.Contains(files["README.md"], "- `secrets/billing-db/db_password`: password of billing-db\n") {
+		t.Errorf("README.md does not list the file you place:\n%s", files["README.md"])
 	}
 }

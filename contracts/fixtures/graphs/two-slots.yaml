@@ -1,0 +1,13 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  a:
+    module: pg14
+  b:
+    module: replicated
+  reports:
+    module: twodb
+    uses:
+      audit-db: b.primary
+      main-db: a
+name: two-slots

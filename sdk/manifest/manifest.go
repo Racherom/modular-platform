@@ -1,7 +1,8 @@
-// Package manifest reads the catalog entry fields the sdk uses (spec 0005: runtime, config,
-// uses.<cap>.client and its env keys, provides.<cap>.auth) and checks their rules. The planner's
-// catalog check (libs/contract) and sdkgen both call it, so a module and the catalog never
-// disagree about an entry. It imports only the standard library and sigs.k8s.io/yaml.
+// Package manifest reads the module entry fields the sdk uses (spec 0005 and spec 0013: runtime,
+// config, the slots and their env delivery, the provides with auth and their clients env) plus
+// the fields of the capabilities they name, and checks their rules. The planner's catalog check
+// (libs/contract) and sdkgen both call it, so a module and the catalog never disagree about an
+// entry. It imports only the standard library and sigs.k8s.io/yaml.
 package manifest
 
 import (
@@ -50,60 +51,132 @@ var BootstrapNames = []string{
 	"MP_CALLER_SIGNING_KEY_FILE",
 }
 
-// BindingKeys lists the env keys a binding may map, per client kind, in the order the render
-// writes them. The key "" holds the keys every kind takes, including a binding without a client.
-var BindingKeys = map[string][]string{
-	"":               {"host", "port", "url", "token_file", "ca_file"},
-	ClientPostgreSQL: {"database", "user", "password_file", "sslmode"},
-	ClientS3:         {"bucket", "region", "access_key_id", "secret_access_key_file"},
-}
-
-// requiredBindingKeys must be mapped by a binding with that client kind.
-var requiredBindingKeys = map[string][]string{
+// clientFields lists the capability fields a slot with that client kind must map in env, so the
+// sdk can build the client (spec 0013). An http client also needs token when its capability has
+// one.
+var clientFields = map[string][]string{
 	ClientHTTP:       {"url"},
-	ClientPostgreSQL: {"url", "database", "user", "password_file"},
-	ClientS3:         {"url", "bucket", "access_key_id", "secret_access_key_file"},
+	ClientPostgreSQL: {"url", "database", "user", "password"},
+	ClientS3:         {"url", "bucket", "access_key_id", "secret_access_key"},
 }
 
-// Entry holds the fields of a catalog entry the sdk reads. The other fields are kept raw, so a
+// Field types of a capability that travel as files.
+const (
+	FieldSecret      = "secret"
+	FieldCertificate = "certificate"
+)
+
+// Field directions of a capability (spec 0012).
+const (
+	DirectionToConsumer = "to_consumer"
+	DirectionToProvider = "to_provider"
+	DirectionBoth       = "both"
+)
+
+// Capability holds the parts of a capability file the sdk reads: its fields. libs/contract checks
+// the file's own rules.
+type Capability struct {
+	Name   string           `json:"name"`
+	Fields map[string]Field `json:"fields"`
+}
+
+// Field is one field of a capability.
+type Field struct {
+	Type      string `json:"type"`
+	Direction string `json:"direction,omitempty"`
+	Optional  bool   `json:"optional,omitempty"`
+}
+
+// IsFile reports whether the field travels as a file: a secret or a certificate.
+func (f Field) IsFile() bool {
+	return f.Type == FieldSecret || f.Type == FieldCertificate
+}
+
+// ToConsumer reports whether the field reaches the consumer: direction to_consumer or both.
+func (f Field) ToConsumer() bool {
+	return f.Direction == "" || f.Direction == DirectionToConsumer || f.Direction == DirectionBoth
+}
+
+// ToProvider reports whether the field reaches the provider: direction to_provider or both.
+func (f Field) ToProvider() bool {
+	return f.Direction == DirectionToProvider || f.Direction == DirectionBoth
+}
+
+// ParseCapability reads the fields of a capability file. It is lenient: the strict decode and the
+// file's rules are libs/contract's.
+func ParseCapability(data []byte) (Capability, error) {
+	var c Capability
+	if err := yaml.Unmarshal(data, &c); err != nil {
+		return Capability{}, err
+	}
+	return c, nil
+}
+
+// RuntimeKey is the key the sdk's binding loader reads a capability field under: the field name,
+// with _file added for a field that travels as a file (password becomes password_file).
+func RuntimeKey(name string, f Field) string {
+	if f.IsFile() {
+		return name + "_file"
+	}
+	return name
+}
+
+// Entry holds the fields of a v1 module entry the sdk reads. The other fields are kept raw, so a
 // strict decode accepts a whole entry and still refuses an unknown key.
 type Entry struct {
-	APIVersion  json.RawMessage    `json:"apiVersion,omitempty"`
-	Kind        json.RawMessage    `json:"kind,omitempty"`
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	Image       json.RawMessage    `json:"image,omitempty"`
-	Runtime     string             `json:"runtime,omitempty"`
-	Healthcheck json.RawMessage    `json:"healthcheck,omitempty"`
-	Provides    map[string]Provide `json:"provides,omitempty"`
-	Uses        map[string]Use     `json:"uses,omitempty"`
-	Secrets     []Secret           `json:"secrets,omitempty"`
-	Config      map[string]Value   `json:"config,omitempty"`
+	APIVersion    json.RawMessage    `json:"apiVersion,omitempty"`
+	Kind          json.RawMessage    `json:"kind,omitempty"`
+	FormatVersion json.RawMessage    `json:"formatVersion,omitempty"`
+	Name          string             `json:"name"`
+	Description   string             `json:"description"`
+	Image         json.RawMessage    `json:"image,omitempty"`
+	Runtime       string             `json:"runtime,omitempty"`
+	Command       json.RawMessage    `json:"command,omitempty"`
+	Entrypoint    json.RawMessage    `json:"entrypoint,omitempty"`
+	Environment   map[string]string  `json:"environment,omitempty"`
+	Healthcheck   json.RawMessage    `json:"healthcheck,omitempty"`
+	Provides      map[string]Provide `json:"provides,omitempty"`
+	Uses          map[string]Use     `json:"uses,omitempty"`
+	Secrets       []Secret           `json:"secrets,omitempty"`
+	Config        map[string]Value   `json:"config,omitempty"`
+	Setup         json.RawMessage    `json:"setup,omitempty"`
+	Templates     json.RawMessage    `json:"templates,omitempty"`
+	Volumes       json.RawMessage    `json:"volumes,omitempty"`
+	Publish       json.RawMessage    `json:"publish,omitempty"`
+	HostMounts    json.RawMessage    `json:"host_mounts,omitempty"`
+	Network       json.RawMessage    `json:"network,omitempty"`
+	Hardening     json.RawMessage    `json:"hardening,omitempty"`
 }
 
-// Provide is one capability the entry provides.
+// Provide is one named provide of the entry.
 type Provide struct {
-	Port *int        `json:"port,omitempty"`
-	Auth string      `json:"auth,omitempty"`
-	Env  *ProvideEnv `json:"env,omitempty"`
+	Capability string            `json:"capability"`
+	Version    json.RawMessage   `json:"version,omitempty"`
+	Port       *int              `json:"port,omitempty"`
+	Auth       string            `json:"auth,omitempty"`
+	Fields     json.RawMessage   `json:"fields,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
 }
 
-// ProvideEnv names the env vars a provider reads for a capability it provides.
-type ProvideEnv struct {
-	ClientsDir string `json:"clients_dir,omitempty"`
-}
-
-// Use is one capability the entry uses.
+// Use is one slot of the entry: a named need of a capability.
 type Use struct {
-	Optional bool              `json:"optional,omitempty"`
-	Client   string            `json:"client,omitempty"`
-	Env      map[string]string `json:"env,omitempty"`
+	Capability string            `json:"capability"`
+	Versions   json.RawMessage   `json:"versions,omitempty"`
+	Optional   bool              `json:"optional,omitempty"`
+	PerCaller  bool              `json:"per_caller,omitempty"`
+	Client     string            `json:"client,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	Files      map[string]string `json:"files,omitempty"`
+	Fields     json.RawMessage   `json:"fields,omitempty"`
 }
 
-// Secret is one generated secret of the entry (spec 0002).
+// Secret is one secret file of the entry (spec 0013).
 type Secret struct {
-	Name string `json:"name"`
-	Env  string `json:"env"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	From        string `json:"from,omitempty"`
+	Env         string `json:"env,omitempty"`
+	Mount       string `json:"mount,omitempty"`
 }
 
 // Value is one declared config value.
@@ -118,6 +191,7 @@ type Value struct {
 	Pattern     *string  `json:"pattern,omitempty"`
 	Values      []string `json:"values,omitempty"`
 	Generate    bool     `json:"generate,omitempty"`
+	Setup       string   `json:"setup,omitempty"`
 }
 
 // Bound is a min or max rule as text: a whole number for an int, a duration like 10s for a
@@ -146,30 +220,13 @@ func (b Bound) MarshalJSON() ([]byte, error) {
 	return json.Marshal(b.Text)
 }
 
-// Parse decodes a catalog entry strictly: an unknown or duplicate key is an error, and so is a
-// binding env key that no client kind takes (a key of another kind is a Check problem).
+// Parse decodes a v1 module entry strictly: an unknown or duplicate key is an error.
 func Parse(data []byte) (Entry, error) {
 	var e Entry
 	if err := yaml.UnmarshalStrict(data, &e); err != nil {
 		return Entry{}, err
 	}
-	for _, capability := range sortedKeys(e.Uses) {
-		for _, key := range sortedKeys(e.Uses[capability].Env) {
-			if !knownBindingKey(key) {
-				return Entry{}, fmt.Errorf("uses.%s.env: unknown field %q", capability, key)
-			}
-		}
-	}
 	return e, nil
-}
-
-func knownBindingKey(key string) bool {
-	for _, keys := range BindingKeys {
-		if slices.Contains(keys, key) {
-			return true
-		}
-	}
-	return false
 }
 
 var (

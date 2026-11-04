@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"go/format"
-	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,22 +22,23 @@ var goTypes = map[string]string{
 	manifest.TypeSecret:   "sdk.Secret",
 }
 
-// Generate returns the gofmt formatted Go source for the entry, or the problems that refuse it,
-// as catalog/<file>: <dotted.path>: <code>: <message> lines.
-func Generate(source, pkg string, data []byte) ([]byte, []string) {
-	file := path.Base(source)
+// Generate returns the gofmt formatted Go source for the v1 entry, checked against the
+// capabilities it names, or the problems that refuse it, as
+// catalog/<file>: <dotted.path>: <code>: <message> lines.
+func Generate(source, pkg string, data []byte, caps map[string]manifest.Capability) ([]byte, []string) {
+	file := strings.TrimPrefix(SourceName(source), "catalog/")
 	e, err := manifest.Parse(data)
 	if err != nil {
 		return nil, []string{fmt.Sprintf("catalog/%s: .: invalid_entry: the entry could not be read: %s", file, oneLine(err))}
 	}
 	var problems []string
-	for _, p := range manifest.Check(e) {
+	for _, p := range manifest.Check(e, caps) {
 		problems = append(problems, fmt.Sprintf("catalog/%s: %s: %s: %s", file, p.Path, p.Code, p.Message))
 	}
 	if len(problems) > 0 {
 		return nil, problems
 	}
-	g := generator{file: file, entry: e, idents: map[string]string{"Config": "the Config type", "Uses": "the Uses type", "Module": "the Module value"}}
+	g := generator{file: file, entry: e, caps: caps, idents: map[string]string{"Config": "the Config type", "Uses": "the Uses type", "Module": "the Module value"}}
 	src := g.source(source, pkg)
 	if len(g.problems) > 0 {
 		return nil, g.problems
@@ -53,6 +53,7 @@ func Generate(source, pkg string, data []byte) ([]byte, []string) {
 type generator struct {
 	file     string
 	entry    manifest.Entry
+	caps     map[string]manifest.Capability
 	idents   map[string]string // package level Go names to what took them, to catch clashes
 	problems []string
 	imports  map[string]bool
@@ -254,11 +255,16 @@ func (g *generator) declaration(b *bytes.Buffer, names, caps []string, clients b
 				fields = append(fields, "Optional: true")
 			}
 			if len(u.Env) > 0 {
-				var env []string
-				for _, k := range sortedKeys(u.Env) {
-					env = append(env, strconv.Quote(k)+": "+strconv.Quote(u.Env[k]))
+				// the sdk's binding loader reads a file field under <field>_file
+				env := map[string]string{}
+				for f, name := range u.Env {
+					env[manifest.RuntimeKey(f, g.caps[u.Capability].Fields[f])] = name
 				}
-				fields = append(fields, "Env: map[string]string{"+strings.Join(env, ", ")+"}")
+				var pairs []string
+				for _, k := range sortedKeys(env) {
+					pairs = append(pairs, strconv.Quote(k)+": "+strconv.Quote(env[k]))
+				}
+				fields = append(fields, "Env: map[string]string{"+strings.Join(pairs, ", ")+"}")
 			}
 			if ct, ok := clientTypes[u.Client]; ok {
 				fields = append(fields, "Open: "+ct.open)
@@ -273,8 +279,8 @@ func (g *generator) declaration(b *bytes.Buffer, names, caps []string, clients b
 		if p.Auth != "" {
 			fields = append(fields, "Auth: "+strconv.Quote(p.Auth))
 		}
-		if p.Env != nil && p.Env.ClientsDir != "" {
-			fields = append(fields, "ClientsDirEnv: "+strconv.Quote(p.Env.ClientsDir))
+		if dir := p.Env["token"]; dir != "" {
+			fields = append(fields, "ClientsDirEnv: "+strconv.Quote(dir))
 		}
 		fmt.Fprintf(b, "\tProvides: &sdk.ProvideSpec{%s},\n", strings.Join(fields, ", "))
 	}

@@ -1,0 +1,34 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: postgres
+description: PostgreSQL database server, official image; creates a database and login per consumer.
+image: postgres:18.6
+provides:
+  server:
+    capability: postgresql-provisioner
+    version: "18.6"
+    port: 5432
+    fields:
+      host: {platform: host}
+      port: {platform: port}
+      url: {platform: url}
+      admin_user: {value: postgres}
+      admin_password: {secret: password}
+      # TLS arrives with the optional tls slot (spec 0014, build task 21)
+      sslmode: {value: disable}
+secrets:
+  - name: password
+    env: POSTGRES_PASSWORD_FILE
+    description: Superuser password.
+volumes:
+  data: /var/lib/postgresql
+hardening:
+  tmpfs: [/var/run/postgresql, /tmp]
+healthcheck:
+  # -h 127.0.0.1: the image's first start init server listens only on the local socket,
+  # so a socket check would pass before the real server is up
+  test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
+  interval: 5s
+  timeout: 3s
+  retries: 10
+  start_period: 30s

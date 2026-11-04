@@ -9,7 +9,7 @@ const saveWorking = vi.hoisted(() => vi.fn((_: unknown) => Promise.resolve()))
 vi.mock('../lib/storage', async (actual) => ({ ...(await actual<typeof import('../lib/storage')>()), saveWorking }))
 
 const graph: Graph = {
-  apiVersion: 'modular-platform/v0alpha1',
+  apiVersion: 'modular-platform/v1',
   kind: 'Graph',
   name: 'g',
   modules: { db: { module: 'postgres' }, db2: { module: 'postgres' }, web: { module: 'whoami', uses: { postgresql: null } } },
@@ -188,7 +188,7 @@ describe('sample copy (AC-18)', () => {
 
   it('copies with the edit applied, history holding the unedited copy, and plans it', async () => {
     const calls = echoPlanner()
-    useEditor.setState({ selection: { kind: 'binding', consumer: 'web', capability: 'postgresql' } })
+    useEditor.setState({ selection: { kind: 'binding', consumer: 'web', slot: 'postgresql' } })
     const made = s().copySample({ fileName: 'sample.yaml', graph: sample, plan: planFor(sample), positions }, (g) =>
       unbind(g, 'web', 'postgresql'),
     )

@@ -1,50 +1,70 @@
 package contract
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
 	"slices"
 	"strings"
-	"time"
 
-	"github.com/distribution/reference"
 	"sigs.k8s.io/yaml"
 
 	"github.com/racherom/modular-platform/sdk/manifest"
 )
 
-// Catalog rule codes (AC-11 of spec 0001; the sdk fields of spec 0005 come from sdk/manifest).
+// Catalog rule codes (spec 0002 and 0005, grown by 0012, 0013 and 0014; the sdk fields come
+// from sdk/manifest).
 const (
-	CodeInvalidEntry       = "invalid_entry"
-	CodeMissingField       = manifest.CodeMissingField
-	CodeInvalidName        = manifest.CodeInvalidName
-	CodeNameMismatch       = "name_mismatch"
-	CodeDuplicateName      = manifest.CodeDuplicateName
-	CodeInvalidImage       = "invalid_image"
-	CodeImageUntagged      = "image_untagged"
-	CodeImageLatest        = "image_latest"
-	CodeInvalidPort        = "invalid_port"
-	CodeInvalidEnvName     = manifest.CodeInvalidEnvName
-	CodeDuplicateEnv       = manifest.CodeDuplicateEnv
-	CodeInvalidHealthcheck = "invalid_healthcheck"
-	CodeInvalidDuration    = "invalid_duration"
-	CodeInvalidRetries     = "invalid_retries"
-	CodeInvalidRuntime     = manifest.CodeInvalidRuntime
-	CodeInvalidType        = manifest.CodeInvalidType
-	CodeInvalidDefault     = manifest.CodeInvalidDefault
-	CodeRuleNotAllowed     = manifest.CodeRuleNotAllowed
-	CodeInvalidRule        = manifest.CodeInvalidRule
-	CodeClientNotAllowed   = manifest.CodeClientNotAllowed
-	CodeUnknownBindingKey  = manifest.CodeUnknownBindingKey
-	CodePortNotAllowed     = manifest.CodePortNotAllowed
-	CodeTooManyProvides    = manifest.CodeTooManyProvides
+	CodeInvalidEntry        = "invalid_entry"
+	CodeMissingField        = manifest.CodeMissingField
+	CodeInvalidName         = manifest.CodeInvalidName
+	CodeNameMismatch        = "name_mismatch"
+	CodeDuplicateName       = manifest.CodeDuplicateName
+	CodeInvalidImage        = "invalid_image"
+	CodeImageUntagged       = "image_untagged"
+	CodeImageLatest         = "image_latest"
+	CodeInvalidPort         = "invalid_port"
+	CodeInvalidEnvName      = manifest.CodeInvalidEnvName
+	CodeDuplicateEnv        = manifest.CodeDuplicateEnv
+	CodeInvalidHealthcheck  = "invalid_healthcheck"
+	CodeInvalidDuration     = "invalid_duration"
+	CodeInvalidRetries      = "invalid_retries"
+	CodeInvalidRuntime      = manifest.CodeInvalidRuntime
+	CodeInvalidType         = manifest.CodeInvalidType
+	CodeInvalidDefault      = manifest.CodeInvalidDefault
+	CodeRuleNotAllowed      = manifest.CodeRuleNotAllowed
+	CodeInvalidRule         = manifest.CodeInvalidRule
+	CodeClientNotAllowed    = manifest.CodeClientNotAllowed
+	CodePortNotAllowed      = manifest.CodePortNotAllowed
+	CodeTooManyProvides     = manifest.CodeTooManyProvides
+	CodeUnknownCapability   = manifest.CodeUnknownCapability
+	CodeUnknownField        = manifest.CodeUnknownField
+	CodePerCallerNotAllowed = manifest.CodePerCallerNotAllowed
+	CodeInvalidDirection    = "invalid_direction"
+	CodeInvalidVersion      = "invalid_version"
+	CodeInvalidRange        = "invalid_range"
+	CodeMissingFieldSource  = "missing_field_source"
+	CodeInvalidFieldSource  = "invalid_field_source"
+	CodeReservedSlot        = "reserved_slot"
+	CodeInvalidTemplate     = "invalid_template"
+	CodeInvalidSetupStep    = "invalid_setup_step"
+	CodeInvalidMount        = "invalid_mount"
+	CodeInvalidYields       = "invalid_yields"
+	CodeInvalidJob          = "invalid_job"
+)
+
+// Catalog folders (spec 0011, "Catalog layout and loading").
+const (
+	capabilitiesDir = "capabilities"
+	modulesDir      = "modules"
+	moduleFile      = "module.yaml"
 )
 
 // CatalogProblem is one broken catalog rule in one file.
 type CatalogProblem struct {
-	File    string // file name inside the catalog, like whoami.yaml
-	Path    string // dotted path inside the entry; "." for the whole file
+	File    string // path inside the catalog, like modules/whoami/module.yaml
+	Path    string // dotted path inside the file; "." for the whole file
 	Code    string
 	Message string
 }
@@ -55,117 +75,107 @@ func (p CatalogProblem) String() string {
 	return fmt.Sprintf("catalog/%s: %s: %s: %s", p.File, p.Path, p.Code, p.Message)
 }
 
-// LoadCatalog reads every *.yaml file at the root of fsys as one catalog entry and checks the
-// catalog rules. It returns the entries sorted by name, and every broken rule; a caller must not
-// serve a catalog that has problems.
-func LoadCatalog(fsys fs.FS) ([]CatalogEntry, []CatalogProblem) {
-	files, err := fs.Glob(fsys, "*.yaml")
+// LoadCatalog reads capabilities/*.yaml and modules/*/module.yaml from fsys and checks every
+// catalog rule; capabilities load first, so the module rules can check field names. It returns
+// the modules and capabilities without problems, each sorted by name, and every broken rule; a
+// caller must not serve a catalog that has problems.
+func LoadCatalog(fsys fs.FS) (Catalog, []CatalogProblem) {
+	var problems []CatalogProblem
+	capFiles, err := fs.Glob(fsys, capabilitiesDir+"/*.yaml")
 	if err != nil {
-		return nil, []CatalogProblem{{File: ".", Path: ".", Code: CodeInvalidEntry, Message: err.Error()}}
+		return Catalog{}, []CatalogProblem{{File: ".", Path: ".", Code: CodeInvalidEntry, Message: err.Error()}}
 	}
-	slices.Sort(files)
+	slices.Sort(capFiles)
 
-	var (
-		entries  []CatalogEntry
+	type loaded[T any] struct {
+		file     string
+		value    T
 		problems []CatalogProblem
-		seen     = map[string]string{}
-	)
-	for _, file := range files {
+	}
+	var caps []loaded[Capability]
+	byName := map[string]Capability{}
+	seen := map[string]string{}
+	for _, file := range capFiles {
 		data, err := fs.ReadFile(fsys, file)
 		if err != nil {
 			problems = append(problems, CatalogProblem{File: file, Path: ".", Code: CodeInvalidEntry, Message: err.Error()})
 			continue
 		}
-		entry, entryProblems := CheckEntry(file, data)
-		if prev, ok := seen[entry.Name]; ok && entry.Name != "" {
-			entryProblems = append(entryProblems, CatalogProblem{
+		c, ps := CheckCapability(file, data)
+		if prev, ok := seen[c.Name]; ok && c.Name != "" {
+			ps = append(ps, CatalogProblem{
 				File: file, Path: "name", Code: CodeDuplicateName,
-				Message: fmt.Sprintf("the name %q is already used by %s", entry.Name, prev),
+				Message: fmt.Sprintf("the name %q is already used by %s", c.Name, prev),
 			})
 		}
-		seen[entry.Name] = file
-		problems = append(problems, entryProblems...)
-		if len(entryProblems) == 0 {
-			entries = append(entries, entry)
+		if c.Name != "" {
+			seen[c.Name] = file
+			byName[c.Name] = c
+		}
+		caps = append(caps, loaded[Capability]{file: file, value: c, problems: ps})
+	}
+	for i := range caps {
+		caps[i].problems = append(caps[i].problems, CheckYields(caps[i].file, caps[i].value, byName)...)
+	}
+
+	var modules []loaded[Module]
+	dirs, err := fs.ReadDir(fsys, modulesDir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		problems = append(problems, CatalogProblem{File: modulesDir, Path: ".", Code: CodeInvalidEntry, Message: err.Error()})
+	}
+	seen = map[string]string{}
+	for _, d := range dirs {
+		if !d.IsDir() {
+			continue
+		}
+		file := path.Join(modulesDir, d.Name(), moduleFile)
+		data, err := fs.ReadFile(fsys, file)
+		if err != nil {
+			problems = append(problems, CatalogProblem{File: file, Path: ".", Code: CodeInvalidEntry, Message: "the module folder has no module.yaml"})
+			continue
+		}
+		m, ps := CheckModule(file, data, byName)
+		if prev, ok := seen[m.Name]; ok && m.Name != "" {
+			ps = append(ps, CatalogProblem{
+				File: file, Path: "name", Code: CodeDuplicateName,
+				Message: fmt.Sprintf("the name %q is already used by %s", m.Name, prev),
+			})
+		}
+		seen[m.Name] = file
+		modules = append(modules, loaded[Module]{file: file, value: m, problems: ps})
+	}
+
+	out := Catalog{Modules: []Module{}, Capabilities: []Capability{}}
+	for _, c := range caps {
+		problems = append(problems, c.problems...)
+		if len(c.problems) == 0 {
+			out.Capabilities = append(out.Capabilities, c.value)
 		}
 	}
-	slices.SortFunc(entries, func(a, b CatalogEntry) int { return strings.Compare(a.Name, b.Name) })
-	return entries, problems
+	for _, m := range modules {
+		problems = append(problems, m.problems...)
+		if len(m.problems) == 0 {
+			out.Modules = append(out.Modules, m.value)
+		}
+	}
+	// capabilities/ sorts before modules/; each file keeps its problems in the order found
+	slices.SortStableFunc(problems, func(a, b CatalogProblem) int { return strings.Compare(a.File, b.File) })
+	slices.SortFunc(out.Capabilities, func(a, b Capability) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(out.Modules, func(a, b Module) int { return strings.Compare(a.Name, b.Name) })
+	return out, problems
 }
 
-// CheckEntry decodes one catalog file strictly and checks every rule that concerns it alone. The
-// sdk fields and every env name are checked by sdk/manifest, so sdkgen refuses the same entries.
-func CheckEntry(file string, data []byte) (CatalogEntry, []CatalogProblem) {
-	c := entryChecker{file: file}
-	var e CatalogEntry
-	if err := yaml.UnmarshalStrict(data, &e); err != nil {
-		c.add(".", CodeInvalidEntry, "the entry could not be read: %s", oneLine(err))
-		return e, c.problems
-	}
-	m, err := manifest.Parse(data)
-	if err != nil {
-		// the schema and sdk/manifest disagree about a field; manifest_test.go guards against it
-		c.add(".", CodeInvalidEntry, "the entry could not be read: %s", oneLine(err))
-		return e, c.problems
-	}
-
-	if e.ApiVersion != APIVersion {
-		c.add("apiVersion", CodeUnsupportedVersion, "apiVersion %q is not %s", e.ApiVersion, APIVersion)
-	}
-	if e.Kind != KindModule {
-		c.add("kind", CodeWrongKind, "kind %q is not %s", e.Kind, KindModule)
-	}
-	c.name("name", e.Name)
-	if e.Name != "" && e.Name != strings.TrimSuffix(path.Base(file), ".yaml") {
-		c.add("name", CodeNameMismatch, "name %q differs from the file name", e.Name)
-	}
-	if strings.TrimSpace(e.Description) == "" {
-		c.add("description", CodeMissingField, "description is required")
-	}
-	c.image(e.Image)
-
-	for _, capability := range sortedKeys(e.Provides) {
-		c.name("provides."+capability, capability)
-		if e.Runtime == Sdk {
-			continue // a runtime: sdk provide has no port (manifest checks it)
-		}
-		if port := e.Provides[capability].Port; port < 1 || port > 65535 {
-			c.add("provides."+capability+".port", CodeInvalidPort, "port %d is not between 1 and 65535", port)
-		}
-	}
-	for _, capability := range sortedKeys(e.Uses) {
-		c.name("uses."+capability, capability)
-	}
-
-	secretNames := map[string]bool{}
-	for i, s := range e.Secrets {
-		p := fmt.Sprintf("secrets.%d", i)
-		c.name(p+".name", s.Name)
-		if secretNames[s.Name] && s.Name != "" {
-			c.add(p+".name", CodeDuplicateName, "secret %q is declared twice", s.Name)
-		}
-		secretNames[s.Name] = true
-	}
-
-	if e.Healthcheck != nil {
-		c.healthcheck(*e.Healthcheck)
-	}
-	for _, p := range manifest.Check(m) {
-		c.add(p.Path, p.Code, "%s", p.Message)
-	}
-	return e, c.problems
-}
-
-type entryChecker struct {
+// checker collects the problems of one catalog file.
+type checker struct {
 	file     string
 	problems []CatalogProblem
 }
 
-func (c *entryChecker) add(path, code, format string, args ...any) {
+func (c *checker) add(path, code, format string, args ...any) {
 	c.problems = append(c.problems, CatalogProblem{File: c.file, Path: path, Code: code, Message: fmt.Sprintf(format, args...)})
 }
 
-func (c *entryChecker) name(path, name string) {
+func (c *checker) name(path, name string) {
 	switch {
 	case name == "":
 		c.add(path, CodeMissingField, "a name is required")
@@ -174,43 +184,44 @@ func (c *entryChecker) name(path, name string) {
 	}
 }
 
-func (c *entryChecker) image(image string) {
-	if image == "" {
-		c.add("image", CodeMissingField, "image is required")
-		return
-	}
-	ref, err := reference.ParseNormalizedNamed(image)
-	if err != nil {
-		c.add("image", CodeInvalidImage, "%q is not an image reference: %v", image, err)
-		return
-	}
-	tagged, ok := ref.(reference.Tagged)
+func (c *checker) description(path, d string) {
 	switch {
-	case !ok:
-		c.add("image", CodeImageUntagged, "%q must carry an exact tag", image)
-	case tagged.Tag() == "latest":
-		c.add("image", CodeImageLatest, "%q must not use the latest tag", image)
+	case strings.TrimSpace(d) == "":
+		c.add(path, CodeMissingField, "description is required")
+	case strings.ContainsAny(d, "\r\n"):
+		c.add(path, CodeInvalidRule, "description must be one line")
 	}
 }
 
-func (c *entryChecker) healthcheck(h Healthcheck) {
-	if len(h.Test) < 2 || (h.Test[0] != "CMD" && h.Test[0] != "CMD-SHELL") {
-		c.add("healthcheck.test", CodeInvalidHealthcheck, "test must be a list starting with CMD or CMD-SHELL and a command")
-	}
-	durations := []struct{ field, value string }{
-		{"interval", h.Interval}, {"start_period", h.StartPeriod}, {"timeout", h.Timeout},
-	}
-	for _, d := range durations {
-		if d.value == "" {
-			continue
+// decode checks the format version before strict decoding, then decodes data strictly into v
+// and checks apiVersion and kind. It reports whether the rest of the file can be checked.
+func (c *checker) decode(data []byte, v any, kind string, apiVersion, gotKind func() string) bool {
+	var h header
+	if err := yaml.Unmarshal(data, &h); err == nil && h.FormatVersion != nil {
+		s, _ := h.FormatVersion.(string)
+		switch ok, tooNew := checkFormat(s); {
+		case tooNew:
+			c.add("formatVersion", CodeFormatTooNew, "needs a planner that reads format %s; this one reads 1.%d", s, FormatMinor)
+			return false
+		case !ok || s == "":
+			c.add("formatVersion", CodeInvalidEntry, "formatVersion %v is not a version like 1.0", h.FormatVersion)
+			return false
 		}
-		if _, err := time.ParseDuration(d.value); err != nil {
-			c.add("healthcheck."+d.field, CodeInvalidDuration, "%q is not a duration like 5s", d.value)
-		}
 	}
-	if h.Retries != nil && *h.Retries < 1 {
-		c.add("healthcheck.retries", CodeInvalidRetries, "retries must be 1 or more")
+	if err := yaml.UnmarshalStrict(data, v); err != nil {
+		c.add(".", CodeInvalidEntry, "the entry could not be read: %s", oneLine(err))
+		return false
 	}
+	ok := true
+	if apiVersion() != APIVersion {
+		c.add("apiVersion", CodeUnsupportedVersion, "apiVersion %q is not %s", apiVersion(), APIVersion)
+		ok = false
+	}
+	if gotKind() != kind {
+		c.add("kind", CodeWrongKind, "kind %q is not %s", gotKind(), kind)
+		ok = false
+	}
+	return ok
 }
 
 func sortedKeys[V any](m map[string]V) []string {

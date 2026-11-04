@@ -1,19 +1,14 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { CatalogEntry } from '../api/client'
+import type { Module } from '../api/client'
 import { CatalogPanel } from '../components/CatalogPanel'
 import { filterCatalog } from '../graph/catalog'
 import { useEditor } from '../lib/store'
+import { testModule } from './fixtures'
 
-const entry = (name: string, description: string, more: Partial<CatalogEntry> = {}): CatalogEntry => ({
-  apiVersion: 'modular-platform/v0alpha1',
-  kind: 'Module',
-  name,
-  description,
-  image: `${name}:1`,
-  ...more,
-})
-const catalog: CatalogEntry[] = [
+const entry = (name: string, description: string, more: Parameters<typeof testModule>[1] = {}): Module =>
+  testModule(name, { ...more, description })
+const catalog: Module[] = [
   entry('postgres', 'PostgreSQL database server.', { provides: { postgresql: { port: 5432 } } }),
   entry('whoami', 'Tiny HTTP service.', { provides: { http: { port: 80 } }, uses: { postgresql: { optional: true } } }),
   entry('test-hostile', '<img src=x onerror=alert(1)> Test entry whose description holds HTML.'),

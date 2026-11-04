@@ -1,4 +1,4 @@
-apiVersion: modular-platform/v0alpha1
+apiVersion: modular-platform/v1
 kind: Graph
 modules:
   postgres:
@@ -6,5 +6,8 @@ modules:
   whoami:
     module: whoami
     uses:
-      postgresql: postgres
+      postgresql:
+        database: whoami_postgresql
+        provider: postgres
+        user: whoami_postgresql
 name: whoami-postgres

@@ -1,0 +1,8 @@
+apiVersion: modular-platform/v0alpha1
+kind: Graph
+modules:
+  ping:
+    module: ping
+  pong:
+    module: pong
+name: cycle

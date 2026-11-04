@@ -6,10 +6,12 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/racherom/modular-platform/libs/contract"
 	"github.com/racherom/modular-platform/libs/planner"
@@ -26,13 +28,36 @@ func init() {
 // updating reports whether -update asks to rewrite the golden files.
 func updating() bool { return flag.Lookup("update").Value.String() == "true" }
 
-func samplePlan(t *testing.T) (contract.PlanResult, []contract.CatalogEntry) {
+// loadCatalog loads the catalogs under dirs as one, so test modules can name built in
+// capabilities.
+func loadCatalog(t *testing.T, dirs ...string) contract.Catalog {
 	t.Helper()
-	catalog, problems := contract.LoadCatalog(os.DirFS("../../catalog"))
+	merged := fstest.MapFS{}
+	for _, dir := range dirs {
+		fsys := os.DirFS(dir)
+		err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			data, err := fs.ReadFile(fsys, path)
+			merged[path] = &fstest.MapFile{Data: data}
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, problems := contract.LoadCatalog(merged)
 	if len(problems) > 0 {
 		t.Fatal(problems)
 	}
-	data, err := os.ReadFile("../../samples/whoami-postgres/graph.yaml")
+	return c
+}
+
+// planFile plans the graph file at path against catalog and fails the test unless it is ok.
+func planFile(t *testing.T, path string, catalog contract.Catalog) contract.PlanResult {
+	t.Helper()
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +65,17 @@ func samplePlan(t *testing.T) (contract.PlanResult, []contract.CatalogEntry) {
 	if p != nil {
 		t.Fatal(p.Message)
 	}
-	return planner.Plan(g, catalog), catalog
+	plan := planner.Plan(g, catalog)
+	if !plan.Ok {
+		t.Fatalf("plan of %s: %+v", path, plan.Problems)
+	}
+	return plan
+}
+
+func samplePlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
+	t.Helper()
+	catalog := loadCatalog(t, "../../catalog")
+	return planFile(t, "../../samples/whoami-postgres/graph.yaml", catalog), catalog
 }
 
 // TestRenderSampleGolden pins every rendered file of the sample (AC-10 for docker-compose.yml).
@@ -92,31 +127,58 @@ func TestRenderSampleRules(t *testing.T) {
 	compose := string(files["docker-compose.yml"].Data)
 	for _, want := range []string{
 		"name: whoami-postgres\n",
-		"    depends_on:\n      postgres:\n        condition: service_healthy\n",
-		"      DEMO_POSTGRESQL_HOST: postgres\n",
+		"      DEMO_POSTGRESQL_HOST: postgres.whoami-postgres.internal\n",
 		"      DEMO_POSTGRESQL_PORT: \"5432\"\n",
 		"      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password\n",
 		"  postgres_password:\n    file: ./secrets/postgres/password\n",
+		"networks:\n  internal:\n    internal: true\n",
+		"      internal:\n        aliases:\n        - whoami.whoami-postgres.internal\n",
+		"    - source: ./data/postgres/data\n      target: /var/lib/postgresql\n      type: bind\n",
+		"    tmpfs:\n    - /var/run/postgresql\n    - /tmp\n",
+		"  postgres_provision_whoami_postgresql:\n",
+		"      MP_DATABASE: whoami_postgresql\n",
+		"      MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password\n",
+		"      MP_PASSWORD_FILE: /run/secrets/bind/password\n",
+		"    restart: \"no\"\n",
 	} {
 		if !strings.Contains(compose, want) {
 			t.Errorf("docker-compose.yml lacks %q\n%s", want, compose)
 		}
 	}
 	whoami := from(t, compose, "  whoami:\n")
-	if strings.Contains(whoami, "secrets:") {
-		t.Error("whoami must get no secret")
+	for _, want := range []string{
+		"      postgres:\n        condition: service_healthy\n",
+		"      postgres_provision_whoami_postgresql:\n        condition: service_completed_successfully\n",
+		"    read_only: true\n", "    cap_drop:\n    - ALL\n", "    - no-new-privileges:true\n",
+		"    user: ${MP_UID}:${MP_GID}\n",
+	} {
+		if !strings.Contains(whoami, want) {
+			t.Errorf("whoami lacks %q\n%s", want, whoami)
+		}
 	}
-	if strings.Contains(compose, "null") || strings.Contains(compose, "ports:") {
+	if strings.Contains(whoami, "secrets:") {
+		t.Error("whoami maps no file field, so it must get no secret")
+	}
+	if strings.Contains(compose, ": null") || strings.Contains(compose, "- null") || strings.Contains(compose, "ports:") {
 		t.Error("docker-compose.yml must hold no null and publish no port")
+	}
+	if !strings.Contains(compose, "$$MP_ADMIN_HOST") || strings.Contains(compose, " $MP_ADMIN_HOST") {
+		t.Error("the job script must escape $ so Compose leaves it to the shell")
 	}
 	if got := files["setup.sh"].Mode; got != 0o755 {
 		t.Errorf("setup.sh mode = %v", got)
 	}
-	if !strings.Contains(string(files["setup.sh"].Data), "new_secret secrets/postgres/password\n") {
-		t.Error("setup.sh does not create the postgres password")
+	setup := string(files["setup.sh"].Data)
+	for _, want := range []string{
+		"new_secret secrets/postgres/password\n", "new_secret secrets/whoami/uses_postgresql_password\n",
+		"new_folder data/postgres/data\n", "set_id MP_UID",
+	} {
+		if !strings.Contains(setup, want) {
+			t.Errorf("setup.sh lacks %q", want)
+		}
 	}
-	want, _ := os.ReadFile("../../samples/whoami-postgres/graph.yaml")
-	if !bytes.Equal(files["graph.yaml"].Data, want) {
+	want, _ := contract.MarshalGraph(plan.Graph)
+	if !bytes.Equal(files["graph.yaml"].Data, want) || !strings.Contains(string(want), "database: whoami_postgresql") {
 		t.Errorf("graph.yaml in the zip is not the resolved canonical graph:\n%s", files["graph.yaml"].Data)
 	}
 }
@@ -166,10 +228,10 @@ func TestZipDeterministic(t *testing.T) {
 // (spec 0002, Secrets in Compose).
 func TestSecretComposeNamesNeverCollide(t *testing.T) {
 	t.Parallel()
-	catalog := []contract.CatalogEntry{
+	catalog := contract.Catalog{Modules: []contract.Module{
 		{Name: "one", Image: "example.test/one:1.0.0", Secrets: []contract.Secret{{Name: "c", Env: "C_FILE"}}},
 		{Name: "two", Image: "example.test/two:1.0.0", Secrets: []contract.Secret{{Name: "b-c", Env: "BC_FILE"}}},
-	}
+	}}
 	plan := contract.PlanResult{Ok: true, Graph: contract.Graph{
 		Name:    "collide",
 		Modules: map[string]contract.GraphModule{"a-b": {Module: "one"}, "a": {Module: "two"}},
@@ -205,7 +267,7 @@ func TestSecretComposeNamesNeverCollide(t *testing.T) {
 
 func TestRenderRefusesErrors(t *testing.T) {
 	t.Parallel()
-	_, err := render.Render(contract.PlanResult{Ok: false}, nil)
+	_, err := render.Render(contract.PlanResult{Ok: false}, contract.Catalog{})
 	if !errors.Is(err, render.ErrPlanHasErrors) {
 		t.Errorf("err = %v, want ErrPlanHasErrors", err)
 	}

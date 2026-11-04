@@ -1,0 +1,12 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  a:
+    module: pg-client
+  b:
+    module: pg-client
+  postgres:
+    module: postgres
+  reports:
+    module: pg-pair
+name: provision-e2e

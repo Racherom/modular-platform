@@ -1,0 +1,14 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: twodb
+description: Test consumer with two slots of postgresql.
+image: example.test/twodb:1.0.0
+uses:
+  main-db:
+    capability: postgresql
+    env:
+      database: MAIN_DB
+  audit-db:
+    capability: postgresql
+    env:
+      database: AUDIT_DB

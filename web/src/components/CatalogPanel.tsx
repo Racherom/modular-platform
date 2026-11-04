@@ -1,6 +1,6 @@
 import { SearchX } from 'lucide-react'
 import { useEffect, useRef } from 'react'
-import type { CatalogEntry } from '../api/client'
+import type { Module } from '../api/client'
 import { filterCatalog } from '../graph/catalog'
 import { useEditor } from '../lib/store'
 import styles from './CatalogPanel.module.css'
@@ -10,11 +10,12 @@ import { Panel } from './ui/Panel'
 import { SearchField } from './ui/SearchField'
 
 /**
- * The catalog panel (AC-19): every entry with its name, description, and the capabilities it
- * provides and uses, filtered by the text in the editor store. Find providers in the inspector
+ * The catalog panel (AC-19): every module with its name, description, what it provides (each
+ * provide's capability and version, spec 0011 AC-19) and what it uses (each slot's capability and
+ * range), filtered by the text in the editor store. Find providers in the inspector
  * sets the filter and moves focus here. Every text from the catalog renders as plain text (AC-20).
  */
-export function CatalogPanel({ entries }: { entries: CatalogEntry[] }) {
+export function CatalogPanel({ entries }: { entries: Module[] }) {
   const filter = useEditor((s) => s.catalogFilter)
   const filterFocus = useEditor((s) => s.filterFocus)
   const { setCatalogFilter } = useEditor.getState()
@@ -62,8 +63,14 @@ export function CatalogPanel({ entries }: { entries: CatalogEntry[] }) {
                 <li key={e.name} className={styles.entry}>
                   <h3 className={styles.name}>{e.name}</h3>
                   <p className={styles.description}>{e.description}</p>
-                  <Capabilities label="Provides" names={Object.keys(e.provides ?? {})} />
-                  <Capabilities label="Uses" names={Object.keys(e.uses ?? {})} />
+                  <Capabilities
+                    label="Provides"
+                    names={Object.entries(e.provides ?? {}).map(([name, p]) => portLabel(name, p.capability, p.version))}
+                  />
+                  <Capabilities
+                    label="Uses"
+                    names={Object.entries(e.uses ?? {}).map(([name, u]) => portLabel(name, u.capability, u.versions ?? ''))}
+                  />
                 </li>
               ))}
             </ul>
@@ -72,6 +79,11 @@ export function CatalogPanel({ entries }: { entries: CatalogEntry[] }) {
       </Panel>
     </div>
   )
+}
+
+/** A provide or slot as the panel shows it: the capability (after the name when they differ) and a version or range. */
+function portLabel(name: string, capability: string, version: string): string {
+  return [name === capability ? capability : `${name}: ${capability}`, version].filter((t) => t !== '').join(' ')
 }
 
 function Capabilities({ label, names }: { label: string; names: string[] }) {

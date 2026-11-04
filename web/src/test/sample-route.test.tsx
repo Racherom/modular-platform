@@ -2,23 +2,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CatalogEntry, Graph, PlanResult } from '../api/client'
+import type { Graph, PlanResult } from '../api/client'
 import { routeTree } from '../routeTree.gen'
+import { testCatalog, testModule } from './fixtures'
 import { fetchHandler } from './setup'
 
 // the editor only needs names and ports from the catalog here
-const entry = (name: string, image: string, more: Partial<CatalogEntry>): CatalogEntry => ({
-  apiVersion: 'modular-platform/v0alpha1',
-  kind: 'Module',
-  name,
-  description: `${name} test entry`,
-  image,
-  ...more,
-})
-const catalog: CatalogEntry[] = [
+const entry = (name: string, image: string, more: Parameters<typeof testModule>[1]) => testModule(name, { ...more, image })
+const catalog = testCatalog([
   entry('postgres', 'postgres:18.6', { provides: { postgresql: { port: 5432 } } }),
   entry('whoami', 'traefik/whoami:v1.12.0', { provides: { http: { port: 80 } }, uses: { postgresql: { optional: true } } }),
-]
+])
 
 function renderAt(path: string) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
@@ -37,13 +31,24 @@ describe('sample route', () => {
     fetchHandler.current = async (req) => {
       const url = new URL(req.url)
       calls.push(`${req.method} ${url.pathname}`)
-      if (url.pathname === '/planner/v1/catalog') return Response.json({ entries: catalog })
+      if (url.pathname === '/planner/v1/catalog') return Response.json(catalog)
       if (url.pathname === '/planner/v1/plan') {
         const graph = (await req.json()) as Graph
         const plan: PlanResult = {
           ok: true,
           graph,
-          bindings: [{ consumer: 'whoami', capability: 'postgresql', provider: 'postgres', auto: false }],
+          bindings: [
+            {
+              consumer: 'whoami',
+              slot: 'postgresql',
+              capability: 'postgresql',
+              provider: 'postgres',
+              provide: 'postgresql',
+              auto: false,
+              named: false,
+              provisioned: false,
+            },
+          ],
           problems: [],
         }
         return Response.json(plan)

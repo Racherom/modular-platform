@@ -1,4 +1,4 @@
-apiVersion: modular-platform/v0alpha1
+apiVersion: modular-platform/v1
 kind: Module
 name: testmodule
 description: Declares one value of every type, for the sdk's own tests.
@@ -6,27 +6,35 @@ image: example.test/testmodule:1.0.0
 runtime: sdk
 provides:
   greet:
+    capability: greet
+    version: "1.0"
     auth: binding-token
+    fields:
+      url: {platform: url}
+      token: {generate: true}
     env:
-      clients_dir: TM_CLIENTS_DIR
+      token: TM_CLIENTS_DIR
 uses:
   echo:
+    capability: echo
     optional: true
     client: http
     env:
       url: TM_ECHO_URL
-      token_file: TM_ECHO_TOKEN_FILE
+      token: TM_ECHO_TOKEN_FILE
   postgresql:
+    capability: postgresql
     optional: true
     client: postgresql
     env:
       url: TM_DB_URL
       database: TM_DB_NAME
       user: TM_DB_USER
-      password_file: TM_DB_PASSWORD_FILE
+      password: TM_DB_PASSWORD_FILE
       sslmode: TM_DB_SSLMODE
-      ca_file: TM_DB_CA_FILE
+      ca: TM_DB_CA_FILE
   storage:
+    capability: s3
     optional: true
     client: s3
     env:
@@ -34,8 +42,8 @@ uses:
       bucket: TM_STORE_BUCKET
       region: TM_STORE_REGION
       access_key_id: TM_STORE_ACCESS_KEY_ID
-      secret_access_key_file: TM_STORE_SECRET_KEY_FILE
-      ca_file: TM_STORE_CA_FILE
+      secret_access_key: TM_STORE_SECRET_KEY_FILE
+      ca: TM_STORE_CA_FILE
 config:
   api-key:
     env: TM_API_KEY

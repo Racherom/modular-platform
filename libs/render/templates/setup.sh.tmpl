@@ -1,9 +1,22 @@
 #!/bin/sh
-# Creates the secret files of the stack {{.Name}}. Run it once before `docker compose up`.
-# It never changes a file that already exists, so running it again is safe.
+# Prepares the stack {{.Name}}: the user it runs as, its secret files and its data folders. Run
+# it once before `docker compose up`. It never changes a file that already exists, so running it
+# again is safe.
 set -eu
 cd "$(dirname "$0")"
 umask 077
+
+# Every module runs as you, so it can read its secret files and write its data folders.
+set_id() {
+	if grep -q "^$1=" .env 2>/dev/null; then
+		echo "kept    $1 in .env"
+		return 0
+	fi
+	printf '%s=%s\n' "$1" "$2" >> .env
+	echo "added   $1 to .env"
+}
+set_id MP_UID "$(id -u)"
+set_id MP_GID "$(id -g)"
 
 new_secret() {
 	if [ -e "$1" ]; then
@@ -26,17 +39,36 @@ new_secret {{.Path}}
 {{- if not .Secrets}}
 echo "This stack needs no secret files."
 {{- end}}
-{{- if .SDK}}
+{{- if .Folders}}
 
-# The modules built on the module SDK run as you, so they can read the secret files above.
-set_id() {
-	if grep -q "^$1=" .env 2>/dev/null; then
-		echo "kept    $1 in .env"
+new_folder() {
+	if [ -d "$1" ]; then
+		echo "kept    $1"
 		return 0
 	fi
-	printf '%s=%s\n' "$1" "$2" >> .env
-	echo "added   $1 to .env"
+	mkdir -p "$1"
+	chmod 0700 "$1"
+	echo "created $1"
 }
-set_id MP_UID "$(id -u)"
-set_id MP_GID "$(id -g)"
+{{range .Folders}}
+new_folder {{.}}
+{{- end}}
+{{- end}}
+{{- if .Placed}}
+
+# Files you place yourself; nothing is created in their place.
+missing=0
+need() {
+	if [ ! -e "$1" ]; then
+		echo "missing $1: $2" >&2
+		missing=1
+	fi
+}
+{{range .Placed}}
+need {{.Path}} "{{.Field}} of the {{.Capability}} service {{.Instance}}"
+{{- end}}
+if [ "$missing" -ne 0 ]; then
+	echo "setup.sh: place the files above, then run it again" >&2
+	exit 1
+fi
 {{- end}}
