@@ -71,7 +71,10 @@ func Managed(plan contract.PlanResult, catalog contract.Catalog, deployment stri
 		for name, svc := range p.Services {
 			labels := types.Labels{LabelGraph: graph, LabelDeployment: deployment}
 			if j, ok := jobs[name]; ok {
-				labels[LabelInstance], labels[LabelModule], labels[LabelJob] = j.instance, j.module, j.kind
+				labels[LabelInstance], labels[LabelJob] = j.instance, j.kind
+				if j.module != "" { // an external provisioner has no module
+					labels[LabelModule] = j.module
+				}
 			} else {
 				labels[LabelInstance], labels[LabelModule] = name, plan.Graph.Modules[name].Module
 			}

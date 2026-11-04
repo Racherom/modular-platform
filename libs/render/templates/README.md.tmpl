@@ -29,7 +29,7 @@ Data folders `setup.sh` creates; they hold each module's data, so keep them:
 {{- if .Placed}}
 Files you place yourself, from the service outside this stack they belong to (`setup.sh` stops and lists every one that is missing):
 {{range .Placed}}
-- `{{.Path}}`: {{.Field}} of {{.Instance}}
+- `{{.Path}}`: {{.Field}} of {{.Instance}}. {{.Description}}
 {{- end}}
 {{end}}
 {{- if .EnvFiles}}
@@ -48,5 +48,5 @@ docker compose down
 
 ## Change it
 
-`graph.yaml` is this stack's graph. Open it in the Modular Platform editor to change the stack, then download it again. Keep your `secrets/` and `data/` folders: they hold the secrets `setup.sh` made and each module's data, and a download never contains them.
+`graph.yaml` is this stack's graph. Open it in the Modular Platform editor to change the stack, then download it again and start it with `docker compose up -d --wait --remove-orphans`, so a module you removed stops too. Keep your `secrets/` and `data/` folders: they hold the secrets `setup.sh` made and each module's data, and a download never contains them.
 {{- if .EnvFiles}} Keep your `config/` files too: a download holds them with empty settings, so do not let it replace the ones you filled, and run `setup.sh` again afterwards.{{end}}

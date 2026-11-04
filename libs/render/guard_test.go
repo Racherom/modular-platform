@@ -18,15 +18,21 @@ var deployEnv = []byte("MP_UID=1000\nMP_GID=1000\n")
 
 // TestGuardAcceptsEveryRender renders every fixture graph with Managed and shows the guard and
 // the project check accept it, so the allow list and the render cannot drift (spec 0006, AC-8).
+// The one exception is cap_add: which capabilities a deployed module may add is build task 16's
+// to decide (spec 0011), so until then the guard refuses it and nothing else in the bindings case.
 func TestGuardAcceptsEveryRender(t *testing.T) {
 	t.Parallel()
-	for name, plan := range map[string]func(*testing.T) (contract.PlanResult, contract.Catalog){
-		"whoami-postgres": samplePlan,
-		"sdk-pair":        pairPlan,
+	for name, c := range map[string]struct {
+		plan    func(*testing.T) (contract.PlanResult, contract.Catalog)
+		refused []string // the paths the guard still refuses
+	}{
+		"whoami-postgres": {samplePlan, nil},
+		"sdk-pair":        {pairPlan, nil},
+		"bindings":        {bindingsPlan, []string{"services.notifier.cap_add"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			p, catalog := plan(t)
+			p, catalog := c.plan(t)
 			m, err := render.Managed(p, catalog, testDeployment)
 			if err != nil {
 				t.Fatal(err)
@@ -35,8 +41,12 @@ func TestGuardAcceptsEveryRender(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if problems := render.Guard(project, reserved); len(problems) > 0 {
-				t.Errorf("the guard refuses the render: %+v", problems)
+			var refused []string
+			for _, pr := range render.Guard(project, reserved) {
+				refused = append(refused, pr.Path)
+			}
+			if !slices.Equal(refused, c.refused) {
+				t.Errorf("the guard refuses %v, want %v", refused, c.refused)
 			}
 			if problems := render.CheckProject(project, m.Name, testDeployment); len(problems) > 0 {
 				t.Errorf("the project check refuses the render: %+v", problems)

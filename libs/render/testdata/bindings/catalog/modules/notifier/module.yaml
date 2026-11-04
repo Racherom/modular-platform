@@ -1,0 +1,30 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: notifier
+description: Sends notifications, for the bindings golden render; joins egress and opts out of hardening.
+image: example.test/notifier:2.1.0
+provides:
+  events:
+    capability: notify
+    version: "2.1"
+    port: 9000
+    fields:
+      url: {platform: url}
+      token: {generate: true}
+    env:
+      token: NOTIFY_TOKENS_DIR
+      key: NOTIFY_KEYS_DIR
+config:
+  public-name:
+    env: NOTIFY_PUBLIC_NAME
+    type: string
+    default: notify.example.test
+    description: Extra name the notifier answers on in the stack.
+network:
+  egress: true
+  aliases: [{config: public-name}]
+hardening:
+  user: root
+  writable_root: true
+  cap_add: [NET_BIND_SERVICE]
+  tmpfs: [/tmp]

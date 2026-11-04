@@ -35,7 +35,10 @@ var ErrNotRendered = errors.New("render: not rendered by this release")
 //go:embed templates/*.tmpl
 var templateFS embed.FS
 
-var templates = template.Must(template.ParseFS(templateFS, "templates/*.tmpl"))
+var templates = template.Must(template.New("").Funcs(template.FuncMap{"shellQuote": shellQuote}).ParseFS(templateFS, "templates/*.tmpl"))
+
+// shellQuote quotes s as one POSIX shell word.
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // zipTime is the earliest time the zip format can hold, so the same graph gives the same bytes.
 var zipTime = time.Date(1980, time.January, 1, 0, 0, 0, 0, time.UTC)
@@ -43,6 +46,7 @@ var zipTime = time.Date(1980, time.January, 1, 0, 0, 0, 0, time.UTC)
 // The networks of every project (spec 0013, "Host name and networks").
 const (
 	networkInternal = "internal" // every instance, no route out
+	networkEgress   = "egress"   // instances that declare network.egress, and jobs of an external provisioner
 	runUser         = "${MP_UID}:${MP_GID}"
 )
 
@@ -63,6 +67,7 @@ type secret struct {
 	Instance          string
 	Path              string // secrets/<instance>/<name>
 	Capability, Field string // placed only: the external provide's capability and field
+	Description       string // placed only: the field's description
 }
 
 type templateData struct {
@@ -105,6 +110,10 @@ type renderer struct {
 	data     templateData
 	jobs     map[string]job
 	declared map[string]bool // secret file paths already listed for setup.sh or as placed
+
+	bound  map[string]map[string]map[string]value // consumer, slot, field to its value
+	admin  map[string]map[string]value            // provider.provide to its admin field values
+	egress bool                                   // some service joins the egress network
 }
 
 // renderProject renders plan in the static flavor, or the managed one: restart: unless-stopped
@@ -121,6 +130,8 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed b
 		data:     templateData{Name: plan.Graph.Name},
 		jobs:     map[string]job{},
 		declared: map[string]bool{},
+		bound:    map[string]map[string]map[string]value{},
+		admin:    map[string]map[string]value{},
 		project: types.Project{
 			Name:     plan.Graph.Name,
 			Services: types.Services{},
@@ -154,6 +165,16 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed b
 		if err := r.binding(b); err != nil {
 			return rendered{}, err
 		}
+	}
+	for _, i := range instances {
+		if gm := r.g.Modules[i]; gm.External == nil {
+			if err := r.environment(i, r.modules[gm.Module]); err != nil {
+				return rendered{}, err
+			}
+		}
+	}
+	if r.egress {
+		r.project.Networks[networkEgress] = types.NetworkConfig{}
 	}
 	slices.SortFunc(r.data.Secrets, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
 	slices.SortFunc(r.data.Placed, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
@@ -209,18 +230,10 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 	if len(m.Command) > 0 {
 		svc.Command = escapeAll(m.Command)
 	}
-	for _, name := range sortedKeys(m.Environment) {
-		v := m.Environment[name]
-		if strings.ContainsAny(v, "{}") {
-			return svc, fmt.Errorf("%w: environment placeholders of module %s", ErrNotRendered, m.Name)
-		}
-		setEnv(&svc, name, v)
+	if len(m.Templates) > 0 || len(m.Setup) > 0 || len(m.Publish) > 0 || len(m.HostMounts) > 0 {
+		return svc, fmt.Errorf("%w: templates, setup steps and host access of module %s", ErrNotRendered, m.Name)
 	}
-	if len(m.Templates) > 0 || len(m.Setup) > 0 || len(m.Publish) > 0 || len(m.HostMounts) > 0 ||
-		(m.Network != nil && (m.Network.Egress || len(m.Network.Aliases) > 0)) {
-		return svc, fmt.Errorf("%w: templates, setup steps, host access and egress of module %s", ErrNotRendered, m.Name)
-	}
-	svc.Networks = map[string]*types.ServiceNetworkConfig{networkInternal: {Aliases: []string{r.host(i)}}}
+	r.networks(&svc, i, m)
 	r.harden(&svc, m.Hardening)
 
 	for _, s := range m.Secrets {
@@ -250,6 +263,64 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 		svc.Restart = types.RestartPolicyUnlessStopped
 	}
 	return svc, nil
+}
+
+// networks joins instance i to internal, and to egress when its entry declares network.egress,
+// with its host name and the entry's config aliases on each (spec 0013).
+func (r *renderer) networks(svc *types.ServiceConfig, i string, m contract.Module) {
+	aliases := []string{r.host(i)}
+	joins := []string{networkInternal}
+	if m.Network != nil {
+		for _, a := range m.Network.Aliases {
+			aliases = append(aliases, composeVar(i, a.Config, m.Config[a.Config].Default))
+		}
+		if m.Network.Egress {
+			joins = append(joins, networkEgress)
+			r.egress = true
+		}
+	}
+	svc.Networks = map[string]*types.ServiceNetworkConfig{}
+	for _, n := range joins {
+		svc.Networks[n] = &types.ServiceNetworkConfig{Aliases: slices.Clone(aliases)}
+	}
+}
+
+// environment writes the entry's fixed env of instance i (spec 0013): literal text escaped, {uid}
+// and {gid} as the setup user's Compose variables, {config.<v>} as the value's Compose variable,
+// and {<slot>.<field>} as that field of the instance's own binding, empty when the slot is unbound
+// or the provider gives no value. It runs after the bindings, whose values it reads.
+func (r *renderer) environment(i string, m contract.Module) error {
+	if len(m.Environment) == 0 {
+		return nil
+	}
+	svc := r.project.Services[i]
+	for _, name := range sortedKeys(m.Environment) {
+		var b strings.Builder
+		for _, part := range contract.ParseEnvironment(m.Environment[name]) {
+			switch part.Kind {
+			case contract.EnvLiteral:
+				b.WriteString(escape(part.Text))
+			case contract.EnvUID:
+				b.WriteString("${MP_UID}")
+			case contract.EnvGID:
+				b.WriteString("${MP_GID}")
+			case contract.EnvConfig:
+				b.WriteString(composeVar(i, part.Name, m.Config[part.Name].Default))
+			case contract.EnvUses:
+				v := r.bound[i][part.Name][part.Field]
+				if v.raw {
+					b.WriteString(v.text)
+				} else {
+					b.WriteString(escape(v.text))
+				}
+			default:
+				return fmt.Errorf("%w: %s in the environment of module %s", ErrNotRendered, part.Text, m.Name)
+			}
+		}
+		setEnvRaw(&svc, name, b.String())
+	}
+	r.project.Services[i] = svc
+	return nil
 }
 
 // harden writes the hardening defaults and the entry's opt outs (spec 0013).
@@ -308,12 +379,12 @@ func (r *renderer) generated(instance, path string) {
 }
 
 // placed lists path once as a file you place.
-func (r *renderer) placed(instance, path, capability, field string) {
+func (r *renderer) placed(instance, path, capability, field, description string) {
 	if r.declared[path] {
 		return
 	}
 	r.declared[path] = true
-	r.data.Placed = append(r.data.Placed, secret{Instance: instance, Path: path, Capability: capability, Field: field})
+	r.data.Placed = append(r.data.Placed, secret{Instance: instance, Path: path, Capability: capability, Field: field, Description: description})
 }
 
 // WriteZip writes the files as a zip, entries in path order with a fixed time, so the same

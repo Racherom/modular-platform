@@ -66,6 +66,8 @@ func CheckModule(file string, data []byte, caps map[string]Capability) (Module, 
 	for _, s := range sortedKeys(m.Uses) {
 		mc.slot("uses."+s, s, m.Uses[s])
 	}
+	mc.environment()
+	mc.network()
 	mc.volumes()
 	mc.templates()
 	mc.setup()
@@ -382,6 +384,14 @@ func (c *moduleChecker) slot(p, name string, s Slot) {
 			}
 		}
 		c.mount(fp, s.Files[f])
+	}
+	if known {
+		for _, f := range sortedKeys(k.Fields) {
+			field := k.Fields[f]
+			if _, ok := s.Fields[f]; !ok && field.Direction == ToProvider && !field.Optional {
+				c.add(p+".fields."+f, CodeMissingFieldSource, "field %s of %s goes to the provider and needs a source here", f, s.Capability)
+			}
+		}
 	}
 	for _, f := range sortedKeys(s.Fields) {
 		fp := p + ".fields." + f

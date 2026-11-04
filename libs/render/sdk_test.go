@@ -170,10 +170,10 @@ func TestRenderExternal(t *testing.T) {
 		t.Error("an external instance has no service and nothing waits for it")
 	}
 	if strings.Contains(files["setup.sh"], "new_secret secrets/billing-db/db_password") ||
-		!strings.Contains(files["setup.sh"], "need secrets/billing-db/db_password \"password of the postgresql service billing-db\"") {
+		!strings.Contains(files["setup.sh"], "need secrets/billing-db/db_password 'password of billing-db, a postgresql service. Password of the login.'") {
 		t.Errorf("setup.sh must check, not create, the placed password:\n%s", files["setup.sh"])
 	}
-	if !strings.Contains(files["README.md"], "- `secrets/billing-db/db_password`: password of billing-db\n") {
+	if !strings.Contains(files["README.md"], "- `secrets/billing-db/db_password`: password of billing-db. Password of the login.\n") {
 		t.Errorf("README.md does not list the file you place:\n%s", files["README.md"])
 	}
 }

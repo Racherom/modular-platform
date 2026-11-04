@@ -165,10 +165,10 @@ Tracer Bullet: milestone 1 runs the whole v1 thread (catalog, planner, render, `
 9. [x] Paper platform: write the eight platform entries of 0015 (and their capabilities) as catalog fixtures under `libs/contract/testdata/platform/`, plus the platform graph, and make the catalog check and the planner accept them, no render yet. A field 0015 needs that v1 cannot say surfaces here, before milestone 2 builds on the format; route it back through `/architect` as a spec change, satisfies **AC-16**, **AC-2**
 
 **Milestone 2: bindings in full**
-10. The revoke job for every provisioner provide with a `login` (empty `MP_KEEP` allowed), its per graph marker role, the `postgres` and `template1` connect revoke; e2e for unbind and rebind, including the last binding, satisfies **AC-6**, **AC-4**
-11. External instances in planner, render (placed files, the missing file list in `setup.sh`) and editor (external node), satisfies **AC-15**, **AC-1**, **AC-19**
-12. Remaining slot features: fixed path mounts, optional fields, `per_caller`, direction `to_provider` and `both` fields with the clients directory per field, `.Clients` data, `duplicate_binding`, satisfies **AC-8**, **AC-13**, **AC-18**
-13. `egress` network, every hardening opt out and `tmpfs`, labels on services and jobs, module `environment`, `formatVersion` checks end to end; golden per case, satisfies **AC-12**, **AC-14**
+10. [ ] The revoke job for every provisioner provide with a `login` (empty `MP_KEEP` allowed), its per graph marker role, the `postgres` and `template1` connect revoke; e2e for unbind and rebind, including the last binding, satisfies **AC-6**, **AC-4**
+11. [x] External instances in planner, render (placed files, the missing file list in `setup.sh`) and editor (external node), satisfies **AC-15**, **AC-1**, **AC-19**
+12. [ ] Remaining slot features: fixed path mounts, optional fields, `per_caller`, direction `to_provider` and `both` fields with the clients directory per field, `.Clients` data, `duplicate_binding`, satisfies **AC-8**, **AC-13**, **AC-18**
+13. [x] `egress` network, every hardening opt out and `tmpfs`, labels on services and jobs, module `environment`, `formatVersion` checks end to end; golden per case, satisfies **AC-12**, **AC-14**
 
 **Milestone 3: install time**
 14. Module `secrets` (`generate`, `ask`, `setup`, folders); config `setup: ask` and the `{uid}`, `{gid}`, `{install}` tokens as Compose variables; setup steps with `entrypoint`, `env`, `for_each`, `writes` modes; `setup.sh` assembly in 0013's order with answer checks and skip by outputs, satisfies **AC-10**
