@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -13,9 +14,11 @@ import (
 // sdkPort is where a runtime: sdk module listens in plain mode.
 const sdkPort = 8080
 
-// jobProvision is the job label of a provision job (spec 0013, "Labels"); the revoke job waits
-// on a spec change for how `up` waits on a job nothing depends on (build task 10).
-const jobProvision = "provision"
+// The job labels of a one shot service (spec 0013, "Labels").
+const (
+	jobProvision = "provision"
+	jobRevoke    = "revoke"
+)
 
 // value is what one field of a binding resolves to: text (a literal, or a Compose variable
 // reference when raw), or the project relative path of a file.
@@ -168,12 +171,17 @@ func (r *renderer) provisioned(e end) (map[string]value, error) {
 			return nil, fmt.Errorf("%w: job outputs of %s", ErrNotRendered, e.offered)
 		}
 	}
+	key := e.b.Provider + "." + e.b.Provide
+	if y.Login != "" {
+		r.keep[key] = append(r.keep[key], named[y.Login])
+	}
+	r.provisions[key] = append(r.provisions[key], provisionJobName(e.b))
 	r.provisionJob(e, admin, adminValues, named)
 	return values, nil
 }
 
-// adminValues resolves the fields of provisioner provide q of instance p once; every provision
-// job of that provide shares them.
+// adminValues resolves the fields of provisioner provide q of instance p once; the provision
+// jobs and the revoke job of that provide share them.
 func (r *renderer) adminValues(p, q string) (map[string]value, error) {
 	key := p + "." + q
 	if v, ok := r.admin[key]; ok {
@@ -319,6 +327,9 @@ func provisionJobName(b contract.Binding) string {
 	return b.Provider + "_provision_" + b.Consumer + "_" + b.Slot
 }
 
+// revokeJobName is the revoke job of provide q of instance p: <p>_revoke_<q>.
+func revokeJobName(p, q string) string { return p + "_revoke_" + q }
+
 // provisionJob adds the one shot service that makes what binding e.b names (spec 0014): the
 // admin fields, the binding's consumer, slot and named values, and its generated files.
 func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues map[string]value, named map[string]string) {
@@ -341,6 +352,45 @@ func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues ma
 	}
 	r.project.Services[name] = svc
 	r.jobs[name] = job{instance: b.Provider, module: e.module.Name, kind: jobProvision}
+}
+
+// revokeJobs adds one revoke job per provisioner provide whose capability names a login,
+// whether or not anything binds to it (spec 0014): it disables every login this stack made on
+// that provide that no current binding keeps. It runs after every provision job of the provide.
+func (r *renderer) revokeJobs() error {
+	for _, p := range sortedKeys(r.g.Modules) {
+		for _, q := range r.provides(p) {
+			e := r.end(p, q)
+			admin := r.caps[e.offered]
+			if admin.Yields == nil || admin.Yields.Login == "" {
+				continue
+			}
+			adminValues, err := r.adminValues(p, q)
+			if err != nil {
+				return err
+			}
+			key := p + "." + q
+			keep := slices.Clone(r.keep[key])
+			slices.Sort(keep)
+			name := revokeJobName(p, q)
+			svc := r.jobService(name, e, admin, adminValues, admin.Yields.Job.Revoke)
+			setEnv(&svc, "MP_KEEP", strings.Join(keep, ","))
+			for _, j := range r.provisions[key] {
+				dependOn(&svc, j, types.ServiceConditionCompletedSuccessfully)
+			}
+			r.project.Services[name] = svc
+			r.jobs[name] = job{instance: p, module: e.module.Name, kind: jobRevoke}
+		}
+	}
+	return nil
+}
+
+// provides lists the provide names of instance p in name order.
+func (r *renderer) provides(p string) []string {
+	if gm := r.g.Modules[p]; gm.External != nil {
+		return sortedKeys(gm.External.Provides)
+	}
+	return sortedKeys(r.modules[r.g.Modules[p].Module].Provides)
 }
 
 // jobService is what every job of provisioner provide e shares (spec 0014): the capability's job

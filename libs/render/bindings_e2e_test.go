@@ -70,6 +70,17 @@ func (s *stack) render(g contract.Graph) string {
 	return compose
 }
 
+// apply renders g like render, then runs setup.sh as a download of a changed graph needs: the
+// new download's .env no longer holds the user ids, and a new binding needs its secret files.
+func (s *stack) apply(g contract.Graph) string {
+	s.t.Helper()
+	compose := s.render(g)
+	if out, err := s.setup(); err != nil {
+		s.t.Fatalf("setup.sh: %v\n%s", err, out)
+	}
+	return compose
+}
+
 // setup runs setup.sh and returns its output and error.
 func (s *stack) setup() (string, error) {
 	cmd := exec.CommandContext(s.t.Context(), "sh", "setup.sh")
@@ -103,8 +114,100 @@ func (s *stack) secret(path string) string {
 	return string(b)
 }
 
+// psql runs one query on the postgres service over TCP as user, and returns its output.
+func (s *stack) psql(user, password, database, query string) (string, error) {
+	return s.compose("exec", "-T", "-e", "PGPASSWORD="+password, "postgres",
+		"psql", "-h", "127.0.0.1", "-U", user, "-d", database, "-v", "ON_ERROR_STOP=1", "-tAc", query)
+}
+
 func graphOf(name string, modules map[string]contract.GraphModule) contract.Graph {
 	return contract.Graph{ApiVersion: contract.APIVersion, Kind: contract.KindGraph, Name: name, Modules: modules}
+}
+
+// TestRevokeEndToEnd runs unbind and rebind for real (spec 0011 AC-6, spec 0014): removing a
+// consumer leaves its login unable to sign in while its database and data stay, binding it
+// again with the same names restores sign in with the data intact, removing the last consumer
+// runs the revoke job with an empty MP_KEEP, and a login the provisioner did not make is never
+// changed. It needs Docker with the Compose plugin; run it with go test -tags e2e.
+func TestRevokeEndToEnd(t *testing.T) {
+	s := newStack(t, loadCatalog(t, "../../catalog", "testdata/provision/catalog"))
+	pg := contract.GraphModule{Module: "postgres"}
+	client := contract.GraphModule{Module: "pg-client"}
+	both := map[string]contract.GraphModule{"postgres": pg, "a": client, "b": client}
+	onlyB := map[string]contract.GraphModule{"postgres": pg, "b": client}
+	none := map[string]contract.GraphModule{"postgres": pg}
+
+	s.apply(graphOf("revoke-e2e", both))
+	s.up()
+	admin := s.secret("secrets/postgres/password")
+	aPass, bPass := s.secret("secrets/a/uses_db_password"), s.secret("secrets/b/uses_db_password")
+	if out, err := s.psql("a_db", aPass, "a_db", "create table notes (x int); insert into notes values (42)"); err != nil {
+		t.Fatalf("a writes its data: %v\n%s", err, out)
+	}
+	if out, err := s.psql("postgres", admin, "postgres", "create role handmade login password 'handmade'"); err != nil {
+		t.Fatalf("hand made role: %v\n%s", err, out)
+	}
+	canLogin := func(role string) string {
+		out, err := s.psql("postgres", admin, "postgres", "select rolcanlogin from pg_roles where rolname = '"+role+"'")
+		if err != nil {
+			t.Fatalf("read %s: %v\n%s", role, err, out)
+		}
+		return strings.TrimSpace(out)
+	}
+	notes := func() string {
+		out, err := s.psql("postgres", admin, "a_db", "select x from notes")
+		if err != nil {
+			t.Fatalf("read a's data as admin: %v\n%s", err, out)
+		}
+		return strings.TrimSpace(out)
+	}
+
+	// unbind a: its login is refused, its data stays, b and the hand made role are untouched
+	compose := s.apply(graphOf("revoke-e2e", onlyB))
+	if !strings.Contains(compose, "MP_KEEP: b_db\n") {
+		t.Errorf("revoke job does not keep exactly b_db:\n%s", compose)
+	}
+	s.up()
+	if _, err := s.psql("a_db", aPass, "a_db", "select 1"); err == nil {
+		t.Error("a_db still signs in after a was removed")
+	}
+	if got := canLogin("a_db"); got != "f" {
+		t.Errorf("a_db rolcanlogin = %q, want f", got)
+	}
+	if got := notes(); got != "42" {
+		t.Errorf("a's data after unbind = %q, want 42", got)
+	}
+	if _, err := s.psql("b_db", bPass, "b_db", "select 1"); err != nil {
+		t.Errorf("b_db cannot sign in after a was removed: %v", err)
+	}
+	if got := canLogin("handmade"); got != "t" {
+		t.Errorf("the hand made role lost sign in: rolcanlogin = %q", got)
+	}
+
+	// bind a again with the same names: sign in comes back with the data intact
+	s.apply(graphOf("revoke-e2e", both))
+	s.up()
+	if out, err := s.psql("a_db", aPass, "a_db", "select x from notes"); err != nil || strings.TrimSpace(out) != "42" {
+		t.Errorf("a after rebind: %q, %v; want 42", out, err)
+	}
+
+	// remove the last consumers: the revoke job runs with an empty MP_KEEP
+	compose = s.apply(graphOf("revoke-e2e", none))
+	if !strings.Contains(compose, "MP_KEEP: \"\"\n") {
+		t.Errorf("revoke job without bindings has no empty MP_KEEP:\n%s", compose)
+	}
+	s.up()
+	for _, role := range []string{"a_db", "b_db"} {
+		if got := canLogin(role); got != "f" {
+			t.Errorf("%s rolcanlogin after the last unbind = %q, want f", role, got)
+		}
+	}
+	if got := notes(); got != "42" {
+		t.Errorf("a's data after the last unbind = %q, want 42", got)
+	}
+	if got := canLogin("handmade"); got != "t" {
+		t.Errorf("the hand made role lost sign in: rolcanlogin = %q", got)
+	}
 }
 
 // TestExternalEndToEnd binds one unchanged consumer entry either to a provisioned database or to
