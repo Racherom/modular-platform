@@ -12,7 +12,7 @@ _How to read the tags: `AC-1` to `AC-12` are spec 0001's criteria (0002 adds AC-
 
 ### Commands
 - [x] From a clean clone: `task generate && git diff --exit-code` → no diff; `task build` → images `ghcr.io/racherom/modular-platform/web:dev` and `planner:dev` exist → AC-1
-- [ ] `task lint && task test` → green → AC-1
+- [x] `task lint && task test` → green → AC-1
 - [x] Unzip the sample, run `docker compose up -d` before `setup.sh` → fails with a missing `secrets/postgres/password` file error → AC-4
 - [x] `sh setup.sh && docker compose up -d --wait --wait-timeout 120` → `postgres` healthy, `whoami` running; `sha256sum secrets/postgres/password`, run `sh setup.sh` again → same hash, file mode 0600 → AC-4
 - [x] `task smoke` → passes, including "the ingress config with a real certificate (acme)", the zip holding exactly `.env README.md docker-compose.yml graph.yaml setup.sh`, and no Playwright report of content blocked by the content policy → AC-3, AC-4, AC-7 · review
@@ -72,8 +72,8 @@ _How to read the tags: `AC-1` to `AC-12` are spec 0001's criteria (0002 adds AC-
 - [x] `go test ./libs/platform/ -run TestRateLimiterEvictsLeastRecentlySeen` → `k1 k2 k3` added, `k1` used again, `k4` added: `k2` gone, `k1 k3 k4` kept → 0003 AC-3
 - [x] `go test ./libs/platform/ -run TestRateLimiterEvictedClientStartsFresh` → a key that spent its burst, once evicted, gets 10 allowed requests again → 0003 AC-4
 - [x] `go test ./libs/platform/ -run TestRateLimiterSweepIdle` → idle 10 minutes plus 1 ns is dropped, idle exactly 10 minutes survives one more sweep, recent buckets kept → 0003 AC-5
-- [ ] `go test ./libs/platform/ -run 'TestRateLimiterSweepCounts|TestRateLimiterWarnsOncePerInterval'` → `Sweep` counts only cap evictions and resets; one `WARN` `rate limiter full` with `evicted`, `buckets`, `max` per tick with evictions, nothing on a quiet tick, no key in the log → 0003 AC-6
-- [ ] `go test -race -count=1 ./libs/platform/ -run TestRateLimiterConcurrent` and `task test` → concurrent `Allow` and `Sweep` pass the race detector, never over the cap; every older test (burst 10, 429 with `Retry-After`, health paths exempt, internal mode token) still passes → 0003 AC-7
+- [x] `go test ./libs/platform/ -run 'TestRateLimiterSweepCounts|TestRateLimiterWarnsOncePerInterval'` → `Sweep` counts only cap evictions and resets; one `WARN` `rate limiter full` with `evicted`, `buckets`, `max` per tick with evictions, nothing on a quiet tick, no key in the log → 0003 AC-6
+- [x] `go test -race -count=1 ./libs/platform/ -run TestRateLimiterConcurrent` and `task test` → concurrent `Allow` and `Sweep` pass the race detector, never over the cap; every older test (burst 10, 429 with `Retry-After`, health paths exempt, internal mode token) still passes → 0003 AC-7
 
 ### Value sourcing
 - [x] Cap: `grep -n maxClients services/planner/internal/api/server.go` → `maxClients = 10_000`, passed as the fourth argument of `NewRateLimiter`; `TestPublicClientCap` fails if it is 9,999 or 10,001 → 0003 AC-1
@@ -81,9 +81,9 @@ _How to read the tags: `AC-1` to `AC-12` are spec 0001's criteria (0002 adds AC-
 - [x] Newcomer's allowance: `TestPublicClientCap` runs with `Rate: 1`; an evicted client gets exactly the burst of 10, not more → 0003 AC-2, AC-4
 - [x] `now` read under the lock: read `Allow` in `libs/platform/ratelimit.go`, the clock is read after `l.mu.Lock()`; the concurrent test passes under `-race` → 0003 AC-5, AC-7
 - [x] Idle cutoff: the 0003 AC-5 test moves the fake clock across the 10 minute edge by 1 ns → 0003 AC-5
-- [ ] Warning `evicted`, `buckets`, `max`: the 0003 AC-6 test checks `evicted` 2 then 1, `buckets` 2, `max` 2 against a cap of 2 → 0003 AC-6
+- [x] Warning `evicted`, `buckets`, `max`: the 0003 AC-6 test checks `evicted` 2 then 1, `buckets` 2, `max` 2 against a cap of 2 → 0003 AC-6
 - [x] Logger: with the online tool up (`task dev`), `docker logs modular-platform-online-planner-1 2>&1 | grep 'rate limiter full'` after ordinary use → no line (normal use never fills the map); a line every minute in normal traffic means `MP_PROXY_HOPS` is wrong → 0003 AC-6
-- [ ] Interval end: the 0003 AC-6 test drives `sweepTicks` with its own channel; evictions after the last tick are not logged → 0003 AC-6
+- [x] Interval end: the 0003 AC-6 test drives `sweepTicks` with its own channel; evictions after the last tick are not logged → 0003 AC-6
 
 ## Acceptance-criteria coverage
 

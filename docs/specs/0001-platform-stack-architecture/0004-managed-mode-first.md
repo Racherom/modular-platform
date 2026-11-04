@@ -103,6 +103,8 @@ Running on the provisional format first and then writing #3 means the public con
 
 ### First managed thread (constraints for the #16 spec)
 
+Designed in spec [0006](../0006-managed-mode-control-plane/index.md) (2026-11-03), which refines two points below: a separate `cert-issuer` module makes eight long running containers, and on its own start `api` resumes polling an operation whose deployer boot id still matches, marking `unknown` only on a new boot id or an operation the deployer no longer knows.
+
 **In thread 1**: `ingress` (Caddy), `web` (managed build), `api`, `planner` (internal mode), `deployer-docker`, `postgres` with the one shot `db-init`, `authelia`. Sign in, cookies, the bootstrap admin, per binding credentials, networks, secrets and the security baseline exactly as 0001's *Managed mode wiring* pins them.
 
 **Left out of thread 1**:
@@ -187,7 +189,7 @@ Running on the provisional format first and then writing #3 means the public con
 
 - [ ] Run `/scope` to apply the revised build order above (move #16 to slice 1, #3 and #4 after it, then #6, then #23 and #24; #22 to Deferred; reword #1's CI milestone).
 - [ ] `/develop stack & architecture`: remove the `smoke` job from `.github/workflows/ci.yml` and keep `task smoke` for manual runs.
-- [ ] `/architect managed mode control plane`: design #16 within the constraints above (`api.yaml` and `deploy-target.yaml` with the polling endpoints and boot id, the thread 1 tables, the refusal rules as plan problems, label keys, Compose project naming, the admin reset, the managed smoke job, plus 0001's existing #16 follow ups except NATS).
+- [x] (spec [0006](../0006-managed-mode-control-plane/index.md), 2026-11-03) `/architect managed mode control plane`: design #16 within the constraints above (`api.yaml` and `deploy-target.yaml` with the polling endpoints and boot id, the thread 1 tables, the refusal rules as plan problems, label keys, Compose project naming, the admin reset, the managed smoke job, plus 0001's existing #16 follow ups except NATS).
 - [ ] Enroll a scope feature for upgrading a managed install (new images, migrations, `setup.sh` steps added by a newer zip), placed after #23.
 - [ ] The feature that brings NATS back (#17 or #19) owns the NATS subject names, streams and per binding permissions that 0001 had assigned to #16.
 
