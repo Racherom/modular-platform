@@ -28,6 +28,8 @@ The graph editor: a React single page app built by Vite, served by a Caddy based
 pnpm --dir web dev            # or task dev for the whole online tool
 pnpm --dir web test           # vitest
 pnpm --dir web typecheck
+pnpm --dir web lint           # Biome, lint and format check
+pnpm --dir web format         # Biome, applying safe fixes
 pnpm --dir web generate       # or task generate at the root
 pnpm --dir web smoke:browser  # Playwright, used by task smoke
 ```
@@ -54,6 +56,7 @@ pnpm --dir web smoke:browser  # Playwright, used by task smoke
 - [react-state-management](../.agents/skills/react-state-management/): `wshobson/agents`, Zustand state
 - [vite](../.agents/skills/vite/): `antfu/skills`, Vite config and plugins
 - [vercel-react-best-practices](../.agents/skills/vercel-react-best-practices/): `vercel-labs/agent-skills`, React performance (skip its Next.js and server rendering advice)
+- [ultracite](../.agents/skills/ultracite/): `haydenbleasel/ultracite`, Biome lint and format (an Ultracite preset; `web/biome.json` is plain Biome, so skip its `ultracite init` advice)
 
 ## Related specs
 

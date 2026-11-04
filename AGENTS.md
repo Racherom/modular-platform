@@ -7,7 +7,7 @@ Builds a microservice stack from exchangeable modules. A graph planner checks th
 - **Language / Runtime**: Go 1.26 or newer (`go.work` pins toolchain go1.27.3); TypeScript (strict) on Node 26
 - **Framework**: Go standard library `net/http` ServeMux, no framework; React single page app built by Vite (see [web/AGENTS.md](web/AGENTS.md))
 - **Key dependencies**: `compose-spec/compose-go` v2 (render), `oapi-codegen` and `openapi-typescript` from one OpenAPI 3.1 contract, `golang.org/x/time/rate`; from managed mode (#16): `pgx` v5 + `sqlc` + `goose`, Authelia (OIDC), Caddy, NATS later
-- **Package manager**: Go modules in a `go.work` workspace (`catalog`, `libs`, `services/planner`); pnpm 12 in `web/`; Task for cross language tasks
+- **Package manager**: Go modules in a `go.work` workspace (`catalog`, `libs`, `sdk`, `services/planner`); pnpm 12 in `web/`; Task for cross language tasks
 - **Images and releases**: distroless static nonroot for Go services, multi stage builds from the repo root; release-please
 - Source of truth: [docs/specs/0001-platform-stack-architecture](docs/specs/0001-platform-stack-architecture/index.md)
 
@@ -22,7 +22,10 @@ task generate   # Go and TS code from contracts/openapi, sdk getters from catalo
 task dev        # online tool on https://platform.localhost, editor with hot reload (binds 80 and 443)
 task build      # Go, the editor, and the web and planner images
 task test       # go test -race and vitest (installs web deps itself)
-task lint       # gofmt, go vet, tsc (golangci-lint and Biome arrive with /develop tooling)
+task test:integration  # the Docker tests (build tags integration and e2e)
+task lint       # golangci-lint (gofumpt), Biome, tsc
+task fmt        # gofumpt, goimports and Biome, applying safe fixes
+task hooks      # install lefthook and the pre commit hook (once per clone)
 task smoke      # sample zip end to end plus the editor under /platform (needs Chromium)
 ```
 
@@ -47,7 +50,7 @@ Stored in `docs/specs/`, one folder per spec: `docs/specs/NNNN-title/index.md`, 
 
 ## Tooling
 
-Chosen here, installed by `/develop tooling`:
+Installed and enforced:
 
 - **Lint and format**: golangci-lint v2 (gofumpt formatter) for Go; Biome for `web/` (lint and format, React hooks rules). Both run through `task lint`.
 - **Pre commit**: lefthook runs format, lint and typecheck on staged files; tests stay in CI.
@@ -80,10 +83,14 @@ Chosen here, installed by `/develop tooling`:
 - [github-actions-templates](.agents/skills/github-actions-templates/): `wshobson/agents`, workflow files
 - [multi-stage-dockerfile](.agents/skills/multi-stage-dockerfile/): `github/awesome-copilot`, image builds
 - [supabase-postgres-best-practices](.agents/skills/supabase-postgres-best-practices/): `supabase/agent-skills`, Postgres schema and SQL (managed mode)
+- [lefthook](.agents/skills/lefthook/): `fandhe-ai/agent-reference-skills`, `lefthook.yml` hooks (the skill text is in Japanese)
+- [docs](.agents/skills/docs/): `minio/skills`, plain language rules (ISO 24495-1) for READMEs, guides and doc comments
 
 ## Context files
 
 - [web/AGENTS.md](web/AGENTS.md) (the editor: React, Vite, base path handling, its tests and skills)
 - [sdk/AGENTS.md](sdk/AGENTS.md): the module SDK, its packages, `sdkgen`, and the config and secret rules
+- [libs/render/AGENTS.md](libs/render/AGENTS.md) (plan to Compose files: golden files, `-update`, the e2e sdk pair)
+- [deploy/online/AGENTS.md](deploy/online/AGENTS.md) (the online tool's Compose stack: overlays, pinned tags, hardening)
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
