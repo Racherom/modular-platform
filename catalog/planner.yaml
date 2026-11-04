@@ -3,7 +3,7 @@ kind: Module
 name: planner
 description: Checks a graph and renders it to a Compose project.
 # release-please bumps the version on this line
-image: ghcr.io/racherom/modular-platform/planner:0.0.0 # x-release-please-version
+image: ghcr.io/racherom/modular-platform/planner:1.0.0 # x-release-please-version
 runtime: sdk
 healthcheck:
   test: ["CMD", "/planner", "healthcheck"]

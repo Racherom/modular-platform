@@ -3,7 +3,7 @@ kind: Module
 name: api
 description: The managed platform's control plane, with sign in, deployments and their history.
 # release-please bumps the version on this line
-image: ghcr.io/racherom/modular-platform/api:0.0.0 # x-release-please-version
+image: ghcr.io/racherom/modular-platform/api:1.0.0 # x-release-please-version
 runtime: sdk
 healthcheck:
   test: ["CMD", "/api", "healthcheck"]

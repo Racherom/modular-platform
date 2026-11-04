@@ -60,7 +60,7 @@ services:
       start_interval: 1s
 
   web:
-    image: ghcr.io/racherom/modular-platform/web:0.0.0 # x-release-please-version
+    image: ghcr.io/racherom/modular-platform/web:1.0.0 # x-release-please-version
     restart: unless-stopped
     <<: *caddy-hardening
     tmpfs: [/tmp]
@@ -84,7 +84,7 @@ services:
       start_interval: 1s
 
   api:
-    image: ghcr.io/racherom/modular-platform/api:0.0.0 # x-release-please-version
+    image: ghcr.io/racherom/modular-platform/api:1.0.0 # x-release-please-version
     restart: unless-stopped
     <<: *hardening
     user: "${PLATFORM_UID}:${PLATFORM_GID}"
@@ -156,7 +156,7 @@ services:
       start_interval: 1s
 
   planner:
-    image: ghcr.io/racherom/modular-platform/planner:0.0.0 # x-release-please-version
+    image: ghcr.io/racherom/modular-platform/planner:1.0.0 # x-release-please-version
     restart: unless-stopped
     <<: *hardening
     user: "${PLATFORM_UID}:${PLATFORM_GID}"
@@ -194,7 +194,7 @@ services:
       start_interval: 1s
 
   deployer-docker:
-    image: ghcr.io/racherom/modular-platform/deployer-docker:0.0.0 # x-release-please-version
+    image: ghcr.io/racherom/modular-platform/deployer-docker:1.0.0 # x-release-please-version
     restart: unless-stopped
     # root: it holds the Docker socket, which is root equivalent anyway (spec 0001)
     read_only: true
