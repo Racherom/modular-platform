@@ -13,11 +13,12 @@ export type PlanReply = { status: number } | { delayMs: number } | 'echo'
 /**
  * A planner stand in. GET /v1/catalog answers the fixture. POST /v1/plan echoes the posted
  * graph, builds bindings from its uses (auto false), and reports unbound_required for each
- * required need set to null, so ok follows. `next` decides how each call is answered, in order.
+ * required need set to null, so ok follows. `next` decides how each call is answered, in order;
+ * `entries` replaces the catalog, as the scale check does.
  */
-export async function mockPlanner(page: Page, next: () => PlanReply = () => 'echo') {
+export async function mockPlanner(page: Page, next: () => PlanReply = () => 'echo', entries: CatalogEntry[] = catalog) {
   const plans: Graph[] = []
-  await page.route('**/planner/v1/catalog', (route) => route.fulfill({ json: { entries: catalog } }))
+  await page.route('**/planner/v1/catalog', (route) => route.fulfill({ json: { entries } }))
   await page.route('**/planner/v1/plan', async (route: Route) => {
     const graph = route.request().postDataJSON() as Graph
     plans.push(graph)
@@ -30,12 +31,12 @@ export async function mockPlanner(page: Page, next: () => PlanReply = () => 'ech
       return
     }
     if (typeof reply === 'object') await new Promise((r) => setTimeout(r, reply.delayMs))
-    await route.fulfill({ json: plan(graph) }).catch(() => undefined) // an aborted call has no one to answer
+    await route.fulfill({ json: plan(graph, entries) }).catch(() => undefined) // an aborted call has no one to answer
   })
   return { plans }
 }
 
-function plan(graph: Graph): PlanResult {
+function plan(graph: Graph, catalog: CatalogEntry[]): PlanResult {
   const entries = new Map(catalog.map((e) => [e.name, e]))
   const bindings: PlanResult['bindings'] = []
   const problems: Problem[] = []

@@ -84,3 +84,15 @@ textarea {
   white-space: nowrap;
   border: 0;
 }
+
+/*
+ * React Aria's pressable rule. React Aria would inject it as a <style> element, which the
+ * content policy (style-src 'self') blocks; the <meta id="react-aria-pressable-style"> in
+ * index.html stops the injection, and the rule lives here instead. It avoids the click delay
+ * of double tap to zoom on touch screens.
+ */
+@layer {
+  [data-react-aria-pressable] {
+    touch-action: pan-x pan-y pinch-zoom;
+  }
+}

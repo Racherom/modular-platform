@@ -22,3 +22,7 @@ secrets/
 .dev/
 # task managed:zip
 /dist/
+
+# local agent caches and TypeScript incremental build info
+docs/.agent-cache/
+*.tsbuildinfo

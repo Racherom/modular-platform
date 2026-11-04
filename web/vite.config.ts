@@ -1,5 +1,7 @@
 /// <reference types="vitest/config" />
 
+import { readFileSync } from 'node:fs'
+import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
@@ -22,19 +24,43 @@ function placement(): Plugin {
     transformIndexHtml: {
       order: 'post',
       handler(html, ctx) {
-        if (ctx.server) {
-          const env: Record<string, string> = {
-            MP_BASE_PATH: process.env.MP_BASE_PATH ?? '',
-            MP_API_ROOT: process.env.MP_API_ROOT ?? '/planner',
-            MP_MODE: process.env.MP_MODE ?? 'online',
-            MP_SIGNED_OUT: process.env.MP_SIGNED_OUT ?? 'index',
-          }
-          return html.replace(/\{\{env `(\w+)`\}\}/g, (_, name: string) => env[name] ?? '')
-        }
+        if (ctx.server) return fillTemplate(html)
         return html.replace(/(src|href)="\.\/assets\//g, '$1="{{env `MP_BASE_PATH`}}/assets/')
       },
     },
+    // vite preview (the browser check's production build): fill the template the way Caddy
+    // would, for every page request; files with an extension are served as they are
+    configurePreviewServer(server) {
+      const index = join(server.config.root, server.config.build.outDir, 'index.html')
+      const policy = contentPolicy()
+      server.middlewares.use((req, res, next) => {
+        const path = new URL(req.url ?? '/', 'http://preview').pathname
+        if (req.method !== 'GET' || extname(path) !== '') return next()
+        res.setHeader('Content-Type', 'text/html; charset=utf-8')
+        res.setHeader('Content-Security-Policy', policy)
+        res.end(fillTemplate(readFileSync(index, 'utf8')))
+      })
+    },
   }
+}
+
+/** The web image's content policy, read from web/Caddyfile; the preview server sends it too, so the browser check sees what production enforces. */
+function contentPolicy(): string {
+  const caddyfile = readFileSync(fileURLToPath(new URL('Caddyfile', import.meta.url)), 'utf8')
+  const policy = caddyfile.match(/Content-Security-Policy "([^"]+)"/)?.[1]
+  if (!policy) throw new Error('web/Caddyfile sets no Content-Security-Policy')
+  return policy
+}
+
+/** Fills the {{env `MP_*`}} calls of index.html from this process's environment, as Caddy does. */
+function fillTemplate(html: string): string {
+  const env: Record<string, string> = {
+    MP_BASE_PATH: process.env.MP_BASE_PATH ?? '',
+    MP_API_ROOT: process.env.MP_API_ROOT ?? '/planner',
+    MP_MODE: process.env.MP_MODE ?? 'online',
+    MP_SIGNED_OUT: process.env.MP_SIGNED_OUT ?? 'index',
+  }
+  return html.replace(/\{\{env `(\w+)`\}\}/g, (_, name: string) => env[name] ?? '')
 }
 
 export default defineConfig({

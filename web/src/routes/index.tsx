@@ -1,12 +1,13 @@
 import { useMutation } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
-import { FolderOpen } from 'lucide-react'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { FolderOpen, Workflow } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { planGraph } from '../api/client'
-import { Failure } from '../components/Failure'
 import { GraphScreen, useCatalog } from '../components/GraphScreen'
 import { useReplaceGuard } from '../components/ReplaceDialog'
 import { Button } from '../components/ui/Button'
+import { EmptyState } from '../components/ui/EmptyState'
+import { Failure } from '../components/ui/Failure'
 import { MAX_FILE_BYTES, parseGraph } from '../graph/yaml'
 import { loadWorking, type WorkingGraph } from '../lib/storage'
 import { useEditor } from '../lib/store'
@@ -102,12 +103,16 @@ function Editor() {
           }}
         />
       ) : (
-        <div className="empty">
-          <h1>No graph open</h1>
-          <p>Open a graph.yaml file, or start from the sample.</p>
-          <div className="empty__actions">{opener}</div>
+        <EmptyState icon={Workflow} level={1} title="No graph open" actions={opener}>
+          <p>
+            Open a <code>graph.yaml</code> file, or{' '}
+            <Link to="/samples/$name" params={{ name: 'whoami-postgres' }}>
+              start from the sample
+            </Link>
+            .
+          </p>
           {catalog.isError && <Failure error={catalog.error} onRetry={() => void catalog.refetch()} />}
-        </div>
+        </EmptyState>
       )}
     </>
   )

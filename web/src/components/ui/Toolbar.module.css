@@ -1,0 +1,13 @@
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.toolbar[data-divider] {
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border);
+}

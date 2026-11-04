@@ -1,4 +1,23 @@
 import type { DeploymentState, ModuleState } from '../api/platform'
+import { StatusBadge, type StatusTone } from './ui/StatusBadge'
+
+const tones: Record<ModuleState['state'] | DeploymentState, StatusTone> = {
+  running: 'success',
+  pending: 'info',
+  starting: 'info',
+  applying: 'info',
+  'rolling-back': 'info',
+  removing: 'info',
+  'rolled-back': 'warning',
+  paused: 'neutral',
+  removed: 'neutral',
+  unhealthy: 'danger',
+  restarting: 'danger',
+  exited: 'danger',
+  missing: 'danger',
+  failed: 'danger',
+  unknown: 'danger',
+}
 
 /** The badge text of a module: its state, with the exit code once it exited. */
 export function moduleLabel(m: ModuleState): string {
@@ -18,7 +37,7 @@ export function restartLine(m: ModuleState): string {
 }
 
 /**
- * A state as text plus colour, never colour alone (AC-13). A module badge adds its restart count
+ * A state as text plus a colored dot on StatusBadge, never color alone (AC-13). A module badge adds its restart count
  * and last exit code, and carries its image and health in its title.
  */
 export function StateBadge({ module, deployment }: { module?: ModuleState; deployment?: DeploymentState }) {
@@ -26,11 +45,16 @@ export function StateBadge({ module, deployment }: { module?: ModuleState; deplo
     const restarts = restartLine(module)
     const details = [module.image, module.health && `health ${module.health}`, `restarts ${module.restartCount}`].filter(Boolean).join(', ')
     return (
-      <span className={`badge badge--${module.state}`} title={details} data-testid={`badge-${module.instance}`}>
+      <StatusBadge tone={tones[module.state]} title={details} data-testid={`badge-${module.instance}`}>
         {moduleLabel(module)}
         {restarts && ` · ${restarts}`}
-      </span>
+      </StatusBadge>
     )
   }
-  return <span className={`badge badge--${deployment}`}>{deployment}</span>
+  if (!deployment) return null
+  return (
+    <StatusBadge tone={tones[deployment]} data-testid="deployment-state">
+      {deployment}
+    </StatusBadge>
+  )
 }

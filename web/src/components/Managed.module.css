@@ -1,0 +1,256 @@
+/*
+ * The managed mode screens (spec 0006): the deployment list and page, plan review, remove and
+ * the signed out view. #16 builds them over on the design system components; until then their
+ * layout lives here, with values from tokens.css only.
+ */
+
+.screen {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.narrow {
+  max-width: 32rem;
+}
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.heading h1 {
+  margin-right: var(--space-2);
+  font-size: var(--text-xl);
+}
+
+.screen h2 {
+  font-size: var(--text-lg);
+}
+
+.loading {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+/* a message about the latest operation or a sign in problem */
+.banner {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: var(--text-sm);
+}
+
+.banner[data-tone="danger"] {
+  border-color: var(--color-danger);
+  background: var(--color-danger-surface);
+}
+
+.progress {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.progress:empty {
+  display: none;
+}
+
+/* a deployment: its graph beside its module list */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--catalog-width);
+  gap: var(--space-4);
+}
+
+.graph {
+  height: 28rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+@media (max-width: 1023.98px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.modules {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.modules h2 {
+  font-size: var(--text-sm);
+}
+
+.modules ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.modules li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.modules code {
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.history {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+}
+
+.error {
+  max-height: 12rem;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2);
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table th,
+.table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.table th {
+  color: var(--color-text-muted);
+  font-weight: var(--weight-strong);
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+/* the native dialogs of plan review and remove */
+.dialog {
+  width: 90vw;
+  max-width: 40rem;
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--shadow-2);
+}
+
+.dialog::backdrop {
+  background: var(--color-scrim);
+}
+
+.dialog form,
+.dialogBody {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.dialog h2 {
+  font-size: var(--text-lg);
+}
+
+.dialog h3 {
+  font-size: var(--text-sm);
+}
+
+.list {
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.field input:not([type="checkbox"]),
+.dialog input:not([type="checkbox"]) {
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* the signed in admin in the header */
+.account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+/* Sign in: a link that looks like a primary Button */
+.linkButton {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-md);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-strong);
+  text-decoration: none;
+}
+
+.linkButton:hover {
+  background: var(--color-accent-hover);
+  color: var(--color-on-accent);
+}

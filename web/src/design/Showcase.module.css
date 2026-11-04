@@ -1,0 +1,247 @@
+.page {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.intro h1 {
+  font-size: var(--text-2xl);
+}
+
+.intro p {
+  max-width: 40rem;
+  margin-top: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.themeControl {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.toc {
+  display: flex;
+  gap: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+
+.part {
+  margin-top: var(--space-4);
+  font-size: var(--text-xl);
+}
+
+.section {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.title {
+  font-size: var(--text-lg);
+}
+
+.note {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.value {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+/* color swatches */
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.swatch {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-size: var(--text-xs);
+}
+
+.chip {
+  height: var(--space-10);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.use {
+  color: var(--color-text-muted);
+}
+
+/* type and spacing rows */
+.typeRow,
+.spaceRow {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.typeRow code,
+.spaceRow code {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.bar {
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+}
+
+/* radius and shadow */
+.boxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.boxes li {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+}
+
+.box {
+  width: var(--space-12);
+  height: var(--space-12);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-raised);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table th,
+.table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  color: var(--color-text-muted);
+}
+
+/* components */
+.matrix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.rowLabel {
+  min-width: 6rem;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.states {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px dashed var(--color-border);
+}
+
+.specimen {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.specimen figcaption {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.staticTooltip {
+  display: inline-block;
+}
+
+.frame {
+  min-height: 10rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+.pad {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.canvas {
+  height: 28rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .typeRow,
+  .spaceRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+}

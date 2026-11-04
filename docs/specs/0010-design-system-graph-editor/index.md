@@ -227,8 +227,8 @@ Tracer Bullet: the first task runs one thin strand through every layer of this f
 6. [x] Sample route: hint, first edit copies and navigates, the replace prompt, satisfies **AC-18**
 7. [x] CatalogPanel with SearchField filter, empty state and Find providers, satisfies **AC-19**
 8. [x] Unknown module nodes and plain text rendering checks, satisfies **AC-20**
-9. [ ] Complete the component set (Badge, StatusBadge, Tooltip, IconButton, Toolbar, EmptyState, Failure restyle), the dev only `/design` route with its bundle marker test, the color literal test, remove `app.css`, write `web/design.md`, satisfies **AC-1**, **AC-4**, **AC-5**
-10. [ ] Finish the browser checks: axe on every listed state and `/design` in both themes, the latest wins and failure scenarios, the 50 module scale check; add the connect and disconnect pass to `task smoke`, satisfies **AC-3**, **AC-7**, **AC-12**, **AC-14**
+9. [x] Complete the component set (Badge, StatusBadge, Tooltip, IconButton, Toolbar, EmptyState, Failure restyle), the dev only `/design` route with its bundle marker test, the color literal test, remove `app.css`, write `web/design.md`, satisfies **AC-1**, **AC-4**, **AC-5**
+10. [x] Finish the browser checks: axe on every listed state and `/design` in both themes, the latest wins and failure scenarios, the 50 module scale check; add the connect and disconnect pass to `task smoke`, satisfies **AC-3**, **AC-7**, **AC-12**, **AC-14**
 
 ## Consequences
 

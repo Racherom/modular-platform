@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DesignRouteImport } from './routes/design'
 import { Route as DeploymentsIndexRouteImport } from './routes/deployments.index'
 import { Route as DeploymentsNameRouteImport } from './routes/deployments.$name'
 import { Route as SamplesNameRouteImport } from './routes/samples.$name'
@@ -17,6 +18,11 @@ import { Route as SamplesNameRouteImport } from './routes/samples.$name'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DesignRoute = DesignRouteImport.update({
+  id: '/design',
+  path: '/design',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DeploymentsIndexRoute = DeploymentsIndexRouteImport.update({
@@ -37,12 +43,14 @@ const SamplesNameRoute = SamplesNameRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/design': typeof DesignRoute
   '/deployments/$name': typeof DeploymentsNameRoute
   '/samples/$name': typeof SamplesNameRoute
   '/deployments/': typeof DeploymentsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/design': typeof DesignRoute
   '/deployments/$name': typeof DeploymentsNameRoute
   '/samples/$name': typeof SamplesNameRoute
   '/deployments': typeof DeploymentsIndexRoute
@@ -50,21 +58,29 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/design': typeof DesignRoute
   '/deployments/$name': typeof DeploymentsNameRoute
   '/samples/$name': typeof SamplesNameRoute
   '/deployments/': typeof DeploymentsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/deployments/$name' | '/samples/$name' | '/deployments/'
+  fullPaths:
+    '/' | '/design' | '/deployments/$name' | '/samples/$name' | '/deployments/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/deployments/$name' | '/samples/$name' | '/deployments'
+  to: '/' | '/design' | '/deployments/$name' | '/samples/$name' | '/deployments'
   id:
-    '__root__' | '/' | '/deployments/$name' | '/samples/$name' | '/deployments/'
+    | '__root__'
+    | '/'
+    | '/design'
+    | '/deployments/$name'
+    | '/samples/$name'
+    | '/deployments/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DesignRoute: typeof DesignRoute
   DeploymentsNameRoute: typeof DeploymentsNameRoute
   SamplesNameRoute: typeof SamplesNameRoute
   DeploymentsIndexRoute: typeof DeploymentsIndexRoute
@@ -77,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/design': {
+      id: '/design'
+      path: '/design'
+      fullPath: '/design'
+      preLoaderRoute: typeof DesignRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/deployments/': {
@@ -105,6 +128,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DesignRoute: DesignRoute,
   DeploymentsNameRoute: DeploymentsNameRoute,
   SamplesNameRoute: SamplesNameRoute,
   DeploymentsIndexRoute: DeploymentsIndexRoute,

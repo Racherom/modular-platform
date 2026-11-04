@@ -9,7 +9,7 @@ const PROBLEMS = `${UNBOUND}  app:
       postgresql: null
 `
 
-// AC-3: zero axe violations in light and in dark, at 1280×800. /design joins with build plan task 9.
+// AC-3: zero axe violations in light and in dark, at 1280×800, on the editor states and /design.
 for (const theme of ['light', 'dark'] as const) {
   test.describe(`${theme} theme`, () => {
     test.beforeEach(async ({ page }) => {
@@ -63,6 +63,27 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(page.getByText('Fix 1 error to download')).toBeVisible()
       await page.locator('.react-flow__node[data-id="postgres"]').click() // dims the unrelated nodes too
       await expectNoAxeViolations(page)
+    })
+
+    test('the /design showcase, with every token and component (AC-5)', async ({ page }) => {
+      await page.goto('/design')
+      await expect(page.getByRole('heading', { name: 'Design system', level: 1 })).toBeVisible()
+      // the marker the production bundle search looks for (preview/bundle.spec.ts) is really here
+      await expect(page.locator('[data-showcase="mp-design-showcase"]')).toHaveCount(1)
+      await expect(page.getByTestId('node-broken')).toBeVisible()
+      await expectNoAxeViolations(page)
+    })
+
+    test('the /design showcase with its Dialog open', async ({ page }) => {
+      await page.goto('/design')
+      const opener = page.getByRole('button', { name: 'Open the dialog' })
+      await opener.click()
+      const dialog = page.getByRole('alertdialog', { name: 'Replace the edited graph?' })
+      await expect(dialog).toBeVisible()
+      await expectNoAxeViolations(page)
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await expect(opener).toBeFocused()
     })
 
     test('the empty editor', async ({ page }) => {

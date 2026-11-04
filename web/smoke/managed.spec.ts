@@ -31,7 +31,7 @@ test('install, sign in, deploy the sample, see it running @deploy', async ({ pag
   test.setTimeout(8 * 60_000)
   await signIn(page)
 
-  await page.getByRole('link', { name: 'Sample' }).click()
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Sample' }).click()
   await expect(page.getByTestId('node-whoami')).toBeVisible()
 
   // Download zip still works in managed mode, through api (AC-20)
@@ -67,5 +67,5 @@ test('after a Docker restart it runs again without an apply, then remove it with
   await dialog.getByLabel('Delete data too').check()
   await dialog.getByLabel(/to confirm/).fill(deployment)
   await dialog.getByRole('button', { name: 'Remove and delete data' }).click()
-  await expect(page.locator('.toolbar .badge')).toHaveText('removed', { timeout: 5 * 60_000 })
+  await expect(page.getByTestId('deployment-state')).toHaveText('removed', { timeout: 5 * 60_000 })
 })

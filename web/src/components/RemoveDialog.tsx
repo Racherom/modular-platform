@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { ApiError, removeDeployment } from '../api/platform'
-import { Failure } from './Failure'
+import m from './Managed.module.css'
+import { Button } from './ui/Button'
+import { Failure } from './ui/Failure'
 
 /**
  * Remove a deployment (spec 0006, AC-15): stops its containers and keeps volumes, secrets and the
@@ -30,7 +32,7 @@ export function RemoveDialog({ name, deleteData: preset = false, onClose }: { na
   const alreadyRemoved = remove.error instanceof ApiError && remove.error.code === 'already_removed'
 
   return (
-    <dialog ref={dialog} className="review" aria-labelledby="remove-title" onClose={onClose}>
+    <dialog ref={dialog} className={m.dialog} aria-labelledby="remove-title" onClose={onClose}>
       <h2 id="remove-title">Remove {name}</h2>
       <form
         onSubmit={(e) => {
@@ -42,12 +44,12 @@ export function RemoveDialog({ name, deleteData: preset = false, onClose }: { na
           This stops and removes the stack's containers. Its volumes, secrets and history stay, so deploying it again brings it back with
           its data.
         </p>
-        <label>
+        <label className={m.check}>
           <input type="checkbox" checked={deleteData} onChange={(e) => setDeleteData(e.target.checked)} /> Delete data too
         </label>
         {deleteData && (
-          <div className="review__field">
-            <p className="banner banner--error">
+          <div className={m.field}>
+            <p className={m.banner} data-tone="danger">
               The volumes and secrets are deleted for good. Placed credentials must be entered again on the next deploy.
             </p>
             <label htmlFor="remove-confirm">
@@ -57,18 +59,16 @@ export function RemoveDialog({ name, deleteData: preset = false, onClose }: { na
           </div>
         )}
         {alreadyRemoved && (
-          <p role="alert" className="banner">
+          <p role="alert" className={m.banner}>
             The stack is removed already. Choose <em>Delete data too</em> to delete its data.
           </p>
         )}
         {remove.isError && !alreadyRemoved && <Failure error={remove.error} onRetry={() => remove.mutate()} />}
-        <div className="review__actions">
-          <button type="button" onClick={() => dialog.current?.close()}>
-            Cancel
-          </button>
-          <button type="submit" disabled={!confirmed || remove.isPending}>
+        <div className={m.actions}>
+          <Button onPress={() => dialog.current?.close()}>Cancel</Button>
+          <Button type="submit" variant="danger" isDisabled={!confirmed || remove.isPending}>
             {remove.isPending ? 'Removing…' : deleteData ? 'Remove and delete data' : 'Remove'}
-          </button>
+          </Button>
         </div>
       </form>
     </dialog>

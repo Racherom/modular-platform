@@ -1,15 +1,17 @@
 import type { Problem } from '../api/client'
 import { problemInstance } from '../graph/flow'
+import styles from './ProblemList.module.css'
 
+/** The planner's problems as a plain list, for plan review (spec 0006). */
 export function ProblemList({ problems }: { problems: Problem[] }) {
-  if (problems.length === 0) return <p className="problems problems--none">No problems.</p>
+  if (problems.length === 0) return <p className={styles.none}>No problems.</p>
   return (
-    <ul className="problems" aria-label="Problems">
+    <ul className={styles.problems} aria-label="Problems">
       {problems.map((p, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: the list is never reordered, and two problems may share a path and code
-        <li key={`${i}|${p.path}|${p.code}`} className={`problem problem--${p.severity}`}>
-          <span className="problem__severity">{p.severity}</span>
-          {problemInstance(p) !== undefined && <span className="problem__instance">{problemInstance(p)}</span>}
+        <li key={`${i}|${p.path}|${p.code}`} className={styles.problem} data-severity={p.severity}>
+          <span className={styles.severity}>{p.severity}</span>
+          {problemInstance(p) !== undefined && <span className={styles.instance}>{problemInstance(p)}</span>}
           <span>{p.message}</span>
         </li>
       ))}
