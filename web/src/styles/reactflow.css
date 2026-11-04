@@ -59,8 +59,16 @@
   stroke-width: 3;
 }
 
-.react-flow__edge.selected .react-flow__edge-path {
+/* selection (AC-8): related edges get 2px accent, the rest 1px dimmed; width carries the dimming */
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge.is-related .react-flow__edge-path {
+  stroke: var(--color-accent);
   stroke-width: 2;
+}
+
+.react-flow__edge.is-dimmed .react-flow__edge-path {
+  stroke: var(--color-edge-dimmed);
+  stroke-width: 1;
 }
 
 .react-flow__controls-button svg {

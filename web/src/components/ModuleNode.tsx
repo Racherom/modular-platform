@@ -1,6 +1,7 @@
 import { Handle, type NodeProps, Position } from '@xyflow/react'
+import { CircleAlert, TriangleAlert } from 'lucide-react'
 import { type CSSProperties, memo } from 'react'
-import { HANDLE_SIZE, type ModuleFlowNode, NODE_HEADER, NODE_WIDTH, PORT_ROW, providesHandle, usesHandle } from '../graph/flow'
+import { HANDLE_SIZE, type Mark, type ModuleFlowNode, NODE_HEADER, NODE_WIDTH, PORT_ROW, providesHandle, usesHandle } from '../graph/flow'
 import styles from './ModuleNode.module.css'
 import { StateBadge } from './StateBadge'
 
@@ -21,16 +22,21 @@ const geometry = {
 export const ModuleNode = memo(function ModuleNode({ data, isConnectable }: NodeProps<ModuleFlowNode>) {
   const rows = Math.max(data.provides.length, data.uses.length)
   const dragging = data.dropTargets !== undefined
+  const lit = (id: string) => (data.highlight?.includes(id) ? true : undefined)
   return (
     <div
       className={styles.node}
       style={geometry}
       data-error={data.hasError || undefined}
       data-dragging={dragging || undefined}
+      data-dimmed={data.dimmed || undefined}
       data-testid={`node-${data.instance}`}
     >
       <div className={styles.head}>
-        <span className={styles.instance}>{data.instance}</span>
+        <span className={styles.title}>
+          <span className={styles.instance}>{data.instance}</span>
+          {data.mark && <ProblemMark mark={data.mark} />}
+        </span>
         <span className={styles.module}>{data.known ? data.module : `${data.module} (not in catalog)`}</span>
         {data.state && <StateBadge module={data.state} />}
       </div>
@@ -50,6 +56,7 @@ export const ModuleNode = memo(function ModuleNode({ data, isConnectable }: Node
                     isConnectableEnd={isConnectable}
                     className={styles.handle}
                     data-drop={dragging ? (data.dropTargets?.includes(provides) ? 'valid' : 'invalid') : undefined}
+                    data-highlight={lit(providesHandle(provides))}
                     aria-hidden="true"
                   />
                   <span className={styles.label}>{provides}</span>
@@ -59,6 +66,7 @@ export const ModuleNode = memo(function ModuleNode({ data, isConnectable }: Node
             <span className={styles.uses}>
               {uses !== undefined && (
                 <>
+                  {uses.mark && <ProblemMark mark={uses.mark} />}
                   <span className={styles.label}>
                     {uses.capability}
                     <span className="visually-hidden">{uses.optional ? ', optional' : ', required'}</span>
@@ -72,6 +80,7 @@ export const ModuleNode = memo(function ModuleNode({ data, isConnectable }: Node
                     className={styles.handle}
                     data-need={uses.optional ? 'optional' : 'required'}
                     data-drop={dragging ? (data.dragSource === uses.capability ? 'source' : 'invalid') : undefined}
+                    data-highlight={lit(usesHandle(uses.capability))}
                     aria-hidden="true"
                   />
                 </>
@@ -83,3 +92,26 @@ export const ModuleNode = memo(function ModuleNode({ data, isConnectable }: Node
     </div>
   )
 })
+
+/**
+ * An icon plus color by severity; its accessible name lists every message (AC-13). Next to text
+ * that already says the message, pass `decorative` so it is not heard twice.
+ */
+export function ProblemMark({ mark, decorative = false }: { mark: Mark; decorative?: boolean }) {
+  const Icon = mark.severity === 'error' ? CircleAlert : TriangleAlert
+  const severity = mark.severity === 'error' ? 'Error' : 'Warning'
+  if (decorative) {
+    return (
+      <span className={styles.mark} data-severity={mark.severity}>
+        <Icon aria-hidden="true" />
+        <span className="visually-hidden">{severity}: </span>
+      </span>
+    )
+  }
+  const label = `${severity}: ${mark.messages.join(' ')}`
+  return (
+    <span role="img" aria-label={label} title={label} className={styles.mark} data-severity={mark.severity}>
+      <Icon aria-hidden="true" />
+    </span>
+  )
+}

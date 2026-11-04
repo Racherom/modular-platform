@@ -12,14 +12,56 @@ export interface Drop {
   targetHandle?: string | null
 }
 
-/** Sets the provider of one need, for connect and rebind. */
+/** Sets the provider of one need, for connect and rebind. Binding the current provider again changes nothing. */
 export function bind(graph: Graph, consumer: string, capability: string, provider: string): Graph {
-  const m = Object.hasOwn(graph.modules, consumer) ? graph.modules[consumer] : undefined
+  return setNeed(graph, consumer, capability, provider)
+}
+
+/** Marks a need as deliberately not bound (`null`). */
+export function unbind(graph: Graph, consumer: string, capability: string): Graph {
+  return setNeed(graph, consumer, capability, null)
+}
+
+/** Removes a need's key, so the planner binds it automatically when it finds one candidate (spec 0002). */
+export function letPlannerChoose(graph: Graph, consumer: string, capability: string): Graph {
+  const m = moduleOf(graph, consumer)
+  if (!m?.uses || !Object.hasOwn(m.uses, capability)) return graph
+  const uses = { ...m.uses }
+  delete uses[capability]
+  return { ...graph, modules: { ...graph.modules, [consumer]: { ...m, uses } } }
+}
+
+/**
+ * The instances that can provide a need: every other instance whose module is in the catalog
+ * and provides the capability, sorted by name (the candidate rule of spec 0002).
+ */
+export function candidates(graph: Graph, catalog: CatalogEntry[], consumer: string, capability: string): string[] {
+  const entries = entryMap(catalog)
+  return Object.keys(graph.modules)
+    .filter((name) => {
+      if (name === consumer) return false
+      const provides = entries.get(graph.modules[name]!.module)?.provides
+      return provides !== undefined && Object.hasOwn(provides, capability)
+    })
+    .sort()
+}
+
+function setNeed(graph: Graph, consumer: string, capability: string, value: string | null): Graph {
+  const m = moduleOf(graph, consumer)
   if (!m) return graph
+  if (m.uses && Object.hasOwn(m.uses, capability) && m.uses[capability] === value) return graph
   return {
     ...graph,
-    modules: { ...graph.modules, [consumer]: { ...m, uses: { ...m.uses, [capability]: provider } } },
+    modules: { ...graph.modules, [consumer]: { ...m, uses: { ...m.uses, [capability]: value } } },
   }
+}
+
+function moduleOf(graph: Graph, instance: string) {
+  return Object.hasOwn(graph.modules, instance) ? graph.modules[instance] : undefined
+}
+
+function entryMap(catalog: CatalogEntry[]) {
+  return new Map(catalog.map((e) => [e.name, e]))
 }
 
 /**
@@ -32,10 +74,10 @@ export function isValidDrop(graph: Graph, catalog: CatalogEntry[], drop: Drop): 
   const to = parseHandle(drop.targetHandle)
   if (from?.side !== 'uses' || to?.side !== 'provides' || from.capability !== to.capability) return false
   if (!drop.source || !drop.target || drop.source === drop.target) return false
-  const consumer = Object.hasOwn(graph.modules, drop.source) ? graph.modules[drop.source] : undefined
-  const provider = Object.hasOwn(graph.modules, drop.target) ? graph.modules[drop.target] : undefined
+  const consumer = moduleOf(graph, drop.source)
+  const provider = moduleOf(graph, drop.target)
   if (!consumer || !provider) return false
-  const entries = new Map(catalog.map((e) => [e.name, e]))
+  const entries = entryMap(catalog)
   const consumerEntry = entries.get(consumer.module)
   const providerEntry = entries.get(provider.module)
   return (

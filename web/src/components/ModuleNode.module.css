@@ -10,12 +10,22 @@
   font-size: var(--text-xs);
 }
 
+.node[data-error] {
+  border: 2px solid var(--color-danger);
+}
+
 :global(.react-flow__node.selected) .node {
   border: 2px solid var(--color-accent);
 }
 
-.node[data-error] {
-  border: 2px solid var(--color-danger);
+/* something unrelated is selected: only the border dims, text keeps its contrast (AC-8); an
+   error border stays, the problem matters more than the selection */
+.node[data-dimmed] {
+  box-shadow: none;
+}
+
+.node[data-dimmed]:not([data-error]) {
+  border-color: var(--color-border);
 }
 
 .head {
@@ -26,6 +36,13 @@
   padding: 0 var(--space-3);
   border-bottom: 1px solid var(--color-border);
   overflow: hidden;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .instance {
@@ -119,6 +136,35 @@
 
 .handle[data-drop="invalid"][data-need="optional"]:global(.react-flow__handle) {
   background: var(--color-surface-raised);
+}
+
+/* ports that belong to the selection */
+.handle[data-highlight]:global(.react-flow__handle) {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+
+.handle[data-highlight][data-need="optional"]:global(.react-flow__handle) {
+  background: var(--color-surface-raised);
+}
+
+.mark {
+  display: inline-flex;
+  flex: none;
+  margin-right: var(--space-1);
+}
+
+.mark svg {
+  width: 14px;
+  height: 14px;
+}
+
+.mark[data-severity="error"] {
+  color: var(--color-danger);
+}
+
+.mark[data-severity="warning"] {
+  color: var(--color-warning);
 }
 
 .handle:global(.react-flow__handle.connectionindicator) {

@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { ReactFlowProvider } from '@xyflow/react'
 import { Download, Rocket, Save } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useId, useState } from 'react'
 import { fetchCatalog, type Graph, type PlannerError, type PlanResult, renderGraph } from '../api/client'
 import type { Positions } from '../graph/flow'
 import { stringifyGraph } from '../graph/yaml'
@@ -11,11 +12,11 @@ import { HeaderContent, Workspace } from './AppShell'
 import { CatalogList } from './CatalogList'
 import { Failure } from './Failure'
 import styles from './GraphScreen.module.css'
-import { GraphView } from './GraphView'
-import { ProblemList } from './ProblemList'
+import { type GraphEdit, GraphView } from './GraphView'
+import { Inspector } from './Inspector'
+import { ProblemsPanel } from './ProblemsPanel'
 import { ReviewDialog } from './ReviewDialog'
 import { Button } from './ui/Button'
-import { Panel } from './ui/Panel'
 
 /** The catalog, fetched once per page. */
 export function useCatalog() {
@@ -29,7 +30,8 @@ export interface Editing {
   planState: PlanState
   planError: PlannerError | null
   onRetry: () => void
-  onBind: (consumer: string, capability: string, provider: string) => void
+  /** Applies a user edit to the working graph. */
+  onEdit: (edit: GraphEdit) => void
   /** Called after Save as file. */
   onSaved: () => void
 }
@@ -43,6 +45,18 @@ interface Props {
   editing?: Editing
 }
 
+/**
+ * Why Download zip (and Deploy) is disabled, or null when it is allowed (AC-14): only a current
+ * plan without errors allows it; warnings never block.
+ */
+export function downloadBlocked(planState: PlanState, plan: PlanResult): string | null {
+  if (planState === 'checking') return 'Checking the graph'
+  if (planState === 'failed') return 'Not checked, retry first'
+  if (plan.ok) return null
+  const errors = plan.problems.filter((p) => p.severity === 'error').length
+  return errors > 0 ? `Fix ${errors} ${errors === 1 ? 'error' : 'errors'} to download` : 'Fix the errors to download'
+}
+
 /** A planned graph in the editor: header toolbar, catalog, canvas, inspector and problems. */
 export function GraphScreen({ graph, plan, fileName, toolbar, editing }: Props) {
   const catalog = useCatalog()
@@ -50,6 +64,7 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing }: Props) 
   const [rendered, setRendered] = useState<{ from: PlanResult; plan: PlanResult }>()
   const shownPlan = rendered?.from === plan ? rendered.plan : plan
   const [reviewing, setReviewing] = useState(false)
+  const reasonId = useId()
   const zip = useMutation({
     mutationFn: () => renderGraph(graph),
     onSuccess: (result) => {
@@ -62,6 +77,7 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing }: Props) 
   if (!catalog.data) return <p>Loading the catalog…</p>
 
   const planState = editing?.planState ?? 'current'
+  const blocked = downloadBlocked(planState, shownPlan)
   const save = () => {
     download(new Blob([stringifyGraph(graph)], { type: 'application/yaml' }), fileName)
     editing?.onSaved()
@@ -79,51 +95,74 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing }: Props) 
             <Save aria-hidden="true" />
             Save as file
           </Button>
-          <Button size="sm" onPress={() => zip.mutate()} isDisabled={zip.isPending || planState !== 'current'}>
+          <Button
+            size="sm"
+            onPress={() => zip.mutate()}
+            isDisabled={zip.isPending || blocked !== null}
+            aria-describedby={blocked ? reasonId : undefined}
+          >
             <Download aria-hidden="true" />
             {zip.isPending ? 'Rendering…' : 'Download zip'}
           </Button>
           {mode === 'managed' && (
-            <Button size="sm" variant="primary" onPress={() => setReviewing(true)} isDisabled={!plan.ok || planState !== 'current'}>
+            <Button
+              size="sm"
+              variant="primary"
+              onPress={() => setReviewing(true)}
+              isDisabled={blocked !== null}
+              aria-describedby={blocked ? reasonId : undefined}
+            >
               <Rocket aria-hidden="true" />
               Deploy
             </Button>
           )}
+          {blocked && (
+            <span id={reasonId} className={styles.reason}>
+              {blocked}
+            </span>
+          )}
         </div>
       </HeaderContent>
       {reviewing && <ReviewDialog graph={graph} onClose={() => setReviewing(false)} />}
-      <Workspace
-        catalog={<CatalogList entries={catalog.data} />}
-        canvas={
-          <div className={styles.canvas}>
-            {zip.isError && <Failure error={zip.error} onRetry={() => zip.mutate()} />}
-            <GraphView
+      <ReactFlowProvider>
+        <Workspace
+          catalog={<CatalogList entries={catalog.data} />}
+          canvas={
+            <div className={styles.canvas}>
+              {zip.isError && <Failure error={zip.error} onRetry={() => zip.mutate()} />}
+              <GraphView
+                graph={graph}
+                catalog={catalog.data}
+                problems={shownPlan.problems}
+                positions={editing?.positions}
+                onEdit={editing?.onEdit}
+              />
+            </div>
+          }
+          inspector={
+            <Inspector
               graph={graph}
               catalog={catalog.data}
-              problems={shownPlan.problems}
-              positions={editing?.positions}
-              onBind={editing?.onBind}
+              plan={shownPlan}
+              planCurrent={planState === 'current'}
+              onEdit={editing?.onEdit}
             />
-          </div>
-        }
-        inspector={
-          <Panel title="Inspector">
-            <p className={styles.muted}>Select a module or a binding to see it here.</p>
-          </Panel>
-        }
-        problemsStatus={
-          <span role="status" className={styles.status}>
-            {planState === 'checking' ? 'Checking the graph…' : planState === 'failed' ? 'Not checked' : ''}
-          </span>
-        }
-        problems={
-          planState === 'failed' && editing?.planError ? (
-            <Failure error={editing.planError} onRetry={editing.onRetry} />
-          ) : (
-            <ProblemList problems={shownPlan.problems} />
-          )
-        }
-      />
+          }
+          problemsStatus={
+            <span role="status" className={styles.status}>
+              {planState === 'checking' ? 'Checking the graph…' : planState === 'failed' ? 'Not checked' : ''}
+            </span>
+          }
+          problems={
+            planState === 'failed' && editing?.planError ? (
+              // a 400 means the planner refused this graph: retrying cannot help, undo is the way back
+              <Failure error={editing.planError} onRetry={editing.planError.status === 400 ? undefined : editing.onRetry} />
+            ) : (
+              <ProblemsPanel problems={shownPlan.problems} graph={graph} />
+            )
+          }
+        />
+      </ReactFlowProvider>
     </>
   )
 }

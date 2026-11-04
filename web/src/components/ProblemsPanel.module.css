@@ -1,0 +1,49 @@
+.list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.none {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.problem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  text-align: left;
+}
+
+button.problem {
+  cursor: pointer;
+}
+
+button.problem[data-hovered] {
+  background: var(--color-surface-raised);
+}
+
+button.problem[data-focus-visible] {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.instance {
+  flex: none;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-strong);
+}
+
+.message {
+  min-width: 0;
+}
