@@ -468,12 +468,115 @@ func (c *moduleChecker) setup() {
 			if _, ok := c.m.Provides[s.ForEach]; !ok {
 				c.add(p+".for_each", CodeInvalidSetupStep, "provide %q is not declared", s.ForEach)
 			}
+			if len(s.Asks) > 0 {
+				c.add(p+".asks", CodeInvalidSetupStep, "a for_each step asks nothing: setup.sh asks every question once")
+			}
+		} else {
+			c.noClient(p, s)
 		}
-		for j, w := range s.Writes {
-			if !ValidName(strings.TrimSuffix(w.Name, "/")) {
-				c.add(fmt.Sprintf("%s.writes.%d.name", p, j), CodeInvalidSetupStep, "%q is not a secret or folder name", w.Name)
+		for _, k := range sortedKeys(s.Env) {
+			if strings.HasPrefix(k, "MP_") {
+				c.add(p+".env."+k, CodeInvalidSetupStep, "env names starting with MP_ belong to the platform")
 			}
 		}
+		c.setupReads(p, s)
+		c.setupWrites(p, s)
+	}
+}
+
+// clientToken is the text a for_each step's client replaces in its env values, command and
+// entrypoint items and writes names (spec 0013, Install time).
+const clientToken = "{client}"
+
+// noClient refuses the client token in the env, command and entrypoint of a step with no for_each;
+// setupWrites covers its writes.
+func (c *moduleChecker) noClient(p string, s SetupStep) {
+	const msg = "{client} belongs to a for_each step"
+	for _, k := range sortedKeys(s.Env) {
+		if strings.Contains(s.Env[k], clientToken) {
+			c.add(p+".env."+k, CodeInvalidSetupStep, msg)
+		}
+	}
+	for _, list := range []struct {
+		field string
+		items []string
+	}{{"entrypoint", s.Entrypoint}, {"command", s.Command}} {
+		for j, item := range list.items {
+			if strings.Contains(item, clientToken) {
+				c.add(fmt.Sprintf("%s.%s.%d", p, list.field, j), CodeInvalidSetupStep, msg)
+			}
+		}
+	}
+}
+
+// setupReads checks {provide, field} reads: only in a for_each step, of its own provide, and of a
+// field that reaches the provider, so each run reads that one client's file.
+func (c *moduleChecker) setupReads(p string, s SetupStep) {
+	for j, r := range s.Reads {
+		if r.Provide == "" {
+			continue
+		}
+		rp := fmt.Sprintf("%s.reads.%d", p, j)
+		if s.ForEach == "" {
+			c.add(rp+".provide", CodeInvalidSetupStep, "a {provide} read belongs to a for_each step")
+			continue
+		}
+		if r.Provide != s.ForEach {
+			c.add(rp+".provide", CodeInvalidSetupStep, "a for_each step reads only its own provide %q", s.ForEach)
+			continue
+		}
+		pr, ok := c.m.Provides[r.Provide]
+		if !ok {
+			continue // reported at for_each
+		}
+		k, known := c.caps[pr.Capability]
+		if !known {
+			continue // reported at the provide
+		}
+		field, ok := k.Fields[r.Field]
+		switch {
+		case !ok:
+			c.add(rp+".field", CodeInvalidSetupStep, "capability %s has no field %q", pr.Capability, r.Field)
+		case !field.ToProvider():
+			c.add(rp+".field", CodeInvalidSetupStep, "a client's file is a to_provider or both field; %s is not one", r.Field)
+		}
+	}
+}
+
+// setupWrites checks write names: in a for_each step each is <folder>/{client}; otherwise a secret
+// name or a folder ending in /, with no client token. Every written folder is a from: setup folder
+// in secrets.
+func (c *moduleChecker) setupWrites(p string, s SetupStep) {
+	for j, w := range s.Writes {
+		wp := fmt.Sprintf("%s.writes.%d.name", p, j)
+		if s.ForEach != "" {
+			folder, ok := strings.CutSuffix(w.Name, "/"+clientToken)
+			if !ok || !ValidName(folder) {
+				c.add(wp, CodeInvalidSetupStep, "a for_each step writes <folder>/{client}, one file per client; %q is not that", w.Name)
+				continue
+			}
+			c.setupFolder(wp, folder)
+			continue
+		}
+		if strings.Contains(w.Name, clientToken) {
+			c.add(wp, CodeInvalidSetupStep, "{client} belongs to a for_each step")
+			continue
+		}
+		name, folder := strings.CutSuffix(w.Name, "/")
+		if !ValidName(name) {
+			c.add(wp, CodeInvalidSetupStep, "%q is not a secret or folder name", w.Name)
+			continue
+		}
+		if folder {
+			c.setupFolder(wp, name)
+		}
+	}
+}
+
+// setupFolder refuses a written folder that is not a from: setup folder entry in secrets.
+func (c *moduleChecker) setupFolder(p, folder string) {
+	if !slices.ContainsFunc(c.m.Secrets, func(s Secret) bool { return s.Name == folder+"/" && s.From == SecretFromSetup }) {
+		c.add(p, CodeInvalidSetupStep, "folder %q is not a secrets entry %q with from: setup", folder, folder+"/")
 	}
 }
 

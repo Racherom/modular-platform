@@ -639,11 +639,16 @@ components:
             type: string
         env:
           type: object
+          description: Literal env for the step, never a secret; no name starts with `MP_`.
           additionalProperties:
             type: string
         for_each:
           type: string
-          description: A provide; the step runs once per binding to it.
+          description: >-
+            A provide; the step runs once per binding to it, in consumer instance name order. That
+            instance name is the step's client: the exact text `{client}` in its `env` values,
+            `command` and `entrypoint` items and `writes` names is replaced by it. A step with no
+            `for_each` holds no `{client}`, and a `for_each` step has no `asks`.
         asks:
           type: array
           items:
@@ -670,7 +675,10 @@ components:
           default: false
     SetupRead:
       type: object
-      description: One of `{slot, field}`, `{provide, field}` or `{secret}`.
+      description: >-
+        One of `{slot, field}`, `{provide, field}` or `{secret}`. A `{provide, field}` read
+        belongs to a `for_each` step, names its own provide and a `to_provider` or `both` field,
+        and gives that one client's file.
       additionalProperties: false
       properties:
         slot:
@@ -688,6 +696,10 @@ components:
       properties:
         name:
           type: string
+          description: >-
+            A secret name, or a folder name ending in `/`. In a `for_each` step every write is
+            `<folder>/{client}`, one file per client. A folder, in either form, is a `secrets`
+            entry with `from: setup`.
         mode:
           type: string
           enum: ["0600", "0644"]

@@ -71,10 +71,11 @@ setup:
     writes: [{name: signing-key}]
   - name: client-digest
     entrypoint: [sh, -c]
-    command: ["authelia crypto hash generate pbkdf2 --password \"$(cat /in/oidc/client_secret)\" ... > /out/client-digests/$MP_CLIENT"]
+    command: ["authelia crypto hash generate pbkdf2 --password \"$(cat /in/oidc/client_secret)\" ... > /out/client-digests/$CLIENT"]
+    env: {CLIENT: "{client}"}
     for_each: oidc
     reads: [{provide: oidc, field: client_secret}]
-    writes: [{name: client-digests/}]
+    writes: [{name: "client-digests/{client}"}]
 templates:
   - file: configuration.yml.tmpl
     path: /config/configuration.yml

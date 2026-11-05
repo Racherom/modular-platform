@@ -770,7 +770,7 @@ type SetupAsk struct {
 	Secret      bool   `json:"secret,omitempty"`
 }
 
-// SetupRead One of `{slot, field}`, `{provide, field}` or `{secret}`.
+// SetupRead One of `{slot, field}`, `{provide, field}` or `{secret}`. A `{provide, field}` read belongs to a `for_each` step, names its own provide and a `to_provider` or `both` field, and gives that one client's file.
 type SetupRead struct {
 	Field   string `json:"field,omitempty"`
 	Provide string `json:"provide,omitempty"`
@@ -780,12 +780,14 @@ type SetupRead struct {
 
 // SetupStep defines model for SetupStep.
 type SetupStep struct {
-	Asks       []SetupAsk        `json:"asks,omitempty"`
-	Command    []string          `json:"command"`
-	Entrypoint []string          `json:"entrypoint,omitempty"`
-	Env        map[string]string `json:"env,omitempty"`
+	Asks       []SetupAsk `json:"asks,omitempty"`
+	Command    []string   `json:"command"`
+	Entrypoint []string   `json:"entrypoint,omitempty"`
 
-	// ForEach A provide; the step runs once per binding to it.
+	// Env Literal env for the step, never a secret; no name starts with `MP_`.
+	Env map[string]string `json:"env,omitempty"`
+
+	// ForEach A provide; the step runs once per binding to it, in consumer instance name order. That instance name is the step's client: the exact text `{client}` in its `env` values, `command` and `entrypoint` items and `writes` names is replaced by it. A step with no `for_each` holds no `{client}`, and a `for_each` step has no `asks`.
 	ForEach string       `json:"for_each,omitempty"`
 	Name    string       `json:"name"`
 	Reads   []SetupRead  `json:"reads,omitempty"`
@@ -795,7 +797,9 @@ type SetupStep struct {
 // SetupWrite defines model for SetupWrite.
 type SetupWrite struct {
 	Mode SetupWriteMode `json:"mode,omitempty"`
-	Name string         `json:"name"`
+
+	// Name A secret name, or a folder name ending in `/`. In a `for_each` step every write is `<folder>/{client}`, one file per client. A folder, in either form, is a `secrets` entry with `from: setup`.
+	Name string `json:"name"`
 }
 
 // SetupWriteMode defines model for SetupWrite.Mode.

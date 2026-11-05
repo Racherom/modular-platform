@@ -538,7 +538,7 @@ export interface components {
             /** @default false */
             secret: boolean;
         };
-        /** @description One of `{slot, field}`, `{provide, field}` or `{secret}`. */
+        /** @description One of `{slot, field}`, `{provide, field}` or `{secret}`. A `{provide, field}` read belongs to a `for_each` step, names its own provide and a `to_provider` or `both` field, and gives that one client's file. */
         SetupRead: {
             slot?: string;
             provide?: string;
@@ -546,6 +546,7 @@ export interface components {
             secret?: string;
         };
         SetupWrite: {
+            /** @description A secret name, or a folder name ending in `/`. In a `for_each` step every write is `<folder>/{client}`, one file per client. A folder, in either form, is a `secrets` entry with `from: setup`. */
             name: string;
             /**
              * @default 0600
@@ -557,10 +558,11 @@ export interface components {
             name: string;
             entrypoint?: string[];
             command: string[];
+            /** @description Literal env for the step, never a secret; no name starts with `MP_`. */
             env?: {
                 [key: string]: string;
             };
-            /** @description A provide; the step runs once per binding to it. */
+            /** @description A provide; the step runs once per binding to it, in consumer instance name order. That instance name is the step's client: the exact text `{client}` in its `env` values, `command` and `entrypoint` items and `writes` names is replaced by it. A step with no `for_each` holds no `{client}`, and a `for_each` step has no `asks`. */
             for_each?: string;
             asks?: components["schemas"]["SetupAsk"][];
             reads?: components["schemas"]["SetupRead"][];
