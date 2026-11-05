@@ -17,7 +17,8 @@ _Steps derived from spec 0011 acceptance criteria. `/check verify` runs these; `
 - [ ] the `password` of `app`'s `db` slot is mounted at `/run/app/db-password` (its fixed path), from `./secrets/billing/db_password`, and no env holds it → AC-8, AC-15
 - [ ] `app` has no `APP_DB_CA` and `APP_NOTIFY_REGION`: optional fields the provider gives no value for are not delivered, and `APP_REGION` is `region=` → AC-8
 - [ ] `notifier` mounts `/run/secrets/clients/events/token/app` (a `both` field) and `/run/secrets/clients/events/key/app` (a `to_provider` field from `secrets/app/notify-key`), and its env holds the two directories → AC-8, AC-18
-- [ ] `notifier` joins `egress` and `internal`, each with `notifier.bindings.internal` and `${MP_NOTIFIER__PUBLIC_NAME:-notify.example.test}`; `app` joins only `internal` → AC-12
+- [ ] `notifier` joins `egress` and `internal`, each with `notifier.bindings.internal` and `${MP_NOTIFIER__PUBLIC_NAME:-notify.example.test}`; `app` joins `egress` and `internal` with no `network.egress` in its entry, because its `db` slot binds to the external `billing` and its `audit` slot through the external provisioner `shared` (task 13b) → AC-12, AC-1
+- [ ] `pg-roaming`'s entry has no `network.egress`, and `TestExternalEndToEnd` still passes (task 13b) → AC-1
 - [ ] `notifier` has `user: "0:0"`, `cap_add: [NET_BIND_SERVICE]`, `tmpfs: [/tmp]` and no `read_only`; `app` has no `user`; every other service keeps `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges` and `${MP_UID}:${MP_GID}` → AC-12
 - [ ] `APP_DB_DSN` is `postgres://billing@db.example.test:5432/billing?sslmode=verify-full`, `APP_RUN_AS` is `${MP_UID}:${MP_GID}`, and `APP_PRICE` is `5$$ a month` (a literal `$`) → value sourcing: `environment` placeholders
 - [ ] `shared_provision_app_audit` joins `egress` and `internal`, has no `depends_on`, and reads `secrets/shared/admin_admin_password`, which `setup.sh` lists as a file you place → AC-15, value sourcing: external field values
@@ -25,10 +26,17 @@ _Steps derived from spec 0011 acceptance criteria. `/check verify` runs these; `
 
 ### Waiting on task 10 (the revoke job)
 
-Run these once the spec says how `up` waits for a job nothing depends on, and the revoke job from branch `feat/capability-module-contract-revoke-job` is merged.
+The spec now says how `up` waits (0014, *Waiting*: the wait anchor `mp_jobs`). Run these once the revoke job from branch `feat/capability-module-contract-revoke-job` and the anchor are merged.
 
-- [ ] `go test -race -count=1 -tags e2e -run TestRevokeEndToEnd ./libs/render/` → passes: after removing `a`, `a_db` cannot sign in while `a_db.notes` still holds 42; after binding `a` again with the same names it signs in and reads 42; after removing the last consumers the revoke job runs with `MP_KEEP: ""` and both logins lose sign in; the hand made role `handmade` keeps sign in throughout → AC-6
+- [ ] `go test -race -count=1 -tags e2e -run TestRevokeEndToEnd ./libs/render/` → passes, run five times in a row (`-count=5`) so a timing failure would show: after removing `a`, `a_db` cannot sign in while `a_db.notes` still holds 42; after binding `a` again with the same names it signs in and reads 42; after removing the last consumers the revoke job runs with `MP_KEEP: ""` and both logins lose sign in; the hand made role `handmade` keeps sign in throughout; every `up -d --wait` exits 0 → AC-6
+- [ ] The e2e case for a failing revoke job (only binding removed, wrong admin password file) → `up --wait` exits non zero naming `postgres_revoke_<provide>`, and a second `up` exits non zero again → AC-6
 - [ ] `go test -race -count=1 -run TestRevokeJob ./libs/render/` → `MP_KEEP` is the sorted logins of every binding to the provide, and the job waits for every provision job of that provide → AC-6
+- [ ] Review `libs/render/testdata/whoami-postgres/docker-compose.yml`: `mp_jobs` depends on the revoke job with `service_completed_successfully`, uses its image, has `network_mode: none` and no `networks`, `init: true`, the hardening defaults and no `restart`; in the managed golden it has `restart: unless-stopped` and only the `graph`, `deployment` and `job: wait` labels, and `managed.json` gains no image or secret for it; a golden with no revoke job has no `mp_jobs` → AC-6, AC-11, AC-12
+- [ ] `go test -race -count=1 -run TestGuardAcceptsEveryRender ./libs/render/` → the guard accepts the managed `mp_jobs`, and refuses `init: false`, `network_mode: host`, `network_mode: none` together with `networks`, and `restart: "no"` on it → AC-11
+- [ ] On a deployed stack with a revoke job, the deployer's live state shows no row for `mp_jobs` → AC-11
+- [ ] `go test -race -count=1 -run TestGuard$ ./libs/render/` → the cases `init on a module`, `no network on a module`, `an unknown job kind`, `a wait anchor on host`, `a wait anchor on a network`, `a wait anchor not restarted` and `init off` are refused; `the wait anchor` and `a revoke job restart no` are accepted (the refusals above run here, not in `TestGuardAcceptsEveryRender`) → AC-11
+- [ ] `go test -race -count=1 -tags e2e -run TestWaitAnchorImages ./libs/render/` → `sleep infinity` keeps running with `--init`, `--read-only`, `--cap-drop ALL`, `no-new-privileges`, a non root user and `--network none` in every pinned job image (`postgres:18.6`, Debian; `smallstep/step-cli:0.30.2`, Alpine) → AC-6
+- [ ] `go test -race -count=1 -run 'TestWaitAnchor$|TestEgressFromBindings' ./libs/render/` → `mp_jobs` waits for each revoke job of two servers and is absent from a graph with no job; `pg-roaming` joins `egress` when bound to an external server or through an external provisioner, and only `internal` when bound inside the stack → AC-6, AC-12, AC-1
 - [ ] Render the sample twice in a row with no change and `up` each time → no role or database added or dropped → AC-5
 
 ## Acceptance criteria coverage (milestone 2)
