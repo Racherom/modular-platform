@@ -18,7 +18,7 @@ const (
 	LabelInstance   = LabelPrefix + "instance"   // the instance name; a job's provisioner instance
 	LabelModule     = LabelPrefix + "module"     // the catalog module name; a job's provisioner module
 	LabelDeployment = LabelPrefix + "deployment" // the deployment id; "platform" on the platform's own services
-	LabelJob        = LabelPrefix + "job"        // provision or revoke, on a one shot job only (spec 0013)
+	LabelJob        = LabelPrefix + "job"        // provision or revoke on a one shot job, wait on mp_jobs (spec 0013)
 )
 
 // ProjectPrefix starts every managed project name, so a deployment can never be or clash with
@@ -71,8 +71,11 @@ func Managed(plan contract.PlanResult, catalog contract.Catalog, deployment stri
 		for name, svc := range p.Services {
 			labels := types.Labels{LabelGraph: graph, LabelDeployment: deployment}
 			if j, ok := jobs[name]; ok {
-				labels[LabelInstance], labels[LabelJob] = j.instance, j.kind
-				if j.module != "" { // an external provisioner has no module
+				labels[LabelJob] = j.kind
+				if j.instance != "" { // the wait anchor belongs to no instance
+					labels[LabelInstance] = j.instance
+				}
+				if j.module != "" { // an external provisioner, or the wait anchor, has no module
 					labels[LabelModule] = j.module
 				}
 			} else {

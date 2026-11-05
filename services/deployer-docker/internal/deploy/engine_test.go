@@ -439,6 +439,7 @@ func TestState(t *testing.T) {
 		{Labels: labels("e"), Status: "running", Health: "unhealthy"},
 		{Labels: labels("f"), Status: "restarting"},
 		{Labels: labels("h"), Status: "paused"},
+		{Labels: map[string]string{"io.github.racherom.modular-platform.job": "wait"}, Status: "running"},
 	}}
 	e, _, _ := newEngine(t, &fakeCompose{}, d)
 	present, services, err := e.State(t.Context(), "mp-sample")
@@ -471,6 +472,15 @@ func TestState(t *testing.T) {
 	}
 	if !slices.IsSorted(order) {
 		t.Errorf("not sorted by instance: %q", order)
+	}
+	if len(services) != len(want) {
+		t.Errorf("%d rows, want %d: the wait anchor mp_jobs is no row", len(services), len(want))
+	}
+	anchorOnly, _, _ := newEngine(t, &fakeCompose{}, fakeDocker{containers: []deploy.Container{
+		{Labels: map[string]string{"io.github.racherom.modular-platform.job": "wait"}, Status: "running"},
+	}})
+	if present, rows, _ := anchorOnly.State(t.Context(), "mp-anchor"); !present || len(rows) != 0 {
+		t.Errorf("only mp_jobs left: present %v, rows %+v; want present with no row", present, rows)
 	}
 
 	empty, _, _ := newEngine(t, &fakeCompose{}, fakeDocker{})

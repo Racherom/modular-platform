@@ -28,8 +28,10 @@ var (
 	secretFile = regexp.MustCompile(`^\./secrets/[a-z0-9-]+/[A-Za-z0-9._-]+$`)
 	configFile = regexp.MustCompile(`^\./config/[a-z0-9]([a-z0-9-]*[a-z0-9])?\.env$`)
 	dataFolder = regexp.MustCompile(`^\./data/([a-z0-9-]+)/[a-z0-9-]+$`)
-	// platformLabels are the only labels a managed service carries; LabelJob only on a job.
+	// platformLabels are the only labels a managed service carries; LabelJob only on a job or
+	// the wait anchor, with one of jobKinds.
 	platformLabels = []string{LabelDeployment, LabelGraph, LabelInstance, LabelJob, LabelModule}
+	jobKinds       = []string{jobProvision, jobRevoke, jobWait}
 )
 
 // Project is a Compose file as docker compose reads it: interpolated with its env files and in
@@ -75,7 +77,8 @@ func LoadProject(ctx context.Context, compose []byte, envFiles ...[]byte) (Proje
 }
 
 // Guard checks p against an allow list of exactly the shape Managed emits (spec 0006 AC-8, grown
-// by spec 0013 with hardening, data folders and one shot jobs):
+// by spec 0013 with hardening, data folders and one shot jobs, and by spec 0014 with the wait
+// anchor mp_jobs):
 // anything else is one host_access problem per instance and key. reservedPorts are the host
 // ports of the platform's ingress, which no project may publish. Guard is the last line between
 // an imported graph and the host, so a key the render does not emit is refused even when it
@@ -214,15 +217,20 @@ func (g *guard) services(model map[string]any, v any) {
 			g.refuse("services." + i)
 			continue
 		}
+		labels, _ := svc["labels"].(map[string]any)
+		kind, _ := labels[LabelJob].(string)
+		oneShot := kind == jobProvision || kind == jobRevoke
 		for _, k := range sortedKeys(svc) {
 			path, v := "services."+i+"."+k, svc[k]
 			switch k {
 			case "image", "user":
 				g.want(path, isString(v) && v != "")
 			case "restart":
-				labels, _ := svc["labels"].(map[string]any)
-				_, isJob := labels[LabelJob]
-				g.want(path, v == string(types.RestartPolicyUnlessStopped) || (isJob && v == types.RestartPolicyNo))
+				g.want(path, v == string(types.RestartPolicyUnlessStopped) || (oneShot && v == types.RestartPolicyNo))
+			case "init": // the wait anchor only (spec 0014, "Waiting")
+				g.want(path, kind == jobWait && v == true)
+			case "network_mode": // the wait anchor only, and then on no network
+				g.want(path, kind == jobWait && v == "none" && !hasKey(svc, "networks"))
 			case "read_only":
 				_, ok := v.(bool)
 				g.want(path, ok)
@@ -266,7 +274,8 @@ func (g *guard) services(model map[string]any, v any) {
 			case "labels":
 				g.entry(path, v, func(m map[string]any) {
 					for _, l := range sortedKeys(m) {
-						g.want(path+"."+l, slices.Contains(platformLabels, l) && isString(m[l]))
+						g.want(path+"."+l, slices.Contains(platformLabels, l) && isString(m[l]) &&
+							(l != LabelJob || slices.Contains(jobKinds, m[l].(string))))
 					}
 				})
 			case "ports":

@@ -11,7 +11,7 @@ docker compose up -d --wait --wait-timeout 120
 
 `setup.sh` writes the user every module runs as into `.env` and creates the secret files and data folders this stack needs, here on your machine. It never changes a file that already exists, so running it again is safe. If you skip it, `docker compose up` stops with a missing file error instead of starting without passwords.
 
-The first `up` also runs a short job for each database or other resource a module gets made for it; the module starts once its job has finished. Each `up` runs these jobs again, which changes nothing that already exists.
+The first `up` also runs a short job for each database or other resource a module gets made for it; the module starts once its job has finished. Each `up` runs these jobs again, which changes nothing that already exists. The service `mp_jobs` is not a module: it only waits for the stack's jobs, so `up --wait` ends once each job has finished, and fails when one fails.
 
 Secret files `setup.sh` creates:
 
