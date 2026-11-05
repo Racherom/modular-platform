@@ -1,0 +1,5 @@
+apiVersion: modular-platform/v1
+kind: Graph
+name: linuxcap
+modules:
+  low: {module: lowport}

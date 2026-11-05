@@ -1,0 +1,8 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: sysadmin
+description: Adds SYS_ADMIN beside NET_BIND_SERVICE, which only a downloaded zip may run (spec 0022).
+image: busybox:1.37.0
+command: [sleep, infinity]
+hardening:
+  cap_add: [NET_BIND_SERVICE, SYS_ADMIN]

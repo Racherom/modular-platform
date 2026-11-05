@@ -65,7 +65,9 @@ services:
       io.github.racherom.modular-platform.graph: sample
       io.github.racherom.modular-platform.instance: postgres
       io.github.racherom.modular-platform.module: postgres
+    cap_drop: [ALL]
     restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
     secrets:
     - source: postgres_password
 `

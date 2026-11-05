@@ -1,6 +1,7 @@
 package planner_test
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -106,8 +107,9 @@ func TestBindingOrder(t *testing.T) {
 	}
 }
 
-// TestPlanHostAccess warns, never refuses, at each instance whose module publishes a port or
-// mounts a host path (spec 0013, Host access; AC-11).
+// TestPlanHostAccess warns, never refuses, at each instance whose module publishes a port,
+// mounts a host path or adds a Linux capability other than NET_BIND_SERVICE, one warning per
+// instance naming every reason (spec 0013, Host access; spec 0022; AC-11).
 func TestPlanHostAccess(t *testing.T) {
 	t.Parallel()
 	g, p := contract.DecodeGraph([]byte(`apiVersion: modular-platform/v1
@@ -117,6 +119,9 @@ modules:
   web: {module: edge}
   agent: {module: socket}
   plain: {module: twin}
+  admin: {module: sysadmin}
+  low: {module: lowport}
+  gate: {module: gateway}
 `))
 	if p != nil {
 		t.Fatal(p.Message)
@@ -125,16 +130,19 @@ modules:
 	if !got.Ok {
 		t.Fatalf("plan not ok: %+v", got.Problems)
 	}
-	var gotProblems []problem
+	var gotProblems []string
 	for _, pr := range got.Problems {
-		gotProblems = append(gotProblems, problem{pr.Severity, pr.Code, pr.Path, pr.Candidates})
+		gotProblems = append(gotProblems, fmt.Sprintf("%s %s %s: %s", pr.Severity, pr.Code, pr.Path, pr.Message))
 	}
-	want := []problem{warningAt(planner.CodeHostAccess, "modules.agent"), warningAt(planner.CodeHostAccess, "modules.web")}
-	if !slices.EqualFunc(gotProblems, want, equalProblem) {
-		t.Fatalf("problems = %+v, want %+v", got.Problems, want)
+	const tail = ", so it reaches the host it runs on; a deployed graph refuses this."
+	want := []string{
+		"warning host_access modules.admin: Instance admin adds the Linux capability SYS_ADMIN" + tail,
+		"warning host_access modules.agent: Instance agent mounts host paths" + tail,
+		"warning host_access modules.gate: Instance gate publishes host ports and adds the Linux capability SYS_ADMIN" + tail,
+		"warning host_access modules.web: Instance web publishes host ports" + tail,
 	}
-	if !strings.Contains(got.Problems[1].Message, "Instance web publishes host ports or mounts host paths") {
-		t.Errorf("message = %q", got.Problems[1].Message)
+	if !slices.Equal(gotProblems, want) {
+		t.Fatalf("problems =\n%s\nwant\n%s", strings.Join(gotProblems, "\n"), strings.Join(want, "\n"))
 	}
 	if got.Digest == "" {
 		t.Error("an ok plan with warnings has no digest")

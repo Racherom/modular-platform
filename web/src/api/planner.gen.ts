@@ -426,6 +426,7 @@ export interface components {
             user?: "root" | "image";
             /** @default false */
             writable_root: boolean;
+            /** @description Linux capability names, upper case without `CAP_` (spec 0022); a deployed graph may add only `NET_BIND_SERVICE`. */
             cap_add?: string[];
             tmpfs?: string[];
         };

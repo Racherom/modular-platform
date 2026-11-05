@@ -199,6 +199,14 @@ func TestRenderHostAccessGolden(t *testing.T) {
 	checkGolden(t, filepath.Join("testdata", "host-access", "golden"), out)
 }
 
+// linuxCapPlan plans the module of the Linux capability case that adds SYS_ADMIN beside one
+// that adds only NET_BIND_SERVICE (spec 0022).
+func linuxCapPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
+	t.Helper()
+	catalog := loadCatalog(t, "testdata/linuxcap/catalog")
+	return planFile(t, "testdata/linuxcap/refused.yaml", catalog), catalog
+}
+
 // TestRenderManagedRefuses: a deployed graph gets no host access and has no setup.sh, so the
 // managed flavor refuses each such instance with an error naming it, and renders nothing (spec
 // 0013, Managed flavor; AC-11).
@@ -209,6 +217,7 @@ func TestRenderManagedRefuses(t *testing.T) {
 		want []string // code and path of each refusal
 	}{
 		"host access": {hostAccessPlan, []string{"host_access modules.agent", "host_access modules.edge"}},
+		"linux caps":  {linuxCapPlan, []string{"host_access modules.admin"}},
 		"install time": {installPlan, []string{
 			"setup_required modules.alpha", "setup_required modules.beta", "setup_required modules.keeper",
 		}},
@@ -232,6 +241,29 @@ func TestRenderManagedRefuses(t *testing.T) {
 				t.Errorf("refusals = %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+// TestRenderManagedRefusesLinuxCap names every reason in the refusal, and the static render
+// still copies each name for the zip you run yourself (spec 0022, AC-11).
+func TestRenderManagedRefusesLinuxCap(t *testing.T) {
+	t.Parallel()
+	plan, catalog := linuxCapPlan(t)
+	_, err := render.Managed(plan, catalog, contract.Templates{}, "d1")
+	var refused *render.RefusedError
+	if !errors.As(err, &refused) || len(refused.Problems) != 1 {
+		t.Fatalf("err = %v, want one refusal", err)
+	}
+	want := "Instance admin adds the Linux capability SYS_ADMIN, which a deployed graph never gets; download the zip to run it."
+	if got := refused.Problems[0].Message; got != want {
+		t.Errorf("message = %q, want %q", got, want)
+	}
+	out, err := render.Render(plan, catalog, contract.Templates{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compose := string(fileData(t, out, "docker-compose.yml")); !strings.Contains(compose, "- SYS_ADMIN") {
+		t.Errorf("the static render lacks cap_add SYS_ADMIN:\n%s", compose)
 	}
 }
 

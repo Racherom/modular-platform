@@ -91,7 +91,8 @@ func Refuse(plan contract.PlanResult, problems []contract.Problem) contract.Plan
 }
 
 // refusals lists what a deployed graph may not have (spec 0013, Host access and Managed flavor):
-// host_access at each instance whose module publishes a port or mounts a host path, and
+// host_access at each instance whose module publishes a port, mounts a host path or adds a Linux
+// capability other than NET_BIND_SERVICE (spec 0022), one problem naming every reason, and
 // setup_required at each one that needs setup.sh, which the deployer cannot run until #9.
 func refusals(plan contract.PlanResult, catalog contract.Catalog) []contract.Problem {
 	modules := make(map[string]contract.Module, len(catalog.Modules))
@@ -105,10 +106,10 @@ func refusals(plan contract.PlanResult, catalog contract.Catalog) []contract.Pro
 		if gm.External != nil || !ok {
 			continue
 		}
-		if len(m.Publish) > 0 || len(m.HostMounts) > 0 {
+		if reasons := m.HostAccess(); reasons != "" {
 			out = append(out, contract.Problem{
 				Severity: contract.Error, Code: CodeHostAccess, Path: "modules." + i,
-				Message: fmt.Sprintf("Instance %s publishes host ports or mounts host paths, which a deployed graph never gets; download the zip to run it.", i),
+				Message: fmt.Sprintf("Instance %s %s, which a deployed graph never gets; download the zip to run it.", i, reasons),
 			})
 		}
 		if needsSetup(m) {

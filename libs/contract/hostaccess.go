@@ -77,3 +77,33 @@ func (c *moduleChecker) claim(p, target string) {
 	}
 	c.mounts[target] = p
 }
+
+// HostAccess names every reason a deployed graph refuses an instance of m, joined into one
+// phrase such as "publishes host ports and adds the Linux capability SYS_ADMIN" (spec 0022):
+// publish, host_mounts, and the cap_add names UndeployableLinuxCaps lists. It is "" when a
+// deployed graph may run m.
+func (m Module) HostAccess() string {
+	var reasons []string
+	if len(m.Publish) > 0 {
+		reasons = append(reasons, "publishes host ports")
+	}
+	if len(m.HostMounts) > 0 {
+		reasons = append(reasons, "mounts host paths")
+	}
+	switch caps := m.UndeployableLinuxCaps(); len(caps) {
+	case 0:
+	case 1:
+		reasons = append(reasons, "adds the Linux capability "+caps[0])
+	default:
+		reasons = append(reasons, "adds the Linux capabilities "+joinAnd(caps))
+	}
+	return joinAnd(reasons)
+}
+
+// joinAnd joins items as "A", "A and B" or "A, B and C".
+func joinAnd(items []string) string {
+	if len(items) < 2 {
+		return strings.Join(items, "")
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+}

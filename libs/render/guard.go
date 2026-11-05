@@ -79,9 +79,10 @@ func LoadProject(ctx context.Context, compose []byte, envFiles ...[]byte) (Proje
 }
 
 // Guard checks p against an allow list of exactly the shape Managed emits (spec 0006 AC-8, grown
-// by spec 0013 with hardening, data folders and one shot jobs, and by spec 0014 with the wait
-// anchor mp_jobs):
-// anything else is one host_access problem per instance and key. reservedPorts are the host
+// by spec 0013 with hardening, data folders and one shot jobs, by spec 0014 with the wait anchor
+// mp_jobs, and by spec 0022 with cap_add of NET_BIND_SERVICE only): anything else is one
+// host_access problem per instance and key. Every service must also carry cap_drop: [ALL] and
+// security_opt: [no-new-privileges:true] (spec 0022), so leaving them out is refused too. reservedPorts are the host
 // ports of the platform's ingress, which no project may publish. Guard is the last line between
 // an imported graph and the host, so a key the render does not emit is refused even when it
 // looks harmless; widening the render means widening this list in the same change.
@@ -240,6 +241,8 @@ func (g *guard) services(model map[string]any, v any) {
 				g.want(path, equalStrings(v, "ALL"))
 			case "security_opt":
 				g.want(path, equalStrings(v, "no-new-privileges:true"))
+			case "cap_add": // only the Linux capabilities a deployed graph may add (spec 0022)
+				g.linuxCaps(path, v)
 			case "entrypoint", "command", "tmpfs":
 				g.want(path, isStrings(v))
 			case "volumes":
@@ -289,6 +292,23 @@ func (g *guard) services(model map[string]any, v any) {
 				g.refuse(path)
 			}
 		}
+		// without these two keys Docker gives back its default Linux capabilities and setuid
+		// binaries regain privileges, so every deployed service must carry them (spec 0022)
+		for _, k := range []string{"cap_drop", "security_opt"} {
+			g.want("services."+i+"."+k, hasKey(svc, k))
+		}
+	}
+}
+
+// linuxCaps refuses a cap_add that is not a list of strings, and each item a deployed graph may
+// not add, compared exactly (spec 0022).
+func (g *guard) linuxCaps(path string, v any) {
+	if !isStrings(v) {
+		g.refuse(path)
+		return
+	}
+	for n, item := range v.([]any) {
+		g.want(path+"."+strconv.Itoa(n), contract.DeployableLinuxCap(item.(string)))
 	}
 }
 

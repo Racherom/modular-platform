@@ -11,22 +11,28 @@ import (
 const (
 	CodeEnvNameCollision = "env_name_collision"
 	CodeSetupOrder       = "setup_order"
-	// CodeHostAccess warns of an instance whose module publishes ports or mounts host paths.
+	// CodeHostAccess warns of an instance whose module publishes ports, mounts host paths or
+	// adds a Linux capability a deployed graph refuses.
 	CodeHostAccess = "host_access"
 )
 
-// hostAccess warns at each instance whose module publishes a port or mounts a host path (spec
-// 0013, Host access), in public and internal mode alike: a downloaded zip gives it that access,
-// while a deployed graph is refused it.
+// hostAccess warns at each instance whose module publishes a port, mounts a host path (spec
+// 0013, Host access) or adds a Linux capability other than NET_BIND_SERVICE (spec 0022), in
+// public and internal mode alike: a downloaded zip gives it that access, while a deployed graph
+// is refused it. One warning per instance names every reason.
 func (p *planning) hostAccess(instances []string) {
 	for _, i := range instances {
 		m, ok := p.entry(i)
-		if !ok || len(m.Publish) == 0 && len(m.HostMounts) == 0 {
+		if !ok {
+			continue
+		}
+		reasons := m.HostAccess()
+		if reasons == "" {
 			continue
 		}
 		p.add(contract.Problem{
 			Severity: contract.Warning, Code: CodeHostAccess, Path: "modules." + i,
-			Message: fmt.Sprintf("Instance %s publishes host ports or mounts host paths, so it reaches the host it runs on; a deployed graph refuses this.", i),
+			Message: fmt.Sprintf("Instance %s %s, so it reaches the host it runs on; a deployed graph refuses this.", i, reasons),
 		})
 	}
 }
