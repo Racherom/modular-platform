@@ -64,8 +64,8 @@ type ManagedProject struct {
 // restart: unless-stopped on every long running service, and the project named mp-<graph>.
 // Host names stay <instance>.<graph>.internal. deployment is the deployment id written into the
 // deployment label.
-func Managed(plan contract.PlanResult, catalog contract.Catalog, deployment string) (ManagedProject, error) {
-	r, err := renderProject(plan, catalog, true, func(p *types.Project, jobs map[string]job) {
+func Managed(plan contract.PlanResult, catalog contract.Catalog, templates contract.Templates, deployment string) (ManagedProject, error) {
+	r, err := renderProject(plan, catalog, templates, true, func(p *types.Project, jobs map[string]job) {
 		graph := p.Name
 		p.Name = ProjectPrefix + graph
 		for name, svc := range p.Services {

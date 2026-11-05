@@ -32,6 +32,13 @@ func updating() bool { return flag.Lookup("update").Value.String() == "true" }
 // capabilities.
 func loadCatalog(t *testing.T, dirs ...string) contract.Catalog {
 	t.Helper()
+	c, _ := loadCatalogTemplates(t, dirs...)
+	return c
+}
+
+// loadCatalogTemplates is loadCatalog plus the templates of its modules.
+func loadCatalogTemplates(t *testing.T, dirs ...string) (contract.Catalog, contract.Templates) {
+	t.Helper()
 	merged := fstest.MapFS{}
 	for _, dir := range dirs {
 		fsys := os.DirFS(dir)
@@ -51,7 +58,11 @@ func loadCatalog(t *testing.T, dirs ...string) contract.Catalog {
 	if len(problems) > 0 {
 		t.Fatal(problems)
 	}
-	return c
+	tmpls, err := contract.LoadTemplates(merged, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c, tmpls
 }
 
 // planFile plans the graph file at path against catalog and fails the test unless it is ok.
@@ -82,7 +93,7 @@ func samplePlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
 // Run with -update after an intended change.
 func TestRenderSampleGolden(t *testing.T) {
 	plan, catalog := samplePlan(t)
-	out, err := render.Render(plan, catalog)
+	out, err := render.Render(plan, catalog, contract.Templates{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +112,7 @@ func bindingsPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
 // TestRenderBindingsGolden pins every rendered file of the bindings case (AC-8, AC-12, AC-15).
 func TestRenderBindingsGolden(t *testing.T) {
 	plan, catalog := bindingsPlan(t)
-	out, err := render.Render(plan, catalog)
+	out, err := render.Render(plan, catalog, contract.Templates{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,11 +131,51 @@ func installPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
 // TestRenderInstallGolden pins every rendered file of the install case (AC-10).
 func TestRenderInstallGolden(t *testing.T) {
 	plan, catalog := installPlan(t)
-	out, err := render.Render(plan, catalog)
+	out, err := render.Render(plan, catalog, contract.Templates{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	checkGolden(t, filepath.Join("testdata", "install", "golden"), out)
+}
+
+// templatesPlan plans the templates case with the templates of its catalog (spec 0011 build
+// task 15).
+func templatesPlan(t *testing.T) (contract.PlanResult, contract.Catalog, contract.Templates) {
+	t.Helper()
+	catalog, tmpls := loadCatalogTemplates(t, "../../catalog", "testdata/bindings/catalog", "testdata/templates/catalog")
+	return planFile(t, "testdata/templates/graph.yaml", catalog), catalog, tmpls
+}
+
+// TestRenderTemplatesGolden pins every rendered file of the templates case (AC-9): a template
+// reading a bound and an unbound slot, the provide's clients in consumer order and its port, and
+// a template with its own delims whose {{ }} text stays as written; each mounted read only
+// through a Compose config. Rendering twice gives the same bytes.
+func TestRenderTemplatesGolden(t *testing.T) {
+	plan, catalog, tmpls := templatesPlan(t)
+	out, err := render.Render(plan, catalog, tmpls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkGolden(t, filepath.Join("testdata", "templates", "golden"), out)
+
+	again, err := render.Render(plan, catalog, tmpls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var a, b bytes.Buffer
+	if err := out.WriteZip(&a); err != nil {
+		t.Fatal(err)
+	}
+	if err := again.WriteZip(&b); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(a.Bytes(), b.Bytes()) {
+		t.Error("two renders of one graph differ")
+	}
+
+	if _, err := render.Render(plan, catalog, contract.Templates{}); !errors.Is(err, contract.ErrNoTemplate) {
+		t.Errorf("render without its templates: err = %v, want ErrNoTemplate", err)
+	}
 }
 
 // TestRenderManagedRefusesInstallTime: a deployed graph has no setup.sh, so a module that needs
@@ -132,7 +183,7 @@ func TestRenderInstallGolden(t *testing.T) {
 // into the 422 setup_required).
 func TestRenderManagedRefusesInstallTime(t *testing.T) {
 	plan, catalog := installPlan(t)
-	if _, err := render.Managed(plan, catalog, "d1"); !errors.Is(err, render.ErrNotRendered) {
+	if _, err := render.Managed(plan, catalog, contract.Templates{}, "d1"); !errors.Is(err, render.ErrNotRendered) {
 		t.Fatalf("err = %v, want ErrNotRendered", err)
 	}
 }
@@ -164,7 +215,7 @@ func checkGolden(t *testing.T, dir string, out render.Output) {
 func TestRenderSampleRules(t *testing.T) {
 	t.Parallel()
 	plan, catalog := samplePlan(t)
-	out, err := render.Render(plan, catalog)
+	out, err := render.Render(plan, catalog, contract.Templates{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +289,7 @@ func TestZipDeterministic(t *testing.T) {
 	plan, catalog := samplePlan(t)
 	var zips [2]bytes.Buffer
 	for i := range zips {
-		out, err := render.Render(plan, catalog)
+		out, err := render.Render(plan, catalog, contract.Templates{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -284,7 +335,7 @@ func TestSecretComposeNamesNeverCollide(t *testing.T) {
 		Name:    "collide",
 		Modules: map[string]contract.GraphModule{"a-b": {Module: "one"}, "a": {Module: "two"}},
 	}}
-	out, err := render.Render(plan, catalog)
+	out, err := render.Render(plan, catalog, contract.Templates{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +366,7 @@ func TestSecretComposeNamesNeverCollide(t *testing.T) {
 
 func TestRenderRefusesErrors(t *testing.T) {
 	t.Parallel()
-	_, err := render.Render(contract.PlanResult{Ok: false}, contract.Catalog{})
+	_, err := render.Render(contract.PlanResult{Ok: false}, contract.Catalog{}, contract.Templates{})
 	if !errors.Is(err, render.ErrPlanHasErrors) {
 		t.Errorf("err = %v, want ErrPlanHasErrors", err)
 	}

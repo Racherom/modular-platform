@@ -1,0 +1,3 @@
+# The gateway reads {{ env "GATEWAY_TOKENS_DIR" }} itself; the render keeps these braces.
+backend: [[ .Uses.backend.Values.url ]]
+clients: [[ len .Clients.hooks ]]

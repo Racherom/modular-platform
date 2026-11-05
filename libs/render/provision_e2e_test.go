@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/racherom/modular-platform/libs/contract"
 	"github.com/racherom/modular-platform/libs/render"
 )
 
@@ -23,7 +24,7 @@ import (
 func TestProvisionEndToEnd(t *testing.T) {
 	catalog := loadCatalog(t, "../../catalog", "testdata/provision/catalog")
 	plan := planFile(t, "testdata/provision/graph.yaml", catalog)
-	out, err := render.Render(plan, catalog)
+	out, err := render.Render(plan, catalog, contract.Templates{})
 	if err != nil {
 		t.Fatal(err)
 	}

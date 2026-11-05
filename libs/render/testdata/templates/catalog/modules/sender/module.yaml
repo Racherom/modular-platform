@@ -1,0 +1,18 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: sender
+description: Sends notifications through the gateway, for the templates golden render.
+image: example.test/sender:1.0.0
+uses:
+  hooks:
+    capability: notify
+    env:
+      url: SENDER_URL
+      token: SENDER_TOKEN_FILE
+    fields:
+      key: {secret: key}
+      label: {value: sender}
+secrets:
+  - name: key
+    env: SENDER_KEY_FILE
+    description: Key the sender signs its notifications with.

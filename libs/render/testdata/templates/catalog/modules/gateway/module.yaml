@@ -1,0 +1,32 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: gateway
+description: Routes to a backend and takes notifications from its clients, for the templates golden render.
+image: example.test/gateway:1.0.0
+provides:
+  hooks:
+    capability: notify
+    version: "2.1"
+    port: 9000
+    fields:
+      url: {platform: url}
+      token: {generate: true}
+    env:
+      token: GATEWAY_TOKENS_DIR
+      key: GATEWAY_KEYS_DIR
+uses:
+  backend:
+    capability: http
+    env:
+      url: GATEWAY_BACKEND_URL
+  cache:
+    capability: postgresql
+    optional: true
+    env:
+      host: GATEWAY_CACHE_HOST
+templates:
+  - file: routes.conf.tmpl
+    path: /etc/gateway/routes.conf
+  - file: app.yml.tmpl
+    path: /etc/gateway/app.yml
+    delims: ["[[", "]]"]

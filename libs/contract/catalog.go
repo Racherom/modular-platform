@@ -76,7 +76,8 @@ func (p CatalogProblem) String() string {
 }
 
 // LoadCatalog reads capabilities/*.yaml and modules/*/module.yaml from fsys and checks every
-// catalog rule; capabilities load first, so the module rules can check field names. It returns
+// catalog rule; capabilities load first, so the module rules can check field names, and each
+// module's templates are checked against it (LoadTemplates parses them for the render). It returns
 // the modules and capabilities without problems, each sorted by name, and every broken rule; a
 // caller must not serve a catalog that has problems.
 func LoadCatalog(fsys fs.FS) (Catalog, []CatalogProblem) {
@@ -135,6 +136,9 @@ func LoadCatalog(fsys fs.FS) (Catalog, []CatalogProblem) {
 			continue
 		}
 		m, ps := CheckModule(file, data, byName)
+		if len(ps) == 0 {
+			ps = checkTemplates(fsys, file, m, byName) // the data needs a clean entry
+		}
 		if prev, ok := seen[m.Name]; ok && m.Name != "" {
 			ps = append(ps, CatalogProblem{
 				File: file, Path: "name", Code: CodeDuplicateName,

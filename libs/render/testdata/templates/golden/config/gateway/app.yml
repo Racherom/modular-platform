@@ -1,0 +1,3 @@
+# The gateway reads {{ env "GATEWAY_TOKENS_DIR" }} itself; the render keeps these braces.
+backend: http://whoami.templates.internal:80
+clients: 2

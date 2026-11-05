@@ -35,7 +35,7 @@ var ErrNotRendered = errors.New("render: not rendered by this release")
 //go:embed templates/*.tmpl
 var templateFS embed.FS
 
-var templates = template.Must(template.New("").Funcs(template.FuncMap{"shellQuote": shellQuote}).ParseFS(templateFS, "templates/*.tmpl"))
+var projectTemplates = template.Must(template.New("").Funcs(template.FuncMap{"shellQuote": shellQuote}).ParseFS(templateFS, "templates/*.tmpl"))
 
 // shellQuote quotes s as one POSIX shell word.
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
@@ -87,9 +87,9 @@ type templateData struct {
 }
 
 // Render renders the resolved graph of an ok plan. catalog must hold every module and
-// capability the graph uses.
-func Render(plan contract.PlanResult, catalog contract.Catalog) (Output, error) {
-	r, err := renderProject(plan, catalog, false, nil)
+// capability the graph uses, and templates the templates of those modules.
+func Render(plan contract.PlanResult, catalog contract.Catalog, templates contract.Templates) (Output, error) {
+	r, err := renderProject(plan, catalog, templates, false, nil)
 	if err != nil {
 		return Output{}, err
 	}
@@ -110,14 +110,15 @@ type job struct {
 
 // renderer holds one render in progress.
 type renderer struct {
-	g        contract.Graph
-	managed  bool
-	modules  map[string]contract.Module
-	caps     map[string]contract.Capability
-	project  types.Project
-	data     templateData
-	jobs     map[string]job
-	declared map[string]bool // secret file paths already listed for setup.sh or as placed
+	g         contract.Graph
+	managed   bool
+	templates contract.Templates
+	modules   map[string]contract.Module
+	caps      map[string]contract.Capability
+	project   types.Project
+	data      templateData
+	jobs      map[string]job
+	declared  map[string]bool // secret file paths already listed for setup.sh or as placed
 
 	bound      map[string]map[string]map[string]value // consumer, slot, field to its value
 	admin      map[string]map[string]value            // provider.provide to its admin field values
@@ -128,13 +129,14 @@ type renderer struct {
 
 // renderProject renders plan in the static flavor, or the managed one: restart: unless-stopped
 // on every long running service, and finish called on the project before it is written.
-func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed bool, finish func(*types.Project, map[string]job)) (rendered, error) {
+func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates contract.Templates, managed bool, finish func(*types.Project, map[string]job)) (rendered, error) {
 	if !plan.Ok {
 		return rendered{}, ErrPlanHasErrors
 	}
 	r := renderer{
 		g:          plan.Graph,
 		managed:    managed,
+		templates:  templates,
 		modules:    make(map[string]contract.Module, len(catalog.Modules)),
 		caps:       make(map[string]contract.Capability, len(catalog.Capabilities)),
 		data:       templateData{Name: plan.Graph.Name},
@@ -191,6 +193,10 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed b
 			}
 		}
 	}
+	configs, err := r.templateFiles(plan.Bindings)
+	if err != nil {
+		return rendered{}, err
+	}
 	r.waitAnchor()
 	if r.egress {
 		r.project.Networks[networkEgress] = types.NetworkConfig{}
@@ -229,7 +235,7 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed b
 		{"README.md", "README.md.tmpl", 0o644},
 	} {
 		var buf bytes.Buffer
-		if err := templates.ExecuteTemplate(&buf, t.template, r.data); err != nil {
+		if err := projectTemplates.ExecuteTemplate(&buf, t.template, r.data); err != nil {
 			return rendered{}, fmt.Errorf("render %s: %w", t.path, err)
 		}
 		files = append(files, File{Path: t.path, Mode: t.mode, Data: buf.Bytes()})
@@ -239,6 +245,7 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed b
 			files = append(files, File{Path: envFilePath(i), Mode: 0o644, Data: envFile(i, r.modules[gm.Module])})
 		}
 	}
+	files = append(files, configs...)
 	slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
 	return rendered{out: Output{Name: r.project.Name, Files: files}, data: r.data, jobs: r.jobs}, nil
 }
@@ -255,8 +262,8 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 	if len(m.Command) > 0 {
 		svc.Command = escapeAll(m.Command)
 	}
-	if len(m.Templates) > 0 || len(m.Publish) > 0 || len(m.HostMounts) > 0 {
-		return svc, fmt.Errorf("%w: templates and host access of module %s", ErrNotRendered, m.Name)
+	if len(m.Publish) > 0 || len(m.HostMounts) > 0 {
+		return svc, fmt.Errorf("%w: host access of module %s", ErrNotRendered, m.Name)
 	}
 	r.networks(&svc, i, m)
 	r.harden(&svc, m.Hardening)

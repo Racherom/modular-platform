@@ -1,0 +1,5 @@
+# {{.Graph}}: {{.Instance}} at {{.Host}}, hooks on port {{.Provides.hooks.Port}}
+backend {{.Uses.backend.Provider}}.{{.Uses.backend.Provide}} {{.Uses.backend.URL}} host={{.Uses.backend.Host}} port={{.Uses.backend.Port}} url={{.Uses.backend.Values.url}}
+{{if .Uses.cache.Bound}}cache {{.Uses.cache.Values.host}}{{else}}# no cache bound{{end}}
+{{range .Clients.hooks}}client {{.Instance}} slot={{.Slot}} host={{.Host}} label={{.Values.label}}
+{{end}}

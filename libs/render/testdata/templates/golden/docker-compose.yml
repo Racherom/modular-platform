@@ -1,0 +1,119 @@
+configs:
+  gateway_app.yml:
+    file: ./config/gateway/app.yml
+  gateway_routes.conf:
+    file: ./config/gateway/routes.conf
+name: templates
+networks:
+  internal:
+    internal: true
+secrets:
+  alpha_key:
+    file: ./secrets/alpha/key
+  alpha_uses_hooks_key:
+    file: ./secrets/alpha/key
+  alpha_uses_hooks_token:
+    file: ./secrets/alpha/uses_hooks_token
+  beta_key:
+    file: ./secrets/beta/key
+  beta_uses_hooks_key:
+    file: ./secrets/beta/key
+  beta_uses_hooks_token:
+    file: ./secrets/beta/uses_hooks_token
+services:
+  alpha:
+    cap_drop:
+    - ALL
+    depends_on:
+      gateway:
+        condition: service_started
+        required: true
+    environment:
+      SENDER_KEY_FILE: /run/secrets/alpha_key
+      SENDER_TOKEN_FILE: /run/secrets/uses/hooks/token
+      SENDER_URL: http://gateway.templates.internal:9000
+    image: example.test/sender:1.0.0
+    networks:
+      internal:
+        aliases:
+        - alpha.templates.internal
+    read_only: true
+    secrets:
+    - source: alpha_key
+      target: /run/secrets/alpha_key
+    - source: alpha_uses_hooks_token
+      target: /run/secrets/uses/hooks/token
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  beta:
+    cap_drop:
+    - ALL
+    depends_on:
+      gateway:
+        condition: service_started
+        required: true
+    environment:
+      SENDER_KEY_FILE: /run/secrets/beta_key
+      SENDER_TOKEN_FILE: /run/secrets/uses/hooks/token
+      SENDER_URL: http://gateway.templates.internal:9000
+    image: example.test/sender:1.0.0
+    networks:
+      internal:
+        aliases:
+        - beta.templates.internal
+    read_only: true
+    secrets:
+    - source: beta_key
+      target: /run/secrets/beta_key
+    - source: beta_uses_hooks_token
+      target: /run/secrets/uses/hooks/token
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  gateway:
+    cap_drop:
+    - ALL
+    configs:
+    - source: gateway_routes.conf
+      target: /etc/gateway/routes.conf
+    - source: gateway_app.yml
+      target: /etc/gateway/app.yml
+    depends_on:
+      whoami:
+        condition: service_started
+        required: true
+    environment:
+      GATEWAY_BACKEND_URL: http://whoami.templates.internal:80
+      GATEWAY_KEYS_DIR: /run/secrets/clients/hooks/key
+      GATEWAY_TOKENS_DIR: /run/secrets/clients/hooks/token
+    image: example.test/gateway:1.0.0
+    networks:
+      internal:
+        aliases:
+        - gateway.templates.internal
+    read_only: true
+    secrets:
+    - source: alpha_uses_hooks_key
+      target: /run/secrets/clients/hooks/key/alpha
+    - source: alpha_uses_hooks_token
+      target: /run/secrets/clients/hooks/token/alpha
+    - source: beta_uses_hooks_key
+      target: /run/secrets/clients/hooks/key/beta
+    - source: beta_uses_hooks_token
+      target: /run/secrets/clients/hooks/token/beta
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  whoami:
+    cap_drop:
+    - ALL
+    image: traefik/whoami:v1.12.0
+    networks:
+      internal:
+        aliases:
+        - whoami.templates.internal
+    read_only: true
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}

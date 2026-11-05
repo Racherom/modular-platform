@@ -33,9 +33,10 @@ var _ StrictServerInterface = (*Server)(nil)
 
 // Server implements the planner contract over the built in catalog.
 type Server struct {
-	catalog  contract.Catalog
-	managed  bool  // internal mode: /v1/render/managed answers
-	reserved []int // host ports of the platform's ingress, which no managed project may publish
+	catalog   contract.Catalog
+	templates contract.Templates
+	managed   bool  // internal mode: /v1/render/managed answers
+	reserved  []int // host ports of the platform's ingress, which no managed project may publish
 }
 
 // GetCatalog lists the catalog: its modules and capabilities, each sorted by name.
@@ -58,7 +59,7 @@ func (s *Server) Render(ctx context.Context, req RenderRequestObject) (RenderRes
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	out, err := render.Render(plan, s.catalog)
+	out, err := render.Render(plan, s.catalog, s.templates)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +93,7 @@ func (s *Server) RenderManaged(ctx context.Context, req RenderManagedRequestObje
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	m, err := render.Managed(plan, s.catalog, req.Body.Deployment.String())
+	m, err := render.Managed(plan, s.catalog, s.templates, req.Body.Deployment.String())
 	if err != nil {
 		return nil, err
 	}
@@ -157,6 +158,10 @@ func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
 			}
 			return nil, fmt.Errorf("the built in catalog breaks %d rules: %w", len(problems), sdk.ErrStart)
 		}
+		templates, err := contract.LoadTemplates(catalogFS, entries)
+		if err != nil {
+			return nil, fmt.Errorf("load the built in templates: %w", err)
+		}
 		mode, err := m.Config.PlannerMode(ctx)
 		if err != nil {
 			return nil, err
@@ -186,7 +191,7 @@ func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
 			m.WithRateLimit(limiter, hops)
 		}
 		m.Log.InfoContext(ctx, "planner starting", slog.String("mode", string(mode)), slog.Int("catalog_modules", len(entries.Modules)), slog.Int("catalog_capabilities", len(entries.Capabilities)))
-		return newHandler(&Server{catalog: entries, managed: mode == config.PlannerModeInternal, reserved: reserved}, m.Log), nil
+		return newHandler(&Server{catalog: entries, templates: templates, managed: mode == config.PlannerModeInternal, reserved: reserved}, m.Log), nil
 	}
 }
 
