@@ -41,7 +41,7 @@ func renderInstall(t *testing.T, dir, modules string) {
 	if !plan.Ok {
 		t.Fatalf("plan: %+v", plan.Problems)
 	}
-	out, err := render.Render(plan, catalog)
+	out, err := render.Render(plan, catalog, contract.Templates{})
 	if err != nil {
 		t.Fatal(err)
 	}

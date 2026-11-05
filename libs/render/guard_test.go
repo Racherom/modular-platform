@@ -18,22 +18,24 @@ var deployEnv = []byte("MP_UID=1000\nMP_GID=1000\n")
 
 // TestGuardAcceptsEveryRender renders every fixture graph with Managed and shows the guard and
 // the project check accept it, so the allow list and the render cannot drift (spec 0006, AC-8).
-// The one exception is cap_add: which capabilities a deployed module may add is build task 16's
-// to decide (spec 0011), so until then the guard refuses it and nothing else in the bindings case.
+// The exceptions are build task 16's to decide (spec 0011): which capabilities a deployed module
+// may add (cap_add in the bindings case), and template outputs under config/<instance>/, which
+// the guard and the deployer's path list (spec 0007) do not allow yet.
 func TestGuardAcceptsEveryRender(t *testing.T) {
 	t.Parallel()
 	for name, c := range map[string]struct {
-		plan    func(*testing.T) (contract.PlanResult, contract.Catalog)
+		plan    func(*testing.T) (contract.PlanResult, contract.Catalog, contract.Templates)
 		refused []string // the paths the guard still refuses
 	}{
-		"whoami-postgres": {samplePlan, nil},
-		"sdk-pair":        {pairPlan, nil},
-		"bindings":        {bindingsPlan, []string{"services.notifier.cap_add"}},
+		"whoami-postgres": {noTemplates(samplePlan), nil},
+		"sdk-pair":        {noTemplates(pairPlan), nil},
+		"bindings":        {noTemplates(bindingsPlan), []string{"services.notifier.cap_add"}},
+		"templates":       {templatesPlan, []string{"configs.gateway_app.yml.file", "configs.gateway_routes.conf.file"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			p, catalog := c.plan(t)
-			m, err := render.Managed(p, catalog, testDeployment)
+			p, catalog, tmpls := c.plan(t)
+			m, err := render.Managed(p, catalog, tmpls, testDeployment)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -76,6 +78,15 @@ func indent(s, prefix string) string {
 		return ""
 	}
 	return prefix + strings.ReplaceAll(s, "\n", "\n"+prefix)
+}
+
+// noTemplates turns a plan helper whose catalog has no templates into one that returns none.
+func noTemplates(plan func(*testing.T) (contract.PlanResult, contract.Catalog)) func(*testing.T) (contract.PlanResult, contract.Catalog, contract.Templates) {
+	return func(t *testing.T) (contract.PlanResult, contract.Catalog, contract.Templates) {
+		t.Helper()
+		p, c := plan(t)
+		return p, c, contract.Templates{}
+	}
 }
 
 func TestGuard(t *testing.T) {

@@ -170,13 +170,13 @@ Tracer Bullet: milestone 1 runs the whole v1 thread (catalog, planner, render, `
 **Milestone 2: bindings in full**
 10. [x] The revoke job for every provisioner provide with a `login` (empty `MP_KEEP` allowed), its per graph marker role, the `postgres` and `template1` connect revoke, and the stack's wait anchor `mp_jobs` (0014, *Waiting*) with one README line saying it only waits for the stack's jobs, the deployer guard's rules for it, and the deployer's live state leaving out `job: wait` containers; e2e for unbind and rebind, including the last binding, and for a failing revoke job on a first and a second `up`; goldens with and without `mp_jobs`, satisfies **AC-6**, **AC-4**
 11. [x] External instances in planner, render (placed files, the missing file list in `setup.sh`) and editor (external node), satisfies **AC-15**, **AC-1**, **AC-19**
-12. [ ] Remaining slot features: fixed path mounts, optional fields, `per_caller`, direction `to_provider` and `both` fields with the clients directory per field, `.Clients` data, `duplicate_binding`, satisfies **AC-8**, **AC-13**, **AC-18**
+12. [x] Remaining slot features: fixed path mounts, optional fields, `per_caller`, direction `to_provider` and `both` fields with the clients directory per field, `.Clients` data, `duplicate_binding`, satisfies **AC-8**, **AC-13**, **AC-18**
 13. [x] `egress` network, every hardening opt out and `tmpfs`, labels on services and jobs, module `environment`, `formatVersion` checks end to end; golden per case, satisfies **AC-12**, **AC-14**
 13b. [x] A consumer with a slot bound to an external instance, directly or through an external provisioner, joins `egress` by itself (0013, *Host name and networks*): the bindings golden's `app` joins it, `pg-roaming` drops its `network.egress` and the external e2e still passes, satisfies **AC-12**, **AC-1**
 
 **Milestone 3: install time**
 14. [x] Module `secrets` (`generate`, `ask`, `setup`, folders); config `setup: ask` and the `{uid}`, `{gid}`, `{install}` tokens as Compose variables; setup steps with `entrypoint`, `env`, `for_each` (one run per client, `{client}` replaced in env, command, entrypoint and writes, the client folder made even with no client, skip per client), `writes` modes; `setup.sh` assembly in 0013's order with answer checks and skip by outputs, satisfies **AC-10**
-15. Templates: loading, `delims`, the check at catalog load, rendering into `config/<instance>/`, mounts, one golden per template, satisfies **AC-9**
+15. [x] Templates: loading, `delims`, the check at catalog load, rendering into `config/<instance>/`, mounts, one golden per template, satisfies **AC-9**
 16. `publish`, `host_mounts` (with `create`), `command`, `entrypoint`; warning `host_access` in plan; the managed flavor refuses `host_access` and `setup_required` and the deployer writes `MP_UID` and `MP_GID` into the project `.env`; widen the deployer guard only for keys the managed flavor now emits (networks, jobs, the `job` label, hardening, `data/` folders; the wait anchor's keys land with task 10), satisfies **AC-11**, **AC-12**
 
 **Milestone 4: the platform is a graph**

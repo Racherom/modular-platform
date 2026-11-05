@@ -50,7 +50,7 @@ func (s *stack) render(g contract.Graph) string {
 	if !plan.Ok {
 		s.t.Fatalf("plan: %+v", plan.Problems)
 	}
-	out, err := render.Render(plan, s.catalog)
+	out, err := render.Render(plan, s.catalog, contract.Templates{})
 	if err != nil {
 		s.t.Fatal(err)
 	}

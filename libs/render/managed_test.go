@@ -27,7 +27,7 @@ func TestRenderManagedGolden(t *testing.T) {
 	} {
 		t.Run(c.dir, func(t *testing.T) {
 			plan, catalog := c.plan(t)
-			m, err := render.Managed(plan, catalog, testDeployment)
+			m, err := render.Managed(plan, catalog, contract.Templates{}, testDeployment)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -49,7 +49,7 @@ func TestRenderManagedGolden(t *testing.T) {
 func TestRenderManagedRules(t *testing.T) {
 	t.Parallel()
 	plan, catalog := pairPlan(t)
-	m, err := render.Managed(plan, catalog, testDeployment)
+	m, err := render.Managed(plan, catalog, contract.Templates{}, testDeployment)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestRenderManagedRules(t *testing.T) {
 func TestRenderManagedJobLabels(t *testing.T) {
 	t.Parallel()
 	plan, catalog := samplePlan(t)
-	m, err := render.Managed(plan, catalog, testDeployment)
+	m, err := render.Managed(plan, catalog, contract.Templates{}, testDeployment)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestRenderManagedJobLabels(t *testing.T) {
 
 func TestRenderManagedRefusesBadPlan(t *testing.T) {
 	t.Parallel()
-	if _, err := render.Managed(contract.PlanResult{}, contract.Catalog{}, testDeployment); err != render.ErrPlanHasErrors { //nolint:errorlint // the sentinel is returned as is
+	if _, err := render.Managed(contract.PlanResult{}, contract.Catalog{}, contract.Templates{}, testDeployment); err != render.ErrPlanHasErrors { //nolint:errorlint // the sentinel is returned as is
 		t.Fatalf("err = %v, want ErrPlanHasErrors", err)
 	}
 }

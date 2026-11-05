@@ -75,3 +75,28 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 ## Acceptance criteria coverage (milestone 3, task 14)
 
 - AC-10: planner order step, pattern step, golden review, e2e step and the manual terminal step · AC-8: e2e `docker inspect` step and the compose golden review · AC-11: the managed refusal for now (task 16 brings 422 `setup_required` and `host_access`)
+
+### Templates (task 15)
+
+#### Commands
+
+- [ ] `go test -race ./libs/contract/ -run 'TestTemplateRules|TestTemplatesAccepted|TestLoadTemplatesExecute'` → passes: a missing file, a parse error, a function that is not built in (`env`), `.Uses.nope`, `.Bogus`, `.Provides.api`, a secret field in `Values`, an unguarded optional slot, a consumer side field in `.Clients` and a broken key under own delims are each `invalid_template` at catalog load, and the entry is left out → AC-9, AC-2
+- [ ] `go test -race ./libs/render/ -run TestRenderTemplatesGolden` → the golden matches, a second render gives a byte identical zip, and a render without the templates fails with `ErrNoTemplate` → AC-9
+- [ ] `go test -race ./libs/planner/ -run TestPaperPlatform` and `go test -race ./catalog/` → the paper platform's templates and the built in catalog still load → AC-2, AC-16
+- [ ] In `libs/render/testdata/templates/golden/`, `MP_UID=1000 MP_GID=1000 docker compose config -q` → exits 0 → AC-9
+
+#### Golden review (libs/render/testdata/templates/golden/)
+
+- [ ] `config/gateway/routes.conf`: graph `templates`, host `gateway.templates.internal`, hooks port 9000; backend `whoami.http`, `http://whoami.templates.internal:80`, the `url` value from whoami's provide; `# no cache bound` for the unbound optional slot; clients `alpha` then `beta`, each with `label=sender` from its slot's `{value}` source (`.Clients` data, task 12) → AC-9
+- [ ] `config/gateway/app.yml`: the `[[ ]]` delims filled, the `{{ env "GATEWAY_TOKENS_DIR" }}` text kept as written → AC-9
+- [ ] `docker-compose.yml`: top level `configs` `gateway_app.yml` and `gateway_routes.conf` pointing at `./config/gateway/...`, mounted on `gateway` at the declared paths; both files mode 0644 in the zip → AC-9
+
+#### Value sourcing
+
+- [ ] Rename the graph in `testdata/templates/graph.yaml` (for example `name: other`) and render → every host in `routes.conf` becomes `<instance>.other.internal` → AC-9 (template data from the graph)
+- [ ] Bind `cache` to a `postgres` instance and render → the `cache` line shows its host instead of `# no cache bound` → AC-9 (`.Uses.<slot>.Bound`)
+- [ ] Remove `beta` from the graph and render → only `client alpha` remains, and `clients: 1` in `app.yml` → AC-9 (`.Clients` per current binding)
+
+## Acceptance criteria coverage (milestone 3, task 15)
+
+- AC-9: the contract rule step, the render golden and repeat step, the golden review and the value sourcing steps · AC-2: the refused fixtures and the paper platform step · Deployed graphs with templates: the guard and the deployer's path list still refuse `config/<instance>/<file>` until task 16
