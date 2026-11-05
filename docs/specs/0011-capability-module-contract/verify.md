@@ -39,6 +39,14 @@ The spec now says how `up` waits (0014, *Waiting*: the wait anchor `mp_jobs`). R
 - [ ] `go test -race -count=1 -run 'TestWaitAnchor$|TestEgressFromBindings' ./libs/render/` → `mp_jobs` waits for each revoke job of two servers and is absent from a graph with no job; `pg-roaming` joins `egress` when bound to an external server or through an external provisioner, and only `internal` when bound inside the stack → AC-6, AC-12, AC-1
 - [ ] Render the sample twice in a row with no change and `up` each time → no role or database added or dropped → AC-5
 
+### The client of a for_each step (task 9b)
+
+- [ ] `go test -race -count=1 -run TestModuleRules ./libs/contract/` → passes: `invalid_setup_step` for each refused case in 0013's *Critical test scenarios* (`{client}` with no `for_each` in env, command, entrypoint or writes; the four bad write forms; an undeclared folder; `asks` under `for_each`; the three bad `{provide}` reads; an `env` key `MP_INSTANCE`); a `for_each` step writing `client-digests/{client}` with `env: {CLIENT: "{client}"}` is accepted → AC-2
+- [ ] `go test -race -count=1 ./libs/contract/` → the paper platform still loads and plans: `authelia`'s `client-digest` step has `env: {CLIENT: "{client}"}`, writes `client-digests/{client}`, and no `MP_CLIENT` is left in `libs/contract/testdata/` → AC-16, AC-2
+- [ ] `task generate` leaves no diff after the `contracts/openapi/planner.yaml` description change → AC-2
+
+The `setup.sh` behavior (one run per client, skip per client, the empty folder, stale files kept) is checked with task 14 (0013, *Critical test scenarios*) → AC-10
+
 ## Acceptance criteria coverage (milestone 2)
 
 - AC-1: external e2e step 1 · AC-6: waiting on task 10 · AC-8: golden review steps 1 to 3, provision e2e · AC-11: guard step, managed labels · AC-12: golden review steps 4 and 5 · AC-15: external e2e, golden steps 1 and 7 · AC-18: the generic `to_provider` file delivery (golden step 3); `caller_key` itself lands in milestone 4 · AC-2: the contract rule cases
