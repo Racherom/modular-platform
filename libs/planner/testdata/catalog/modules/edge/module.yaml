@@ -1,0 +1,14 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: edge
+description: Publishes a host port, so planning it warns of host access.
+image: example.test/edge:1.0.0
+config:
+  http-port:
+    env: EDGE_HTTP_PORT
+    type: int
+    default: "8080"
+    description: Host port for HTTP.
+publish:
+  - port: 80
+    host: {config: http-port}

@@ -137,7 +137,13 @@ paths:
         "413":
           $ref: "#/components/responses/TooLarge"
         "422":
-          description: The plan has an error, so nothing was rendered.
+          description: |
+            The plan has an error, so nothing was rendered. Besides the plan's own errors, a
+            deployed graph is refused with error `host_access` at `modules.<instance>` for each
+            instance whose module publishes ports or mounts host paths, and with error
+            `setup_required` for each instance that needs `setup.sh` (an asked value, an asked
+            secret or a setup step) until secrets handling (#9). A rendered project the guard
+            refuses also answers here, with `host_access` at the offending Compose key.
           content:
             application/json:
               schema:

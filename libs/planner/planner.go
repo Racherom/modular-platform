@@ -152,6 +152,7 @@ func (p *planning) run() {
 	p.cycles(instances)
 	p.envNames(instances)
 	p.setupOrder(instances)
+	p.hostAccess(instances)
 }
 
 // offers lists the provides of instance i in name order; nil for an unknown module.

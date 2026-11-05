@@ -100,3 +100,28 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 ## Acceptance criteria coverage (milestone 3, task 15)
 
 - AC-9: the contract rule step, the render golden and repeat step, the golden review and the value sourcing steps · AC-2: the refused fixtures and the paper platform step · Deployed graphs with templates: the guard and the deployer's path list still refuse `config/<instance>/<file>` until task 16
+
+### Host access and the managed refusals (task 16)
+
+#### Commands
+
+- [ ] `go test -race ./libs/contract/ -run 'TestModuleRules|TestHostAccessEntry'` → passes: a publish port of 0, a host port of 70000, a `{config}` host port naming no int value, a relative or config naming no text value host path, `{install: ../etc}` and `{install: .}`, a `{config}` or relative container path, a container path mounted twice, and `create` on a plain host path are each refused; every form of `publish` and `host_mounts` together is accepted → AC-2
+- [ ] `go test -race ./libs/planner/ -run 'TestPlanHostAccess|TestPaperPlatform'` → passes: warning `host_access` at each instance that publishes or mounts, the plan stays ok with its digest; the paper platform warns at `deployer-docker` and `ingress` only → AC-11
+- [ ] `go test -race ./libs/render/ -run 'TestRenderHostAccessGolden|TestRenderManagedRefuses|TestRefuse|TestGuard'` → passes: the managed flavor refuses `host_access` at `agent` and `edge` and `setup_required` at `alpha`, `beta` and `keeper`, rendering nothing; the guard accepts a template output and the templates render, and still refuses `cap_add` → AC-11, AC-12
+- [ ] `go test -race ./services/planner/internal/api/ -run TestRenderManagedRefuses` → `POST /v1/plan` answers 200 with warning `host_access`; `POST /v1/render/managed` answers 422, not ok, no digest, with error `setup_required` at `modules.ask` and error `host_access` at `modules.web`, the warning replaced → AC-11
+- [ ] `go test -race ./services/deployer-docker/internal/deploy/ -run 'TestApplySucceeds|TestApplyRefused'` → `config/app/routes.conf` is written 0644 in a 0755 folder; `config/a/b/c`, `config/a/..` and `config/A/x` are refused with `invalid_path` → AC-11
+- [ ] In `libs/render/testdata/host-access/golden/`, `MP_UID=1000 MP_GID=1000 docker compose config` → `edge` publishes 8080 and 9443 and joins `egress`; `agent` binds `/etc/hostname` read only and `/var/spool/agent` read write and joins `internal` only → AC-12
+
+#### Golden review (libs/render/testdata/host-access/golden/)
+
+- [ ] `docker-compose.yml`: `edge` keeps its `entrypoint` and `command` (`$HOSTNAME` escaped as `$$HOSTNAME`), has the hardening defaults, and `ports` with `published: ${MP_EDGE__HTTP_PORT:-8080}` and `"9443"`; `agent` has two bind mounts, the first `read_only: true` → AC-12
+
+#### Value sourcing
+
+- [ ] Set `MP_EDGE__HTTP_PORT=8181` in the golden's `.env` and run `docker compose config` → `edge` publishes 8181; with the line removed it publishes 8080, the entry's default → AC-11 (host port from `{config}`)
+- [ ] Set `MP_AGENT__SPOOL=/srv/spool` the same way → `agent` binds `/srv/spool` at `/var/spool/agent` → AC-11 (host path from `{config}`)
+- [ ] Render a managed project as the deployer does and compare `deploy.env` → `MP_UID` and `MP_GID` are the deployer's `platform-uid` and `platform-gid` → AC-12 (managed user)
+
+## Acceptance criteria coverage (milestone 3, task 16)
+
+- AC-11: the plan warning step, the managed refusal steps, the deployer path step and the host port and path value sourcing steps · AC-12: the render golden, the Compose config step and the managed user step · AC-2: the refused fixtures · Open: `cap_add` on deployed graphs stays refused until `/architect` decides it

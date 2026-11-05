@@ -192,7 +192,7 @@ type ProjectFile struct {
 	Data []byte `json:"data"`
 	Mode int    `json:"mode"`
 
-	// Path `docker-compose.yml`, `.env`, `graph.yaml`, `README.md`, `setup.sh` or `config/<instance>.env`.
+	// Path `docker-compose.yml`, `.env`, `graph.yaml`, `README.md`, `setup.sh`, `config/<instance>.env`, or a template output `config/<instance>/<file>`.
 	Path string `json:"path"`
 }
 

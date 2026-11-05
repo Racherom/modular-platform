@@ -1,0 +1,6 @@
+apiVersion: modular-platform/v1
+kind: Graph
+name: host-access
+modules:
+  agent: {module: agent}
+  edge: {module: edge}

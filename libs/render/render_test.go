@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -178,13 +179,87 @@ func TestRenderTemplatesGolden(t *testing.T) {
 	}
 }
 
-// TestRenderManagedRefusesInstallTime: a deployed graph has no setup.sh, so a module that needs
-// one is not rendered for the deployer until #9 (spec 0013, Managed flavor; task 16 turns this
-// into the 422 setup_required).
-func TestRenderManagedRefusesInstallTime(t *testing.T) {
-	plan, catalog := installPlan(t)
-	if _, err := render.Managed(plan, catalog, contract.Templates{}, "d1"); !errors.Is(err, render.ErrNotRendered) {
-		t.Fatalf("err = %v, want ErrNotRendered", err)
+// hostAccessPlan plans the host access case: published ports (a number and a config value),
+// host mounts (read only and read write, a plain and a config path), and an entry's own
+// entrypoint and command (spec 0011 build task 16).
+func hostAccessPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
+	t.Helper()
+	catalog := loadCatalog(t, "testdata/host-access/catalog")
+	return planFile(t, "testdata/host-access/graph.yaml", catalog), catalog
+}
+
+// TestRenderHostAccessGolden pins the static render of host access (spec 0013, Host access;
+// AC-11, AC-12): ports, bind mounts and egress for the instance that publishes.
+func TestRenderHostAccessGolden(t *testing.T) {
+	plan, catalog := hostAccessPlan(t)
+	out, err := render.Render(plan, catalog, contract.Templates{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkGolden(t, filepath.Join("testdata", "host-access", "golden"), out)
+}
+
+// TestRenderManagedRefuses: a deployed graph gets no host access and has no setup.sh, so the
+// managed flavor refuses each such instance with an error naming it, and renders nothing (spec
+// 0013, Managed flavor; AC-11).
+func TestRenderManagedRefuses(t *testing.T) {
+	t.Parallel()
+	for name, c := range map[string]struct {
+		plan func(*testing.T) (contract.PlanResult, contract.Catalog)
+		want []string // code and path of each refusal
+	}{
+		"host access": {hostAccessPlan, []string{"host_access modules.agent", "host_access modules.edge"}},
+		"install time": {installPlan, []string{
+			"setup_required modules.alpha", "setup_required modules.beta", "setup_required modules.keeper",
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			plan, catalog := c.plan(t)
+			_, err := render.Managed(plan, catalog, contract.Templates{}, "d1")
+			var refused *render.RefusedError
+			if !errors.As(err, &refused) {
+				t.Fatalf("err = %v, want a *RefusedError", err)
+			}
+			var got []string
+			for _, p := range refused.Problems {
+				if p.Severity != contract.Error || p.Message == "" {
+					t.Errorf("%s at %s: severity %s, message %q", p.Code, p.Path, p.Severity, p.Message)
+				}
+				got = append(got, p.Code+" "+p.Path)
+			}
+			if !slices.Equal(got, c.want) {
+				t.Errorf("refusals = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// TestRefuse: the refused plan is not ok, has no digest, and keeps one problem per code and path,
+// the error, sorted by path then code.
+func TestRefuse(t *testing.T) {
+	t.Parallel()
+	plan, _ := hostAccessPlan(t)
+	if !plan.Ok || plan.Digest == "" || len(plan.Problems) != 2 {
+		t.Fatalf("plan: ok %v, digest %q, problems %+v", plan.Ok, plan.Digest, plan.Problems)
+	}
+	refused := render.Refuse(plan, []contract.Problem{
+		{Severity: contract.Error, Code: render.CodeSetupRequired, Path: "modules.edge", Message: "m"},
+		{Severity: contract.Error, Code: render.CodeHostAccess, Path: "modules.edge", Message: "m"},
+	})
+	if refused.Ok || refused.Digest != "" {
+		t.Errorf("refused: ok %v, digest %q", refused.Ok, refused.Digest)
+	}
+	var got []string
+	for _, p := range refused.Problems {
+		got = append(got, string(p.Severity)+" "+p.Code+" "+p.Path)
+	}
+	want := []string{"warning host_access modules.agent", "error host_access modules.edge", "error setup_required modules.edge"}
+	if !slices.Equal(got, want) {
+		t.Errorf("problems = %v, want %v", got, want)
+	}
+	if len(plan.Problems) != 2 || plan.Problems[1].Severity != contract.Warning {
+		t.Error("Refuse changed the plan it was given")
 	}
 }
 

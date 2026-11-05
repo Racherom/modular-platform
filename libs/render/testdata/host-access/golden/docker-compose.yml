@@ -1,0 +1,57 @@
+name: host-access
+networks:
+  egress: {}
+  internal:
+    internal: true
+services:
+  agent:
+    cap_drop:
+    - ALL
+    environment:
+      AGENT_SPOOL: ${MP_AGENT__SPOOL:-/var/spool/agent}
+    image: traefik/whoami:v1.11.0
+    networks:
+      internal:
+        aliases:
+        - agent.host-access.internal
+    read_only: true
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - read_only: true
+      source: /etc/hostname
+      target: /run/host/hostname
+      type: bind
+    - source: ${MP_AGENT__SPOOL:-/var/spool/agent}
+      target: /var/spool/agent
+      type: bind
+  edge:
+    cap_drop:
+    - ALL
+    command:
+    - --port
+    - "8080"
+    - --name
+    - edge $$HOSTNAME
+    entrypoint:
+    - /whoami
+    environment:
+      EDGE_HTTP_PORT: ${MP_EDGE__HTTP_PORT:-8080}
+    image: traefik/whoami:v1.11.0
+    networks:
+      egress:
+        aliases:
+        - edge.host-access.internal
+      internal:
+        aliases:
+        - edge.host-access.internal
+    ports:
+    - published: ${MP_EDGE__HTTP_PORT:-8080}
+      target: 8080
+    - published: "9443"
+      target: 8443
+    read_only: true
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
