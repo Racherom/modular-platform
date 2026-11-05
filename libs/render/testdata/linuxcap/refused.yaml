@@ -1,0 +1,6 @@
+apiVersion: modular-platform/v1
+kind: Graph
+name: linuxcap
+modules:
+  admin: {module: sysadmin}
+  low: {module: lowport}

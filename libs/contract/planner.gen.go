@@ -499,6 +499,7 @@ type GraphModule struct {
 
 // Hardening defines model for Hardening.
 type Hardening struct {
+	// CapAdd Linux capability names, upper case without `CAP_` (spec 0022); a deployed graph may add only `NET_BIND_SERVICE`.
 	CapAdd       []string      `json:"cap_add,omitempty"`
 	Tmpfs        []string      `json:"tmpfs,omitempty"`
 	User         HardeningUser `json:"user,omitempty"`

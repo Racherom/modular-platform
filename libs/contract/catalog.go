@@ -13,7 +13,7 @@ import (
 	"github.com/racherom/modular-platform/sdk/manifest"
 )
 
-// Catalog rule codes (spec 0002 and 0005, grown by 0012, 0013 and 0014; the sdk fields come
+// Catalog rule codes (spec 0002 and 0005, grown by 0012, 0013, 0014 and 0022; the sdk fields come
 // from sdk/manifest).
 const (
 	CodeInvalidEntry        = "invalid_entry"
@@ -50,6 +50,7 @@ const (
 	CodeInvalidTemplate     = "invalid_template"
 	CodeInvalidSetupStep    = "invalid_setup_step"
 	CodeInvalidMount        = "invalid_mount"
+	CodeInvalidHardening    = "invalid_hardening"
 	CodeInvalidYields       = "invalid_yields"
 	CodeInvalidJob          = "invalid_job"
 )

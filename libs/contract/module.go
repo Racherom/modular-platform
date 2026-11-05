@@ -77,6 +77,7 @@ func CheckModule(file string, data []byte, caps map[string]Capability) (Module, 
 			mc.mount(fmt.Sprintf("hardening.tmpfs.%d", i), t)
 		}
 	}
+	mc.linuxCaps()
 	if m.Healthcheck != nil {
 		c.healthcheck(*m.Healthcheck)
 	}

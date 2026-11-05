@@ -222,6 +222,11 @@ func TestModuleRules(t *testing.T) {
 		"files text field":    one("ca: /run/ca.pem", "host: /run/host", "uses.db.files.host", contract.CodeInvalidFieldSource),
 		"files relative":      one("ca: /run/ca.pem", "ca: run/ca.pem", "uses.db.files.ca", contract.CodeInvalidMount),
 		"mount twice":         one("tmpfs: [/tmp]", "tmpfs: [/var/lib/svc]", "hardening.tmpfs.0", contract.CodeInvalidMount),
+		"cap lower case":      one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [net_bind_service]", "hardening.cap_add.0", contract.CodeInvalidHardening),
+		"cap prefix":          one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [CAP_NET_BIND_SERVICE]", "hardening.cap_add.0", contract.CodeInvalidHardening),
+		"cap all":             one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [ALL]", "hardening.cap_add.0", contract.CodeInvalidHardening),
+		"cap twice":           one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [NET_BIND_SERVICE, NET_BIND_SERVICE]", "hardening.cap_add.1", contract.CodeInvalidHardening),
+		"cap unknown":         one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [NOT_A_CAP]", "hardening.cap_add.0", contract.CodeInvalidHardening),
 		"consumer source":     one("owner: {value: svc}", "owner: {generate: true}", "uses.db.fields.owner", contract.CodeInvalidFieldSource),
 		"consumer to_cons":    one("owner: {value: svc}", "host: {value: svc}", "uses.db.fields.host", contract.CodeInvalidFieldSource),
 		"per caller":          one("    optional: true\n", "    optional: true\n    per_caller: true\n", "uses.db.per_caller", contract.CodePerCallerNotAllowed),
@@ -467,5 +472,98 @@ func TestParseEnvironment(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("ParseEnvironment = %+v, want %+v", got, want)
+	}
+}
+
+// TestLinuxCapEntry checks the hardening.cap_add messages and accepted names (spec 0022): a
+// misspelt known name gets its one spelling suggested, and any kernel name passes the catalog
+// even when a deployed graph would refuse it.
+func TestLinuxCapEntry(t *testing.T) {
+	t.Parallel()
+	caps := testCaps(t)
+	tests := map[string]struct {
+		capAdd string
+		want   []string // path: message
+	}{
+		"accepted":        {"[NET_BIND_SERVICE, SYS_ADMIN]", nil},
+		"empty":           {"[]", nil},
+		"lower case":      {"[net_bind_service]", []string{`hardening.cap_add.0: "net_bind_service" is not a Linux capability name; write NET_BIND_SERVICE`}},
+		"prefix":          {"[CAP_NET_BIND_SERVICE]", []string{`hardening.cap_add.0: "CAP_NET_BIND_SERVICE" is not a Linux capability name; write NET_BIND_SERVICE`}},
+		"lower prefix":    {"[cap_chown]", []string{`hardening.cap_add.0: "cap_chown" is not a Linux capability name; write CHOWN`}},
+		"unknown":         {"[NOT_A_CAP]", []string{`hardening.cap_add.0: "NOT_A_CAP" is not a Linux capability name`}},
+		"all":             {"[ALL]", []string{"hardening.cap_add.0: ALL is not allowed here; name each Linux capability"}},
+		"twice":           {"[CHOWN, NET_RAW, CHOWN]", []string{"hardening.cap_add.2: CHOWN is already listed at hardening.cap_add.0"}},
+		"last kernel cap": {"[CHECKPOINT_RESTORE]", nil},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			data := edit(t, goodModule, [][2]string{{"tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: " + tc.capAdd}})
+			_, problems := contract.CheckModule("modules/svc/module.yaml", []byte(data), caps)
+			var got []string
+			for _, p := range problems {
+				if p.Code != contract.CodeInvalidHardening {
+					t.Errorf("unexpected problem %+v", p)
+					continue
+				}
+				got = append(got, p.Path+": "+p.Message)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("problems = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestUndeployableLinuxCaps lists, in entry order, the cap_add names a deployed graph refuses
+// (spec 0022).
+func TestUndeployableLinuxCaps(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		hardening *contract.Hardening
+		want      []string
+	}{
+		"no hardening":    {nil, nil},
+		"none":            {&contract.Hardening{}, nil},
+		"deployable":      {&contract.Hardening{CapAdd: []string{"NET_BIND_SERVICE"}}, nil},
+		"mixed":           {&contract.Hardening{CapAdd: []string{"SYS_ADMIN", "NET_BIND_SERVICE", "CHOWN"}}, []string{"SYS_ADMIN", "CHOWN"}},
+		"other spellings": {&contract.Hardening{CapAdd: []string{"net_bind_service", "CAP_NET_BIND_SERVICE", "ALL"}}, []string{"net_bind_service", "CAP_NET_BIND_SERVICE", "ALL"}},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := contract.Module{Hardening: tc.hardening}.UndeployableLinuxCaps()
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("UndeployableLinuxCaps() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestModuleHostAccess joins every reason a deployed graph refuses into one phrase (spec 0022).
+func TestModuleHostAccess(t *testing.T) {
+	t.Parallel()
+	publish := []contract.Publish{{Port: 80}}
+	mounts := []contract.HostMount{{}}
+	caps := func(names ...string) *contract.Hardening { return &contract.Hardening{CapAdd: names} }
+	tests := map[string]struct {
+		m    contract.Module
+		want string
+	}{
+		"nothing":        {contract.Module{}, ""},
+		"deployable cap": {contract.Module{Hardening: caps("NET_BIND_SERVICE")}, ""},
+		"publish":        {contract.Module{Publish: publish}, "publishes host ports"},
+		"two reasons":    {contract.Module{Publish: publish, Hardening: caps("SYS_ADMIN")}, "publishes host ports and adds the Linux capability SYS_ADMIN"},
+		"three reasons":  {contract.Module{Publish: publish, HostMounts: mounts, Hardening: caps("SYS_ADMIN")}, "publishes host ports, mounts host paths and adds the Linux capability SYS_ADMIN"},
+		"two caps":       {contract.Module{Hardening: caps("SYS_ADMIN", "NET_BIND_SERVICE", "NET_ADMIN")}, "adds the Linux capabilities SYS_ADMIN and NET_ADMIN"},
+		"three caps":     {contract.Module{Hardening: caps("CHOWN", "SETUID", "SETGID")}, "adds the Linux capabilities CHOWN, SETUID and SETGID"},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.m.HostAccess(); got != tc.want {
+				t.Errorf("HostAccess() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

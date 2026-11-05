@@ -10,7 +10,7 @@ _Steps derived from spec 0011 acceptance criteria. `/check verify` runs these; `
 - [ ] `go test -race -count=1 -tags e2e -run TestProvisionEndToEnd ./libs/render/` (needs Docker) → still passes; no service env holds a secret value → AC-5, AC-8
 - [ ] `go test -race -count=1 -run 'TestRenderBindingsGolden|TestRenderManagedGolden' ./libs/render/` → passes; review `libs/render/testdata/bindings/golden/docker-compose.yml` → AC-8, AC-12, AC-15
 - [ ] `go test -race -count=1 -run 'TestModuleRules|TestModuleEnvironmentAndClientFields|TestParseEnvironment' ./libs/contract/` → passes: a bad `environment` placeholder, a secret config value in a placeholder, an alias naming no config value, and a required `to_provider` field with no consumer source are each refused → AC-2
-- [ ] `go test -race -count=1 -run TestGuardAcceptsEveryRender ./libs/render/` → passes: the guard accepts the managed bindings render except `services.notifier.cap_add` (left for build task 16) → AC-11
+- [ ] `go test -race -count=1 -run TestGuardAcceptsEveryRender ./libs/render/` → passes: the guard accepts every managed render with nothing refused, the bindings render's `notifier` with `cap_add: [NET_BIND_SERVICE]` included (spec 0022) → AC-11, AC-21
 
 ### Golden review (libs/render/testdata/bindings/golden/)
 
@@ -107,7 +107,7 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 
 - [ ] `go test -race ./libs/contract/ -run 'TestModuleRules|TestHostAccessEntry'` → passes: a publish port of 0, a host port of 70000, a `{config}` host port naming no int value, a relative or config naming no text value host path, `{install: ../etc}` and `{install: .}`, a `{config}` or relative container path, a container path mounted twice, and `create` on a plain host path are each refused; every form of `publish` and `host_mounts` together is accepted → AC-2
 - [ ] `go test -race ./libs/planner/ -run 'TestPlanHostAccess|TestPaperPlatform'` → passes: warning `host_access` at each instance that publishes or mounts, the plan stays ok with its digest; the paper platform warns at `deployer-docker` and `ingress` only → AC-11
-- [ ] `go test -race ./libs/render/ -run 'TestRenderHostAccessGolden|TestRenderManagedRefuses|TestRefuse|TestGuard'` → passes: the managed flavor refuses `host_access` at `agent` and `edge` and `setup_required` at `alpha`, `beta` and `keeper`, rendering nothing; the guard accepts a template output and the templates render, and still refuses `cap_add` → AC-11, AC-12
+- [ ] `go test -race ./libs/render/ -run 'TestRenderHostAccessGolden|TestRenderManagedRefuses|TestRefuse|TestGuard'` → passes: the managed flavor refuses `host_access` at `agent` and `edge` and `setup_required` at `alpha`, `beta` and `keeper`, rendering nothing; the guard accepts a template output and the templates render; for `cap_add` see the Linux capabilities steps below → AC-11, AC-12
 - [ ] `go test -race ./services/planner/internal/api/ -run TestRenderManagedRefuses` → `POST /v1/plan` answers 200 with warning `host_access`; `POST /v1/render/managed` answers 422, not ok, no digest, with error `setup_required` at `modules.ask` and error `host_access` at `modules.web`, the warning replaced → AC-11
 - [ ] `go test -race ./services/deployer-docker/internal/deploy/ -run 'TestApplySucceeds|TestApplyRefused'` → `config/app/routes.conf` is written 0644 in a 0755 folder; `config/a/b/c`, `config/a/..` and `config/A/x` are refused with `invalid_path` → AC-11
 - [ ] In `libs/render/testdata/host-access/golden/`, `MP_UID=1000 MP_GID=1000 docker compose config` → `edge` publishes 8080 and 9443 and joins `egress`; `agent` binds `/etc/hostname` read only and `/var/spool/agent` read write and joins `internal` only → AC-12
@@ -124,4 +124,25 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 
 ## Acceptance criteria coverage (milestone 3, task 16)
 
-- AC-11: the plan warning step, the managed refusal steps, the deployer path step and the host port and path value sourcing steps · AC-12: the render golden, the Compose config step and the managed user step · AC-2: the refused fixtures · Open: `cap_add` on deployed graphs stays refused until `/architect` decides it
+- AC-11: the plan warning step, the managed refusal steps, the deployer path step and the host port and path value sourcing steps · AC-12: the render golden, the Compose config step and the managed user step · AC-2: the refused fixtures · `cap_add` on deployed graphs: decided by 0022, see tasks 16b and 16c below
+
+### Linux capabilities on deployed graphs (tasks 16b and 16c, spec 0022)
+
+#### Commands
+
+- [ ] `go test -race ./libs/contract/ -run 'TestModuleRules|TestLinuxCapEntry|TestUndeployableLinuxCaps|TestModuleHostAccess'` → passes: `cap_add` of `net_bind_service` and `CAP_NET_BIND_SERVICE` are `invalid_hardening` at `hardening.cap_add.0` with `; write NET_BIND_SERVICE`, `ALL` says `ALL is not allowed here; name each Linux capability`, a second `NET_BIND_SERVICE` is refused at `.1` naming `.0`, `NOT_A_CAP` gets no suggestion; `SYS_ADMIN` and `CHECKPOINT_RESTORE` pass the catalog → AC-2
+- [ ] `go test -race ./libs/planner/ -run 'TestPlanHostAccess|TestPaperPlatform'` → passes: `admin` (`SYS_ADMIN`) warns `Instance admin adds the Linux capability SYS_ADMIN, so it reaches the host it runs on; a deployed graph refuses this.`; `gate` (publish plus `SYS_ADMIN`) gets one warning naming both; `low` (`NET_BIND_SERVICE` only) gets none; the paper platform still warns at `deployer-docker` and `ingress` only → AC-11
+- [ ] `go test -race ./libs/render/ -run 'TestRenderManagedRefuses|TestRenderManagedRefusesLinuxCap'` → passes: the `linuxcap/refused.yaml` graph answers one `host_access` refusal at `modules.admin` and renders nothing in managed; the static render still writes `cap_add` with `SYS_ADMIN` → AC-11
+- [ ] `go test -race ./libs/render/ -run 'TestGuard$|TestLoadProjectRefusesBrokenFiles'` → passes: `cap_add: [NET_BIND_SERVICE]` and `[]` pass; `[SYS_ADMIN]`, `[net_bind_service]`, `[CAP_NET_BIND_SERVICE]` and `[ALL]` fail at `services.app.cap_add.0`, `[NET_BIND_SERVICE, SYS_ADMIN]` at `.1`; a string or null `cap_add` fails at load (the Compose schema stops it before the guard); a service, a provision job, a revoke job and `mp_jobs` without `cap_drop` or `security_opt` fail at that key; `cap_drop: [NET_RAW]`, `seccomp=unconfined` and `apparmor=unconfined` fail; `privileged` and `profiles` still fail → AC-21
+- [ ] `go test -race ./services/deployer-docker/internal/deploy/ -run TestApplyRefused` → passes: the deployer refuses a project adding `SYS_ADMIN` and one missing `cap_drop` with `host_access`, before it touches the folder or runs compose → AC-21
+- [ ] `go test -race -count=1 -tags e2e -run TestLinuxCapsEndToEnd ./libs/render/` (needs Docker) → passes: the managed `linuxcap` render passes the guard and comes up; `/proc/1/status` of `low` shows `Uid: 0`, `CapEff: 0000000000000400` and `NoNewPrivs: 1` → AC-21
+
+#### Value sourcing
+
+- [ ] In `libs/render/testdata/linuxcap/catalog/modules/lowport/module.yaml` change `cap_add` to `[NET_BIND_SERVICE, CHOWN]` and run the planner test → `low` now warns `adds the Linux capability CHOWN`, so the refused names come from `UndeployableLinuxCaps` of the entry; revert → AC-11 (names a deployed graph refuses)
+- [ ] Change `DeployableLinuxCap` in `libs/contract/linuxcap.go` to also admit `CHOWN` and run `TestGuard` → the `SYS_ADMIN` cases still fail, so the guard reads the same single source; revert → AC-21 (whether an item may pass)
+- [ ] Run the e2e with `cap_add: []` on `lowport` → `CapEff` is `0000000000000000`, so bit 10 comes from the admitted name alone; revert → AC-21 (the expected `CapEff`)
+
+## Acceptance criteria coverage (milestone 3, tasks 16b and 16c)
+
+- AC-2: the `cap_add` catalog rule step · AC-11: the plan warning step, the managed refusal step and the first value sourcing step · AC-21: the guard step, the deployer step, the e2e step and the last two value sourcing steps

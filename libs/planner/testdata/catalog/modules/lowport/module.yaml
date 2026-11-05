@@ -1,0 +1,7 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: lowport
+description: Adds only NET_BIND_SERVICE, which a deployed graph allows, so planning it warns of nothing.
+image: example.test/lowport:1.0.0
+hardening:
+  cap_add: [NET_BIND_SERVICE]

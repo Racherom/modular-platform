@@ -111,7 +111,9 @@ services:
       io.github.racherom.modular-platform.graph: sample
       io.github.racherom.modular-platform.instance: app
       io.github.racherom.modular-platform.module: whoami
+    cap_drop: [ALL]
     restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
     secrets:
     - source: app_uses_postgresql_password
     user: ${MP_UID}:${MP_GID}
@@ -122,7 +124,9 @@ services:
       io.github.racherom.modular-platform.graph: sample
       io.github.racherom.modular-platform.instance: postgres
       io.github.racherom.modular-platform.module: postgres
+    cap_drop: [ALL]
     restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
     secrets:
     - source: postgres_password
     volumes:
@@ -335,6 +339,8 @@ func TestApplyRefused(t *testing.T) {
 		"privileged":              {composeEdit("    restart: unless-stopped\n", "    restart: unless-stopped\n    privileged: true\n"), deploy.CodeHostAccess},
 		"the docker socket":       {composeEdit("    restart: unless-stopped\n", "    restart: unless-stopped\n    volumes: [/var/run/docker.sock:/var/run/docker.sock]\n"), deploy.CodeHostAccess},
 		"a reserved port":         {composeEdit("    restart: unless-stopped\n", "    restart: unless-stopped\n    ports: [\"443:8080\"]\n"), deploy.CodeHostAccess},
+		"a Linux capability":      {composeEdit("    restart: unless-stopped\n", "    restart: unless-stopped\n    cap_add: [SYS_ADMIN]\n"), deploy.CodeHostAccess},
+		"no cap_drop":             {composeEdit("    cap_drop: [ALL]\n", ""), deploy.CodeHostAccess},
 		"the platform's network": {func(r *deploy.ApplyRequest) {
 			r.Files[0].Data = append(r.Files[0].Data, "networks:\n  default:\n    external: true\n    name: modular-platform_internal\n"...)
 		}, deploy.CodeHostAccess},

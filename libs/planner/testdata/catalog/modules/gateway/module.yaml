@@ -1,0 +1,10 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: gateway
+description: Publishes a host port and adds SYS_ADMIN, so planning it warns once, naming both.
+image: example.test/gateway:1.0.0
+publish:
+  - port: 80
+    host: 8080
+hardening:
+  cap_add: [NET_BIND_SERVICE, SYS_ADMIN]

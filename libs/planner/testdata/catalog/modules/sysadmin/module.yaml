@@ -1,0 +1,7 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: sysadmin
+description: Adds the Linux capability SYS_ADMIN, so planning it warns of host access.
+image: example.test/sysadmin:1.0.0
+hardening:
+  cap_add: [SYS_ADMIN]
