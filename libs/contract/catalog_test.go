@@ -263,6 +263,20 @@ func TestModuleRules(t *testing.T) {
 		"env file field":      one("secrets:\n", "environment:\n  SVC_DB: \"{db.password}\"\nsecrets:\n", "environment.SVC_DB", contract.CodeInvalidFieldSource),
 		"env no config":       one("secrets:\n", "environment:\n  SVC_DB: \"{config.nope}\"\nsecrets:\n", "environment.SVC_DB", contract.CodeInvalidFieldSource),
 		"alias no config":     one("secrets:\n", "network:\n  aliases: [{config: nope}]\nsecrets:\n", "network.aliases.0", contract.CodeInvalidRule),
+		"publish port":        one("secrets:\n", "publish:\n  - {port: 0, host: 8080}\nsecrets:\n", "publish.0.port", contract.CodeInvalidPort),
+		"publish host port":   one("secrets:\n", "publish:\n  - {port: 80, host: 70000}\nsecrets:\n", "publish.0.host", contract.CodeInvalidPort),
+		"publish no config":   one("secrets:\n", "publish:\n  - {port: 80, host: {config: nope}}\nsecrets:\n", "publish.0.host", contract.CodeInvalidRule),
+		"publish text config": {[][2]string{{"secrets:\n", hostConfig + "publish:\n  - {port: 80, host: {config: data-dir}}\nsecrets:\n"}}, "publish.0.host", contract.CodeInvalidRule},
+		"mount host relative": one("secrets:\n", "host_mounts:\n  - {host: srv/svc, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidMount),
+		"mount host config":   one("secrets:\n", "host_mounts:\n  - {host: {config: nope}, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidRule),
+		"mount host secret":   {[][2]string{{"secrets:\n", hostConfig + "host_mounts:\n  - {host: {config: key}, path: /srv/svc}\nsecrets:\n"}}, "host_mounts.0.host", contract.CodeInvalidRule},
+		"mount install out":   one("secrets:\n", "host_mounts:\n  - {host: {install: ../etc}, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidMount),
+		"mount install root":  one("secrets:\n", "host_mounts:\n  - {host: {install: .}, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidMount),
+		"mount path config":   {[][2]string{{"secrets:\n", hostConfig + "host_mounts:\n  - {host: /srv/svc, path: {config: data-dir}}\nsecrets:\n"}}, "host_mounts.0.path", contract.CodeInvalidMount},
+		"mount path relative": one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: srv/svc}\nsecrets:\n", "host_mounts.0.path", contract.CodeInvalidMount),
+		"mount path twice":    one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: /var/lib/svc}\nsecrets:\n", "host_mounts.0.path", contract.CodeInvalidMount),
+		"mount install twice": one("secrets:\n", "host_mounts:\n  - {host: {install: a}, path: {install: a}}\n  - {host: {install: b}, path: {install: a}}\nsecrets:\n", "host_mounts.1.path", contract.CodeInvalidMount),
+		"mount create plain":  one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: /srv/svc, create: true}\nsecrets:\n", "host_mounts.0.create", contract.CodeInvalidRule),
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -271,6 +285,31 @@ func TestModuleRules(t *testing.T) {
 			_, problems := contract.CheckModule("modules/svc/module.yaml", []byte(data), caps)
 			wantProblem(t, problems, tc.path, tc.code)
 		})
+	}
+}
+
+// hostConfig declares the config values the host access cases name: an int port, a text folder
+// and a secret.
+const hostConfig = `config:
+  http-port: {env: SVC_HTTP_PORT, type: int, default: "8080", description: Host port.}
+  data-dir: {env: SVC_DATA_DIR, type: string, default: /srv/svc, description: Host folder.}
+  key: {env: SVC_KEY, type: secret, description: A key.}
+`
+
+// TestHostAccessEntry accepts every form of publish and host_mounts (spec 0013, Fields).
+func TestHostAccessEntry(t *testing.T) {
+	t.Parallel()
+	data := edit(t, goodModule, [][2]string{{"secrets:\n", hostConfig + `publish:
+  - {port: 8080, host: {config: http-port}}
+  - {port: 9090, host: 9090}
+host_mounts:
+  - {host: /var/run/svc.sock, path: /run/svc.sock}
+  - {host: {config: data-dir}, path: /srv/svc, read_only: false}
+  - {host: {install: state}, path: {install: state}, read_only: false, create: true}
+secrets:
+`}})
+	if _, problems := contract.CheckModule("modules/svc/module.yaml", []byte(data), testCaps(t)); len(problems) > 0 {
+		t.Errorf("problems = %v, want none", problems)
 	}
 }
 

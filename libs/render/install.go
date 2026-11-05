@@ -42,11 +42,9 @@ type installStep struct {
 
 // installTime collects what setup.sh does for instance i besides generating files: its asked
 // config values and asked secrets, and its mounts of the secrets its setup steps write. The
-// managed flavor has no setup.sh, so it refuses all of these until #9 (spec 0013).
+// managed flavor has no setup.sh, so Managed refuses such an instance before it gets here
+// (setup_required, until #9; spec 0013).
 func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Module) error {
-	if r.managed && needsSetup(m) {
-		return fmt.Errorf("%w: module %s needs setup.sh (asked values, asked or setup secrets, or setup steps), which a deployed graph cannot run yet", ErrNotRendered, m.Name)
-	}
 	compose := m.ComposeValues()
 	for _, name := range sortedKeys(m.Config) {
 		v := m.Config[name]

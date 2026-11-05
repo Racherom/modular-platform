@@ -1,0 +1,20 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: edge
+description: Publishes two host ports, one from a config value, and replaces the image's entrypoint and command.
+image: traefik/whoami:v1.11.0
+entrypoint: [/whoami]
+command: [--port, "8080", --name, "edge $HOSTNAME"]
+config:
+  http-port:
+    env: EDGE_HTTP_PORT
+    type: int
+    default: "8080"
+    min: 1
+    max: 65535
+    description: Host port for HTTP.
+publish:
+  - port: 8080
+    host: {config: http-port}
+  - port: 8443
+    host: 9443

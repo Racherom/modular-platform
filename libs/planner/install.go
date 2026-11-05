@@ -11,7 +11,25 @@ import (
 const (
 	CodeEnvNameCollision = "env_name_collision"
 	CodeSetupOrder       = "setup_order"
+	// CodeHostAccess warns of an instance whose module publishes ports or mounts host paths.
+	CodeHostAccess = "host_access"
 )
+
+// hostAccess warns at each instance whose module publishes a port or mounts a host path (spec
+// 0013, Host access), in public and internal mode alike: a downloaded zip gives it that access,
+// while a deployed graph is refused it.
+func (p *planning) hostAccess(instances []string) {
+	for _, i := range instances {
+		m, ok := p.entry(i)
+		if !ok || len(m.Publish) == 0 && len(m.HostMounts) == 0 {
+			continue
+		}
+		p.add(contract.Problem{
+			Severity: contract.Warning, Code: CodeHostAccess, Path: "modules." + i,
+			Message: fmt.Sprintf("Instance %s publishes host ports or mounts host paths, so it reaches the host it runs on; a deployed graph refuses this.", i),
+		})
+	}
+}
 
 // envNames reports two config values that become one Compose variable, possible because an
 // instance or value name may hold -- (spec 0013, "Asked values"). It reports the later pair in

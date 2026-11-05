@@ -51,9 +51,14 @@ func TestPaperPlatform(t *testing.T) {
 		t.Fatal(p.Message)
 	}
 	plan := planner.Plan(g, catalog)
-	if !plan.Ok || len(plan.Problems) != 0 {
-		// host_access warnings at ingress and deployer-docker join with build task 16
-		t.Fatalf("plan: ok %v, problems %+v", plan.Ok, plan.Problems)
+	var planProblems []string
+	for _, p := range plan.Problems {
+		planProblems = append(planProblems, string(p.Severity)+" "+p.Code+" "+p.Path)
+	}
+	// the ingress publishes its ports and the deployer mounts the Docker socket (spec 0015)
+	wantProblems := []string{"warning host_access modules.deployer-docker", "warning host_access modules.ingress"}
+	if !plan.Ok || !slices.Equal(planProblems, wantProblems) {
+		t.Fatalf("plan: ok %v, problems %v, want %v", plan.Ok, planProblems, wantProblems)
 	}
 	var got []string
 	for _, b := range plan.Bindings {

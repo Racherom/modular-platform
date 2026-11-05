@@ -1,6 +1,8 @@
 package render
 
 import (
+	"cmp"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -59,12 +61,78 @@ type ManagedProject struct {
 	Secrets []Secret // sorted by path
 }
 
+// CodeSetupRequired refuses a deployed instance that needs setup.sh (spec 0013, Managed flavor).
+const CodeSetupRequired = "setup_required"
+
+// RefusedError lists why the managed flavor refuses an ok plan, one error per instance and
+// code, sorted by path then code; nothing was rendered.
+type RefusedError struct {
+	Problems []contract.Problem
+}
+
+func (e *RefusedError) Error() string {
+	return fmt.Sprintf("render: the managed flavor refuses the graph: %d problems", len(e.Problems))
+}
+
+// Refuse returns plan refused with problems: not ok, no digest, a warning that one of problems
+// repeats as an error (same code and path) left out, and every problem sorted by path then code.
+func Refuse(plan contract.PlanResult, problems []contract.Problem) contract.PlanResult {
+	plan.Ok, plan.Digest = false, ""
+	kept := slices.DeleteFunc(slices.Clone(plan.Problems), func(w contract.Problem) bool {
+		return w.Severity == contract.Warning && slices.ContainsFunc(problems, func(e contract.Problem) bool {
+			return e.Code == w.Code && e.Path == w.Path
+		})
+	})
+	plan.Problems = slices.Concat(kept, problems)
+	slices.SortStableFunc(plan.Problems, func(a, b contract.Problem) int {
+		return cmp.Or(strings.Compare(a.Path, b.Path), strings.Compare(a.Code, b.Code))
+	})
+	return plan
+}
+
+// refusals lists what a deployed graph may not have (spec 0013, Host access and Managed flavor):
+// host_access at each instance whose module publishes a port or mounts a host path, and
+// setup_required at each one that needs setup.sh, which the deployer cannot run until #9.
+func refusals(plan contract.PlanResult, catalog contract.Catalog) []contract.Problem {
+	modules := make(map[string]contract.Module, len(catalog.Modules))
+	for _, m := range catalog.Modules {
+		modules[m.Name] = m
+	}
+	var out []contract.Problem
+	for _, i := range sortedKeys(plan.Graph.Modules) {
+		gm := plan.Graph.Modules[i]
+		m, ok := modules[gm.Module]
+		if gm.External != nil || !ok {
+			continue
+		}
+		if len(m.Publish) > 0 || len(m.HostMounts) > 0 {
+			out = append(out, contract.Problem{
+				Severity: contract.Error, Code: CodeHostAccess, Path: "modules." + i,
+				Message: fmt.Sprintf("Instance %s publishes host ports or mounts host paths, which a deployed graph never gets; download the zip to run it.", i),
+			})
+		}
+		if needsSetup(m) {
+			out = append(out, contract.Problem{
+				Severity: contract.Error, Code: CodeSetupRequired, Path: "modules." + i,
+				Message: fmt.Sprintf("Instance %s needs setup.sh (an asked value, an asked secret or a setup step), which a deployed graph cannot run yet; download the zip to run it.", i),
+			})
+		}
+	}
+	return out
+}
+
 // Managed renders an ok plan for the managed deployer (spec 0006, grown by 0013): the static
 // output plus the platform labels on every service (and the job label on each one shot job),
 // restart: unless-stopped on every long running service, and the project named mp-<graph>.
 // Host names stay <instance>.<graph>.internal. deployment is the deployment id written into the
-// deployment label.
+// deployment label. A graph with an instance the managed flavor refuses returns a *RefusedError.
 func Managed(plan contract.PlanResult, catalog contract.Catalog, templates contract.Templates, deployment string) (ManagedProject, error) {
+	if !plan.Ok {
+		return ManagedProject{}, ErrPlanHasErrors
+	}
+	if problems := refusals(plan, catalog); len(problems) > 0 {
+		return ManagedProject{}, &RefusedError{Problems: problems}
+	}
 	r, err := renderProject(plan, catalog, templates, true, func(p *types.Project, jobs map[string]job) {
 		graph := p.Name
 		p.Name = ProjectPrefix + graph

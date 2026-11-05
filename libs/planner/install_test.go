@@ -105,3 +105,38 @@ func TestBindingOrder(t *testing.T) {
 		t.Errorf("order = %v, want %v", got, want)
 	}
 }
+
+// TestPlanHostAccess warns, never refuses, at each instance whose module publishes a port or
+// mounts a host path (spec 0013, Host access; AC-11).
+func TestPlanHostAccess(t *testing.T) {
+	t.Parallel()
+	g, p := contract.DecodeGraph([]byte(`apiVersion: modular-platform/v1
+kind: Graph
+name: reach
+modules:
+  web: {module: edge}
+  agent: {module: socket}
+  plain: {module: twin}
+`))
+	if p != nil {
+		t.Fatal(p.Message)
+	}
+	got := planner.Plan(g, testCatalog(t))
+	if !got.Ok {
+		t.Fatalf("plan not ok: %+v", got.Problems)
+	}
+	var gotProblems []problem
+	for _, pr := range got.Problems {
+		gotProblems = append(gotProblems, problem{pr.Severity, pr.Code, pr.Path, pr.Candidates})
+	}
+	want := []problem{warningAt(planner.CodeHostAccess, "modules.agent"), warningAt(planner.CodeHostAccess, "modules.web")}
+	if !slices.EqualFunc(gotProblems, want, equalProblem) {
+		t.Fatalf("problems = %+v, want %+v", got.Problems, want)
+	}
+	if !strings.Contains(got.Problems[1].Message, "Instance web publishes host ports or mounts host paths") {
+		t.Errorf("message = %q", got.Problems[1].Message)
+	}
+	if got.Digest == "" {
+		t.Error("an ok plan with warnings has no digest")
+	}
+}

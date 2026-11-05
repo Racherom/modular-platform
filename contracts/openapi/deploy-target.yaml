@@ -290,7 +290,7 @@ components:
       properties:
         path:
           type: string
-          description: "`docker-compose.yml`, `.env`, `graph.yaml`, `README.md`, `setup.sh` or `config/<instance>.env`."
+          description: "`docker-compose.yml`, `.env`, `graph.yaml`, `README.md`, `setup.sh`, `config/<instance>.env`, or a template output `config/<instance>/<file>`."
         mode:
           type: integer
         data:

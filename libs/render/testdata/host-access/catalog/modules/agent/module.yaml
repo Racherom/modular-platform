@@ -1,0 +1,17 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: agent
+description: Mounts a host file read only and a host folder from a config value read write.
+image: traefik/whoami:v1.11.0
+config:
+  spool:
+    env: AGENT_SPOOL
+    type: string
+    default: /var/spool/agent
+    description: Host folder the agent writes into.
+host_mounts:
+  - host: /etc/hostname
+    path: /run/host/hostname
+  - host: {config: spool}
+    path: /var/spool/agent
+    read_only: false

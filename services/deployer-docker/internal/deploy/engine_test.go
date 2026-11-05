@@ -138,6 +138,7 @@ func sampleRequest() deploy.ApplyRequest {
 			{Path: "docker-compose.yml", Data: []byte(sampleCompose)},
 			{Path: ".env", Data: []byte("# env\n")},
 			{Path: "config/app.env", Data: []byte("A=1\n")},
+			{Path: "config/app/routes.conf", Data: []byte("route /\n")},
 		},
 		Secrets: []deploy.Secret{
 			{Path: "secrets/postgres/password", Kind: deploy.SecretGenerated},
@@ -182,6 +183,8 @@ func TestApplySucceeds(t *testing.T) {
 	for path, mode := range map[string]fs.FileMode{
 		"docker-compose.yml":                   0o644,
 		"config/app.env":                       0o644,
+		"config/app":                           0o755 | fs.ModeDir,
+		"config/app/routes.conf":               0o644,
 		"deploy.env":                           0o644,
 		"secrets":                              0o700 | fs.ModeDir,
 		"secrets/postgres":                     0o700 | fs.ModeDir,
@@ -316,7 +319,9 @@ func TestApplyRefused(t *testing.T) {
 		"project without mp-":     {func(r *deploy.ApplyRequest) { r.Project = "sample" }, deploy.CodeInvalidProject},
 		"the platform's project":  {func(r *deploy.ApplyRequest) { r.Project = "modular-platform" }, deploy.CodeInvalidProject},
 		"file outside the layout": {func(r *deploy.ApplyRequest) { r.Files[0].Path = "../escape.yml" }, deploy.CodeInvalidPath},
-		"nested config":           {func(r *deploy.ApplyRequest) { r.Files[2].Path = "config/a/b.env" }, deploy.CodeInvalidPath},
+		"config two deep":         {func(r *deploy.ApplyRequest) { r.Files[3].Path = "config/a/b/c" }, deploy.CodeInvalidPath},
+		"config dot name":         {func(r *deploy.ApplyRequest) { r.Files[3].Path = "config/a/.." }, deploy.CodeInvalidPath},
+		"config of no instance":   {func(r *deploy.ApplyRequest) { r.Files[3].Path = "config/A/x" }, deploy.CodeInvalidPath},
 		"secret outside secrets/": {func(r *deploy.ApplyRequest) { r.Secrets[0].Path = "secrets/../x" }, deploy.CodeInvalidPath},
 		"empty placed":            {func(r *deploy.ApplyRequest) { r.Placed[0].Data = nil }, deploy.CodePlacedInvalid},
 		"placed with NUL":         {func(r *deploy.ApplyRequest) { r.Placed[0].Data = []byte("a\x00b") }, deploy.CodePlacedInvalid},

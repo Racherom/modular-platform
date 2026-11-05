@@ -479,3 +479,81 @@ func TestRenderManaged(t *testing.T) {
 		t.Errorf("public mode: status %d, want 404", resp.StatusCode)
 	}
 }
+
+// TestRenderManagedRefuses covers AC-11 through the contract: the plan warns of host access,
+// and the managed render answers 422 with error host_access at the instance that publishes and
+// error setup_required at the one that asks a value, the warning replaced by the error.
+func TestRenderManagedRefuses(t *testing.T) {
+	t.Parallel()
+	fsys := fstest.MapFS{
+		"modules/edge/module.yaml": {Data: []byte(`apiVersion: modular-platform/v1
+kind: Module
+name: edge
+description: Publishes a host port.
+image: traefik/whoami:v1.11.0
+publish:
+  - {port: 80, host: 8080}
+`)},
+		"modules/asker/module.yaml": {Data: []byte(`apiVersion: modular-platform/v1
+kind: Module
+name: asker
+description: Asks a value at setup.
+image: traefik/whoami:v1.11.0
+config:
+  domain: {env: ASKER_DOMAIN, type: string, setup: ask, description: Domain.}
+`)},
+	}
+	if err := fs.WalkDir(catalog.FS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := fs.ReadFile(catalog.FS, path)
+		fsys[path] = &fstest.MapFile{Data: data}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("a1", 16)
+	h, logs, err := build(t, map[string]string{
+		"MP_INSTANCE":            "planner",
+		"MP_PLANNER_MODE":        "internal",
+		"MP_PLANNER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
+	}, fsys)
+	if err != nil {
+		t.Fatalf("start refused: %v\n%s", err, logs)
+	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	p := planner{srv: srv, log: logs}
+	auth := http.Header{"Authorization": {"Bearer " + token}}
+	graph := `{"apiVersion":"modular-platform/v1","kind":"Graph","name":"reach","modules":{"web":{"module":"edge"},"ask":{"module":"asker"}}}`
+
+	problems := func(data []byte) []string {
+		t.Helper()
+		var plan contract.PlanResult
+		if err := json.Unmarshal(data, &plan); err != nil {
+			t.Fatal(err)
+		}
+		out := []string{fmt.Sprintf("ok %v, digest %v", plan.Ok, plan.Digest != "")}
+		for _, pr := range plan.Problems {
+			out = append(out, string(pr.Severity)+" "+pr.Code+" "+pr.Path)
+		}
+		return out
+	}
+
+	resp, data := p.do(t, http.MethodPost, "/v1/plan", graph, auth)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("plan: status %d: %s", resp.StatusCode, data)
+	}
+	if got, want := problems(data), []string{"ok true, digest true", "warning host_access modules.web"}; !slices.Equal(got, want) {
+		t.Errorf("plan = %v, want %v", got, want)
+	}
+
+	resp, data = p.do(t, http.MethodPost, "/v1/render/managed", `{"graph":`+graph+`,"deployment":"01960000-0000-7000-8000-000000000001"}`, auth)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("managed render: status %d, want 422: %s", resp.StatusCode, data)
+	}
+	if got, want := problems(data), []string{"ok false, digest false", "error setup_required modules.ask", "error host_access modules.web"}; !slices.Equal(got, want) {
+		t.Errorf("managed render = %v, want %v", got, want)
+	}
+}

@@ -38,9 +38,11 @@ const (
 )
 
 var (
-	projectPattern  = regexp.MustCompile(`^mp-[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
-	secretPattern   = regexp.MustCompile(`^secrets/[a-z0-9-]+/[A-Za-z0-9._-]+$`)
-	envFilePattern  = regexp.MustCompile(`^config/[a-z0-9]([a-z0-9-]*[a-z0-9])?\.env$`)
+	projectPattern = regexp.MustCompile(`^mp-[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+	secretPattern  = regexp.MustCompile(`^secrets/[a-z0-9-]+/[A-Za-z0-9._-]+$`)
+	// configPattern is an sdk module's env file config/<instance>.env, or a template output
+	// config/<instance>/<file> (spec 0013, Templates), never a dot name like ..
+	configPattern   = regexp.MustCompile(`^config/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.env|/[A-Za-z0-9_-][A-Za-z0-9._-]*)$`)
 	projectFiles    = map[string]bool{"docker-compose.yml": true, ".env": true, "graph.yaml": true, "README.md": true, "setup.sh": true}
 	errNotSecretDir = errors.New("not a secret path")
 )
@@ -104,7 +106,7 @@ func (e *Engine) check(req ApplyRequest) []Problem {
 		return problems
 	}
 	for _, f := range req.Files {
-		if !projectFiles[f.Path] && !envFilePattern.MatchString(f.Path) {
+		if !projectFiles[f.Path] && !configPattern.MatchString(f.Path) {
 			refuse(CodeInvalidPath, "files."+f.Path, "%q is not a file a rendered project holds.", f.Path)
 		}
 	}

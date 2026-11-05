@@ -78,8 +78,9 @@ func (s *Server) Render(ctx context.Context, req RenderRequestObject) (RenderRes
 }
 
 // RenderManaged answers the project the managed deployer applies, or the plan itself (422) when
-// it has an error or the rendered project fails the guard (host_access, spec 0006 AC-8). Public
-// mode has no managed render: 404.
+// it has an error, the managed flavor refuses an instance (host_access or setup_required, spec
+// 0013), or the rendered project fails the guard (host_access, spec 0006 AC-8). Public mode has
+// no managed render: 404.
 func (s *Server) RenderManaged(ctx context.Context, req RenderManagedRequestObject) (RenderManagedResponseObject, error) {
 	if !s.managed {
 		return RenderManaged404JSONResponse{Problems: []contract.Problem{{
@@ -94,6 +95,9 @@ func (s *Server) RenderManaged(ctx context.Context, req RenderManagedRequestObje
 		return nil, err
 	}
 	m, err := render.Managed(plan, s.catalog, s.templates, req.Body.Deployment.String())
+	if refused, ok := errors.AsType[*render.RefusedError](err); ok {
+		return RenderManaged422JSONResponse(render.Refuse(plan, refused.Problems)), nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -102,9 +106,7 @@ func (s *Server) RenderManaged(ctx context.Context, req RenderManagedRequestObje
 		return nil, err
 	}
 	if problems := render.Guard(project, s.reserved); len(problems) > 0 {
-		plan.Ok, plan.Digest = false, ""
-		plan.Problems = append(plan.Problems, problems...)
-		return RenderManaged422JSONResponse(plan), nil
+		return RenderManaged422JSONResponse(render.Refuse(plan, problems)), nil
 	}
 	return RenderManaged200JSONResponse(renderedProject(plan, m)), nil
 }

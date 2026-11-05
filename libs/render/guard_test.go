@@ -18,9 +18,8 @@ var deployEnv = []byte("MP_UID=1000\nMP_GID=1000\n")
 
 // TestGuardAcceptsEveryRender renders every fixture graph with Managed and shows the guard and
 // the project check accept it, so the allow list and the render cannot drift (spec 0006, AC-8).
-// The exceptions are build task 16's to decide (spec 0011): which capabilities a deployed module
-// may add (cap_add in the bindings case), and template outputs under config/<instance>/, which
-// the guard and the deployer's path list (spec 0007) do not allow yet.
+// The one exception is still open (spec 0011, task 16 left it for /architect): which
+// capabilities a deployed module may add, so the guard keeps refusing cap_add (the bindings case).
 func TestGuardAcceptsEveryRender(t *testing.T) {
 	t.Parallel()
 	for name, c := range map[string]struct {
@@ -30,7 +29,7 @@ func TestGuardAcceptsEveryRender(t *testing.T) {
 		"whoami-postgres": {noTemplates(samplePlan), nil},
 		"sdk-pair":        {noTemplates(pairPlan), nil},
 		"bindings":        {noTemplates(bindingsPlan), []string{"services.notifier.cap_add"}},
-		"templates":       {templatesPlan, []string{"configs.gateway_app.yml.file", "configs.gateway_routes.conf.file"}},
+		"templates":       {templatesPlan, nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -130,6 +129,9 @@ func TestGuard(t *testing.T) {
 		"a secret by env":             {top: "secrets:\n  s:\n    file: ${SECRET}", env: "SECRET=/etc/shadow", want: "secrets.s.file"},
 		"a secret from env":           {top: "secrets:\n  s:\n    environment: HOME", want: "secrets.s.environment"},
 		"a config outside":            {top: "configs:\n  c:\n    file: ../other/config/app.env", want: "configs.c.file"},
+		"a template output":           {top: "configs:\n  c:\n    file: ./config/app/Caddyfile", want: ""},
+		"a template folder up":        {top: "configs:\n  c:\n    file: ./config/app/..", want: "configs.c.file"},
+		"a template two deep":         {top: "configs:\n  c:\n    file: ./config/app/a/b", want: "configs.c.file"},
 		"include":                     {top: "include: [other.yml]", want: "include"},
 		"an extension":                {top: "x-anything: 1", want: "x-anything"},
 		"the platform network":        {top: "networks:\n  internal:\n    external: true\n    name: modular-platform_internal", want: "networks.internal.external"},

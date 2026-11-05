@@ -69,6 +69,7 @@ func CheckModule(file string, data []byte, caps map[string]Capability) (Module, 
 	mc.environment()
 	mc.network()
 	mc.volumes()
+	mc.hostAccess()
 	mc.templates()
 	mc.setup()
 	if m.Hardening != nil {
@@ -582,14 +583,11 @@ func (c *moduleChecker) setupFolder(p, folder string) {
 
 // mount checks an absolute container path and claims it, so no two mounts share one path.
 func (c *moduleChecker) mount(p, target string) {
-	switch {
-	case !path.IsAbs(target) || path.Clean(target) != target:
+	if !path.IsAbs(target) || path.Clean(target) != target {
 		c.add(p, CodeInvalidMount, "%q must be a clean absolute path", target)
-	case c.mounts[target] != "":
-		c.add(p, CodeInvalidMount, "%s is already mounted by %s", target, c.mounts[target])
-	default:
-		c.mounts[target] = p
+		return
 	}
+	c.claim(p, target)
 }
 
 func (c *checker) image(image string) {

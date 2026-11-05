@@ -26,7 +26,9 @@ const (
 
 var (
 	secretFile = regexp.MustCompile(`^\./secrets/[a-z0-9-]+/[A-Za-z0-9._-]+$`)
-	configFile = regexp.MustCompile(`^\./config/[a-z0-9]([a-z0-9-]*[a-z0-9])?\.env$`)
+	// configFile is an sdk module's env file config/<instance>.env, or a template output
+	// config/<instance>/<file> (spec 0013, Templates), never a dot name like ..
+	configFile = regexp.MustCompile(`^\./config/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.env|/[A-Za-z0-9_-][A-Za-z0-9._-]*)$`)
 	dataFolder = regexp.MustCompile(`^\./data/([a-z0-9-]+)/[a-z0-9-]+$`)
 	// platformLabels are the only labels a managed service carries; LabelJob only on a job or
 	// the wait anchor, with one of jobKinds.

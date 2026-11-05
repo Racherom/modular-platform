@@ -262,9 +262,6 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 	if len(m.Command) > 0 {
 		svc.Command = escapeAll(m.Command)
 	}
-	if len(m.Publish) > 0 || len(m.HostMounts) > 0 {
-		return svc, fmt.Errorf("%w: host access of module %s", ErrNotRendered, m.Name)
-	}
 	r.networks(&svc, i, m)
 	r.harden(&svc, m.Hardening)
 	if err := r.installTime(&svc, i, m); err != nil {
@@ -294,6 +291,9 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 		svc.Volumes = append(svc.Volumes, types.ServiceVolumeConfig{Type: types.VolumeTypeBind, Source: "./" + folder, Target: m.Volumes[n]})
 		r.data.Folders = append(r.data.Folders, folder)
 	}
+	if err := r.hostAccess(&svc, i, m); err != nil {
+		return svc, err
+	}
 	if m.Runtime == contract.Sdk {
 		r.sdkInstance(&svc, i, m)
 	}
@@ -303,8 +303,8 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 	return svc, nil
 }
 
-// networks joins instance i to internal, and to egress when its entry declares network.egress,
-// with its host name and the entry's config aliases on each (spec 0013).
+// networks joins instance i to internal, and to egress when its entry declares network.egress
+// or publishes a port, with its host name and the entry's config aliases on each (spec 0013).
 func (r *renderer) networks(svc *types.ServiceConfig, i string, m contract.Module) {
 	aliases := []string{r.host(i)}
 	joins := []string{networkInternal}
@@ -312,10 +312,11 @@ func (r *renderer) networks(svc *types.ServiceConfig, i string, m contract.Modul
 		for _, a := range m.Network.Aliases {
 			aliases = append(aliases, composeVar(i, a.Config, m.Config[a.Config]))
 		}
-		if m.Network.Egress {
-			joins = append(joins, networkEgress)
-			r.egress = true
-		}
+	}
+	// a published port needs a network with a route to the host: internal has none
+	if m.Network != nil && m.Network.Egress || len(m.Publish) > 0 {
+		joins = append(joins, networkEgress)
+		r.egress = true
 	}
 	svc.Networks = map[string]*types.ServiceNetworkConfig{}
 	for _, n := range joins {
