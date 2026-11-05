@@ -2,6 +2,7 @@
 
 **Date**: 2026-11-03
 **Parent**: [0006. Managed mode control plane](index.md)
+**Extended by**: [0022](../0011-capability-module-contract/0022-deployed-cap-add.md) (#3): `cap_add` items equal to `NET_BIND_SERVICE` only, and `cap_drop: [ALL]` and `security_opt: [no-new-privileges:true]` required on every service.
 
 ## Summary
 
