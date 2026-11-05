@@ -91,6 +91,7 @@ secrets:
   - name: token
     env: TOKEN_FILE
     description: A token.
+  - {name: clients/, from: setup, mount: /run/clients, description: One file per client.}
 volumes:
   data: /var/lib/svc
 hardening:
@@ -102,6 +103,13 @@ setup:
   - name: init
     command: [svc, init]
     writes: [{name: token}]
+  - name: client-file
+    entrypoint: [sh, -c]
+    command: ["svc digest \"$(cat /in/web/token)\" ${SALT:-x} > /out/clients/$CLIENT"]
+    env: {CLIENT: "{client}"}
+    for_each: web
+    reads: [{provide: web, field: token}]
+    writes: [{name: "clients/{client}"}]
 healthcheck:
   test: ["CMD", "svc", "check"]
   interval: 5s
@@ -232,6 +240,22 @@ func TestModuleRules(t *testing.T) {
 		"template delims":     one("    path: /etc/svc.conf\n", "    path: /etc/svc.conf\n    delims: [\"[[\", \"\"]\n", "templates.0.delims", contract.CodeInvalidTemplate),
 		"setup no command":    one("command: [svc, init]", "command: []", "setup.0.command", contract.CodeInvalidSetupStep),
 		"setup for each":      one("    command: [svc, init]\n", "    command: [svc, init]\n    for_each: nope\n", "setup.0.for_each", contract.CodeInvalidSetupStep),
+		"client env":          one("    command: [svc, init]\n", "    command: [svc, init]\n    env: {X: \"{client}\"}\n", "setup.0.env.X", contract.CodeInvalidSetupStep),
+		"client command":      one("command: [svc, init]", "command: [svc, \"{client}\"]", "setup.0.command.1", contract.CodeInvalidSetupStep),
+		"client entrypoint":   one("    command: [svc, init]\n", "    entrypoint: [\"svc-{client}\"]\n    command: [svc, init]\n", "setup.0.entrypoint.0", contract.CodeInvalidSetupStep),
+		"client write":        one("writes: [{name: token}]", "writes: [{name: \"clients/{client}\"}]", "setup.0.writes.0.name", contract.CodeInvalidSetupStep),
+		"each bare folder":    one(`"clients/{client}"`, "clients/", "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"each prefix":         one(`"clients/{client}"`, `"digest-{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"each suffix":         one(`"clients/{client}"`, `"clients/{client}.pem"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"each nested":         one(`"clients/{client}"`, `"a/b/{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"each no folder":      one(`"clients/{client}"`, `"other/{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"each file secret":    one(`"clients/{client}"`, `"token/{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"folder not declared": one("writes: [{name: token}]", "writes: [{name: other/}]", "setup.0.writes.0.name", contract.CodeInvalidSetupStep),
+		"each asks":           one("    for_each: web\n", "    for_each: web\n    asks: [{name: who, description: Who.}]\n", "setup.1.asks", contract.CodeInvalidSetupStep),
+		"provide no for_each": one("writes: [{name: token}]", "writes: [{name: token}]\n    reads: [{provide: web, field: token}]", "setup.0.reads.0.provide", contract.CodeInvalidSetupStep),
+		"provide other":       one("reads: [{provide: web, field: token}]", "reads: [{provide: api, field: token}]", "setup.1.reads.0.provide", contract.CodeInvalidSetupStep),
+		"provide to_consumer": one("reads: [{provide: web, field: token}]", "reads: [{provide: web, field: host}]", "setup.1.reads.0.field", contract.CodeInvalidSetupStep),
+		"setup env MP_":       one(`env: {CLIENT: "{client}"}`, `env: {MP_INSTANCE: "{client}"}`, "setup.1.env.MP_INSTANCE", contract.CodeInvalidSetupStep),
 		"healthcheck form":    one(`["CMD", "svc", "check"]`, `["svc", "check"]`, "healthcheck.test", contract.CodeInvalidHealthcheck),
 		"duration":            one("interval: 5s", "interval: soon", "healthcheck.interval", contract.CodeInvalidDuration),
 		"retries":             one("retries: 3", "retries: 0", "healthcheck.retries", contract.CodeInvalidRetries),
