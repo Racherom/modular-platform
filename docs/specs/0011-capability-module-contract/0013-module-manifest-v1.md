@@ -85,7 +85,7 @@ healthcheck:
 | `publish[*]` | `port`, `host` | container port; host port as `{config: <int value>}` or a number. Host access |
 | `host_mounts[*]` | `host`, `path`, `read_only` | host path (absolute, `{config: <value>}`, or `{install: <relative>}`, platform flavor only, 0015), container path (absolute or the same `{install}` form), `read_only` default `true`, `create: true` for an `{install}` folder that `setup.sh` makes (mode 0700, as you) when missing. Host access |
 | `network` | `egress`, `aliases` | `egress: true` joins the egress network; `aliases` lists `{config: <value>}` names added on every network |
-| `hardening` | `user`, `writable_root`, `cap_add`, `tmpfs` | `user: root` or `user: image` (keep the image's user); `writable_root: true`; `cap_add` names; `tmpfs` paths (not an opt out) |
+| `hardening` | `user`, `writable_root`, `cap_add`, `tmpfs` | `user: root` or `user: image` (keep the image's user); `writable_root: true`; `cap_add` Linux capability names (upper case, no `CAP_`; a deployed graph may add only `NET_BIND_SERVICE`, 0022); `tmpfs` paths (not an opt out) |
 
 **Field sources** (on a provide; values a template may read are marked *plan*):
 
@@ -106,7 +106,7 @@ healthcheck:
 | `{uses: <slot>, format: "{origin}{base_path}/auth"}` | the format with each `{field}` replaced by that field of the provider's own binding on `<slot>` (text fields only) | as the fields it names |
 | `{volume: <name>, path: <relative file>}` | a file the provider writes into its own data folder (Caddy's local root CA); the consumer gets the containing folder mounted read only at `/run/volumes/<s>/<f>/` and its env the file path in it, so the file may appear after start; the consumer depends on the provider being healthy | file |
 
-**Catalog rules** added (path in the entry): `unknown_capability`, `unknown_field`, `missing_field_source`, `invalid_field_source` (a source whose type does not fit, like `{secret}` on a `string`, `platform: url` without a scheme), `reserved_slot`, `per_caller_not_allowed`, `invalid_template`, `invalid_setup_step`, `invalid_mount` (relative path, two mounts on one path), plus every 0002 and 0005 rule still in force.
+**Catalog rules** added (path in the entry): `unknown_capability`, `unknown_field`, `missing_field_source`, `invalid_field_source` (a source whose type does not fit, like `{secret}` on a `string`, `platform: url` without a scheme), `reserved_slot`, `per_caller_not_allowed`, `invalid_hardening` (a `cap_add` name, 0022), `invalid_template`, `invalid_setup_step`, `invalid_mount` (relative path, two mounts on one path), plus every 0002 and 0005 rule still in force.
 
 ## Render
 
