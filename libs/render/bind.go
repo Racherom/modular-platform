@@ -277,7 +277,7 @@ func (r *renderer) source(e end, k contract.Capability, f string, src contract.F
 	case src.Value != "":
 		return value{text: src.Value}, true, nil
 	case src.Config != "":
-		v := composeVar(p, src.Config, m.Config[src.Config].Default)
+		v := composeVar(p, src.Config, m.Config[src.Config])
 		if src.Format != "" {
 			v = strings.ReplaceAll(escape(src.Format), "{}", v)
 		}
@@ -313,18 +313,24 @@ func (r *renderer) servesTLS(p string) bool {
 // secrets/<consumer>/uses_<slot>_<field>.
 func (r *renderer) perBinding(b contract.Binding, f string) string {
 	path := "secrets/" + b.Consumer + "/uses_" + b.Slot + "_" + f
-	r.generated(b.Consumer, path)
+	r.generated(b.Consumer, path, true)
 	return path
 }
 
-// composeVar is the Compose variable of config value v of instance i: MP_<I>__<V>, upper case,
-// - as _ (spec 0013), with the value's default.
-func composeVar(i, v, def string) string {
-	name := "MP_" + envPart(i) + "__" + envPart(v)
-	if def == "" {
+// composeVar is the Compose variable of config value v of instance i (spec 0013): an asked
+// value plain, since setup.sh always writes its answer; any other with its default, {uid} and
+// {gid} as the setup user's variables.
+func composeVar(i, v string, cv contract.ConfigValue) string {
+	name := contract.ComposeVar(i, v)
+	switch {
+	case cv.Asked() || cv.Default == "":
 		return "${" + name + "}"
+	case cv.Default == "{uid}":
+		return "${" + name + ":-${MP_UID}}"
+	case cv.Default == "{gid}":
+		return "${" + name + ":-${MP_GID}}"
 	}
-	return "${" + name + ":-" + escape(def) + "}"
+	return "${" + name + ":-" + escape(cv.Default) + "}"
 }
 
 func envPart(s string) string { return strings.ToUpper(strings.ReplaceAll(s, "-", "_")) }

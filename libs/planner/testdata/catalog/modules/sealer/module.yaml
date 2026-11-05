@@ -1,0 +1,30 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: sealer
+description: Seals secrets per client; its steps read only what setup.sh made before them.
+image: example.test/sealer:1.0.0
+provides:
+  seal:
+    capability: seal
+    version: "1.0"
+    port: 8200
+    fields:
+      url: {platform: url}
+      shared: {generate: true}
+      root: {secret: root}
+      stamp: {volume: data, path: stamp.pem}
+secrets:
+  - {name: root, from: setup, mount: /run/secrets/root, description: Root certificate.}
+  - {name: marks/, from: setup, mount: /run/secrets/marks, description: One mark per client.}
+setup:
+  - name: root
+    command: [make-root]
+    writes: [{name: root, mode: "0644"}]
+  - name: mark
+    command: [mark]
+    env: {CLIENT: "{client}"}
+    for_each: seal
+    reads: [{provide: seal, field: key}, {provide: seal, field: shared}, {secret: root}]
+    writes: [{name: "marks/{client}"}]
+volumes:
+  data: /var/lib/sealer

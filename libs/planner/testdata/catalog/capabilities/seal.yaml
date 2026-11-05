@@ -1,0 +1,11 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: seal
+description: Seals secrets for a consumer, for the setup order checks.
+scheme: http
+fields:
+  url: {type: url, description: Base URL of the sealer.}
+  shared: {type: secret, direction: both, description: Secret both sides hold.}
+  key: {type: certificate, direction: to_provider, description: Public key of the consumer.}
+  root: {type: certificate, description: Root certificate of the sealer.}
+  stamp: {type: certificate, optional: true, description: Stamp the sealer writes at run time.}

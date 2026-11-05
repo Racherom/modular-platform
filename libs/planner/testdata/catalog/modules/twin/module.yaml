@@ -1,0 +1,16 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: twin
+description: Two asked values whose Compose variables meet when an instance name holds --.
+image: example.test/twin:1.0.0
+config:
+  a--b:
+    env: TWIN_A_B
+    type: string
+    setup: ask
+    description: First value.
+  b:
+    env: TWIN_B
+    type: string
+    setup: ask
+    description: Second value.

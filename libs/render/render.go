@@ -66,18 +66,24 @@ type Output struct {
 type secret struct {
 	Instance          string
 	Path              string // secrets/<instance>/<name>
+	PerBinding        bool   // generated for one binding, after the module secrets
 	Capability, Field string // placed only: the external provide's capability and field
 	Description       string // placed only: the field's description
 }
 
 type templateData struct {
-	Name     string
-	Secrets  []secret // the secret files setup.sh creates
-	Placed   []secret // the files you place
-	EnvFiles []string // config/<instance>.env of each sdk instance
-	Folders  []string // data/<instance>/<volume> folders setup.sh creates
+	Name         string
+	Asked        []askedValue  // asked config values, instances then values in name order
+	AskedSecrets []askedValue  // secrets with from: ask, in the same order
+	Secrets      []secret      // the secret files setup.sh generates
+	Steps        []installStep // setup steps in binding order
+	Placed       []secret      // the files you place
+	EnvFiles     []string      // config/<instance>.env of each sdk instance
+	Folders      []string      // data/<instance>/<volume> folders setup.sh creates
 
-	WaitAnchor bool // the stack has the wait anchor mp_jobs (spec 0014, "Waiting")
+	NeedEnvGet   bool // setup.sh reads an answer back from .env
+	NeedDuration bool // setup.sh checks a duration
+	WaitAnchor   bool // the stack has the wait anchor mp_jobs (spec 0014, "Waiting")
 }
 
 // Render renders the resolved graph of an ok plan. catalog must hold every module and
@@ -175,6 +181,9 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed b
 	if err := r.revokeJobs(); err != nil {
 		return rendered{}, err
 	}
+	if err := r.steps(plan.Bindings); err != nil {
+		return rendered{}, err
+	}
 	for _, i := range instances {
 		if gm := r.g.Modules[i]; gm.External == nil {
 			if err := r.environment(i, r.modules[gm.Module]); err != nil {
@@ -186,7 +195,13 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed b
 	if r.egress {
 		r.project.Networks[networkEgress] = types.NetworkConfig{}
 	}
-	slices.SortFunc(r.data.Secrets, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
+	// module secrets first, then per binding files, each in path order (spec 0013, step 4)
+	slices.SortFunc(r.data.Secrets, func(a, b secret) int {
+		if a.PerBinding != b.PerBinding {
+			return map[bool]int{false: -1, true: 1}[a.PerBinding]
+		}
+		return strings.Compare(a.Path, b.Path)
+	})
 	slices.SortFunc(r.data.Placed, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
 	slices.Sort(r.data.Folders)
 
@@ -240,15 +255,19 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 	if len(m.Command) > 0 {
 		svc.Command = escapeAll(m.Command)
 	}
-	if len(m.Templates) > 0 || len(m.Setup) > 0 || len(m.Publish) > 0 || len(m.HostMounts) > 0 {
-		return svc, fmt.Errorf("%w: templates, setup steps and host access of module %s", ErrNotRendered, m.Name)
+	if len(m.Templates) > 0 || len(m.Publish) > 0 || len(m.HostMounts) > 0 {
+		return svc, fmt.Errorf("%w: templates and host access of module %s", ErrNotRendered, m.Name)
 	}
 	r.networks(&svc, i, m)
 	r.harden(&svc, m.Hardening)
+	if err := r.installTime(&svc, i, m); err != nil {
+		return svc, err
+	}
 
 	for _, s := range m.Secrets {
-		if s.From != "" && s.From != contract.SecretFromGenerate {
-			return svc, fmt.Errorf("%w: secret %s of module %s comes from %s", ErrNotRendered, s.Name, m.Name, s.From)
+		if s.From == contract.SecretFromSetup {
+			r.setupSecrets(&svc, i, s)
+			continue
 		}
 		path := "secrets/" + i + "/" + s.Name
 		target := s.Mount
@@ -259,7 +278,9 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 		if s.Env != "" {
 			setEnv(&svc, s.Env, target)
 		}
-		r.generated(i, path)
+		if s.From != contract.SecretFromAsk { // setup.sh asks it instead
+			r.generated(i, path, false)
+		}
 	}
 	for _, n := range sortedKeys(m.Volumes) {
 		folder := "data/" + i + "/" + n
@@ -282,7 +303,7 @@ func (r *renderer) networks(svc *types.ServiceConfig, i string, m contract.Modul
 	joins := []string{networkInternal}
 	if m.Network != nil {
 		for _, a := range m.Network.Aliases {
-			aliases = append(aliases, composeVar(i, a.Config, m.Config[a.Config].Default))
+			aliases = append(aliases, composeVar(i, a.Config, m.Config[a.Config]))
 		}
 		if m.Network.Egress {
 			joins = append(joins, networkEgress)
@@ -315,7 +336,7 @@ func (r *renderer) environment(i string, m contract.Module) error {
 			case contract.EnvGID:
 				b.WriteString("${MP_GID}")
 			case contract.EnvConfig:
-				b.WriteString(composeVar(i, part.Name, m.Config[part.Name].Default))
+				b.WriteString(composeVar(i, part.Name, m.Config[part.Name]))
 			case contract.EnvUses:
 				v := r.bound[i][part.Name][part.Field]
 				if v.raw {
@@ -379,13 +400,14 @@ func (r *renderer) mountSecret(svc *types.ServiceConfig, name, path, target stri
 	svc.Secrets = append(svc.Secrets, types.ServiceSecretConfig{Source: name, Target: target})
 }
 
-// generated lists path once as a file setup.sh (or the deployer) creates.
-func (r *renderer) generated(instance, path string) {
+// generated lists path once as a file setup.sh (or the deployer) creates; perBinding marks a
+// file of one binding, which setup.sh creates after the module secrets.
+func (r *renderer) generated(instance, path string, perBinding bool) {
 	if r.declared[path] {
 		return
 	}
 	r.declared[path] = true
-	r.data.Secrets = append(r.data.Secrets, secret{Instance: instance, Path: path})
+	r.data.Secrets = append(r.data.Secrets, secret{Instance: instance, Path: path, PerBinding: perBinding})
 }
 
 // placed lists path once as a file you place.

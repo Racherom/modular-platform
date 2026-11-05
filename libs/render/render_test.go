@@ -108,6 +108,35 @@ func TestRenderBindingsGolden(t *testing.T) {
 	checkGolden(t, filepath.Join("testdata", "bindings", "golden"), out)
 }
 
+// installPlan plans the install time case: asked values of every type, an asked secret value,
+// a from: ask secret, setup steps with asks, reads, writes and for_each over two clients, and
+// clients whose own step reads the provider's step output (spec 0011 build task 14).
+func installPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
+	t.Helper()
+	catalog := loadCatalog(t, "testdata/install/catalog")
+	return planFile(t, "testdata/install/graph.yaml", catalog), catalog
+}
+
+// TestRenderInstallGolden pins every rendered file of the install case (AC-10).
+func TestRenderInstallGolden(t *testing.T) {
+	plan, catalog := installPlan(t)
+	out, err := render.Render(plan, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkGolden(t, filepath.Join("testdata", "install", "golden"), out)
+}
+
+// TestRenderManagedRefusesInstallTime: a deployed graph has no setup.sh, so a module that needs
+// one is not rendered for the deployer until #9 (spec 0013, Managed flavor; task 16 turns this
+// into the 422 setup_required).
+func TestRenderManagedRefusesInstallTime(t *testing.T) {
+	plan, catalog := installPlan(t)
+	if _, err := render.Managed(plan, catalog, "d1"); !errors.Is(err, render.ErrNotRendered) {
+		t.Fatalf("err = %v, want ErrNotRendered", err)
+	}
+}
+
 // checkGolden compares each rendered file with its copy under dir, or rewrites it with -update.
 func checkGolden(t *testing.T, dir string, out render.Output) {
 	t.Helper()

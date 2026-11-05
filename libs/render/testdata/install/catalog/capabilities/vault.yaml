@@ -1,0 +1,9 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: vault
+description: Keeps one sealed secret per consumer, for the install time render.
+scheme: http
+fields:
+  url: {type: url, description: Base URL of the vault.}
+  client_secret: {type: secret, direction: both, description: Secret the vault and one consumer share.}
+  root: {type: certificate, description: Root certificate the vault signs with.}

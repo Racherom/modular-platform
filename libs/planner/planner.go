@@ -150,6 +150,8 @@ func (p *planning) run() {
 	p.namedValues()
 	p.tokens()
 	p.cycles(instances)
+	p.envNames(instances)
+	p.setupOrder(instances)
 }
 
 // offers lists the provides of instance i in name order; nil for an unknown module.

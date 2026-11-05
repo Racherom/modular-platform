@@ -1,0 +1,21 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: client
+description: Holds a sealed secret from a vault and trusts its root, for the install time render.
+image: postgres:18.6
+command: [sleep, infinity]
+uses:
+  vault:
+    capability: vault
+    env:
+      url: CLIENT_VAULT_URL
+      client_secret: CLIENT_VAULT_SECRET_FILE
+    files:
+      root: /run/secrets/vault-root.crt
+secrets:
+  - {name: trusted-root, from: setup, mount: /run/secrets/trusted-root.crt, description: "The vault's root, as this client trusts it."}
+setup:
+  - name: trust
+    command: [cp, /in/vault/root, /out/trusted-root]
+    reads: [{slot: vault, field: root}]
+    writes: [{name: trusted-root, mode: "0644"}]

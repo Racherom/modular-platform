@@ -15,8 +15,8 @@ The first `up` also runs a short job for each database or other resource a modul
 
 Secret files `setup.sh` creates:
 
-- `secrets/consumer/uses_greet_token`
 - `secrets/provider/signing-key`
+- `secrets/consumer/uses_greet_token`
 
 Settings of the modules built on the module SDK. Fill every line marked `required` before you start, and restart a module after you change its file:
 
