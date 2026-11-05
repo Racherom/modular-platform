@@ -14,6 +14,9 @@ import (
 const (
 	labelInstance = "io.github.racherom.modular-platform.instance"
 	labelModule   = "io.github.racherom.modular-platform.module"
+	labelJob      = "io.github.racherom.modular-platform.job"
+	// jobWait marks the wait anchor mp_jobs (spec 0014, "Waiting"): it belongs to no instance.
+	jobWait = "wait"
 )
 
 // Container is one container of a project as the engine sees it.
@@ -67,7 +70,8 @@ type Service struct {
 var ErrDocker = errors.New("deploy: docker did not answer")
 
 // State reports each container of project, sorted by instance, and whether the project is
-// present at all (a container or its folder exists).
+// present at all (a container or its folder exists). The wait anchor mp_jobs is left out: it
+// belongs to no instance.
 func (e *Engine) State(ctx context.Context, project string) (bool, []Service, error) {
 	containers, err := e.docker.Containers(ctx, project)
 	if err != nil {
@@ -75,10 +79,13 @@ func (e *Engine) State(ctx context.Context, project string) (bool, []Service, er
 	}
 	services := make([]Service, 0, len(containers))
 	for _, c := range containers {
+		if c.Labels[labelJob] == jobWait {
+			continue
+		}
 		services = append(services, e.service(c))
 	}
 	slices.SortFunc(services, func(a, b Service) int { return strings.Compare(a.Instance, b.Instance) })
-	present := len(services) > 0
+	present := len(containers) > 0
 	if !present {
 		_, err := os.Lstat(e.projectDir(project))
 		present = !errors.Is(err, fs.ErrNotExist)

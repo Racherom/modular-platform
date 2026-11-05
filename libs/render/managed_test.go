@@ -90,7 +90,8 @@ func TestRenderManagedRules(t *testing.T) {
 }
 
 // TestRenderManagedJobLabels checks that a provision job carries its provisioner's instance and
-// module and the job label, and keeps restart "no" (spec 0013, "Labels").
+// module and the job label, and keeps restart "no", and that the wait anchor carries job: wait and
+// no instance or module (spec 0013, "Labels").
 func TestRenderManagedJobLabels(t *testing.T) {
 	t.Parallel()
 	plan, catalog := samplePlan(t)
@@ -114,6 +115,17 @@ func TestRenderManagedJobLabels(t *testing.T) {
 	} {
 		if !strings.Contains(job, want) {
 			t.Errorf("job lacks %q:\n%s", want, job)
+		}
+	}
+	// the wait anchor belongs to no instance: graph, deployment and job: wait only (spec 0014)
+	anchor := from(t, compose, "  mp_jobs:\n")
+	anchor, _, _ = strings.Cut(anchor, "\n  postgres:\n")
+	if !strings.Contains(anchor, "      io.github.racherom.modular-platform.job: wait\n") || !strings.Contains(anchor, "    restart: unless-stopped\n") {
+		t.Errorf("mp_jobs lacks job: wait or restart: unless-stopped:\n%s", anchor)
+	}
+	for _, unwanted := range []string{"modular-platform.instance", "modular-platform.module"} {
+		if strings.Contains(anchor, unwanted) {
+			t.Errorf("mp_jobs carries %s:\n%s", unwanted, anchor)
 		}
 	}
 	kinds := map[string]render.SecretKind{}

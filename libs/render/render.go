@@ -46,7 +46,7 @@ var zipTime = time.Date(1980, time.January, 1, 0, 0, 0, 0, time.UTC)
 // The networks of every project (spec 0013, "Host name and networks").
 const (
 	networkInternal = "internal" // every instance, no route out
-	networkEgress   = "egress"   // instances that declare network.egress, and jobs of an external provisioner
+	networkEgress   = "egress"   // instances that declare network.egress, consumers and jobs of an external instance
 	runUser         = "${MP_UID}:${MP_GID}"
 )
 
@@ -76,6 +76,8 @@ type templateData struct {
 	Placed   []secret // the files you place
 	EnvFiles []string // config/<instance>.env of each sdk instance
 	Folders  []string // data/<instance>/<volume> folders setup.sh creates
+
+	WaitAnchor bool // the stack has the wait anchor mp_jobs (spec 0014, "Waiting")
 }
 
 // Render renders the resolved graph of an ok plan. catalog must hold every module and
@@ -95,9 +97,9 @@ type rendered struct {
 	jobs map[string]job // job service name to what it does
 }
 
-// job is a one shot service of the project (spec 0014).
+// job is a one shot service of the project (spec 0014), or the wait anchor mp_jobs.
 type job struct {
-	instance, module, kind string // the provisioner instance and module; provision or revoke
+	instance, module, kind string // the provisioner instance and module (none on mp_jobs); provision, revoke or wait
 }
 
 // renderer holds one render in progress.
@@ -180,6 +182,7 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, managed b
 			}
 		}
 	}
+	r.waitAnchor()
 	if r.egress {
 		r.project.Networks[networkEgress] = types.NetworkConfig{}
 	}

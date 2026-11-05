@@ -14,11 +14,17 @@ import (
 // sdkPort is where a runtime: sdk module listens in plain mode.
 const sdkPort = 8080
 
-// The job labels of a one shot service (spec 0013, "Labels").
+// The job labels of a one shot service, and of the wait anchor (spec 0013, "Labels").
 const (
 	jobProvision = "provision"
 	jobRevoke    = "revoke"
+	jobWait      = "wait"
 )
+
+// waitAnchorName is the service that waits for every job nothing else depends on (spec 0014,
+// "Waiting"). Instance names hold no _, and it fits no job name pattern, so it meets no other
+// service name.
+const waitAnchorName = "mp_jobs"
 
 // value is what one field of a binding resolves to: text (a literal, or a Compose variable
 // reference when raw), or the project relative path of a file.
@@ -107,6 +113,8 @@ func (r *renderer) binding(b contract.Binding) error {
 			r.clientFiles(e, k, slot, values)
 		}
 		dependOn(&consumer, b.Provider, condition(e.module))
+	} else {
+		r.joinEgress(&consumer) // the bound host is outside the stack, and internal has no route out
 	}
 	if b.Provisioned {
 		dependOn(&consumer, provisionJobName(b), types.ServiceConditionCompletedSuccessfully)
@@ -405,8 +413,7 @@ func (r *renderer) jobService(name string, e end, admin contract.Capability, adm
 	svc.Restart = types.RestartPolicyNo
 	svc.Networks = map[string]*types.ServiceNetworkConfig{networkInternal: {}}
 	if e.external != nil {
-		svc.Networks[networkEgress] = &types.ServiceNetworkConfig{}
-		r.egress = true
+		r.joinEgress(&svc)
 	}
 	r.harden(&svc, nil)
 	setEnv(&svc, "MP_MARKER", marker(r.g.Name))
@@ -428,6 +435,57 @@ func (r *renderer) jobService(name string, e end, admin contract.Capability, adm
 		dependOn(&svc, b.Provider, condition(e.module))
 	}
 	return svc
+}
+
+// waitAnchor adds the service mp_jobs when some job has no dependent (spec 0014, "Waiting"):
+// docker compose up --wait waits for a job correctly only through a depends_on with
+// service_completed_successfully, so mp_jobs gives each such job one. It idles in the first such
+// job's image with no network, so it holds nothing and reaches nothing.
+func (r *renderer) waitAnchor() {
+	waited := map[string]bool{}
+	for _, svc := range r.project.Services {
+		for dep := range svc.DependsOn {
+			waited[dep] = true
+		}
+	}
+	var alone []string
+	for _, name := range sortedKeys(r.jobs) {
+		if !waited[name] {
+			alone = append(alone, name)
+		}
+	}
+	if len(alone) == 0 {
+		return
+	}
+	svc := types.ServiceConfig{Name: waitAnchorName}
+	svc.Image = r.project.Services[alone[0]].Image
+	svc.Entrypoint = []string{"sleep", "infinity"}
+	svc.Init = new(true) // so it stops at once on down
+	svc.NetworkMode = "none"
+	r.harden(&svc, nil)
+	if r.managed {
+		svc.Restart = types.RestartPolicyUnlessStopped
+	}
+	for _, j := range alone {
+		dependOn(&svc, j, types.ServiceConditionCompletedSuccessfully)
+	}
+	r.project.Services[waitAnchorName] = svc
+	r.jobs[waitAnchorName] = job{kind: jobWait}
+	r.data.WaitAnchor = true
+}
+
+// joinEgress joins svc to the egress network with the aliases it has on internal, if it has not
+// joined it yet.
+func (r *renderer) joinEgress(svc *types.ServiceConfig) {
+	r.egress = true
+	if _, ok := svc.Networks[networkEgress]; ok {
+		return
+	}
+	var aliases []string
+	if n := svc.Networks[networkInternal]; n != nil {
+		aliases = slices.Clone(n.Aliases)
+	}
+	svc.Networks[networkEgress] = &types.ServiceNetworkConfig{Aliases: aliases}
 }
 
 // condition is what a dependant waits for: healthy when the module has a healthcheck, else

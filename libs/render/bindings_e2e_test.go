@@ -100,9 +100,24 @@ func (s *stack) compose(args ...string) (string, error) {
 // service is healthy and every job exited 0.
 func (s *stack) up() {
 	s.t.Helper()
-	if out, err := s.compose("up", "-d", "--wait", "--wait-timeout", "180", "--remove-orphans"); err != nil {
+	if out, err := s.tryUp(); err != nil {
 		s.t.Fatalf("up: %v\n%s", err, out)
 	}
+}
+
+// tryUp runs up like up and returns its output and error.
+func (s *stack) tryUp() (string, error) {
+	return s.compose("up", "-d", "--wait", "--wait-timeout", "180", "--remove-orphans")
+}
+
+// state is the state of service's container, as docker compose ps reports it.
+func (s *stack) state(service string) string {
+	s.t.Helper()
+	out, err := s.compose("ps", "-a", "--format", "{{.State}}", service)
+	if err != nil {
+		s.t.Fatalf("ps %s: %v\n%s", service, err, out)
+	}
+	return strings.TrimSpace(out)
 }
 
 func (s *stack) secret(path string) string {
@@ -138,7 +153,13 @@ func TestRevokeEndToEnd(t *testing.T) {
 	none := map[string]contract.GraphModule{"postgres": pg}
 
 	s.apply(graphOf("revoke-e2e", both))
-	s.up()
+	s.up() // the revoke job has no module waiting for it; mp_jobs makes up wait for it (spec 0014)
+	if got := s.state("mp_jobs"); got != "running" {
+		t.Errorf("mp_jobs is %q after up, want running", got)
+	}
+	if got := s.state("postgres_revoke_server"); got != "exited" {
+		t.Errorf("the revoke job is %q after up, want exited", got)
+	}
 	admin := s.secret("secrets/postgres/password")
 	aPass, bPass := s.secret("secrets/a/uses_db_password"), s.secret("secrets/b/uses_db_password")
 	if out, err := s.psql("a_db", aPass, "a_db", "create table notes (x int); insert into notes values (42)"); err != nil {
@@ -207,6 +228,64 @@ func TestRevokeEndToEnd(t *testing.T) {
 	}
 	if got := canLogin("handmade"); got != "t" {
 		t.Errorf("the hand made role lost sign in: rolcanlogin = %q", got)
+	}
+
+	// a wrong admin password file: the revoke job fails, and so does up, on this up and the next
+	// one, with mp_jobs already running (spec 0014, "Waiting"; AC-6)
+	if got := s.state("mp_jobs"); got != "running" {
+		t.Fatalf("mp_jobs is %q before the failing up, want running", got)
+	}
+	if err := os.WriteFile(filepath.Join(s.dir, "secrets/postgres/password"), []byte("not-the-password"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range []string{"first", "second"} {
+		out, err := s.tryUp()
+		if err == nil {
+			t.Fatalf("%s up with a failing revoke job exited 0:\n%s", run, out)
+		}
+		if !strings.Contains(out, "postgres_revoke_server") {
+			t.Errorf("%s failing up does not name the revoke job:\n%s", run, out)
+		}
+		if strings.Contains(out, admin) {
+			t.Errorf("%s failing up prints the admin password", run)
+		}
+	}
+}
+
+// TestWaitAnchorImages runs the wait anchor's command, with its hardening and no network, in
+// every job image this release pins (spec 0014: a job image needs a sleep that takes
+// infinity; no catalog check can see inside an image). It needs Docker; run it with go test
+// -tags e2e.
+func TestWaitAnchorImages(t *testing.T) {
+	images := map[string]bool{}
+	// the built in catalog with the paper platform over it, as the planner's platform test loads it
+	for _, k := range loadCatalog(t, "../../catalog", "../contract/testdata/platform").Capabilities {
+		if k.Yields != nil && k.Yields.Job.Image != "" {
+			images[k.Yields.Job.Image] = true
+		}
+	}
+	if len(images) < 2 {
+		t.Fatalf("job images %v, want at least the Debian and the Alpine one", slices.Sorted(maps.Keys(images)))
+	}
+	for _, image := range slices.Sorted(maps.Keys(images)) {
+		t.Run(image, func(t *testing.T) {
+			name := "mp-e2e-anchor-" + strings.NewReplacer("/", "-", ":", "-", ".", "-").Replace(image)
+			t.Cleanup(func() {
+				_ = exec.CommandContext(context.WithoutCancel(t.Context()), "docker", "rm", "-f", name).Run()
+			})
+			if out, err := exec.CommandContext(t.Context(), "docker", "run", "-d", "--name", name,
+				"--init", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+				"--user", "65532:65532", "--network", "none", "--entrypoint", "sleep", image, "infinity").CombinedOutput(); err != nil {
+				t.Fatalf("run: %v\n%s", err, out)
+			}
+			// a sleep that does not take infinity exits at once with an error
+			cmd := exec.CommandContext(t.Context(), "sh", "-c", "sleep 2; docker inspect -f '{{.State.Status}}' \"$1\"", "inspect", name)
+			out, err := cmd.CombinedOutput()
+			if err != nil || strings.TrimSpace(string(out)) != "running" {
+				logs, _ := exec.CommandContext(t.Context(), "docker", "logs", name).CombinedOutput()
+				t.Errorf("%s does not idle: %s %v\n%s", image, out, err, logs)
+			}
+		})
 	}
 }
 
