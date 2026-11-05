@@ -50,3 +50,28 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 ## Acceptance criteria coverage (milestone 2)
 
 - AC-1: external e2e step 1 · AC-6: waiting on task 10 · AC-8: golden review steps 1 to 3, provision e2e · AC-11: guard step, managed labels · AC-12: golden review steps 4 and 5 · AC-15: external e2e, golden steps 1 and 7 · AC-18: the generic `to_provider` file delivery (golden step 3); `caller_key` itself lands in milestone 4 · AC-2: the contract rule cases
+
+## Milestone 3: install time
+
+### Asked values, secrets, setup steps and setup.sh (task 14)
+
+#### Commands
+
+- [ ] `go test -race -count=1 -run 'TestPlanInstallTime|TestBindingOrder' ./libs/planner/` → `setup_order` for a step reading a later step's output, a file the provider writes at run time (`{volume}`), a text field, a file you place for an external, and a client key a consumer's own step writes; none for steps in order; `env_name_collision` for `x` (`a--b`) and `x--a` (`b`), both `MP_X__A__B`; steps run providers first, ties by name → AC-10
+- [ ] `go test -race -count=1 -run 'TestEREPattern' ./libs/render/` → for every case `setup.sh`'s check (`printf` to an ERE, `LC_ALL=C grep -E`) accepts exactly the answers Go's `regexp` accepts, non ASCII answers included; word boundaries, a class of only some non ASCII characters, an empty match and a literal newline are refused with `ErrNotRendered` → AC-10
+- [ ] `go test -race -count=1 -run 'TestRenderInstallGolden|TestRenderManagedRefusesInstallTime' ./libs/render/` → the install golden matches; the managed flavor refuses a module that needs `setup.sh` (task 16 turns this into the 422 `setup_required`) → AC-10, AC-11
+- [ ] `go test -race -count=1 -tags e2e -run TestInstallSetup ./libs/render/` (needs Docker and `postgres:18.6`) → with answers piped in, the defaults fill (`origin` from the `domain` answer), `.env` holds each answer, secrets are written, steps run in the module's image with `{client}` replaced in env, command and file name while `${GREETING}` stays as written; a second run asks nothing and leaves every file's content, mode and mtime unchanged; a third client runs the `for_each` step once, for it only; an unbound client's file stays; with no client the folder exists, empty, and the step never runs; a wrong piped domain or an out of range port stops `setup.sh` naming the value; the project then starts with `up --wait` and `docker inspect` shows no secret value in any env → AC-10, AC-8
+
+#### Golden review
+
+- [ ] `libs/render/testdata/install/golden/setup.sh` runs in 0013's order: `MP_UID`/`MP_GID`, asked values (instances then values in name order, the secret value without echo), `from: ask` secrets, generated files (module secrets, then per binding files), setup steps (`keeper` before `alpha` and `beta`), data folders → AC-10
+- [ ] Each `docker run` has `--rm -i --network none --user "$(id -u):$(id -g)"`, `secrets/<i>` at `/out`, only its declared reads read only under `/in`, `MP_GRAPH`, `MP_INSTANCE` and one `MP_ASK_<V>` per non secret asked value; a step with asks gets its answers on stdin, any other `</dev/null` → AC-10
+- [ ] `libs/render/testdata/install/golden/docker-compose.yml`: asked values arrive as `${MP_KEEPER__<V>}` with no default, `{uid}` as `${MP_UID}`, the asked secret and `from: ask` secret as files with `_FILE` env, step written files as Compose secrets, the `sealed/` folder as a read only bind → AC-10, AC-8
+
+#### UI / manual
+
+- [ ] Render `libs/render/testdata/install/graph.yaml`, run `sh setup.sh` in a terminal, answer the domain with `Not A Domain!` → it says why and asks again; the unseal key, license and admin password are typed without echo → AC-10
+
+## Acceptance criteria coverage (milestone 3, task 14)
+
+- AC-10: planner order step, pattern step, golden review, e2e step and the manual terminal step · AC-8: e2e `docker inspect` step and the compose golden review · AC-11: the managed refusal for now (task 16 brings 422 `setup_required` and `host_access`)

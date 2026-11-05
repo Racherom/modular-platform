@@ -1,0 +1,98 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: keeper
+description: A vault that asks values, asks and generates secrets and runs setup steps, for the install time render.
+image: postgres:18.6
+command: [sleep, infinity]
+provides:
+  vault:
+    capability: vault
+    version: "1.0"
+    port: 8200
+    fields:
+      url: {config: origin}
+      client_secret: {generate: true}
+      root: {secret: root}
+config:
+  domain:
+    env: KEEPER_DOMAIN
+    type: string
+    pattern: "[a-z0-9]([a-z0-9.-]*[a-z0-9])?"
+    setup: ask
+    description: Domain the vault answers on.
+  origin:
+    env: KEEPER_ORIGIN
+    type: string
+    default: "https://{domain}"
+    setup: ask
+    description: Origin clients reach the vault at.
+  port:
+    env: KEEPER_PORT
+    type: int
+    min: 1
+    max: 65535
+    default: "8200"
+    setup: ask
+    description: Port the vault listens on.
+  timeout:
+    env: KEEPER_TIMEOUT
+    type: duration
+    min: 1s
+    max: 1h
+    default: 30s
+    setup: ask
+    description: How long a request may take.
+  mode:
+    env: KEEPER_MODE
+    type: enum
+    values: [strict, relaxed]
+    default: strict
+    setup: ask
+    description: How strictly the vault checks clients.
+  note:
+    env: KEEPER_NOTE
+    type: string
+    optional: true
+    setup: ask
+    description: A note shown on the vault's page.
+  unseal-key:
+    env: KEEPER_UNSEAL_KEY
+    type: secret
+    setup: ask
+    description: Key that unseals the vault.
+  run-uid:
+    env: KEEPER_RUN_UID
+    type: int
+    default: "{uid}"
+    description: User id the vault writes its files as.
+secrets:
+  - {name: license, from: ask, env: KEEPER_LICENSE_FILE, description: License key of the vault.}
+  - {name: master-key, env: KEEPER_MASTER_KEY_FILE, description: Key the vault seals with.}
+  - {name: root, from: setup, mount: /run/secrets/root.crt, description: Root certificate.}
+  - {name: root-key, from: setup, mount: /run/secrets/root.key, description: Root key.}
+  - {name: admins, from: setup, mount: /run/secrets/admins, description: The admin list with its first user.}
+  - {name: sealed/, from: setup, mount: /run/secrets/sealed, description: One sealed secret per client.}
+setup:
+  - name: root
+    entrypoint: [sh, -c]
+    command: ['printf "root of %s on %s\n" "$MP_INSTANCE.$MP_GRAPH" "$MP_ASK_DOMAIN" > /out/root && head -c 16 /in/master-key > /out/root-key']
+    reads: [{secret: master-key}]
+    writes: [{name: root, mode: "0644"}, {name: root-key}]
+  - name: admins
+    entrypoint: [sh, -c]
+    command: ['IFS= read -r user; IFS= read -r pass; printf "%s:%s\n" "$user" "$(printf %s "$pass" | sha256sum | cut -c1-16)" > /out/admins']
+    asks:
+      - {name: admin-user, description: User name of the vault admin.}
+      - {name: admin-pass, description: Password of the vault admin., secret: true}
+    writes: [{name: admins}]
+  - name: seal
+    entrypoint: [sh, -c]
+    command: ['printf "%s %s %s\n" "$CLIENT" "${GREETING}" "$(sha256sum < /in/vault/client_secret | cut -c1-16)" > "/out/sealed/{client}"']
+    env: {CLIENT: "{client}", GREETING: "sealed for {client}"}
+    for_each: vault
+    reads: [{provide: vault, field: client_secret}, {secret: root}]
+    writes: [{name: "sealed/{client}"}]
+volumes:
+  data: /var/lib/keeper
+hardening:
+  tmpfs: [/tmp]

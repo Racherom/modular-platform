@@ -34,5 +34,5 @@ new_secret() {
 	echo "created $1"
 }
 
-new_secret secrets/consumer/uses_greet_token
 new_secret secrets/provider/signing-key
+new_secret secrets/consumer/uses_greet_token

@@ -1,0 +1,20 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: sealed-client
+description: A client of a sealer whose key is generated, so the sealer can read it.
+image: example.test/sealed-client:1.0.0
+uses:
+  seal:
+    capability: seal
+    env: {url: SEAL_URL}
+    files: {root: /run/secrets/seal-root}
+    fields:
+      key: {secret: key}
+secrets:
+  - {name: key, mount: /run/secrets/key, description: Its key.}
+  - {name: trusted, from: setup, mount: /run/secrets/trusted, description: The root it trusts.}
+setup:
+  - name: trust
+    command: [trust]
+    reads: [{slot: seal, field: root}]
+    writes: [{name: trusted}]

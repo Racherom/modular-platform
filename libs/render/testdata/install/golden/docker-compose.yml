@@ -1,0 +1,141 @@
+name: install
+networks:
+  internal:
+    internal: true
+secrets:
+  alpha_trusted-root:
+    file: ./secrets/alpha/trusted-root
+  alpha_uses_vault_client_secret:
+    file: ./secrets/alpha/uses_vault_client_secret
+  alpha_uses_vault_root:
+    file: ./secrets/keeper/root
+  beta_trusted-root:
+    file: ./secrets/beta/trusted-root
+  beta_uses_vault_client_secret:
+    file: ./secrets/beta/uses_vault_client_secret
+  beta_uses_vault_root:
+    file: ./secrets/keeper/root
+  keeper_admins:
+    file: ./secrets/keeper/admins
+  keeper_license:
+    file: ./secrets/keeper/license
+  keeper_master-key:
+    file: ./secrets/keeper/master-key
+  keeper_root:
+    file: ./secrets/keeper/root
+  keeper_root-key:
+    file: ./secrets/keeper/root-key
+  keeper_unseal-key:
+    file: ./secrets/keeper/unseal-key
+services:
+  alpha:
+    cap_drop:
+    - ALL
+    command:
+    - sleep
+    - infinity
+    depends_on:
+      keeper:
+        condition: service_started
+        required: true
+    environment:
+      CLIENT_VAULT_SECRET_FILE: /run/secrets/uses/vault/client_secret
+      CLIENT_VAULT_URL: ${MP_KEEPER__ORIGIN}
+    image: postgres:18.6
+    networks:
+      internal:
+        aliases:
+        - alpha.install.internal
+    read_only: true
+    secrets:
+    - source: alpha_trusted-root
+      target: /run/secrets/trusted-root.crt
+    - source: alpha_uses_vault_client_secret
+      target: /run/secrets/uses/vault/client_secret
+    - source: alpha_uses_vault_root
+      target: /run/secrets/vault-root.crt
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  beta:
+    cap_drop:
+    - ALL
+    command:
+    - sleep
+    - infinity
+    depends_on:
+      keeper:
+        condition: service_started
+        required: true
+    environment:
+      CLIENT_VAULT_SECRET_FILE: /run/secrets/uses/vault/client_secret
+      CLIENT_VAULT_URL: ${MP_KEEPER__ORIGIN}
+    image: postgres:18.6
+    networks:
+      internal:
+        aliases:
+        - beta.install.internal
+    read_only: true
+    secrets:
+    - source: beta_trusted-root
+      target: /run/secrets/trusted-root.crt
+    - source: beta_uses_vault_client_secret
+      target: /run/secrets/uses/vault/client_secret
+    - source: beta_uses_vault_root
+      target: /run/secrets/vault-root.crt
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  keeper:
+    cap_drop:
+    - ALL
+    command:
+    - sleep
+    - infinity
+    environment:
+      KEEPER_DOMAIN: ${MP_KEEPER__DOMAIN}
+      KEEPER_LICENSE_FILE: /run/secrets/keeper_license
+      KEEPER_MASTER_KEY_FILE: /run/secrets/keeper_master-key
+      KEEPER_MODE: ${MP_KEEPER__MODE}
+      KEEPER_NOTE: ${MP_KEEPER__NOTE}
+      KEEPER_ORIGIN: ${MP_KEEPER__ORIGIN}
+      KEEPER_PORT: ${MP_KEEPER__PORT}
+      KEEPER_RUN_UID: ${MP_UID}
+      KEEPER_TIMEOUT: ${MP_KEEPER__TIMEOUT}
+      KEEPER_UNSEAL_KEY_FILE: /run/secrets/keeper_unseal-key
+    image: postgres:18.6
+    networks:
+      internal:
+        aliases:
+        - keeper.install.internal
+    read_only: true
+    secrets:
+    - source: keeper_unseal-key
+      target: /run/secrets/keeper_unseal-key
+    - source: keeper_license
+      target: /run/secrets/keeper_license
+    - source: keeper_master-key
+      target: /run/secrets/keeper_master-key
+    - source: keeper_root
+      target: /run/secrets/root.crt
+    - source: keeper_root-key
+      target: /run/secrets/root.key
+    - source: keeper_admins
+      target: /run/secrets/admins
+    - source: alpha_uses_vault_client_secret
+      target: /run/secrets/clients/vault/client_secret/alpha
+    - source: beta_uses_vault_client_secret
+      target: /run/secrets/clients/vault/client_secret/beta
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - read_only: true
+      source: ./secrets/keeper/sealed
+      target: /run/secrets/sealed
+      type: bind
+    - source: ./data/keeper/data
+      target: /var/lib/keeper
+      type: bind

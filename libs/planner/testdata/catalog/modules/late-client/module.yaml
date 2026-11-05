@@ -1,0 +1,17 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: late-client
+description: A client of a sealer whose key a setup step writes, after the sealer's steps.
+image: example.test/late-client:1.0.0
+uses:
+  seal:
+    capability: seal
+    env: {url: SEAL_URL}
+    fields:
+      key: {secret: key}
+secrets:
+  - {name: key, from: setup, mount: /run/secrets/key, description: Its key.}
+setup:
+  - name: keygen
+    command: [keygen]
+    writes: [{name: key}]

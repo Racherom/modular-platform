@@ -1,0 +1,23 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: wrong-steps
+description: Steps that read what setup.sh has not made when they run.
+image: example.test/wrong-steps:1.0.0
+uses:
+  seal:
+    capability: seal
+    env: {url: SEAL_URL}
+    fields:
+      key: {secret: key}
+secrets:
+  - {name: key, mount: /run/secrets/key, description: Its key.}
+  - {name: first-out, from: setup, mount: /run/secrets/first-out, description: Written by the first step.}
+  - {name: second-out, from: setup, mount: /run/secrets/second-out, description: Written by the second step.}
+setup:
+  - name: first
+    command: [first]
+    reads: [{secret: second-out}, {slot: seal, field: stamp}, {slot: seal, field: url}]
+    writes: [{name: first-out}]
+  - name: second
+    command: [second]
+    writes: [{name: second-out}]

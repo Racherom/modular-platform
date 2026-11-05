@@ -88,6 +88,7 @@ services:
     - ALL
     environment:
       NOTIFY_KEYS_DIR: /run/secrets/clients/events/key
+      NOTIFY_PUBLIC_NAME: ${MP_NOTIFIER__PUBLIC_NAME:-notify.example.test}
       NOTIFY_TOKENS_DIR: /run/secrets/clients/events/token
     image: example.test/notifier:2.1.0
     networks:

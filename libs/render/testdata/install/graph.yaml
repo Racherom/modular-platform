@@ -1,0 +1,7 @@
+apiVersion: modular-platform/v1
+kind: Graph
+name: install
+modules:
+  alpha: {module: client}
+  beta: {module: client}
+  keeper: {module: keeper}

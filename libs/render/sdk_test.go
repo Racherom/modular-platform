@@ -107,7 +107,7 @@ PAIR_GREETING=
 
 	setup := string(files["setup.sh"].Data)
 	for _, w := range []string{
-		"new_secret secrets/consumer/uses_greet_token\nnew_secret secrets/provider/signing-key\n",
+		"new_secret secrets/provider/signing-key\nnew_secret secrets/consumer/uses_greet_token\n",
 		"set_id MP_UID \"$(id -u)\"\nset_id MP_GID \"$(id -g)\"\n",
 	} {
 		if !strings.Contains(setup, w) {

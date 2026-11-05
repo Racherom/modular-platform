@@ -1,5 +1,5 @@
 #!/bin/sh
-# Prepares the stack {{.Name}}: the user it runs as, its secret files and its data folders. Run
+# Prepares the stack {{.Name}}: the user it runs as{{if or .Asked .AskedSecrets}}, the values it asks you{{end}}, its secret files{{if .Steps}}, its setup steps{{end}} and its data folders. Run
 # it once before `docker compose up`. It never changes a file that already exists, so running it
 # again is safe.
 set -eu
@@ -17,6 +17,205 @@ set_id() {
 }
 set_id MP_UID "$(id -u)"
 set_id MP_GID "$(id -g)"
+{{- if .NeedEnvGet}}
+
+# env_get NAME prints the value of NAME in .env, without the quotes setup.sh writes around it.
+env_get() {
+	sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1 | sed "s/^'\(.*\)'\$/\1/"
+}
+{{- end}}
+{{- if or .Asked .AskedSecrets}}
+
+# A question is asked once: an answer already in .env, or a secret file that exists, is kept.
+# With answers piped in, one per line, a wrong answer stops setup.sh; on a terminal it asks again.
+retry_or_stop() {
+	if [ ! -t 0 ]; then
+		echo "setup.sh: $1: the answer $2" >&2
+		exit 1
+	fi
+	echo "The answer $2; try again." >&2
+}
+
+# read_answer PROMPT SECRET reads one line into $answer, without echo for a secret.
+read_answer() {
+	printf '%s: ' "$1" >&2
+	if [ "$2" = true ] && [ -t 0 ]; then
+		stty -echo
+		trap 'stty echo' EXIT
+	fi
+	answer=
+	IFS= read -r answer || true
+	if [ "$2" = true ] && [ -t 0 ]; then
+		stty echo
+		trap - EXIT
+		echo >&2
+	fi
+}
+{{- end}}
+{{- if .Asked}}
+{{- if .NeedDuration}}
+
+# nanoseconds DURATION prints a duration like 1m30s in nanoseconds, or fails.
+nanoseconds() {
+	printf '%s\n' "$1" | LC_ALL=C awk '{
+		s = $0; sign = 1
+		if (s ~ /^[-+]/) { if (substr(s, 1, 1) == "-") sign = -1; s = substr(s, 2) }
+		if (s == "0") { print 0; exit 0 }
+		if (s == "") exit 1
+		total = 0
+		while (s != "") {
+			if (!match(s, /^([0-9]+(\.[0-9]*)?|\.[0-9]+)/)) exit 1
+			n = substr(s, 1, RLENGTH); s = substr(s, RLENGTH + 1)
+			if (match(s, /^(ns|us|ms|h|m|s)/)) { u = substr(s, 1, RLENGTH) }
+			else if (substr(s, 1, 3) == "\302\265s" || substr(s, 1, 3) == "\316\274s") { u = "us"; RLENGTH = 3 }
+			else exit 1
+			s = substr(s, RLENGTH + 1)
+			total += n * (u == "ns" ? 1 : u == "us" ? 1e3 : u == "ms" ? 1e6 : u == "s" ? 1e9 : u == "m" ? 6e10 : 3.6e12)
+		}
+		printf "%.0f\n", sign * total
+	}'
+}
+{{- end}}
+
+# valid TYPE VALUE MIN MAX PATTERN [VALUES...] checks an answer by the value's type and rules,
+# as the module itself does; a failure sets $why.
+valid() {
+	type=$1 value=$2 min=$3 max=$4 pattern=$5
+	shift 5
+	case $type in
+	string)
+		if [ -n "$pattern" ] && ! printf '%s\n' "$value" | LC_ALL=C grep -Eq -e "$(printf "$pattern")"; then
+			why="does not match the pattern the module needs"
+			return 1
+		fi
+		;;
+	int)
+		if ! printf '%s\n' "$value" | LC_ALL=C grep -Eq '^[-+]?[0-9]+$'; then
+			why="is not a whole number"
+			return 1
+		fi
+		value=${value#+}
+		if [ -n "$min" ] && ! [ "$value" -ge "$min" ] 2>/dev/null; then
+			why="is below the minimum $min"
+			return 1
+		fi
+		if [ -n "$max" ] && ! [ "$value" -le "$max" ] 2>/dev/null; then
+			why="is above the maximum $max"
+			return 1
+		fi
+		;;
+	bool)
+		case $value in
+		true | false) ;;
+		*)
+			why="is not true or false"
+			return 1
+			;;
+		esac
+		;;
+{{- if .NeedDuration}}
+	duration)
+		if ! ns=$(nanoseconds "$value"); then
+			why="is not a duration like 10s"
+			return 1
+		fi
+		if [ -n "$min" ] && awk -v a="$ns" -v b="$min" 'BEGIN { exit !(a + 0 < b + 0) }'; then
+			why="is below the minimum"
+			return 1
+		fi
+		if [ -n "$max" ] && awk -v a="$ns" -v b="$max" 'BEGIN { exit !(a + 0 > b + 0) }'; then
+			why="is above the maximum"
+			return 1
+		fi
+		;;
+{{- end}}
+	url)
+		if ! printf '%s\n' "$value" | LC_ALL=C grep -Eq '^[A-Za-z][A-Za-z0-9+.-]*://[^/?#]+'; then
+			why="is not an absolute URL with a scheme and a host"
+			return 1
+		fi
+		;;
+	enum)
+		for allowed; do
+			[ "$value" = "$allowed" ] && return 0
+		done
+		why="is not one of: $*"
+		return 1
+		;;
+	esac
+	return 0
+}
+
+# ask VAR TYPE MIN MAX PATTERN OPTIONAL DESCRIPTION DEFAULT [VALUES...] asks a value and writes
+# it into .env as VAR. An empty answer takes the default.
+ask() {
+	var=$1 type=$2 min=$3 max=$4 pattern=$5 optional=$6 description=$7 default=$8
+	shift 8
+	if grep -q "^$var=" .env 2>/dev/null; then
+		echo "kept    $var in .env"
+		return 0
+	fi
+	while :; do
+		if [ -n "$default" ]; then
+			read_answer "$description [$default]" false
+		else
+			read_answer "$description" false
+		fi
+		[ -n "$answer" ] || answer=$default
+		if [ -z "$answer" ]; then
+			[ "$optional" = true ] && break
+			retry_or_stop "$var" "is required"
+			continue
+		fi
+		case $answer in
+		*"'"* | *\\*)
+			retry_or_stop "$var" "holds ' or \\, which .env cannot keep"
+			continue
+			;;
+		esac
+		if valid "$type" "$answer" "$min" "$max" "$pattern" "$@"; then
+			break
+		fi
+		retry_or_stop "$var" "$why"
+	done
+	printf "%s='%s'\n" "$var" "$answer" >> .env
+	echo "added   $var to .env"
+}
+{{- end}}
+{{- if or .Asked .AskedSecrets}}
+
+# ask_secret PATH OPTIONAL DESCRIPTION asks a secret without echo and writes it into PATH.
+ask_secret() {
+	if [ -e "$1" ]; then
+		echo "kept    $1"
+		return 0
+	fi
+	while :; do
+		read_answer "$3" true
+		if [ -n "$answer" ] || [ "$2" = true ]; then
+			break
+		fi
+		retry_or_stop "$1" "is required"
+	done
+	mkdir -p "$(dirname "$1")"
+	(set -C && printf '%s' "$answer" > "$1")
+	echo "created $1"
+}
+{{- end}}
+{{- if .Asked}}
+
+# Values the modules ask you, written into .env.
+{{- range .Asked}}
+{{.Func}} {{.Args}}
+{{- end}}
+{{- end}}
+{{- if .AskedSecrets}}
+
+# Secrets the modules ask you, written into their files.
+{{- range .AskedSecrets}}
+ask_secret {{.Args}}
+{{- end}}
+{{- end}}
 
 new_secret() {
 	if [ -e "$1" ]; then
@@ -36,8 +235,80 @@ new_secret() {
 {{range .Secrets}}
 new_secret {{.Path}}
 {{- end}}
-{{- if not .Secrets}}
+{{- if not (or .Secrets .Asked .AskedSecrets .Steps)}}
 echo "This stack needs no secret files."
+{{- end}}
+{{- if .Steps}}
+
+# Setup steps run once each, in the module's own image, as you and with no network. A step whose
+# files all exist is skipped; one that fails, or leaves a file missing, stops setup.sh.
+missing() {
+	for path; do
+		[ -e "$path" ] || return 0
+	done
+	return 1
+}
+
+need_read() {
+	if [ ! -e "$1" ]; then
+		echo "setup.sh: $1 is missing, but a setup step reads it" >&2
+		exit 1
+	fi
+}
+
+# step_ask DESCRIPTION SECRET adds one answer, on a line of its own, to $answers.
+step_ask() {
+	read_answer "$1" "$2"
+	answers="$answers$answer
+"
+}
+
+# wrote MODE PATH stops setup.sh when the step left PATH missing, else gives it MODE.
+wrote() {
+	if [ ! -e "$2" ]; then
+		echo "setup.sh: the setup step left $2 missing" >&2
+		exit 1
+	fi
+	chmod "$1" "$2"
+	echo "created $2"
+}
+
+step_folder() {
+	if [ ! -d "$1" ]; then
+		mkdir -p "$1"
+		chmod 0700 "$1"
+	fi
+}
+{{- range .Steps}}
+
+# Setup step {{.Title}}
+{{- range .Folders}}
+step_folder {{.}}
+{{- end}}
+{{- range .Runs}}
+if missing{{range .Writes}} {{.}}{{end}}; then
+	echo "running setup step {{.Title}}"
+	step_folder {{.Out}}
+{{- range .Reads}}
+	need_read {{.}}
+{{- end}}
+{{- if .Asks}}
+	answers=
+{{- range .Asks}}
+	step_ask {{.}}
+{{- end}}
+	printf '%s' "$answers" | docker run {{.Command}}
+{{- else}}
+	docker run {{.Command}} </dev/null
+{{- end}}
+{{- range .Modes}}
+	wrote {{.}}
+{{- end}}
+else
+	echo "kept    the files of setup step {{.Title}}"
+fi
+{{- end}}
+{{- end}}
 {{- end}}
 {{- if .Folders}}
 
