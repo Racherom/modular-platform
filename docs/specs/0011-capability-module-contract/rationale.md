@@ -53,6 +53,19 @@ Within Option 2, the sub decisions are argued in each child's short rationale. T
 
 So `--wait` already gives 0014's *Waiting* rule. No fallback is needed, and the README, `scripts/smoke*.sh` and the deployer keep `up -d --wait`.
 
+**Build task 10, jobs nothing depends on (2026-11-05, Docker Compose v5.6.1).** Task 1 only covered a job a service depends on; the revoke job has no dependent, and `up -d --wait` then failed at random in the revoke e2e. A project with a long running service, a job that exits 0 at once and a job that sleeps 3 seconds then exits 1, none depended on: three `up -d --wait` runs each exited 1 with `container ... exited (0)` for the fast job, while the failing job was reported `Healthy` because it was still running at the check; its exit 1 came later and nothing reported it. Whether `up` fails depends on timing, and a failure can pass unseen.
+
+Two fixes were spiked, each over four `up` runs (first `up`, same config again, config changed, job made to fail):
+
+- **Anchor service** (chosen): an idle service that depends on the job with `service_completed_successfully`. Exit 0, 0, 0, 1 as expected; the job ran on every `up`, and with the anchor already running a failing job still made `up` exit 1 with `service "revoke" didn't complete successfully: exit 1`.
+- **Job that idles after its work**: the script ends with `touch /run/mp/done; exec sleep infinity`, and a healthcheck (`start_interval: 1s`) tests the file. Exit 0, 0, 0, 1 as expected, but with the same config the second `up` left the running container alone, so the work ran only when the config changed.
+
+A third option, a Compose profile plus `docker compose run --rm` after `up`, was not spiked: it changes the command everyone runs, and a plain `up` would skip the revoke work silently.
+
+You chose the anchor: one meaning for "job" (one shot, runs on every `up`, ends `exited 0`), one idle container per stack instead of one per provisioner provide, and the same anchor covers any later job no module waits for.
+
+**Egress for consumers of an external instance (2026-11-05).** `internal` is `internal: true`, so it has no route out of the host. The bindings golden's `app` is bound to the external `billing` and through the external provisioner `shared`, joined only `internal`, and so could not reach either; the external e2e passed only because its test consumer declares `network.egress`. You chose to have the render join such a consumer to `egress` by itself, matching the rule for provision jobs of an external provisioner, over requiring `network.egress` in the entry (which breaks AC-1's "binds unchanged" and grants the internet to every instance of a module, even one bound only inside the stack).
+
 To be filled by build task 20: `postgres` running as the setup user with its key file written by the certificate job, and its reload of a reissued certificate.
 
 ## References
