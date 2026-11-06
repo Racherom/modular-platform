@@ -72,7 +72,7 @@ func (c Config) Verbose(ctx context.Context) (bool, error) {
 	return sdk.Value[bool](ctx, c.v, "verbose")
 }
 
-// Uses holds the testmodule module's binding clients; read them only through the getters.
+// Uses holds the testmodule module's bindings; read them only through the getters.
 type Uses struct{ b *sdk.Bindings }
 
 // Echo is the client of the echo binding.
@@ -85,6 +85,81 @@ func (u Uses) Echo(ctx context.Context) (*httpclient.Client, error) {
 // It returns sdk.ErrUnbound when the graph leaves postgresql unbound.
 func (u Uses) Postgresql(ctx context.Context) (*pgxpool.Pool, error) {
 	return sdk.Client[*pgxpool.Pool](ctx, u.b, "postgresql")
+}
+
+// RealmMode is a value of realm.mode.
+type RealmMode string
+
+// The values RealmMode takes.
+const (
+	RealmModeOpen   RealmMode = "open"
+	RealmModeClosed RealmMode = "closed"
+)
+
+// RealmTier is a value of realm.tier.
+type RealmTier string
+
+// The values RealmTier takes.
+const (
+	RealmTierFree RealmTier = "free"
+	RealmTierPaid RealmTier = "paid"
+)
+
+// RealmBinding holds the fields of the realm binding (capability realm).
+type RealmBinding struct {
+	// Ca is root CA of the realm.
+	Ca []byte
+	// Hint is free text about the realm. Nil when the binding does not deliver it.
+	Hint *string
+	// Home is URL of the realm's home page. Nil when the binding does not deliver it.
+	Home *url.URL
+	// Issuer is URL of the realm's issuer.
+	Issuer *url.URL
+	// Key is key the consumer signs with.
+	Key sdk.Secret
+	// Mode is whether the realm takes new members.
+	Mode RealmMode
+	// Name is name of the realm.
+	Name string
+	// Pin is second key for the consumer. Nil when the binding does not deliver it.
+	Pin *sdk.Secret
+	// Port is port the realm answers on.
+	Port int
+	// Retries is calls the consumer may retry. Nil when the binding does not deliver it.
+	Retries *int
+	// Roots is extra roots of the realm. Nil when the binding does not deliver it.
+	Roots []byte
+	// Secure is whether the realm speaks TLS.
+	Secure bool
+	// Strict is whether the realm refuses unknown members. Nil when the binding does not deliver it.
+	Strict *bool
+	// Tier is plan of the realm. Nil when the binding does not deliver it.
+	Tier *RealmTier
+}
+
+// Realm returns the fields of the realm binding, checked at start.
+// The bool reports whether the graph binds realm.
+func (u Uses) Realm(ctx context.Context) (RealmBinding, bool, error) {
+	f, ok, err := sdk.LookupFields(ctx, u.b, "realm")
+	if err != nil || !ok {
+		return RealmBinding{}, ok, err
+	}
+	return RealmBinding{
+		Ca:      sdk.Field[[]byte](f, "ca"),
+		Hint:    sdk.OptionalField[string](f, "hint"),
+		Home:    sdk.Field[*url.URL](f, "home"),
+		Issuer:  sdk.Field[*url.URL](f, "issuer"),
+		Key:     sdk.Field[sdk.Secret](f, "key"),
+		Mode:    sdk.EnumField[RealmMode](f, "mode"),
+		Name:    sdk.Field[string](f, "name"),
+		Pin:     sdk.OptionalField[sdk.Secret](f, "pin"),
+		Port:    sdk.Field[int](f, "port"),
+		Retries: sdk.OptionalField[int](f, "retries"),
+		Roots:   sdk.Field[[]byte](f, "roots"),
+		Secure:  sdk.Field[bool](f, "secure"),
+		Strict:  sdk.OptionalField[bool](f, "strict"),
+		Tier:    sdk.OptionalEnumField[RealmTier](f, "tier"),
+	}, true, nil
 }
 
 // Storage is the client of the storage binding.
@@ -109,6 +184,7 @@ var Module = sdk.Declaration[Config, Uses]{
 	Bindings: []sdk.BindingSpec{
 		{Capability: "echo", Client: "http", Optional: true, Env: map[string]string{"token_file": "TM_ECHO_TOKEN_FILE", "url": "TM_ECHO_URL"}, Open: httpclient.Open},
 		{Capability: "postgresql", Client: "postgresql", Optional: true, Env: map[string]string{"ca_file": "TM_DB_CA_FILE", "database": "TM_DB_NAME", "password_file": "TM_DB_PASSWORD_FILE", "sslmode": "TM_DB_SSLMODE", "url": "TM_DB_URL", "user": "TM_DB_USER"}, Open: pg.Open},
+		{Capability: "realm", Optional: true, Env: map[string]string{"ca_file": "TM_REALM_CA_FILE", "hint": "TM_REALM_HINT", "home": "TM_REALM_HOME", "issuer": "TM_REALM_ISSUER", "key_file": "TM_REALM_KEY_FILE", "mode": "TM_REALM_MODE", "name": "TM_REALM_NAME", "pin_file": "TM_REALM_PIN_FILE", "port": "TM_REALM_PORT", "retries": "TM_REALM_RETRIES", "roots_file": "TM_REALM_ROOTS_FILE", "secure": "TM_REALM_SECURE", "strict": "TM_REALM_STRICT", "tier": "TM_REALM_TIER"}, Fields: []sdk.FieldSpec{{Name: "ca", Env: "TM_REALM_CA_FILE", Type: "certificate"}, {Name: "hint", Env: "TM_REALM_HINT", Type: "string", Optional: true}, {Name: "home", Env: "TM_REALM_HOME", Type: "url", Optional: true}, {Name: "issuer", Env: "TM_REALM_ISSUER", Type: "url"}, {Name: "key", Env: "TM_REALM_KEY_FILE", Type: "secret"}, {Name: "mode", Env: "TM_REALM_MODE", Type: "enum", Values: []string{"open", "closed"}}, {Name: "name", Env: "TM_REALM_NAME", Type: "string", Pattern: "[a-z]+"}, {Name: "pin", Env: "TM_REALM_PIN_FILE", Type: "secret", Optional: true}, {Name: "port", Env: "TM_REALM_PORT", Type: "int"}, {Name: "retries", Env: "TM_REALM_RETRIES", Type: "int", Optional: true}, {Name: "roots", Env: "TM_REALM_ROOTS_FILE", Type: "certificate", Optional: true}, {Name: "secure", Env: "TM_REALM_SECURE", Type: "bool"}, {Name: "strict", Env: "TM_REALM_STRICT", Type: "bool", Optional: true}, {Name: "tier", Env: "TM_REALM_TIER", Type: "enum", Optional: true, Values: []string{"free", "paid"}}}},
 		{Capability: "storage", Client: "s3", Optional: true, Env: map[string]string{"access_key_id": "TM_STORE_ACCESS_KEY_ID", "bucket": "TM_STORE_BUCKET", "ca_file": "TM_STORE_CA_FILE", "region": "TM_STORE_REGION", "secret_access_key_file": "TM_STORE_SECRET_KEY_FILE", "url": "TM_STORE_URL"}, Open: s3.Open},
 	},
 	Provides: &sdk.ProvideSpec{Capability: "greet", Auth: "binding-token", ClientsDirEnv: "TM_CLIENTS_DIR"},

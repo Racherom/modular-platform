@@ -26,8 +26,10 @@ type CallerSource interface {
 	LookupFor(ctx context.Context, caller Caller, value string) (string, bool, error)
 }
 
-// BindingResolver picks the provider binding for one caller and capability (#21). Not found
-// means the module's own binding.
+// BindingResolver picks the provider binding for one caller and slot (#21). Not found means the
+// module's own binding. For a slot with no client the answer is Binding.Fields, each field in the
+// Go form its getter returns (string, int, bool, *url.URL, a string for an enum, Secret, []byte
+// PEM for a certificate); the sdk checks it by the start rules (spec 0025).
 type BindingResolver interface {
 	BindingFor(ctx context.Context, caller Caller, capability string) (Binding, bool, error)
 }

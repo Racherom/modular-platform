@@ -31,23 +31,34 @@ func (c Config) PlannerRate(ctx context.Context) (int, error) {
 	return sdk.Value[int](ctx, c.v, "planner-rate")
 }
 
-// PlatformHttpPort is host port of the platform's ingress for HTTP, which no deployed project may publish.
-func (c Config) PlatformHttpPort(ctx context.Context) (int, error) {
-	return sdk.Value[int](ctx, c.v, "platform-http-port")
-}
-
-// PlatformHttpsPort is host port of the platform's ingress for HTTPS, which no deployed project may publish.
-func (c Config) PlatformHttpsPort(ctx context.Context) (int, error) {
-	return sdk.Value[int](ctx, c.v, "platform-https-port")
-}
-
 // ProxyHops is proxies in front of the planner that append X-Forwarded-For.
 func (c Config) ProxyHops(ctx context.Context) (int, error) {
 	return sdk.Value[int](ctx, c.v, "proxy-hops")
 }
 
-// Uses holds the planner module's binding clients (none).
-type Uses struct{}
+// Uses holds the planner module's bindings; read them only through the getters.
+type Uses struct{ b *sdk.Bindings }
+
+// IngressBinding holds the fields of the ingress binding (capability http-ingress).
+type IngressBinding struct {
+	// HttpPort is host port for HTTP.
+	HttpPort int
+	// HttpsPort is host port for HTTPS.
+	HttpsPort int
+}
+
+// Ingress returns the fields of the ingress binding, checked at start.
+// The bool reports whether the graph binds ingress.
+func (u Uses) Ingress(ctx context.Context) (IngressBinding, bool, error) {
+	f, ok, err := sdk.LookupFields(ctx, u.b, "ingress")
+	if err != nil || !ok {
+		return IngressBinding{}, ok, err
+	}
+	return IngressBinding{
+		HttpPort:  sdk.Field[int](f, "http_port"),
+		HttpsPort: sdk.Field[int](f, "https_port"),
+	}, true, nil
+}
 
 // Module is the declaration sdk.Run loads.
 var Module = sdk.Declaration[Config, Uses]{
@@ -55,10 +66,11 @@ var Module = sdk.Declaration[Config, Uses]{
 	Values: []sdk.ValueSpec{
 		{Name: "planner-mode", Env: "MP_PLANNER_MODE", Type: "enum", Values: []string{"public", "internal"}, Description: "Where the planner runs, public behind the online tool or internal inside the platform."},
 		{Name: "planner-rate", Env: "MP_PLANNER_RATE", Type: "int", Default: "60", Min: "1", Description: "Requests per minute per client address in public mode."},
-		{Name: "platform-http-port", Env: "MP_PLATFORM_HTTP_PORT", Type: "int", Default: "80", Min: "1", Max: "65535", Description: "Host port of the platform's ingress for HTTP, which no deployed project may publish."},
-		{Name: "platform-https-port", Env: "MP_PLATFORM_HTTPS_PORT", Type: "int", Default: "443", Min: "1", Max: "65535", Description: "Host port of the platform's ingress for HTTPS, which no deployed project may publish."},
 		{Name: "proxy-hops", Env: "MP_PROXY_HOPS", Type: "int", Default: "1", Min: "0", Description: "Proxies in front of the planner that append X-Forwarded-For."},
 	},
+	Bindings: []sdk.BindingSpec{
+		{Capability: "ingress", Optional: true, Env: map[string]string{"http_port": "MP_PLATFORM_HTTP_PORT", "https_port": "MP_PLATFORM_HTTPS_PORT"}, Fields: []sdk.FieldSpec{{Name: "http_port", Env: "MP_PLATFORM_HTTP_PORT", Type: "int"}, {Name: "https_port", Env: "MP_PLATFORM_HTTPS_PORT", Type: "int"}}},
+	},
 	Provides: &sdk.ProvideSpec{Capability: "planner", Auth: "binding-token", ClientsDirEnv: "MP_PLANNER_CLIENTS_DIR"},
-	New:      func(v *sdk.Values, _ *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{} },
+	New:      func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },
 }

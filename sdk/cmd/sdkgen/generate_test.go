@@ -18,11 +18,11 @@ runtime: sdk
 `
 
 // testCaps reads the sdk test module's capabilities: greet and echo (url, token, ca),
-// postgresql and s3.
+// postgresql, s3 and realm (one field of every type).
 func testCaps(t *testing.T) map[string]manifest.Capability {
 	t.Helper()
 	caps, err := readCapabilities("../../internal/testmodule/capabilities")
-	if err != nil || len(caps) != 4 {
+	if err != nil || len(caps) != 5 {
 		t.Fatalf("capabilities: %v %v", caps, err)
 	}
 	return caps
@@ -91,8 +91,9 @@ func TestGenerate(t *testing.T) {
 	}
 }
 
-// TestGenerateUses covers the Uses getters: one per binding with a client, none for an env only
-// binding, and the client package imported only then.
+// TestGenerateUses covers the Uses getters: one per binding with a client, a field getter for a
+// slot with no client that maps a field, none for a slot that maps nothing, and the client
+// package imported only for a client.
 func TestGenerateUses(t *testing.T) {
 	t.Parallel()
 	src, problems := Generate("catalog/svc.yaml", "config", []byte(header+`uses:
@@ -106,6 +107,8 @@ func TestGenerateUses(t *testing.T) {
     capability: postgresql
     env:
       host: CACHE_HOST
+  quiet:
+    capability: echo
 `), testCaps(t))
 	if len(problems) > 0 {
 		t.Fatal(problems)
@@ -120,8 +123,47 @@ func TestGenerateUses(t *testing.T) {
 			t.Errorf("the source lacks %q:\n%s", want, src)
 		}
 	}
-	if strings.Contains(string(src), "Cache(") {
-		t.Error("a getter for an env only binding")
+	if strings.Contains(string(src), "Quiet(") {
+		t.Error("a getter for a slot that maps no field")
+	}
+	if !strings.Contains(string(src), "func (u Uses) Cache(ctx context.Context) (CacheBinding, error) {") {
+		t.Errorf("no field getter for the cache slot:\n%s", src)
+	}
+}
+
+// TestGenerateFields covers the getter of a required slot with no client (spec 0025): a struct
+// with one field per mapped capability field, typed by the capability, the getter returning an
+// error rather than a bool, the field specs in the declaration, and net/url imported only for a
+// url field.
+func TestGenerateFields(t *testing.T) {
+	t.Parallel()
+	src, problems := Generate("catalog/svc.yaml", "config", []byte(header+`uses:
+  realm:
+    capability: realm
+    env:
+      name: SVC_REALM_NAME
+      key: SVC_REALM_KEY_FILE
+      tier: SVC_REALM_TIER
+`), testCaps(t))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	for _, want := range []string{
+		"type RealmTier string\n",
+		"\tRealmTierPaid RealmTier = \"paid\"\n",
+		"type RealmBinding struct {\n\t// Key is key the consumer signs with.\n\tKey sdk.Secret\n",
+		"\tTier *RealmTier\n",
+		"func (u Uses) Realm(ctx context.Context) (RealmBinding, error) {\n\tf, err := sdk.Fields(ctx, u.b, \"realm\")\n",
+		"Tier: sdk.OptionalEnumField[RealmTier](f, \"tier\"),",
+		`Fields: []sdk.FieldSpec{{Name: "key", Env: "SVC_REALM_KEY_FILE", Type: "secret"}, {Name: "name", Env: "SVC_REALM_NAME", Type: "string", Pattern: "[a-z]+"}, {Name: "tier", Env: "SVC_REALM_TIER", Type: "enum", Optional: true, Values: []string{"free", "paid"}}}`,
+		"New: func(_ *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{}, Uses{b} },",
+	} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("the source lacks %q:\n%s", want, src)
+		}
+	}
+	if strings.Contains(string(src), "net/url") {
+		t.Error("net/url imported with no url field mapped")
 	}
 }
 
@@ -192,6 +234,10 @@ func TestGenerateRefuses(t *testing.T) {
 		"an enum value without a Go name": {
 			body: "config:\n  mode:\n    env: SVC_MODE\n    type: enum\n    values: [\"--\"]\n    description: M.\n",
 			want: []string{"catalog/svc.yaml: config.mode.values.0: name_clash: "},
+		},
+		"a slot enum type that takes a config enum's name": {
+			body: "config:\n  realm-mode:\n    env: SVC_MODE\n    type: enum\n    values: [a]\n    description: M.\nuses:\n  realm:\n    capability: realm\n    env:\n      mode: SVC_REALM_MODE\n",
+			want: []string{"catalog/svc.yaml: uses.realm.env.mode: name_clash: "},
 		},
 		"an enum type that takes a generated name": {
 			body: "config:\n  module:\n    env: SVC_MODULE\n    type: enum\n    values: [a]\n    description: M.\n",

@@ -318,6 +318,8 @@ func TestInternalAuth(t *testing.T) {
 	p := start(t, map[string]string{
 		"MP_INSTANCE":            "planner",
 		"MP_PLANNER_MODE":        "internal",
+		"MP_PLATFORM_HTTP_PORT":  "80",
+		"MP_PLATFORM_HTTPS_PORT": "443",
 		"MP_PLANNER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
 	})
 	if resp, _ := p.do(t, http.MethodGet, "/v1/catalog", "", nil); resp.StatusCode != http.StatusUnauthorized {
@@ -340,7 +342,8 @@ func TestInternalAuth(t *testing.T) {
 }
 
 // TestStartRefused covers spec 0005 AC-13: internal mode refuses to start without a consumer
-// token in MP_PLANNER_CLIENTS_DIR, and no mode is no start.
+// token in MP_PLANNER_CLIENTS_DIR, and no mode is no start; and spec 0025 AC-24: internal mode
+// refuses to start without the ingress binding, in one line.
 func TestStartRefused(t *testing.T) {
 	t.Parallel()
 	for name, tc := range map[string]struct {
@@ -348,12 +351,20 @@ func TestStartRefused(t *testing.T) {
 		want string
 	}{
 		"internal without clients dir": {
-			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal"},
+			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal", "MP_PLATFORM_HTTP_PORT": "80", "MP_PLATFORM_HTTPS_PORT": "443"},
 			want: "config: provides.planner.clients_dir (MP_PLANNER_CLIENTS_DIR): missing: ",
 		},
 		"internal with an empty clients dir": {
-			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal", "MP_PLANNER_CLIENTS_DIR": clientsDir(t, nil)},
+			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal", "MP_PLATFORM_HTTP_PORT": "80", "MP_PLATFORM_HTTPS_PORT": "443", "MP_PLANNER_CLIENTS_DIR": clientsDir(t, nil)},
 			want: "config: provides.planner.clients_dir (MP_PLANNER_CLIENTS_DIR): missing: ",
+		},
+		"internal without the ingress binding": {
+			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal", "MP_PLANNER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": strings.Repeat("t", 32)})},
+			want: "config: uses.ingress (MP_PLATFORM_HTTP_PORT): missing: internal mode needs the ingress binding",
+		},
+		"internal with half the ingress binding": {
+			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal", "MP_PLATFORM_HTTP_PORT": "80"},
+			want: "config: uses.ingress.https_port (MP_PLATFORM_HTTPS_PORT): missing: ",
 		},
 		"no mode": {
 			env:  map[string]string{"MP_INSTANCE": "planner"},
@@ -430,6 +441,8 @@ func TestRenderManaged(t *testing.T) {
 	internal := start(t, map[string]string{
 		"MP_INSTANCE":            "planner",
 		"MP_PLANNER_MODE":        "internal",
+		"MP_PLATFORM_HTTP_PORT":  "80",
+		"MP_PLATFORM_HTTPS_PORT": "443",
 		"MP_PLANNER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
 	})
 	auth := http.Header{"Authorization": {"Bearer " + token}}
@@ -517,6 +530,8 @@ config:
 	h, logs, err := build(t, map[string]string{
 		"MP_INSTANCE":            "planner",
 		"MP_PLANNER_MODE":        "internal",
+		"MP_PLATFORM_HTTP_PORT":  "80",
+		"MP_PLATFORM_HTTPS_PORT": "443",
 		"MP_PLANNER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
 	}, fsys)
 	if err != nil {

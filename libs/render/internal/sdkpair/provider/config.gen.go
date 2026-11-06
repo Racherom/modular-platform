@@ -21,7 +21,7 @@ func (c Config) SigningKey(ctx context.Context) (sdk.Secret, error) {
 	return sdk.Value[sdk.Secret](ctx, c.v, "signing-key")
 }
 
-// Uses holds the pair-provider module's binding clients (none).
+// Uses holds the pair-provider module's bindings (none).
 type Uses struct{}
 
 // Module is the declaration sdk.Run loads.

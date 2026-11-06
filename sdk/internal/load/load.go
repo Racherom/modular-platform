@@ -100,6 +100,9 @@ type BindingSpec struct {
 	Optional   bool
 	Env        map[string]string // binding key to env var name
 	Open       Opener            // opens the client; sdkgen sets it for every client binding
+	// Fields are the mapped fields of a slot with no client, in name order (spec 0025); sdkgen
+	// sets them for every such slot that maps a field.
+	Fields []FieldSpec
 }
 
 // Opener opens the client of a loaded binding. Each client package has one, so a module links
@@ -205,13 +208,13 @@ func ReadBootstrap(lookupEnv func(string) (string, bool), readFile func(string) 
 	return l.res.Bootstrap, l.res.Problems
 }
 
-// Binding is a loaded binding with a client, in capability order. Its secrets hide themselves
+// Binding is a loaded binding, in slot order: one with a client, or the fields of one without. Its secrets hide themselves
 // from fmt and slog.
 type Binding struct {
 	Capability string
 	Client     string
 	Optional   bool
-	Bound      bool           // false only for an optional binding whose url is unset
+	Bound      bool           // false only for an optional binding whose url (or every mapped field) is unset
 	URL        *url.URL       // the provider's address
 	Token      Secret         // the content of token_file; empty when token_file is unset
 	Roots      *x509.CertPool // the certificates in ca_file, else MP_CA_FILE's in TLS mode; nil in plain mode without ca_file
@@ -226,6 +229,10 @@ type Binding struct {
 	Bucket, Region string // Region is empty when unset
 	AccessKeyID    string
 	SecretKey      Secret // the content of secret_access_key_file
+
+	// Fields holds the parsed fields of a slot with no client, by field name, in their Go form
+	// (spec 0025); a field not delivered is absent. nil for a slot with a client.
+	Fields map[string]any
 }
 
 // The sslmode values a postgresql binding takes; unset means SSLModeDisable, as the render writes
@@ -447,6 +454,9 @@ func (l *loader) knownKeys() map[string]bool {
 		for _, env := range b.Env {
 			known[env] = true
 		}
+		for _, f := range b.Fields {
+			known[f.Env] = true
+		}
 	}
 	if p := l.in.Provides; p != nil && p.ClientsDirEnv != "" {
 		known[p.ClientsDirEnv] = true
@@ -648,7 +658,10 @@ var urlSchemes = map[string][]string{
 // optional binding whose url is unset is unbound.
 func (l *loader) binding(b BindingSpec) {
 	if b.Client == "" {
-		return // env mapping only: the module reads nothing through the sdk
+		if len(b.Fields) > 0 {
+			l.fields(b)
+		}
+		return // with no field mapped the module reads nothing through the sdk
 	}
 	bl := bindingLoader{l: l, spec: b, path: "uses." + b.Capability}
 	urlEnv := b.Env["url"]

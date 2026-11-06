@@ -31,10 +31,12 @@ type resolver struct {
 	closed  bool
 }
 
-// resolvedAnswer is the client key the resolver picked, or the fact that it picked none.
+// resolvedAnswer is the client key the resolver picked, or for a slot with no client the checked
+// fields of its answer, or the fact that it picked none.
 type resolvedAnswer struct {
-	key   string
-	found bool
+	key    string
+	fields map[string]any
+	found  bool
 }
 
 func newResolver(ctx context.Context, specs []BindingSpec, boot load.Bootstrap, o options) *resolver {
@@ -89,6 +91,37 @@ func (r *resolver) client(ctx context.Context, c Caller, capability string) (any
 	}
 	r.answers.put(answerKey, resolvedAnswer{key: key, found: true})
 	return o.Client, true, nil
+}
+
+// fields returns the fields of the binding the resolver picks for c on a slot with no client, and
+// whether it picked one. The answer is checked by the start rules; a bad one is an error and is
+// not kept.
+func (r *resolver) fields(ctx context.Context, c Caller, slot string) (map[string]any, bool, error) {
+	spec := r.specs[slot]
+	if spec.Client != "" || len(spec.Fields) == 0 {
+		return nil, false, nil
+	}
+	answerKey := callerKey(c) + "\x00" + slot
+	if a, ok := r.answers.get(answerKey); ok {
+		return a.fields, a.found, nil
+	}
+	b, found, err := ask(ctx, r.budget, func(ctx context.Context) (Binding, bool, error) {
+		return r.r.BindingFor(ctx, c, slot)
+	})
+	if err != nil {
+		// the resolver's own error is never shown: its text may carry a credential
+		return nil, false, fmt.Errorf("%w: binding %s", ErrCallerSource, slot)
+	}
+	if !found {
+		r.answers.put(answerKey, resolvedAnswer{})
+		return nil, false, nil
+	}
+	fields, err := load.CheckFields(spec.Fields, b.Fields)
+	if err != nil {
+		return nil, false, fmt.Errorf("sdk: the resolved binding %s: %w", slot, err)
+	}
+	r.answers.put(answerKey, resolvedAnswer{fields: fields, found: true})
+	return fields, true, nil
 }
 
 // open returns the client of b, opening it the first time b is picked. b takes the capability,

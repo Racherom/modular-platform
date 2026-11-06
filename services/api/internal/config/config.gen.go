@@ -16,54 +16,9 @@ import (
 // Config holds the api module's declared values; read them only through the getters.
 type Config struct{ v *sdk.Values }
 
-// AdminEmail is email of the admin; the first verified sign in with it binds the admin.
-func (c Config) AdminEmail(ctx context.Context) (string, error) {
-	return sdk.Value[string](ctx, c.v, "admin-email")
-}
-
-// BasePath is path the platform is served under, like /platform; unset at the site root.
-// The bool reports whether it is set.
-func (c Config) BasePath(ctx context.Context) (string, bool, error) {
-	return sdk.Lookup[string](ctx, c.v, "base-path")
-}
-
-// OidcCa is PEM CA bundle to trust the identity provider's TLS certificate with; usually given as a file through MP_OIDC_CA_FILE.
-// The bool reports whether it is set.
-func (c Config) OidcCa(ctx context.Context) (string, bool, error) {
-	return sdk.Lookup[string](ctx, c.v, "oidc-ca")
-}
-
-// OidcClientId is client id of the platform at the identity provider.
-func (c Config) OidcClientId(ctx context.Context) (string, error) {
-	return sdk.Value[string](ctx, c.v, "oidc-client-id")
-}
-
-// OidcClientSecret is client secret of the platform at the identity provider.
-func (c Config) OidcClientSecret(ctx context.Context) (sdk.Secret, error) {
-	return sdk.Value[sdk.Secret](ctx, c.v, "oidc-client-secret")
-}
-
-// OidcIssuer is issuer URL of the identity provider that signs the admin in.
-func (c Config) OidcIssuer(ctx context.Context) (*url.URL, error) {
-	u, err := sdk.Value[url.URL](ctx, c.v, "oidc-issuer")
-	if err != nil {
-		return nil, err
-	}
-	return &u, nil
-}
-
 // ProxyHops is proxies in front of api that append X-Forwarded-For.
 func (c Config) ProxyHops(ctx context.Context) (int, error) {
 	return sdk.Value[int](ctx, c.v, "proxy-hops")
-}
-
-// PublicOrigin is scheme, host and port the browser sees, like https://platform.example.com.
-func (c Config) PublicOrigin(ctx context.Context) (*url.URL, error) {
-	u, err := sdk.Value[url.URL](ctx, c.v, "public-origin")
-	if err != nil {
-		return nil, err
-	}
-	return &u, nil
 }
 
 // SessionIdle is a session ends after this long without a request.
@@ -76,12 +31,41 @@ func (c Config) SessionMax(ctx context.Context) (time.Duration, error) {
 	return sdk.Value[time.Duration](ctx, c.v, "session-max")
 }
 
-// Uses holds the api module's binding clients; read them only through the getters.
+// Uses holds the api module's bindings; read them only through the getters.
 type Uses struct{ b *sdk.Bindings }
 
 // DeployTarget is the client of the deploy-target binding.
 func (u Uses) DeployTarget(ctx context.Context) (*httpclient.Client, error) {
 	return sdk.Client[*httpclient.Client](ctx, u.b, "deploy-target")
+}
+
+// OidcBinding holds the fields of the oidc binding (capability oidc).
+type OidcBinding struct {
+	// AdminEmail is email of the provider's bootstrap admin. Nil when the binding does not deliver it.
+	AdminEmail *string
+	// Ca is root CA that signs the provider's certificate. Nil when the binding does not deliver it.
+	Ca []byte
+	// ClientId is client id of the consumer at the provider.
+	ClientId string
+	// ClientSecret is client secret the consumer sends and the provider checks.
+	ClientSecret sdk.Secret
+	// Issuer is issuer URL of the provider.
+	Issuer *url.URL
+}
+
+// Oidc returns the fields of the oidc binding, checked at start.
+func (u Uses) Oidc(ctx context.Context) (OidcBinding, error) {
+	f, err := sdk.Fields(ctx, u.b, "oidc")
+	if err != nil {
+		return OidcBinding{}, err
+	}
+	return OidcBinding{
+		AdminEmail:   sdk.OptionalField[string](f, "admin_email"),
+		Ca:           sdk.Field[[]byte](f, "ca"),
+		ClientId:     sdk.Field[string](f, "client_id"),
+		ClientSecret: sdk.Field[sdk.Secret](f, "client_secret"),
+		Issuer:       sdk.Field[*url.URL](f, "issuer"),
+	}, nil
 }
 
 // Planner is the client of the planner binding.
@@ -94,25 +78,40 @@ func (u Uses) Postgresql(ctx context.Context) (*pgxpool.Pool, error) {
 	return sdk.Client[*pgxpool.Pool](ctx, u.b, "postgresql")
 }
 
+// PublicBinding holds the fields of the public binding (capability http-ingress).
+type PublicBinding struct {
+	// BasePath is path the platform is served under; unset at the site root. Nil when the binding does not deliver it.
+	BasePath *string
+	// Origin is scheme, host and port the browser sees.
+	Origin *url.URL
+}
+
+// Public returns the fields of the public binding, checked at start.
+func (u Uses) Public(ctx context.Context) (PublicBinding, error) {
+	f, err := sdk.Fields(ctx, u.b, "public")
+	if err != nil {
+		return PublicBinding{}, err
+	}
+	return PublicBinding{
+		BasePath: sdk.OptionalField[string](f, "base_path"),
+		Origin:   sdk.Field[*url.URL](f, "origin"),
+	}, nil
+}
+
 // Module is the declaration sdk.Run loads.
 var Module = sdk.Declaration[Config, Uses]{
 	Name: "api",
 	Values: []sdk.ValueSpec{
-		{Name: "admin-email", Env: "MP_ADMIN_EMAIL", Type: "string", Pattern: "[^@\\s]+@[^@\\s]+", Description: "Email of the admin; the first verified sign in with it binds the admin."},
-		{Name: "base-path", Env: "MP_BASE_PATH", Type: "string", Optional: true, Pattern: "(/[A-Za-z0-9._~-]+)+", Description: "Path the platform is served under, like /platform; unset at the site root."},
-		{Name: "oidc-ca", Env: "MP_OIDC_CA", Type: "string", Optional: true, Description: "PEM CA bundle to trust the identity provider's TLS certificate with; usually given as a file through MP_OIDC_CA_FILE."},
-		{Name: "oidc-client-id", Env: "MP_OIDC_CLIENT_ID", Type: "string", Default: "mp-api", Description: "Client id of the platform at the identity provider."},
-		{Name: "oidc-client-secret", Env: "MP_OIDC_CLIENT_SECRET", Type: "secret", Description: "Client secret of the platform at the identity provider."},
-		{Name: "oidc-issuer", Env: "MP_OIDC_ISSUER", Type: "url", Description: "Issuer URL of the identity provider that signs the admin in."},
 		{Name: "proxy-hops", Env: "MP_PROXY_HOPS", Type: "int", Default: "1", Min: "0", Description: "Proxies in front of api that append X-Forwarded-For."},
-		{Name: "public-origin", Env: "MP_PUBLIC_ORIGIN", Type: "url", Description: "Scheme, host and port the browser sees, like https://platform.example.com."},
 		{Name: "session-idle", Env: "MP_SESSION_IDLE", Type: "duration", Default: "1h", Min: "5m", Max: "24h", Description: "A session ends after this long without a request."},
 		{Name: "session-max", Env: "MP_SESSION_MAX", Type: "duration", Default: "12h", Min: "5m", Max: "720h", Description: "A session ends this long after sign in, whatever its activity."},
 	},
 	Bindings: []sdk.BindingSpec{
 		{Capability: "deploy-target", Client: "http", Env: map[string]string{"ca_file": "MP_DEPLOY_TARGET_CA_FILE", "token_file": "MP_DEPLOY_TARGET_TOKEN_FILE", "url": "MP_DEPLOY_TARGET_URL"}, Open: httpclient.Open},
+		{Capability: "oidc", Env: map[string]string{"admin_email": "MP_ADMIN_EMAIL", "ca_file": "MP_OIDC_CA_FILE", "client_id": "MP_OIDC_CLIENT_ID", "client_secret_file": "MP_OIDC_CLIENT_SECRET_FILE", "issuer": "MP_OIDC_ISSUER"}, Fields: []sdk.FieldSpec{{Name: "admin_email", Env: "MP_ADMIN_EMAIL", Type: "string", Optional: true}, {Name: "ca", Env: "MP_OIDC_CA_FILE", Type: "certificate", Optional: true}, {Name: "client_id", Env: "MP_OIDC_CLIENT_ID", Type: "string"}, {Name: "client_secret", Env: "MP_OIDC_CLIENT_SECRET_FILE", Type: "secret"}, {Name: "issuer", Env: "MP_OIDC_ISSUER", Type: "url"}}},
 		{Capability: "planner", Client: "http", Env: map[string]string{"ca_file": "MP_PLANNER_CA_FILE", "token_file": "MP_PLANNER_TOKEN_FILE", "url": "MP_PLANNER_URL"}, Open: httpclient.Open},
 		{Capability: "postgresql", Client: "postgresql", Env: map[string]string{"database": "MP_DATABASE_NAME", "password_file": "MP_DATABASE_PASSWORD_FILE", "sslmode": "MP_DATABASE_SSLMODE", "url": "MP_DATABASE_URL", "user": "MP_DATABASE_USER"}, Open: pg.Open},
+		{Capability: "public", Env: map[string]string{"base_path": "MP_BASE_PATH", "origin": "MP_PUBLIC_ORIGIN"}, Fields: []sdk.FieldSpec{{Name: "base_path", Env: "MP_BASE_PATH", Type: "string", Optional: true}, {Name: "origin", Env: "MP_PUBLIC_ORIGIN", Type: "url"}}},
 	},
 	New: func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },
 }

@@ -1,0 +1,20 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: realm
+description: A provider whose binding carries one field of every type, for the sdk's own tests.
+fields:
+  name: {type: string, pattern: "[a-z]+", description: Name of the realm.}
+  port: {type: int, description: Port the realm answers on.}
+  secure: {type: bool, description: Whether the realm speaks TLS.}
+  issuer: {type: url, description: URL of the realm's issuer.}
+  mode: {type: enum, values: [open, closed], description: Whether the realm takes new members.}
+  key: {type: secret, description: Key the consumer signs with.}
+  ca: {type: certificate, description: Root CA of the realm.}
+  hint: {type: string, optional: true, description: Free text about the realm.}
+  retries: {type: int, optional: true, description: Calls the consumer may retry.}
+  strict: {type: bool, optional: true, description: Whether the realm refuses unknown members.}
+  home: {type: url, optional: true, description: URL of the realm's home page.}
+  tier: {type: enum, values: [free, paid], optional: true, description: Plan of the realm.}
+  pin: {type: secret, optional: true, description: Second key for the consumer.}
+  roots: {type: certificate, optional: true, description: Extra roots of the realm.}
+  member: {type: string, direction: to_provider, optional: true, description: Name the consumer goes by.}

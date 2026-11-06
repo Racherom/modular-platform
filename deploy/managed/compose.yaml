@@ -94,6 +94,8 @@ services:
       MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
       MP_CA_FILE: /run/secrets/cert_issuer_root
       MP_OIDC_ISSUER: ${PLATFORM_ORIGIN:?run setup.sh first}${PLATFORM_BASE_PATH:-}/auth
+      # the client id api's catalog entry no longer defaults (spec 0025); this file goes with task 19
+      MP_OIDC_CLIENT_ID: mp-api
       MP_OIDC_CLIENT_SECRET_FILE: /run/secrets/api_oidc_client_secret
       # Caddy's local root, while PLATFORM_TLS is internal (spec 0001)
       MP_OIDC_CA_FILE: /caddy-data/caddy/pki/authorities/local/root.crt

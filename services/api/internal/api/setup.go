@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/racherom/modular-platform/sdk"
@@ -22,30 +23,43 @@ type settings struct {
 	oidc signin.OIDCConfig
 }
 
-// readSettings reads every value and checks the rule the declared bounds cannot: session-max
-// at least session-idle (AC-3). A broken rule is logged as a problem line and stops the start.
+// basePathRe is the shape of a base path: one or more /segments, no trailing slash.
+var basePathRe = regexp.MustCompile(`^(/[A-Za-z0-9._~-]+)+$`)
+
+// readSettings reads the public and oidc bindings and every value, and checks the rules the
+// capability fields and the declared bounds cannot: an origin without a path, a base path's
+// shape, an admin email the identity provider must deliver, and session-max at least
+// session-idle (AC-3). A broken rule is logged as a problem line and stops the start.
 func readSettings(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (settings, error) {
 	var s settings
 	c := m.Config
-	issuer, err := c.OidcIssuer(ctx)
+	public, err := m.Uses.Public(ctx)
 	if err != nil {
 		return s, err
 	}
-	origin, err := c.PublicOrigin(ctx)
+	oidc, err := m.Uses.Oidc(ctx)
 	if err != nil {
 		return s, err
 	}
+	origin := public.Origin
 	if origin.Path != "" && origin.Path != "/" || origin.RawQuery != "" {
-		m.Log.ErrorContext(ctx, "MP_PUBLIC_ORIGIN: invalid: an origin is scheme, host and port, without a path")
+		m.Log.ErrorContext(ctx, "config: uses.public.origin (MP_PUBLIC_ORIGIN): invalid: an origin is scheme, host and port, without a path")
 		return s, fmt.Errorf("public origin %s: %w", origin.Redacted(), sdk.ErrStart)
 	}
 	s.PublicOrigin = strings.TrimSuffix(origin.String(), "/")
-	if s.BasePath, _, err = c.BasePath(ctx); err != nil {
-		return s, err
+	if public.BasePath != nil {
+		if !basePathRe.MatchString(*public.BasePath) {
+			m.Log.ErrorContext(ctx, "config: uses.public.base_path (MP_BASE_PATH): no_match: a base path is /segments without a trailing slash, like /platform")
+			return s, fmt.Errorf("base path: %w", sdk.ErrStart)
+		}
+		s.BasePath = *public.BasePath
 	}
-	if s.AdminEmail, err = c.AdminEmail(ctx); err != nil {
-		return s, err
+	if oidc.AdminEmail == nil {
+		// the first verified sign in with this email binds the admin, so api cannot run without it
+		m.Log.ErrorContext(ctx, "config: uses.oidc.admin_email (MP_ADMIN_EMAIL): missing: api needs the admin email; set MP_ADMIN_EMAIL")
+		return s, fmt.Errorf("admin email: %w", sdk.ErrStart)
 	}
+	s.AdminEmail = *oidc.AdminEmail
 	if s.Idle, err = c.SessionIdle(ctx); err != nil {
 		return s, err
 	}
@@ -56,24 +70,10 @@ func readSettings(ctx context.Context, m *sdk.Module[config.Config, config.Uses]
 		m.Log.ErrorContext(ctx, "MP_SESSION_MAX: invalid: "+err.Error())
 		return s, fmt.Errorf("%w: %w", err, sdk.ErrStart)
 	}
-	id, err := c.OidcClientId(ctx)
-	if err != nil {
-		return s, err
-	}
-	secret, err := c.OidcClientSecret(ctx)
-	if err != nil {
-		return s, err
-	}
-	ca, _, err := c.OidcCa(ctx)
-	if err != nil {
-		return s, err
-	}
 	s.oidc = signin.OIDCConfig{
-		Issuer: issuer.String(), ClientID: id, ClientSecret: secret.Reveal(),
+		Issuer: oidc.Issuer.String(), ClientID: oidc.ClientId, ClientSecret: oidc.ClientSecret.Reveal(),
 		RedirectURL: s.PublicOrigin + s.BasePath + "/api/v1/auth/callback",
-	}
-	if ca != "" {
-		s.oidc.CA = []byte(ca)
+		CA:          oidc.Ca, // nil when the binding delivers none
 	}
 	return s, nil
 }

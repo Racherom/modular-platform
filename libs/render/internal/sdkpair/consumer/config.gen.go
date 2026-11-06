@@ -23,7 +23,7 @@ func (c Config) Shout(ctx context.Context) (bool, error) {
 	return sdk.Value[bool](ctx, c.v, "shout")
 }
 
-// Uses holds the pair-consumer module's binding clients; read them only through the getters.
+// Uses holds the pair-consumer module's bindings; read them only through the getters.
 type Uses struct{ b *sdk.Bindings }
 
 // Greet is the client of the greet binding.

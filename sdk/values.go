@@ -147,6 +147,9 @@ var ErrUnbound = errors.New("sdk: the binding is not bound")
 type Bindings struct {
 	m        map[string]any // nil value: an optional binding left unbound
 	resolver *resolver      // nil without a BindingResolver
+	// fields of each slot with no client that maps a field, by slot; a nil map is an optional
+	// slot left unbound
+	fields map[string]map[string]any
 }
 
 // Format keeps every client out of fmt output.
@@ -201,4 +204,80 @@ func CallerFrom(ctx context.Context) (Caller, bool) {
 // MP_CALLER_SIGNING_KEY_FILE then sends c as an MP-Caller token on its http binding calls.
 func WithCaller(ctx context.Context, c Caller) context.Context {
 	return caller.With(ctx, c)
+}
+
+// BindingFields holds the loaded fields of one slot with no client, by capability field name, in
+// their Go form (spec 0025). The generated getters read them with Field, OptionalField, EnumField
+// and OptionalEnumField; they hide themselves from fmt and slog.
+type BindingFields struct{ m map[string]any }
+
+// Format keeps every field out of fmt output.
+func (BindingFields) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, "sdk.BindingFields{…}") }
+
+// LogValue keeps every field out of slog output.
+func (BindingFields) LogValue() slog.Value { return slog.StringValue("sdk.BindingFields{…}") }
+
+// Fields returns the fields of the binding of slot, a slot with no client. It returns ErrUnbound
+// for an optional slot the graph left unbound. With a BindingResolver and a caller in ctx, the
+// resolver is asked first and its answer, checked by the start rules, replaces the binding for
+// that call; its failure is an error wrapping ErrCallerSource, and a bad answer is an error.
+func Fields(ctx context.Context, b *Bindings, slot string) (BindingFields, error) {
+	f, ok, err := LookupFields(ctx, b, slot)
+	if err == nil && !ok {
+		err = fmt.Errorf("%w: %s", ErrUnbound, slot)
+	}
+	return f, err
+}
+
+// LookupFields is Fields for an optional slot: the bool reports whether it is bound.
+func LookupFields(ctx context.Context, b *Bindings, slot string) (BindingFields, bool, error) {
+	fields, ok := b.fields[slot]
+	if !ok {
+		return BindingFields{}, false, fmt.Errorf("sdk: no slot %s with fields is declared", slot)
+	}
+	if c, has := CallerFrom(ctx); has && b.resolver != nil {
+		resolved, found, err := b.resolver.fields(ctx, c, slot)
+		if err != nil {
+			return BindingFields{}, false, err
+		}
+		if found {
+			fields = resolved
+		}
+	}
+	if fields == nil {
+		return BindingFields{}, false, nil
+	}
+	return BindingFields{m: fields}, true, nil
+}
+
+// Field returns the field name as T, or T's zero value when it was not delivered: the generated
+// getters call it for a required field, and for an optional url or certificate, whose zero value
+// (nil) means not delivered.
+func Field[T any](f BindingFields, name string) T {
+	t, _ := f.m[name].(T)
+	return t
+}
+
+// OptionalField returns the field name as *T, nil when it was not delivered.
+func OptionalField[T any](f BindingFields, name string) *T {
+	t, ok := f.m[name].(T)
+	if !ok {
+		return nil
+	}
+	return &t
+}
+
+// EnumField returns the enum field name as E.
+func EnumField[E ~string](f BindingFields, name string) E {
+	return E(Field[string](f, name))
+}
+
+// OptionalEnumField returns the enum field name as *E, nil when it was not delivered.
+func OptionalEnumField[E ~string](f BindingFields, name string) *E {
+	s, ok := f.m[name].(string)
+	if !ok {
+		return nil
+	}
+	e := E(s)
+	return &e
 }
