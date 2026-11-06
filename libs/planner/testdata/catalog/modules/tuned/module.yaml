@@ -1,0 +1,38 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: tuned
+description: Test module with one config value of each kind a graph may or may not set (spec 0025).
+image: example.test/tuned:1.0.0
+config:
+  label:
+    env: TUNED_LABEL
+    type: string
+    optional: true
+    description: An optional label with no default.
+  level:
+    env: TUNED_LEVEL
+    type: int
+    min: 1
+    max: 9
+    default: "5"
+    description: A level from 1 to 9.
+  mode:
+    env: TUNED_MODE
+    type: enum
+    values: [fast, slow]
+    default: fast
+    description: How fast it runs.
+  need:
+    env: TUNED_NEED
+    type: string
+    description: A required text with no default that nobody asks.
+  token:
+    env: TUNED_TOKEN
+    type: secret
+    setup: ask
+    description: A secret setup.sh asks.
+  uid:
+    env: TUNED_UID
+    type: int
+    default: "{uid}"
+    description: The setup user's id.

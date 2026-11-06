@@ -1,5 +1,5 @@
 #!/bin/sh
-# Prepares the stack {{.Name}}: the user it runs as{{if or .Asked .AskedSecrets}}, the values it asks you{{end}}, its secret files{{if .Steps}}, its setup steps{{end}} and its data folders. Run
+# Prepares the stack {{.Name}}: the user it runs as{{if or .NeedAsk .AskedSecrets}}, the values it asks you{{end}}, its secret files{{if .Steps}}, its setup steps{{end}} and its data folders. Run
 # it once before `docker compose up`. It never changes a file that already exists, so running it
 # again is safe.
 set -eu
@@ -22,6 +22,29 @@ set_id MP_GID "$(id -g)"
 # env_get NAME prints the value of NAME in .env, without the quotes setup.sh writes around it.
 env_get() {
 	sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1 | sed "s/^'\(.*\)'\$/\1/"
+}
+{{- end}}
+{{- if .GraphSet}}
+
+# env_or NAME TEXT prints the value of NAME in .env, or TEXT, the graph's value, when .env has no
+# NAME line.
+env_or() {
+	if grep -q "^$1=" .env 2>/dev/null; then
+		env_get "$1"
+	else
+		printf '%s\n' "$2"
+	fi
+}
+
+# graph_set VAR TEXT says that the graph answers the asked value VAR with TEXT, or that a VAR line
+# in .env with another value overrides it. It writes nothing: a later graph change reaches the
+# stack on the next render.
+graph_set() {
+	if grep -q "^$1=" .env 2>/dev/null && [ "$(env_get "$1")" != "$2" ]; then
+		printf '.env overrides the graph  %s\n' "$1"
+		return 0
+	fi
+	printf 'set by the graph  %s=%s\n' "$1" "$2"
 }
 {{- end}}
 {{- if .NeedDuration}}
@@ -156,7 +179,7 @@ check_value() {
 {{- end}}
 check_env
 {{- end}}
-{{- if or .Asked .AskedSecrets}}
+{{- if or .NeedAsk .AskedSecrets}}
 
 # A question is asked once: an answer already in .env, or a secret file that exists, is kept.
 # With answers piped in, one per line, a wrong answer stops setup.sh; on a terminal it asks again.
@@ -184,7 +207,7 @@ read_answer() {
 	fi
 }
 {{- end}}
-{{- if .Asked}}
+{{- if .NeedAsk}}
 
 # ask VAR TYPE MIN MAX PATTERN OPTIONAL DESCRIPTION DEFAULT [VALUES...] asks a value and writes
 # it into .env as VAR. An empty answer takes the default.
@@ -222,7 +245,7 @@ ask() {
 	echo "added   $var to .env"
 }
 {{- end}}
-{{- if or .Asked .AskedSecrets}}
+{{- if or .NeedAsk .AskedSecrets}}
 
 # ask_secret PATH OPTIONAL DESCRIPTION asks a secret without echo and writes it into PATH.
 ask_secret() {
@@ -244,7 +267,7 @@ ask_secret() {
 {{- end}}
 {{- if .Asked}}
 
-# Values the modules ask you, written into .env.
+# Values the modules ask you, written into .env{{if .GraphSet}}, unless the graph answers them{{end}}.
 {{- range .Asked}}
 {{.Func}} {{.Args}}
 {{- end}}

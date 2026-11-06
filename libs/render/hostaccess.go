@@ -18,7 +18,7 @@ func (r *renderer) hostAccess(svc *types.ServiceConfig, i string, m contract.Mod
 	for _, p := range m.Publish {
 		host := strconv.Itoa(p.Host.Number)
 		if p.Host.Config != "" {
-			host = composeVar(i, p.Host.Config, m.Config[p.Host.Config])
+			host = r.composeVar(i, p.Host.Config, m.Config[p.Host.Config])
 		}
 		svc.Ports = append(svc.Ports, types.ServicePortConfig{
 			Target:    uint32(p.Port), //nolint:gosec // CheckModule keeps the port between 1 and 65535
@@ -31,7 +31,7 @@ func (r *renderer) hostAccess(svc *types.ServiceConfig, i string, m contract.Mod
 		}
 		source := escape(h.Host.Path)
 		if h.Host.Config != "" {
-			source = composeVar(i, h.Host.Config, m.Config[h.Host.Config])
+			source = r.composeVar(i, h.Host.Config, m.Config[h.Host.Config])
 		}
 		svc.Volumes = append(svc.Volumes, types.ServiceVolumeConfig{
 			Type:     types.VolumeTypeBind,

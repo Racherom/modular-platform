@@ -71,6 +71,33 @@ func TestMissingKeyAndNull(t *testing.T) {
 	}
 }
 
+// TestConfigText checks the canonical text of config values (spec 0025, AC-27): each value
+// double quoted whatever it holds, keys sorted, an empty or null config left out, and a long
+// line never wrapped.
+func TestConfigText(t *testing.T) {
+	t.Parallel()
+	const head = "apiVersion: modular-platform/v1\nkind: Graph\nmodules:\n  a:\n"
+	long := strings.Repeat("word ", 30) + "end"
+	for in, want := range map[string]string{
+		head + "    config: {}\n    module: a\nname: x\n":                                    head + "    module: a\nname: x\n",
+		head + "    config: null\n    module: a\nname: x\n":                                  head + "    module: a\nname: x\n",
+		head + "    config:\n      b: plain\n      a: 'it''s'\n    module: a\nname: x\n":     head + "    config:\n      a: \"it's\"\n      b: \"plain\"\n    module: a\nname: x\n",
+		head + "    config:\n      a: \"" + long + "\"\n    module: " + long + "\nname: x\n": head + "    config:\n      a: \"" + long + "\"\n    module: " + long + "\nname: x\n",
+	} {
+		g, p := contract.DecodeGraph([]byte(in))
+		if p != nil {
+			t.Fatalf("decode %q: %s", in, p.Message)
+		}
+		out, err := contract.MarshalGraph(g)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(out) != want {
+			t.Errorf("text of\n%s--- got\n%s--- want\n%s", in, out, want)
+		}
+	}
+}
+
 func TestDecodeGraphRejects(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct {
@@ -93,6 +120,11 @@ func TestDecodeGraphRejects(t *testing.T) {
 		"format v2":       {`{"apiVersion":"modular-platform/v1","formatVersion":"2.0","kind":"Graph","name":"x","modules":{}}`, contract.CodeInvalidGraph, "formatVersion"},
 		"v0alpha1 named":  {`{"apiVersion":"modular-platform/v0alpha1","kind":"Graph","name":"x","modules":{"a":{"module":"a","uses":{"c":{"provider":"b","user":"u"}}}}}`, contract.CodeInvalidGraph, "modules.a.uses.c"},
 		"v0alpha1 format": {`{"apiVersion":"modular-platform/v0alpha1","formatVersion":"1.0","kind":"Graph","name":"x","modules":{}}`, contract.CodeInvalidGraph, "formatVersion"},
+		"config number":   {"apiVersion: modular-platform/v1\nkind: Graph\nname: x\nmodules:\n  a:\n    module: a\n    config:\n      port: 5432\n", contract.CodeInvalidGraph, ""},
+		"config yes":      {"apiVersion: modular-platform/v1\nkind: Graph\nname: x\nmodules:\n  a:\n    module: a\n    config:\n      on: yes\n", contract.CodeInvalidGraph, ""},
+		"config null":     {`{"apiVersion":"modular-platform/v1","kind":"Graph","name":"x","modules":{"a":{"module":"a","config":{"v":null}}}}`, contract.CodeInvalidGraph, ""},
+		"config list":     {`{"apiVersion":"modular-platform/v1","kind":"Graph","name":"x","modules":{"a":{"module":"a","config":["v"]}}}`, contract.CodeInvalidGraph, ""},
+		"v0alpha1 config": {`{"apiVersion":"modular-platform/v0alpha1","kind":"Graph","name":"x","modules":{"a":{"module":"a","config":{"v":"x"}}}}`, contract.CodeInvalidGraph, "modules.a.config"},
 		"v0alpha1 extern": {`{"apiVersion":"modular-platform/v0alpha1","kind":"Graph","name":"x","modules":{"a":{"external":{"provides":{}}}}}`, contract.CodeInvalidGraph, "modules.a.external"},
 	}
 	for name, tc := range tests {

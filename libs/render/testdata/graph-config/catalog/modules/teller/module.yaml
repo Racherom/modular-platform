@@ -1,0 +1,71 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: teller
+description: A teller not built on the SDK whose asked values the graph partly answers, for the graph config render (spec 0025).
+image: traefik/whoami:v1.11.0
+config:
+  domain:
+    env: TELLER_DOMAIN
+    type: string
+    pattern: "[a-z0-9]([a-z0-9.-]*[a-z0-9])?"
+    setup: ask
+    description: Domain the teller answers on.
+  origin:
+    env: TELLER_ORIGIN
+    type: string
+    default: "https://{domain}"
+    setup: ask
+    description: Origin clients reach the teller at.
+  mode:
+    env: TELLER_MODE
+    type: enum
+    values: [strict, relaxed]
+    default: strict
+    setup: ask
+    description: How strictly the teller checks clients.
+  note:
+    env: TELLER_NOTE
+    type: string
+    optional: true
+    setup: ask
+    description: A note shown on the teller's page.
+  motto:
+    env: TELLER_MOTTO
+    type: string
+    optional: true
+    setup: ask
+    description: The teller's motto.
+  tagline:
+    env: TELLER_TAGLINE
+    type: string
+    optional: true
+    setup: ask
+    description: The teller's tagline.
+  banner:
+    env: TELLER_BANNER
+    type: string
+    default: "pay $5"
+    description: The banner the teller shows.
+  motd:
+    env: TELLER_MOTD
+    type: string
+    optional: true
+    description: A message of the day, none when empty.
+  level:
+    env: TELLER_LEVEL
+    type: enum
+    values: [debug, info]
+    default: info
+    description: How much the teller logs.
+  run-uid:
+    env: TELLER_RUN_UID
+    type: int
+    default: "{uid}"
+    description: User id the teller writes its files as.
+secrets:
+  - {name: hello, from: setup, mount: /run/secrets/hello, description: The greeting its setup step writes.}
+setup:
+  - name: hello
+    entrypoint: [sh, -c]
+    command: ['printf "%s|%s|%s|%s|%s\n" "$MP_ASK_DOMAIN" "$MP_ASK_ORIGIN" "$MP_ASK_NOTE" "$MP_ASK_MOTTO" "$MP_ASK_TAGLINE" > /out/hello']
+    writes: [{name: hello}]

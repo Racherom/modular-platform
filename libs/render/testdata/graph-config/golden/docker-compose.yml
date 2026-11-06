@@ -1,0 +1,56 @@
+configs:
+  tally_env:
+    file: ./config/tally.env
+name: graphconfig
+networks:
+  internal:
+    internal: true
+secrets:
+  teller_hello:
+    file: ./secrets/teller/hello
+services:
+  tally:
+    cap_drop:
+    - ALL
+    configs:
+    - source: tally_env
+      target: /etc/modular-platform/module.env
+    environment:
+      MP_DOMAIN: graphconfig.internal
+      MP_ENV_FILE: /etc/modular-platform/module.env
+      MP_INSTANCE: tally
+    image: example.test/tally:1.0.0
+    networks:
+      internal:
+        aliases:
+        - tally.graphconfig.internal
+    read_only: true
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  teller:
+    cap_drop:
+    - ALL
+    environment:
+      TELLER_BANNER: ${MP_TELLER__BANNER:-$$y $$$$z}
+      TELLER_DOMAIN: ${MP_TELLER__DOMAIN:-example.org}
+      TELLER_LEVEL: ${MP_TELLER__LEVEL:-debug}
+      TELLER_MODE: ${MP_TELLER__MODE}
+      TELLER_MOTD: ${MP_TELLER__MOTD:-}
+      TELLER_MOTTO: ${MP_TELLER__MOTTO:-$$x}
+      TELLER_NOTE: ${MP_TELLER__NOTE:-a'b}
+      TELLER_ORIGIN: ${MP_TELLER__ORIGIN}
+      TELLER_RUN_UID: ${MP_UID}
+      TELLER_TAGLINE: '${MP_TELLER__TAGLINE:-a #b}'
+    image: traefik/whoami:v1.11.0
+    networks:
+      internal:
+        aliases:
+        - teller.graphconfig.internal
+    read_only: true
+    secrets:
+    - source: teller_hello
+      target: /run/secrets/hello
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}

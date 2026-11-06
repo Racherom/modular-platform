@@ -1,0 +1,19 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  tally:
+    config:
+      greeting: "a\"b"
+      note: "\"q"
+    module: tally
+  teller:
+    config:
+      banner: "$y $$z"
+      domain: "example.org"
+      level: "debug"
+      motd: ""
+      motto: "$x"
+      note: "a'b"
+      tagline: "a #b"
+    module: teller
+name: graphconfig

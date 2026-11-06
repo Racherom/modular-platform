@@ -1,0 +1,21 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: tally
+description: A tally on the SDK whose values the graph sets, for the graph config render (spec 0025).
+image: example.test/tally:1.0.0
+runtime: sdk
+config:
+  greeting:
+    env: TALLY_GREETING
+    type: string
+    description: The greeting it answers with.
+  note:
+    env: TALLY_NOTE
+    type: string
+    optional: true
+    description: A note it logs at start.
+  level:
+    env: TALLY_LEVEL
+    type: int
+    default: "3"
+    description: How much it logs.

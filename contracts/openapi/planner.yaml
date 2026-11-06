@@ -237,6 +237,22 @@ components:
           $ref: "#/components/schemas/Uses"
           # keep the pointer: `uses: {}` and no `uses` must write back differently
           x-go-type-skip-optional-pointer: false
+        config:
+          $ref: "#/components/schemas/ModuleConfig"
+          # keep the pointer: sigs.k8s.io/yaml finds InstanceConfig's strict decoder only through
+          # a pointer, and without it turns a YAML 5432 or yes into text
+          x-go-type-skip-optional-pointer: false
+    ModuleConfig:
+      x-go-type: InstanceConfig
+      type: object
+      description: |
+        Config value name to its text, for a module instance (spec 0025). Each value is a string,
+        never expanded; it becomes the value's default in the render, and `.env` can still
+        override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
+        `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
+        empty map is left out.
+      additionalProperties:
+        type: string
     Uses:
       type: object
       description: |

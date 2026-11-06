@@ -86,8 +86,9 @@ func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Mo
 			setEnv(svc, v.Env+"_FILE", target)
 			r.declared[path] = true
 			r.data.Asked = append(r.data.Asked, askedValue{Func: "ask_secret", Args: askSecretArgs(path, v.Optional, v.Description)})
+			r.data.NeedAsk = true
 		case slices.Contains(compose, name) || m.Runtime != contract.Sdk && v.Type != contract.ConfigValueTypeSecret && !tokenDefault(v.Default):
-			setEnvRaw(svc, v.Env, composeVar(i, name, v))
+			setEnvRaw(svc, v.Env, r.composeVar(i, name, v))
 			if tokenDefault(v.Default) {
 				break // the setup user's ids: no block, no rules (AC-25, AC-26)
 			}
@@ -97,9 +98,19 @@ func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Mo
 			}
 			check.Args = strings.Join(slices.Concat(rules, []string{strconv.FormatBool(v.Optional)}, values), " ")
 			block := envBlock{Description: v.Description, Var: check.Var, Default: v.Default}
-			if v.Asked() {
+			text, set := r.graphValue(i, name)
+			if set {
+				block.Default = text
+			}
+			switch {
+			case v.Asked() && set:
+				// the graph answers it: setup.sh says so and asks nothing (AC-28)
+				r.data.Asked = append(r.data.Asked, askedValue{Func: "graph_set", Args: check.Var + " " + shellQuote(text)})
+				r.data.GraphSet = true
+			case v.Asked():
 				block.Asked = true
 				r.data.Asked = append(r.data.Asked, r.askText(i, name, m, rules, values))
+				r.data.NeedAsk = true
 			}
 			r.data.Blocks = append(r.data.Blocks, block)
 		case tokenDefault(v.Default):
@@ -117,10 +128,15 @@ func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Mo
 	return nil
 }
 
-// needsSetup reports whether setup.sh must ask or run something for an instance of m.
-func needsSetup(m contract.Module) bool {
-	for _, v := range m.Config {
-		if v.Asked() {
+// needsSetup reports whether setup.sh must ask or run something for an instance of m whose
+// graph sets the config values set: an asked value the graph sets is not asked (spec 0025,
+// AC-28), so it does not count.
+func needsSetup(m contract.Module, set *contract.InstanceConfig) bool {
+	for name, v := range m.Config {
+		if !v.Asked() {
+			continue
+		}
+		if _, given := (*orEmpty(set))[name]; !given || v.Type == contract.ConfigValueTypeSecret {
 			return true
 		}
 	}
@@ -130,6 +146,14 @@ func needsSetup(m contract.Module) bool {
 		}
 	}
 	return len(m.Setup) > 0
+}
+
+// orEmpty is c, or an empty config when the graph sets none.
+func orEmpty(c *contract.InstanceConfig) *contract.InstanceConfig {
+	if c == nil {
+		return &contract.InstanceConfig{}
+	}
+	return c
 }
 
 // tokenDefault reports whether def is the setup user's id, {uid} or {gid}, which renders as
@@ -205,12 +229,23 @@ func (r *renderer) defaultWord(i string, m contract.Module, def string) string {
 			continue
 		}
 		b.WriteString(doubleQuoted(def[last:loc[0]]))
-		b.WriteString("$(env_get " + contract.ComposeVar(i, ref) + ")")
+		b.WriteString("$(" + r.answer(i, ref) + ")")
 		last = loc[1]
 		r.data.NeedEnvGet = true
 	}
 	b.WriteString(doubleQuoted(def[last:]) + `"`)
 	return b.String()
+}
+
+// answer is the shell command that prints the answer to asked value v of instance i: its line in
+// .env, else the graph's text when the graph sets it (spec 0025, AC-28).
+func (r *renderer) answer(i, v string) string {
+	r.data.NeedEnvGet = true
+	if text, set := r.graphValue(i, v); set {
+		r.data.GraphSet = true
+		return "env_or " + contract.ComposeVar(i, v) + " " + shellQuote(text)
+	}
+	return "env_get " + contract.ComposeVar(i, v)
 }
 
 // doubleQuoted escapes s for the inside of a double quoted shell word.
@@ -313,8 +348,7 @@ func (r *renderer) stepRun(i string, m contract.Module, s contract.SetupStep, cl
 	args = append(args, "-e "+shellQuote("MP_GRAPH="+r.g.Name), "-e "+shellQuote("MP_INSTANCE="+i))
 	for _, name := range sortedKeys(m.Config) {
 		if v := m.Config[name]; v.Asked() && v.Type != contract.ConfigValueTypeSecret {
-			args = append(args, `-e "MP_ASK_`+envPart(name)+"=$(env_get "+contract.ComposeVar(i, name)+`)"`)
-			r.data.NeedEnvGet = true
+			args = append(args, `-e "MP_ASK_`+envPart(name)+"=$("+r.answer(i, name)+`)"`)
 		}
 	}
 	for _, k := range sortedKeys(s.Env) {
