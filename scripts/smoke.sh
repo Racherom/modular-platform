@@ -13,6 +13,9 @@ online="$repo/deploy/online"
 export MP_VERSION=dev
 # the smoke stack uses Caddy's internal certificate authority; Playwright skips certificate checks only then
 export SMOKE_TLS=internal
+# every editor flow runs from one address, which the production rate (60 a minute, a burst of 10)
+# would throttle partway through; the planner's own tests cover the limiter
+export MP_PLANNER_RATE=600
 
 online() {
 	docker compose --project-directory "$online" --env-file "$online/versions.env" --env-file "$online/.env" "$@"
