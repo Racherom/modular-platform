@@ -35,40 +35,25 @@ uses:
       user: MP_DATABASE_USER
       password: MP_DATABASE_PASSWORD_FILE
       sslmode: MP_DATABASE_SSLMODE
+  public:
+    capability: http-ingress
+    env:
+      origin: MP_PUBLIC_ORIGIN
+      base_path: MP_BASE_PATH
+    fields:
+      route: {value: /api}
+      stream: {value: "true"}
+  oidc:
+    capability: oidc
+    env:
+      issuer: MP_OIDC_ISSUER
+      client_id: MP_OIDC_CLIENT_ID
+      client_secret: MP_OIDC_CLIENT_SECRET_FILE
+      ca: MP_OIDC_CA_FILE
+      admin_email: MP_ADMIN_EMAIL
+    fields:
+      redirect_path: {value: /api/v1/auth/callback}
 config:
-  oidc-issuer:
-    env: MP_OIDC_ISSUER
-    type: url
-    description: Issuer URL of the identity provider that signs the admin in.
-  oidc-client-id:
-    env: MP_OIDC_CLIENT_ID
-    type: string
-    default: mp-api
-    description: Client id of the platform at the identity provider.
-  oidc-client-secret:
-    env: MP_OIDC_CLIENT_SECRET
-    type: secret
-    description: Client secret of the platform at the identity provider.
-  oidc-ca:
-    env: MP_OIDC_CA
-    type: string
-    optional: true
-    description: PEM CA bundle to trust the identity provider's TLS certificate with; usually given as a file through MP_OIDC_CA_FILE.
-  public-origin:
-    env: MP_PUBLIC_ORIGIN
-    type: url
-    description: Scheme, host and port the browser sees, like https://platform.example.com.
-  base-path:
-    env: MP_BASE_PATH
-    type: string
-    optional: true
-    pattern: "(/[A-Za-z0-9._~-]+)+"
-    description: Path the platform is served under, like /platform; unset at the site root.
-  admin-email:
-    env: MP_ADMIN_EMAIL
-    type: string
-    pattern: "[^@\\s]+@[^@\\s]+"
-    description: Email of the admin; the first verified sign in with it binds the admin.
   proxy-hops:
     env: MP_PROXY_HOPS
     type: int

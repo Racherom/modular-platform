@@ -170,13 +170,16 @@ func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
 		}
 		var reserved []int
 		if mode == config.PlannerModeInternal {
-			for _, port := range []func(context.Context) (int, error){m.Config.PlatformHttpPort, m.Config.PlatformHttpsPort} {
-				p, err := port(ctx)
-				if err != nil {
-					return nil, err
-				}
-				reserved = append(reserved, p)
+			ingress, bound, err := m.Uses.Ingress(ctx)
+			if err != nil {
+				return nil, err
 			}
+			if !bound {
+				// the line has the sdk's problem form, so it reads like a refused start (spec 0025)
+				m.Log.ErrorContext(ctx, "config: uses.ingress (MP_PLATFORM_HTTP_PORT): missing: internal mode needs the ingress binding")
+				return nil, fmt.Errorf("internal mode without the ingress binding: %w", sdk.ErrStart)
+			}
+			reserved = []int{ingress.HttpPort, ingress.HttpsPort}
 		}
 		if mode == config.PlannerModePublic {
 			rate, err := m.Config.PlannerRate(ctx)

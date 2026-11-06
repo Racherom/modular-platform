@@ -4,7 +4,7 @@ name: http-ingress
 description: The public entry a browser sees; a consumer may ask to be served under a path.
 fields:
   origin: {type: url, description: "Scheme, host and port the browser sees."}
-  base_path: {type: string, description: Path the platform is served under; empty at the site root.}
+  base_path: {type: string, optional: true, description: Path the platform is served under; unset at the site root.}
   domain: {type: string, description: Host name of the public origin.}
   http_port: {type: int, description: Host port for HTTP.}
   https_port: {type: int, description: Host port for HTTPS.}

@@ -1,0 +1,15 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: http-ingress
+description: The public entry a browser sees; a consumer may ask to be served under a path.
+fields:
+  origin: {type: url, description: "Scheme, host and port the browser sees."}
+  base_path: {type: string, optional: true, description: Path the platform is served under; unset at the site root.}
+  domain: {type: string, description: Host name of the public origin.}
+  http_port: {type: int, description: Host port for HTTP.}
+  https_port: {type: int, description: Host port for HTTPS.}
+  ca: {type: certificate, optional: true, description: Root CA that signs the ingress certificate.}
+  route: {type: string, direction: to_provider, optional: true, description: "Path prefix the consumer is served under, like /auth."}
+  upstream: {type: url, direction: to_provider, optional: true, description: URL the ingress forwards the route to.}
+  server_name: {type: string, direction: to_provider, optional: true, description: TLS name the ingress verifies for an https upstream.}
+  stream: {type: bool, direction: to_provider, optional: true, description: Whether responses stream (server sent events) without buffering.}

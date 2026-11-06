@@ -9,7 +9,7 @@ import (
 // Config holds the tls-module module's declared values; read them only through the getters.
 type Config struct{}
 
-// Uses holds the tls-module module's binding clients (none).
+// Uses holds the tls-module module's bindings (none).
 type Uses struct{}
 
 // Module is the declaration sdk.Run loads.

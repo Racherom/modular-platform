@@ -80,12 +80,25 @@ type Capability struct {
 	Fields map[string]Field `json:"fields"`
 }
 
-// Field is one field of a capability.
+// Field is one field of a capability: its type, direction and rules, which sdkgen writes into a
+// slot's field getter (spec 0025).
 type Field struct {
-	Type      string `json:"type"`
-	Direction string `json:"direction,omitempty"`
-	Optional  bool   `json:"optional,omitempty"`
+	Type        string   `json:"type"`
+	Direction   string   `json:"direction,omitempty"`
+	Optional    bool     `json:"optional,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Pattern     string   `json:"pattern,omitempty"`
+	Values      []string `json:"values,omitempty"`
 }
+
+// Field types of a capability that travel as text (spec 0012).
+const (
+	FieldString = "string"
+	FieldInt    = "int"
+	FieldBool   = "bool"
+	FieldURL    = "url"
+	FieldEnum   = "enum"
+)
 
 // IsFile reports whether the field travels as a file: a secret or a certificate.
 func (f Field) IsFile() bool {

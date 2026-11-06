@@ -1,7 +1,7 @@
 apiVersion: modular-platform/v1
 kind: Module
 name: testmodule
-description: Declares one value of every type, for the sdk's own tests.
+description: Declares one value of every type and one slot field of every type, for the sdk's own tests.
 image: example.test/testmodule:1.0.0
 runtime: sdk
 provides:
@@ -33,6 +33,24 @@ uses:
       password: TM_DB_PASSWORD_FILE
       sslmode: TM_DB_SSLMODE
       ca: TM_DB_CA_FILE
+  realm:
+    capability: realm
+    optional: true
+    env:
+      name: TM_REALM_NAME
+      port: TM_REALM_PORT
+      secure: TM_REALM_SECURE
+      issuer: TM_REALM_ISSUER
+      mode: TM_REALM_MODE
+      key: TM_REALM_KEY_FILE
+      ca: TM_REALM_CA_FILE
+      hint: TM_REALM_HINT
+      retries: TM_REALM_RETRIES
+      strict: TM_REALM_STRICT
+      home: TM_REALM_HOME
+      tier: TM_REALM_TIER
+      pin: TM_REALM_PIN_FILE
+      roots: TM_REALM_ROOTS_FILE
   storage:
     capability: s3
     optional: true

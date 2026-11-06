@@ -1,0 +1,11 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: oidc
+description: An OpenID Connect provider and one client per binding.
+fields:
+  issuer: {type: url, description: Issuer URL of the provider.}
+  client_id: {type: string, description: Client id of the consumer at the provider.}
+  client_secret: {type: secret, direction: both, description: Client secret the consumer sends and the provider checks.}
+  ca: {type: certificate, optional: true, description: Root CA that signs the provider's certificate.}
+  admin_email: {type: string, optional: true, description: Email of the provider's bootstrap admin.}
+  redirect_path: {type: string, direction: to_provider, description: "The consumer's callback path under the public origin and base path."}

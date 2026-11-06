@@ -115,7 +115,7 @@ func (p *pusher[C, U]) apply(ctx context.Context, snapshot map[string]string) er
 		return fmt.Errorf("%w: %d problems", ErrSnapshotRefused, len(problems))
 	}
 	p.values.swap(values)
-	configLoaded(ctx, p.log, p.d, p.boot, sources)
+	configLoaded(ctx, p.log, p.d, p.boot, sources, p.bindings)
 	if p.state != pushWaiting {
 		return nil
 	}

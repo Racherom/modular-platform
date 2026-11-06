@@ -40,6 +40,8 @@ type (
 	ValueSpec = load.ValueSpec
 	// BindingSpec declares one capability the module uses.
 	BindingSpec = load.BindingSpec
+	// FieldSpec declares one field of a slot with no client (spec 0025).
+	FieldSpec = load.FieldSpec
 	// ProvideSpec declares the capability the module provides.
 	ProvideSpec = load.ProvideSpec
 	// Binding is a loaded binding: the provider's address and the credentials its client uses.
@@ -326,8 +328,12 @@ func loadModule[C, U any](ctx context.Context, d Declaration[C, U], o options, q
 	context.AfterFunc(ctx, func() { closeAll(opened) })
 
 	values := newValues(d.Values, res.Values, o)
-	bindings := &Bindings{m: map[string]any{}}
+	bindings := &Bindings{m: map[string]any{}, fields: map[string]map[string]any{}}
 	for _, b := range res.Bindings {
+		if b.Client == "" {
+			bindings.fields[b.Capability] = b.Fields // nil: an optional slot left unbound
+			continue
+		}
 		bindings.m[b.Capability] = nil // an optional binding left unbound
 		if o, ok := opened[b.Capability]; ok {
 			bindings.m[b.Capability] = o.Client
@@ -343,7 +349,7 @@ func loadModule[C, U any](ctx context.Context, d Declaration[C, U], o options, q
 			return loaded[C, U]{}, ErrStart
 		}
 		if !quiet {
-			configLoaded(ctx, log, d, res.Bootstrap, res.Sources)
+			configLoaded(ctx, log, d, res.Bootstrap, res.Sources, bindings)
 		}
 	}
 	if !quiet {
@@ -380,7 +386,8 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 
 	var r readiness
 	for _, b := range res.Bindings {
-		if b.Bound && !b.Optional {
+		// a slot with no client has nothing to poll: its fields were checked at load
+		if b.Bound && !b.Optional && b.Client != "" {
 			r.wait(ctx, log, b.Capability, opened[b.Capability].Ready)
 		}
 	}
@@ -472,8 +479,8 @@ func open(specs []BindingSpec, loaded []Binding) (map[string]Opened, []Problem) 
 	opened := map[string]Opened{}
 	var problems []Problem
 	for _, b := range loaded {
-		if !b.Bound {
-			continue
+		if !b.Bound || b.Client == "" {
+			continue // unbound, or the fields of a slot with no client
 		}
 		path := "uses." + b.Capability
 		openFn := openers[b.Capability]
@@ -515,12 +522,26 @@ func refuse(ctx context.Context, log *slog.Logger, problems []Problem) bool {
 }
 
 // configLoaded writes the one config loaded line: the host name, the TLS mode, each value's
-// source (never a value) and each binding's client kind. With a push source it is written for
-// every accepted snapshot.
-func configLoaded[C, U any](ctx context.Context, log *slog.Logger, d Declaration[C, U], bs load.Bootstrap, sources map[string]string) {
+// source (never a value), each field of a bound slot with no client as uses.<slot>.<field>
+// (binding, or unset when not delivered), and each binding's client kind. With a push source it
+// is written for every accepted snapshot.
+func configLoaded[C, U any](ctx context.Context, log *slog.Logger, d Declaration[C, U], bs load.Bootstrap, sources map[string]string, b *Bindings) {
 	values := make([]any, 0, len(d.Values))
 	for _, v := range d.Values {
 		values = append(values, slog.String(v.Name, sources[v.Name]))
+	}
+	for _, spec := range d.Bindings {
+		fields, bound := b.fields[spec.Capability]
+		if spec.Client != "" || !bound || fields == nil {
+			continue
+		}
+		for _, f := range spec.Fields {
+			source := "unset"
+			if _, ok := fields[f.Name]; ok {
+				source = "binding"
+			}
+			values = append(values, slog.String("uses."+spec.Capability+"."+f.Name, source))
+		}
 	}
 	bindings := make([]any, 0, len(d.Bindings))
 	for _, b := range d.Bindings {

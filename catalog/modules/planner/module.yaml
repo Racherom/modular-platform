@@ -11,6 +11,13 @@ healthcheck:
   timeout: 3s
   retries: 10
   start_period: 30s
+uses:
+  ingress:
+    capability: http-ingress
+    optional: true
+    env:
+      http_port: MP_PLATFORM_HTTP_PORT
+      https_port: MP_PLATFORM_HTTPS_PORT
 provides:
   planner:
     capability: planner
@@ -40,17 +47,3 @@ config:
     default: "1"
     min: 0
     description: Proxies in front of the planner that append X-Forwarded-For.
-  platform-http-port:
-    env: MP_PLATFORM_HTTP_PORT
-    type: int
-    default: "80"
-    min: 1
-    max: 65535
-    description: Host port of the platform's ingress for HTTP, which no deployed project may publish.
-  platform-https-port:
-    env: MP_PLATFORM_HTTPS_PORT
-    type: int
-    default: "443"
-    min: 1
-    max: 65535
-    description: Host port of the platform's ingress for HTTPS, which no deployed project may publish.

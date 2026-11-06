@@ -587,7 +587,7 @@ func TestStartLog(t *testing.T) {
 	if fmt.Sprint(l.Values) != fmt.Sprint(wantValues) {
 		t.Errorf("values = %v, want %v", l.Values, wantValues)
 	}
-	if fmt.Sprint(l.Bindings) != fmt.Sprint(map[string]string{"echo": "http", "postgresql": "postgresql", "storage": "s3"}) {
+	if fmt.Sprint(l.Bindings) != fmt.Sprint(map[string]string{"echo": "http", "postgresql": "postgresql", "realm": "env", "storage": "s3"}) {
 		t.Errorf("bindings = %v", l.Bindings)
 	}
 	// timestamps and the temp files the source labels name may hold any digits

@@ -22,16 +22,6 @@ func (c Config) PlatformGid(ctx context.Context) (int, error) {
 	return sdk.Value[int](ctx, c.v, "platform-gid")
 }
 
-// PlatformHttpPort is host port of the platform's ingress for HTTP, which no deployed project may publish.
-func (c Config) PlatformHttpPort(ctx context.Context) (int, error) {
-	return sdk.Value[int](ctx, c.v, "platform-http-port")
-}
-
-// PlatformHttpsPort is host port of the platform's ingress for HTTPS, which no deployed project may publish.
-func (c Config) PlatformHttpsPort(ctx context.Context) (int, error) {
-	return sdk.Value[int](ctx, c.v, "platform-https-port")
-}
-
 // PlatformUid is user id that owns deployed files and secrets and runs deployed sdk modules.
 func (c Config) PlatformUid(ctx context.Context) (int, error) {
 	return sdk.Value[int](ctx, c.v, "platform-uid")
@@ -47,8 +37,28 @@ func (c Config) WaitTimeout(ctx context.Context) (time.Duration, error) {
 	return sdk.Value[time.Duration](ctx, c.v, "wait-timeout")
 }
 
-// Uses holds the deployer-docker module's binding clients (none).
-type Uses struct{}
+// Uses holds the deployer-docker module's bindings; read them only through the getters.
+type Uses struct{ b *sdk.Bindings }
+
+// IngressBinding holds the fields of the ingress binding (capability http-ingress).
+type IngressBinding struct {
+	// HttpPort is host port for HTTP.
+	HttpPort int
+	// HttpsPort is host port for HTTPS.
+	HttpsPort int
+}
+
+// Ingress returns the fields of the ingress binding, checked at start.
+func (u Uses) Ingress(ctx context.Context) (IngressBinding, error) {
+	f, err := sdk.Fields(ctx, u.b, "ingress")
+	if err != nil {
+		return IngressBinding{}, err
+	}
+	return IngressBinding{
+		HttpPort:  sdk.Field[int](f, "http_port"),
+		HttpsPort: sdk.Field[int](f, "https_port"),
+	}, nil
+}
 
 // Module is the declaration sdk.Run loads.
 var Module = sdk.Declaration[Config, Uses]{
@@ -56,12 +66,13 @@ var Module = sdk.Declaration[Config, Uses]{
 	Values: []sdk.ValueSpec{
 		{Name: "deployments-dir", Env: "MP_DEPLOYMENTS_DIR", Type: "string", Pattern: "/.+", Description: "Absolute path of the deployments folder, the same path on the host and in the deployer."},
 		{Name: "platform-gid", Env: "MP_PLATFORM_GID", Type: "int", Min: "0", Description: "Group id that owns deployed files and secrets and runs deployed sdk modules."},
-		{Name: "platform-http-port", Env: "MP_PLATFORM_HTTP_PORT", Type: "int", Default: "80", Min: "1", Max: "65535", Description: "Host port of the platform's ingress for HTTP, which no deployed project may publish."},
-		{Name: "platform-https-port", Env: "MP_PLATFORM_HTTPS_PORT", Type: "int", Default: "443", Min: "1", Max: "65535", Description: "Host port of the platform's ingress for HTTPS, which no deployed project may publish."},
 		{Name: "platform-uid", Env: "MP_PLATFORM_UID", Type: "int", Min: "0", Description: "User id that owns deployed files and secrets and runs deployed sdk modules."},
 		{Name: "pull-timeout", Env: "MP_PULL_TIMEOUT", Type: "duration", Default: "10m", Min: "1m", Description: "Longest time an apply may spend pulling images."},
 		{Name: "wait-timeout", Env: "MP_WAIT_TIMEOUT", Type: "duration", Default: "5m", Min: "10s", Description: "Longest time an apply waits for every service to run and pass its healthcheck."},
 	},
+	Bindings: []sdk.BindingSpec{
+		{Capability: "ingress", Env: map[string]string{"http_port": "MP_PLATFORM_HTTP_PORT", "https_port": "MP_PLATFORM_HTTPS_PORT"}, Fields: []sdk.FieldSpec{{Name: "http_port", Env: "MP_PLATFORM_HTTP_PORT", Type: "int"}, {Name: "https_port", Env: "MP_PLATFORM_HTTPS_PORT", Type: "int"}}},
+	},
 	Provides: &sdk.ProvideSpec{Capability: "deploy-target", Auth: "binding-token", ClientsDirEnv: "MP_DEPLOY_TARGET_CLIENTS_DIR"},
-	New:      func(v *sdk.Values, _ *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{} },
+	New:      func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },
 }
