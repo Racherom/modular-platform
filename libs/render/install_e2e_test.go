@@ -218,8 +218,39 @@ func up(t *testing.T, dir string) {
 			t.Errorf("the value of secrets/%s shows in a service's env", p)
 		}
 	}
-	if !bytes.Contains(inspect, []byte("KEEPER_ORIGIN=https://vault.example.test")) {
-		t.Errorf("keeper lacks its asked origin in its env: %s", inspect)
+	for _, want := range []string{"KEEPER_ORIGIN=https://vault.example.test", "KEEPER_LEVEL=info", "KEEPER_BANNER=costs $5 #1", `"KEEPER_MOTD="`} {
+		if !bytes.Contains(inspect, []byte(want)) {
+			t.Errorf("keeper lacks %s in its env: %s", want, inspect)
+		}
+	}
+
+	// a value set in .env reaches the container on the next up, once setup.sh has checked it (spec 0025, AC-25)
+	f, err := os.OpenFile(filepath.Join(dir, ".env"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("MP_KEEPER__LEVEL=debug\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := setup(t, dir, ""); err != nil {
+		t.Fatalf("setup.sh after editing .env: %v\n%s", err, out)
+	}
+	if out, err := compose(t.Context(), "up", "-d", "--wait", "--wait-timeout", "60"); err != nil {
+		t.Fatalf("up after editing .env: %v\n%s", err, out)
+	}
+	id, err := compose(t.Context(), "ps", "-q", "keeper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspect, err = exec.CommandContext(t.Context(), "docker", "inspect", "--format", "{{json .Config.Env}}", strings.TrimSpace(string(id))).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(inspect, []byte("KEEPER_LEVEL=debug")) {
+		t.Errorf("keeper did not get the level set in .env: %s", inspect)
 	}
 }
 

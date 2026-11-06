@@ -9,7 +9,7 @@ sh setup.sh
 docker compose up -d --wait --wait-timeout 120
 ```
 
-`setup.sh` writes the user every module runs as into `.env` and creates the secret files and data folders this stack needs, here on your machine. It never changes a file that already exists, so running it again is safe. If you skip it, `docker compose up` stops with a missing file error instead of starting without passwords.
+`setup.sh` writes the user every module runs as into `.env` and creates the secret files and data folders this stack needs, here on your machine. It never changes a file that already exists, so running it again is safe. If you skip it, `docker compose up` stops with a missing file error instead of starting without passwords. The settings of each module are in `.env`; after you edit `.env`, run `./setup.sh` again, which checks every value there, then `docker compose up -d`.
 
 The first `up` also runs a short job for each database or other resource a module gets made for it; the module starts once its job has finished. Each `up` runs these jobs again, which changes nothing that already exists.
 

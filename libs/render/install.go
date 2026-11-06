@@ -21,6 +21,30 @@ type askedValue struct {
 	Args string // its arguments, quoted
 }
 
+// envBlock is the commented block .env holds for one value rendered as MP_<I>__<V> (spec 0025,
+// AC-25): its description, then its default as a hint, or that setup.sh asks it.
+type envBlock struct {
+	Description string
+	Var         string // MP_<I>__<V>
+	Default     string // as typed, not escaped for Compose
+	Asked       bool
+}
+
+// envCheck is how setup.sh checks one MP_<I>__<V> line of .env before anything else (spec 0025,
+// AC-26): Args are the arguments of check_value after the name, or empty for a declared value
+// that renders no variable of its own, which passes unchecked.
+type envCheck struct {
+	Var  string
+	Args string
+}
+
+// knownInstance is the variable prefix of instance Name; a .env line under it that names no
+// declared value gets a warning.
+type knownInstance struct {
+	Glob string // MP_<I>__*
+	Name string
+}
+
 // stepRun is one run of a setup step (spec 0013, Install time, step 5); a for_each step has one
 // per client.
 type stepRun struct {
@@ -46,11 +70,14 @@ type installStep struct {
 // (setup_required, until #9; spec 0013).
 func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Module) error {
 	compose := m.ComposeValues()
+	r.data.Known = append(r.data.Known, knownInstance{Glob: contract.ComposeVar(i, "") + "*", Name: i})
+	r.data.NeedEnvGet = true // check_env reads each line back
 	for _, name := range sortedKeys(m.Config) {
 		v := m.Config[name]
 		if strings.HasPrefix(v.Default, "{install}/") {
 			return fmt.Errorf("%w: {install} in config value %s of module %s belongs to the platform flavor", ErrNotRendered, name, m.Name)
 		}
+		check := envCheck{Var: contract.ComposeVar(i, name)}
 		switch {
 		case v.Type == contract.ConfigValueTypeSecret && v.Asked():
 			path := "secrets/" + i + "/" + name
@@ -59,18 +86,26 @@ func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Mo
 			setEnv(svc, v.Env+"_FILE", target)
 			r.declared[path] = true
 			r.data.Asked = append(r.data.Asked, askedValue{Func: "ask_secret", Args: askSecretArgs(path, v.Optional, v.Description)})
-		case slices.Contains(compose, name):
+		case slices.Contains(compose, name) || m.Runtime != contract.Sdk && v.Type != contract.ConfigValueTypeSecret && !tokenDefault(v.Default):
 			setEnvRaw(svc, v.Env, composeVar(i, name, v))
-			if v.Asked() {
-				a, err := r.askText(i, name, m)
-				if err != nil {
-					return err
-				}
-				r.data.Asked = append(r.data.Asked, a)
+			if tokenDefault(v.Default) {
+				break // the setup user's ids: no block, no rules (AC-25, AC-26)
 			}
-		case v.Default == "{uid}" || v.Default == "{gid}":
+			rules, values, err := r.ruleWords(name, m)
+			if err != nil {
+				return err
+			}
+			check.Args = strings.Join(slices.Concat(rules, []string{strconv.FormatBool(v.Optional)}, values), " ")
+			block := envBlock{Description: v.Description, Var: check.Var, Default: v.Default}
+			if v.Asked() {
+				block.Asked = true
+				r.data.Asked = append(r.data.Asked, r.askText(i, name, m, rules, values))
+			}
+			r.data.Blocks = append(r.data.Blocks, block)
+		case tokenDefault(v.Default):
 			setEnvRaw(svc, v.Env, map[string]string{"{uid}": "${MP_UID}", "{gid}": "${MP_GID}"}[v.Default])
 		}
+		r.data.Checks = append(r.data.Checks, check)
 	}
 	for _, s := range slices.SortedFunc(slices.Values(m.Secrets), func(a, b contract.Secret) int { return strings.Compare(a.Name, b.Name) }) {
 		if s.From == contract.SecretFromAsk {
@@ -97,36 +132,46 @@ func needsSetup(m contract.Module) bool {
 	return len(m.Setup) > 0
 }
 
-// askText is the question for asked text value name of instance i: its variable, the checks
-// of its type, its description and its default as a shell word.
-func (r *renderer) askText(i, name string, m contract.Module) (askedValue, error) {
+// tokenDefault reports whether def is the setup user's id, {uid} or {gid}, which renders as
+// that user's variable rather than as a value of its own.
+func tokenDefault(def string) bool { return def == "{uid}" || def == "{gid}" }
+
+// ruleWords are the rules setup.sh checks text value name of m by, as the arguments of its valid
+// function: the type, min, max and pattern (as an ERE) as shell words, then the enum values.
+func (r *renderer) ruleWords(name string, m contract.Module) (rules, values []string, err error) {
 	v := m.Config[name]
-	rules := manifest.Rules{Type: string(v.Type), Pattern: v.Pattern, Values: v.Values}
+	rs := manifest.Rules{Type: string(v.Type), Pattern: v.Pattern, Values: v.Values}
 	if v.Min != nil {
-		rules.Min = v.Min.Text()
+		rs.Min = v.Min.Text()
 	}
 	if v.Max != nil {
-		rules.Max = v.Max.Text()
+		rs.Max = v.Max.Text()
 	}
-	if rules.Type == manifest.TypeDuration {
-		rules.Min, rules.Max = nanoseconds(rules.Min), nanoseconds(rules.Max)
+	if rs.Type == manifest.TypeDuration {
+		rs.Min, rs.Max = nanoseconds(rs.Min), nanoseconds(rs.Max)
 		r.data.NeedDuration = true
 	}
 	var re string
-	if rules.Pattern != "" {
-		var err error
-		if re, err = erePattern(rules.Pattern); err != nil {
-			return askedValue{}, fmt.Errorf("config value %s of module %s: %w", name, m.Name, err)
+	if rs.Pattern != "" {
+		if re, err = erePattern(rs.Pattern); err != nil {
+			return nil, nil, fmt.Errorf("config value %s of module %s: %w", name, m.Name, err)
 		}
 	}
-	words := []string{
-		contract.ComposeVar(i, name), shellQuote(rules.Type), shellQuote(rules.Min), shellQuote(rules.Max), shellQuote(re),
-		strconv.FormatBool(v.Optional), shellQuote(v.Description), r.defaultWord(i, m, v.Default),
+	r.data.NeedValid = true
+	rules = []string{shellQuote(rs.Type), shellQuote(rs.Min), shellQuote(rs.Max), shellQuote(re)}
+	for _, e := range rs.Values {
+		values = append(values, shellQuote(e))
 	}
-	for _, e := range rules.Values {
-		words = append(words, shellQuote(e))
-	}
-	return askedValue{Func: "ask", Args: strings.Join(words, " ")}, nil
+	return rules, values, nil
+}
+
+// askText is the question for asked text value name of instance i: its variable, its rules
+// (from ruleWords), whether it is optional, its description and its default as a shell word.
+func (r *renderer) askText(i, name string, m contract.Module, rules, values []string) askedValue {
+	v := m.Config[name]
+	words := slices.Concat([]string{contract.ComposeVar(i, name)}, rules,
+		[]string{strconv.FormatBool(v.Optional), shellQuote(v.Description), r.defaultWord(i, m, v.Default)}, values)
+	return askedValue{Func: "ask", Args: strings.Join(words, " ")}
 }
 
 // nanoseconds writes a duration bound as whole nanoseconds, which setup.sh compares; "" stays.

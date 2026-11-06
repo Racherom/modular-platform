@@ -60,6 +60,22 @@ config:
     type: secret
     setup: ask
     description: Key that unseals the vault.
+  level:
+    env: KEEPER_LEVEL
+    type: enum
+    values: [debug, info]
+    default: info
+    description: How much the vault logs.
+  motd:
+    env: KEEPER_MOTD
+    type: string
+    optional: true
+    description: A message of the day, none when empty.
+  banner:
+    env: KEEPER_BANNER
+    type: string
+    default: "costs $5 #1"
+    description: The banner the vault shows above its page.
   run-uid:
     env: KEEPER_RUN_UID
     type: int
