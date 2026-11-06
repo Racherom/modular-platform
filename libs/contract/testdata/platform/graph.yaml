@@ -33,6 +33,8 @@ modules:
     uses:
       trust: cert-issuer.acme
   planner:
+    config:
+      planner-mode: "internal"
     module: planner
     uses:
       acme: cert-issuer.acme

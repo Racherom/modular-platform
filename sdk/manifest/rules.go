@@ -148,6 +148,21 @@ func fullMatch(pattern string) *regexp.Regexp {
 	return re
 }
 
+// CheckValue checks text as a value of v by the rules the SDK loads it with (spec 0025), so a
+// value the planner accepts from a graph is one the module accepts at start. A failure is a
+// *RuleError.
+func CheckValue(v Value, text string) error {
+	_, err := RulesOf(v).Parse(text)
+	return err
+}
+
+// QuotedText reports whether s is two characters or longer and starts and ends with the same
+// ASCII quote, " or '. sdk/envfile strips such a pair from a line, so such a text cannot pass
+// through an env file unchanged (spec 0025).
+func QuotedText(s string) bool {
+	return len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0]
+}
+
 // RulesOf returns the rules of a declared value.
 func RulesOf(v Value) Rules {
 	r := Rules{Type: v.Type, Values: v.Values}
@@ -458,6 +473,10 @@ func (c *checker) enumValues(path string, values []string) bool {
 			return false
 		case seen[s]:
 			c.add(fmt.Sprintf("%s.values.%d", path, i), CodeInvalidRule, "%q is listed twice", s)
+			return false
+		case QuotedText(s):
+			// a graph can never set such a text (spec 0025, "Quoted enum values")
+			c.add(fmt.Sprintf("%s.values.%d", path, i), CodeInvalidRule, "an enum value must not start and end with the same quote")
 			return false
 		}
 		seen[s] = true

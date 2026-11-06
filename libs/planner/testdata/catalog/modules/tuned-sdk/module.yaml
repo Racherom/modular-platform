@@ -1,0 +1,11 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: tuned-sdk
+description: Test module on the sdk with a required config value that has no default (spec 0025).
+image: example.test/tuned-sdk:1.0.0
+runtime: sdk
+config:
+  need:
+    env: TUNED_NEED
+    type: string
+    description: A required text with no default that nobody asks.

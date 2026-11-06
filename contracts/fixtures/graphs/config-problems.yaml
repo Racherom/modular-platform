@@ -1,0 +1,27 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  a:
+    config:
+      ghost: "x"
+      label: "{"
+      level: "12"
+      mode: "medium"
+      need: ""
+      token: "{"
+      uid: "1000"
+    module: tuned
+  c:
+    module: tuned
+  e:
+    config:
+      need: "x"
+    external:
+      provides: {}
+  m:
+    config:
+      root: "/x"
+    module: mounted
+  s:
+    module: tuned-sdk
+name: config-problems

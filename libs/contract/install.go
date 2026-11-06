@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"slices"
 	"strings"
+
+	"github.com/racherom/modular-platform/sdk/manifest"
 )
 
 // ComposeVar is the Compose variable of config value v of instance i (spec 0013, "Asked
@@ -26,6 +28,22 @@ func (b ConfigBound) Text() string {
 		return s
 	}
 	return string(raw)
+}
+
+// Check checks text as a value of v with the parser the SDK loads it with (spec 0025), so a
+// value the planner accepts is one the module accepts. A failure is a *manifest.RuleError.
+func (v ConfigValue) Check(text string) error {
+	mv := manifest.Value{Type: string(v.Type), Values: v.Values}
+	if v.Min != nil {
+		mv.Min = &manifest.Bound{Text: v.Min.Text()}
+	}
+	if v.Max != nil {
+		mv.Max = &manifest.Bound{Text: v.Max.Text()}
+	}
+	if v.Pattern != "" {
+		mv.Pattern = &v.Pattern
+	}
+	return manifest.CheckValue(mv, text)
 }
 
 // Asked reports whether setup.sh asks config value v.

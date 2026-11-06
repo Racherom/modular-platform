@@ -39,6 +39,19 @@ describe('canonical graph text', () => {
     expect(stringifyGraph({ ...g, formatVersion: '1.0' })).toBe(stringifyGraph(g))
   })
 
+  it('writes config values double quoted and leaves an empty or null config out (spec 0025)', () => {
+    const g = parseGraph(readFileSync(join(fixtureDir, 'config-set.yaml'), 'utf8'))
+    expect(g.modules.a?.config).toEqual({ label: '', level: '7', mode: 'slow', need: 'a"b' })
+    const head = 'apiVersion: modular-platform/v1\nkind: Graph\nmodules:\n  a:\n'
+    const bare = `${head}    module: a\nname: x\n`
+    expect(stringifyGraph(parseGraph(`${head}    config: {}\n    module: a\nname: x\n`))).toBe(bare)
+    expect(stringifyGraph(parseGraph(`${head}    config: null\n    module: a\nname: x\n`))).toBe(bare)
+    const long = `${'word '.repeat(30)}end`
+    expect(stringifyGraph(parseGraph(`${head}    config:\n      b: plain\n      a: 'it''s'\n    module: ${long}\nname: x\n`))).toBe(
+      `${head}    config:\n      a: "it's"\n      b: "plain"\n    module: ${long}\nname: x\n`,
+    )
+  })
+
   it('refuses another version, another kind and duplicate keys', () => {
     const sample = readFileSync(files.at(-1)!, 'utf8')
     expect(() => parseGraph(sample.replace('modular-platform/v1', 'modular-platform/v2'))).toThrow(/apiVersion/)

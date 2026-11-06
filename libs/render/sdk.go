@@ -44,9 +44,11 @@ func (r *renderer) sdkInstance(svc *types.ServiceConfig, i string, m contract.Mo
 
 func envFilePath(i string) string { return "config/" + i + ".env" }
 
-// envFile writes config/<i>.env: one block per value in name order, secrets never. Bindings
-// deliver every value they carry, so the file holds no binding lines.
-func envFile(i string, m contract.Module) []byte {
+// envFile writes config/<i>.env: one block per value in name order, secrets never. A value the
+// graph sets is written uncommented as <ENV>=<text> (spec 0025, AC-27); the planner has refused
+// the texts sdk/envfile would change. Bindings deliver every value they carry, so the file holds
+// no binding lines.
+func envFile(i string, m contract.Module, set *contract.InstanceConfig) []byte {
 	blocks := []string{fmt.Sprintf("# Settings for %s (module %s). Edit and restart the module to apply.\n"+
 		"# Lines starting with # are defaults or optional values; remove the # to set one.\n", i, m.Name)}
 	compose := m.ComposeValues()
@@ -55,10 +57,13 @@ func envFile(i string, m contract.Module) []byte {
 		if v.Type == contract.ConfigValueTypeSecret {
 			continue
 		}
+		text, given := (*orEmpty(set))[name]
 		var line string
 		switch {
 		case slices.Contains(compose, name):
 			line = "# set in .env as " + contract.ComposeVar(i, name)
+		case given:
+			line = v.Env + "=" + text
 		case v.Default == "{uid}" || v.Default == "{gid}":
 			line = fmt.Sprintf("# set to the id of the user setup.sh ran as (%s)", strings.Trim(v.Default, "{}"))
 		case v.Default != "":

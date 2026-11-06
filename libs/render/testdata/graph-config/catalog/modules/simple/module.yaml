@@ -1,0 +1,11 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: simple
+description: A module whose only setup need is one asked value, for the managed setup_required rule (spec 0025, AC-28).
+image: traefik/whoami:v1.11.0
+config:
+  domain:
+    env: SIMPLE_DOMAIN
+    type: string
+    setup: ask
+    description: Domain it answers on.

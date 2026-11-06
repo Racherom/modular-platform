@@ -316,6 +316,15 @@ cases:
           type: enum
           values: [""]
           description: A mode.
+  - name: enum value in matching quotes
+    want: [config.mode.values.1 invalid_rule]
+    body: |
+      config:
+        mode:
+          env: SVC_MODE
+          type: enum
+          values: [a, '"b"', "'", '"c']
+          description: A mode.
   - name: enum default not in values
     want: [config.mode.default invalid_default]
     body: |

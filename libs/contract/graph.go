@@ -1,10 +1,12 @@
 package contract
 
 import (
+	"bytes"
 	"fmt"
 	"maps"
 	"strings"
 
+	yaml3 "go.yaml.in/yaml/v3"
 	"sigs.k8s.io/yaml"
 )
 
@@ -91,6 +93,9 @@ func v0alpha1Only(g Graph) *Problem {
 		if m.External != nil {
 			return requestProblem(CodeInvalidGraph, "modules."+i+".external", "A v0alpha1 graph has no external instances.")
 		}
+		if m.Config != nil {
+			return requestProblem(CodeInvalidGraph, "modules."+i+".config", "A v0alpha1 graph has no config values.")
+		}
 		if m.Uses == nil {
 			continue
 		}
@@ -116,18 +121,68 @@ func ConvertGraph(g Graph) (Graph, bool) {
 }
 
 // MarshalGraph writes the canonical text of a graph: keys in byte order, two space indent,
-// block style, null written as null, a binding as a string unless it has named values,
-// formatVersion left out at 1.0, one trailing newline. The editor's writer matches it byte for
-// byte (AC-19).
+// block style, no line wrapping, null written as null, a binding as a string unless it has named
+// values, each config value double quoted and an empty config left out (spec 0025), formatVersion
+// left out at 1.0, one trailing newline. The editor's writer matches it byte for byte (AC-19).
 func MarshalGraph(g Graph) ([]byte, error) {
 	if g.FormatVersion == "1.0" {
 		g.FormatVersion = ""
 	}
+	modules := make(map[string]GraphModule, len(g.Modules))
+	for i, m := range g.Modules {
+		if m.Config != nil && len(*m.Config) == 0 {
+			m.Config = nil
+		}
+		modules[i] = m
+	}
+	g.Modules = modules
 	out, err := yaml.Marshal(g)
 	if err != nil {
 		return nil, fmt.Errorf("marshal graph: %w", err)
 	}
-	return out, nil
+	return quoteConfig(out)
+}
+
+// quoteConfig writes text again with every config value double quoted, escaping only " and \
+// (the planner refuses control characters in them). The YAML text yaml.Marshal picks for every
+// other scalar is kept as is; only its line wrapping goes, which the editor's writer never does.
+func quoteConfig(text []byte) ([]byte, error) {
+	var doc yaml3.Node
+	if err := yaml3.Unmarshal(text, &doc); err != nil {
+		return nil, fmt.Errorf("marshal graph: read back: %w", err)
+	}
+	if modules := mapValue(doc.Content[0], "modules"); modules != nil {
+		for k := 1; k < len(modules.Content); k += 2 {
+			if config := mapValue(modules.Content[k], "config"); config != nil {
+				for v := 1; v < len(config.Content); v += 2 {
+					config.Content[v].Style = yaml3.DoubleQuotedStyle
+				}
+			}
+		}
+	}
+	var b bytes.Buffer
+	enc := yaml3.NewEncoder(&b)
+	enc.SetIndent(2)
+	if err := enc.Encode(&doc); err != nil {
+		return nil, fmt.Errorf("marshal graph: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return nil, fmt.Errorf("marshal graph: %w", err)
+	}
+	return b.Bytes(), nil
+}
+
+// mapValue is the value node of key in mapping node n, or nil.
+func mapValue(n *yaml3.Node, key string) *yaml3.Node {
+	if n == nil || n.Kind != yaml3.MappingNode {
+		return nil
+	}
+	for k := 0; k+1 < len(n.Content); k += 2 {
+		if n.Content[k].Value == key {
+			return n.Content[k+1]
+		}
+	}
+	return nil
 }
 
 // CloneGraph returns a deep copy, so a planner result never shares maps with its input.
@@ -145,6 +200,10 @@ func CloneGraph(g Graph) Graph {
 				uses[s] = b
 			}
 			m.Uses = &uses
+		}
+		if m.Config != nil {
+			c := maps.Clone(*m.Config)
+			m.Config = &c
 		}
 		if m.External != nil {
 			ext := ExternalInstance{Provides: make(map[string]ExternalProvide, len(m.External.Provides))}

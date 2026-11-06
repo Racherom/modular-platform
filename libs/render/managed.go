@@ -112,10 +112,10 @@ func refusals(plan contract.PlanResult, catalog contract.Catalog) []contract.Pro
 				Message: fmt.Sprintf("Instance %s %s, which a deployed graph never gets; download the zip to run it.", i, reasons),
 			})
 		}
-		if needsSetup(m) {
+		if needsSetup(m, gm.Config) {
 			out = append(out, contract.Problem{
 				Severity: contract.Error, Code: CodeSetupRequired, Path: "modules." + i,
-				Message: fmt.Sprintf("Instance %s needs setup.sh (an asked value, an asked secret or a setup step), which a deployed graph cannot run yet; download the zip to run it.", i),
+				Message: fmt.Sprintf("Instance %s needs setup.sh (an asked value the graph does not set, an asked secret or a setup step), which a deployed graph cannot run yet; download the zip to run it.", i),
 			})
 		}
 	}

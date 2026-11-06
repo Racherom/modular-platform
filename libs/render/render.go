@@ -85,6 +85,8 @@ type templateData struct {
 	Known        []knownInstance // the variable prefix of each instance in the stack
 
 	NeedValid    bool // setup.sh checks a value by its rules
+	NeedAsk      bool // setup.sh asks at least one value
+	GraphSet     bool // the graph sets an asked value, so setup.sh has graph_set and env_or
 	NeedEnvGet   bool // setup.sh reads an answer back from .env
 	NeedDuration bool // setup.sh checks a duration
 	WaitAnchor   bool // the stack has the wait anchor mp_jobs (spec 0014, "Waiting")
@@ -246,7 +248,7 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates
 	}
 	for _, i := range instances {
 		if gm := r.g.Modules[i]; gm.External == nil && r.modules[gm.Module].Runtime == contract.Sdk {
-			files = append(files, File{Path: envFilePath(i), Mode: 0o644, Data: envFile(i, r.modules[gm.Module])})
+			files = append(files, File{Path: envFilePath(i), Mode: 0o644, Data: envFile(i, r.modules[gm.Module], gm.Config)})
 		}
 	}
 	files = append(files, configs...)
@@ -314,7 +316,7 @@ func (r *renderer) networks(svc *types.ServiceConfig, i string, m contract.Modul
 	joins := []string{networkInternal}
 	if m.Network != nil {
 		for _, a := range m.Network.Aliases {
-			aliases = append(aliases, composeVar(i, a.Config, m.Config[a.Config]))
+			aliases = append(aliases, r.composeVar(i, a.Config, m.Config[a.Config]))
 		}
 	}
 	// a published port needs a network with a route to the host: internal has none
@@ -348,7 +350,7 @@ func (r *renderer) environment(i string, m contract.Module) error {
 			case contract.EnvGID:
 				b.WriteString("${MP_GID}")
 			case contract.EnvConfig:
-				b.WriteString(composeVar(i, part.Name, m.Config[part.Name]))
+				b.WriteString(r.composeVar(i, part.Name, m.Config[part.Name]))
 			case contract.EnvUses:
 				v := r.bound[i][part.Name][part.Field]
 				if v.raw {

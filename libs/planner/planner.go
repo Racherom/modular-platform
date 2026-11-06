@@ -147,6 +147,7 @@ func (p *planning) run() {
 			p.instance(i)
 		}
 	}
+	p.config(instances)
 	p.namedValues()
 	p.tokens()
 	p.cycles(instances)

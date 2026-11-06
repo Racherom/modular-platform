@@ -1,0 +1,39 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  a:
+    config:
+      label: ""
+      level: "7"
+      mode: "slow"
+      need: "a\"b"
+    module: tuned
+  b:
+    config:
+      need: "x"
+    module: tuned-sdk
+  p1:
+    config:
+      need: " \"q\""
+    module: tuned
+  p2:
+    config:
+      need: "\"q"
+    module: tuned
+  p3:
+    config:
+      need: "yes"
+    module: tuned
+  p4:
+    config:
+      need: "\"q'"
+    module: tuned
+  p5:
+    config:
+      need: "\""
+    module: tuned
+  p6:
+    config:
+      need: "0x1"
+    module: tuned
+name: config-set

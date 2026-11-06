@@ -105,6 +105,17 @@ export interface components {
             module?: string;
             external?: components["schemas"]["ExternalInstance"];
             uses?: components["schemas"]["Uses"];
+            config?: components["schemas"]["ModuleConfig"];
+        };
+        /**
+         * @description Config value name to its text, for a module instance (spec 0025). Each value is a string,
+         *     never expanded; it becomes the value's default in the render, and `.env` can still
+         *     override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
+         *     `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
+         *     empty map is left out.
+         */
+        ModuleConfig: {
+            [key: string]: string;
         };
         /**
          * @description Slot name to its binding. `null` leaves an optional slot unbound on purpose. A missing key

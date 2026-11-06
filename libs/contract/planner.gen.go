@@ -487,6 +487,12 @@ type Graph struct {
 
 // GraphModule Exactly one of `module` (a catalog module) and `external` (a service outside the stack).
 type GraphModule struct {
+	// Config Config value name to its text, for a module instance (spec 0025). Each value is a string,
+	// never expanded; it becomes the value's default in the render, and `.env` can still
+	// override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
+	// `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
+	// empty map is left out.
+	Config   *ModuleConfig     `json:"config,omitempty"`
 	External *ExternalInstance `json:"external,omitempty"`
 
 	// Module The catalog module this instance runs.
@@ -610,6 +616,13 @@ type Module struct {
 // ModuleRuntime `sdk` when the image is built on the module SDK (spec 0005): the render gives it the
 // bootstrap env and its env file, and it listens on 8080 (plain) or 8443 (TLS).
 type ModuleRuntime string
+
+// ModuleConfig Config value name to its text, for a module instance (spec 0025). Each value is a string,
+// never expanded; it becomes the value's default in the render, and `.env` can still
+// override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
+// `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
+// empty map is left out.
+type ModuleConfig = InstanceConfig
 
 // ModuleImage defines model for ModuleImage.
 type ModuleImage struct {

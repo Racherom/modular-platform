@@ -775,12 +775,23 @@ export interface components {
         Uses: {
             [key: string]: components["schemas"]["UseBinding"];
         };
+        /**
+         * @description Config value name to its text, for a module instance (spec 0025). Each value is a string,
+         *     never expanded; it becomes the value's default in the render, and `.env` can still
+         *     override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
+         *     `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
+         *     empty map is left out.
+         */
+        ModuleConfig: {
+            [key: string]: string;
+        };
         /** @description Exactly one of `module` (a catalog module) and `external` (a service outside the stack). */
         GraphModule: {
             /** @description The catalog module this instance runs. */
             module?: string;
             external?: components["schemas"]["ExternalInstance"];
             uses?: components["schemas"]["Uses"];
+            config?: components["schemas"]["ModuleConfig"];
         };
         /** @description A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value. */
         Graph: {

@@ -88,6 +88,30 @@ func (b *GraphBinding) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// InstanceConfig is the config values a graph sets on a module instance (spec 0025): value name
+// to its text. The text is never expanded; the planner checks it against the value's rules.
+type InstanceConfig map[string]string
+
+// UnmarshalJSON reads an object of strings. It refuses any other value, so a YAML number or
+// boolean (5432, yes) is invalid_graph rather than quietly turned into text.
+func (c *InstanceConfig) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil || raw == nil {
+		return errors.New("config must be a map of value names to text")
+	}
+	out := make(InstanceConfig, len(raw))
+	for _, k := range sortedKeys(raw) {
+		v := bytes.TrimSpace(raw[k])
+		var s string
+		if len(v) == 0 || v[0] != '"' || json.Unmarshal(v, &s) != nil {
+			return fmt.Errorf("config value %q must be text in quotes", k)
+		}
+		out[k] = s
+	}
+	*c = out
+	return nil
+}
+
 // The kinds of a YieldFieldSource.
 const (
 	YieldNamed    = "named"    // the binding's named value from the graph

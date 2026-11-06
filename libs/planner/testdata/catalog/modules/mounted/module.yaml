@@ -1,0 +1,14 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: mounted
+description: Test module whose host mount source is a config value, which a graph cannot set (spec 0025).
+image: example.test/mounted:1.0.0
+config:
+  root:
+    env: MOUNTED_ROOT
+    type: string
+    default: /srv/mounted
+    description: The host folder it mounts.
+host_mounts:
+  - host: {config: root}
+    path: /data

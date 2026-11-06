@@ -73,7 +73,14 @@ func planFile(t *testing.T, path string, catalog contract.Catalog) contract.Plan
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, p := contract.DecodeGraph(data)
+	return planText(t, string(data), catalog)
+}
+
+// planText plans the graph text and fails the test unless the plan is ok.
+func planText(t *testing.T, text string, catalog contract.Catalog) contract.PlanResult {
+	t.Helper()
+	path := "graph"
+	g, p := contract.DecodeGraph([]byte(text))
 	if p != nil {
 		t.Fatal(p.Message)
 	}

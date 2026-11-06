@@ -1,0 +1,40 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  q1:
+    config:
+      need: "\"q\""
+    module: tuned
+  q2:
+    config:
+      need: "'q'"
+    module: tuned
+  q3:
+    config:
+      need: "\"\""
+    module: tuned
+  q4:
+    config:
+      need: "\"é\""
+    module: tuned
+  q5:
+    config:
+      need: "a\tb"
+    module: tuned
+  s1:
+    config:
+      need: "\"q\""
+    module: tuned-sdk
+  s2:
+    config:
+      need: "'q'"
+    module: tuned-sdk
+  s3:
+    config:
+      need: "\"\""
+    module: tuned-sdk
+  s4:
+    config:
+      need: "\"é\""
+    module: tuned-sdk
+name: config-quotes

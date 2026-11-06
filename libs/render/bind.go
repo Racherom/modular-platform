@@ -277,7 +277,7 @@ func (r *renderer) source(e end, k contract.Capability, f string, src contract.F
 	case src.Value != "":
 		return value{text: src.Value}, true, nil
 	case src.Config != "":
-		v := composeVar(p, src.Config, m.Config[src.Config])
+		v := r.composeVar(p, src.Config, m.Config[src.Config])
 		if src.Format != "" {
 			v = strings.ReplaceAll(escape(src.Format), "{}", v)
 		}
@@ -317,12 +317,16 @@ func (r *renderer) perBinding(b contract.Binding, f string) string {
 	return path
 }
 
-// composeVar is the Compose variable of config value v of instance i (spec 0013, spec 0025 AC-25):
-// an asked value bare, so a missing answer fails up; any other with its default, empty when it
-// has none, so the env name is always set; {uid} and {gid} as the setup user's variables.
-func composeVar(i, v string, cv contract.ConfigValue) string {
+// composeVar is the Compose variable of config value v of instance i with its default (spec
+// 0025, AC-25): the graph's text, else the catalog default, else empty, with $ written $$. An
+// asked value the graph does not set stays bare, so a missing answer fails up; {uid} and {gid}
+// defaults take the setup user's variables.
+func (r *renderer) composeVar(i, v string, cv contract.ConfigValue) string {
 	name := contract.ComposeVar(i, v)
+	text, set := r.graphValue(i, v)
 	switch {
+	case set:
+		return "${" + name + ":-" + escape(text) + "}"
 	case cv.Asked():
 		return "${" + name + "}"
 	case cv.Default == "{uid}":
@@ -331,6 +335,17 @@ func composeVar(i, v string, cv contract.ConfigValue) string {
 		return "${" + name + ":-${MP_GID}}"
 	}
 	return "${" + name + ":-" + escape(cv.Default) + "}"
+}
+
+// graphValue is the text the graph sets as config value v of instance i, if it sets one (spec
+// 0025). The planner has checked it, so it holds no control character, { or }.
+func (r *renderer) graphValue(i, v string) (string, bool) {
+	c := r.g.Modules[i].Config
+	if c == nil {
+		return "", false
+	}
+	text, ok := (*c)[v]
+	return text, ok
 }
 
 func envPart(s string) string { return strings.ToUpper(strings.ReplaceAll(s, "-", "_")) }
