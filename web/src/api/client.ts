@@ -9,6 +9,7 @@ export type Catalog = components['schemas']['Catalog']
 export type Module = components['schemas']['Module']
 export type Capability = components['schemas']['Capability']
 export type Slot = components['schemas']['Slot']
+export type ConfigValue = components['schemas']['ConfigValue']
 export type PlanResult = components['schemas']['PlanResult']
 export type Problem = components['schemas']['Problem']
 

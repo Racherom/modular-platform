@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Graph } from '../api/client'
-import { bind, candidates, type Drop, isValidDrop, letPlannerChoose, unbind } from '../graph/edit'
+import { bind, candidates, clearConfig, type Drop, isValidDrop, letPlannerChoose, setConfig, unbind } from '../graph/edit'
 import { testCatalog, testModule } from './fixtures'
 
 const catalog = testCatalog([
@@ -145,5 +145,27 @@ describe('isValidDrop', () => {
 
   it('refuses missing handles', () => {
     expect(isValidDrop(graph, catalog, { source: 'web', sourceHandle: null, target: 'db', targetHandle: null })).toBe(false)
+  })
+})
+
+describe('config values (spec 0025, AC-29)', () => {
+  it('sets a value, keeps the others and leaves the input untouched', () => {
+    const one = setConfig(graph, 'db', 'mode', 'fast')
+    expect(one.modules.db?.config).toEqual({ mode: 'fast' })
+    const two = setConfig(one, 'db', 'label', '')
+    expect(two.modules.db?.config).toEqual({ label: '', mode: 'fast' })
+    expect(graph.modules.db?.config).toBeUndefined()
+    expect(setConfig(two, 'db', 'mode', 'fast')).toBe(two)
+    expect(setConfig(graph, 'nobody', 'mode', 'x')).toBe(graph)
+  })
+
+  it('clears a value, and the config map once it is empty', () => {
+    const g = setConfig(setConfig(graph, 'db', 'mode', 'fast'), 'db', 'level', '3')
+    const one = clearConfig(g, 'db', 'mode')
+    expect(one.modules.db?.config).toEqual({ level: '3' })
+    const none = clearConfig(one, 'db', 'level')
+    expect(none.modules.db).toEqual({ module: 'postgres' })
+    expect(Object.hasOwn(none.modules.db ?? {}, 'config')).toBe(false)
+    expect(clearConfig(none, 'db', 'level')).toBe(none)
   })
 })
