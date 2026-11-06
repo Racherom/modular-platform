@@ -1,0 +1,67 @@
+# The ingress of {{.Graph}} (spec 0015): one origin for every backend bound to it. Each route
+# keeps its path: a backend serves under <base path><route>.
+{
+	email "{$MP_ACME_EMAIL}"
+	servers {
+		# only TCP 80 and 443 are published
+		protocols h1 h2
+	}
+}
+
+# a real certificate: browsers may keep to HTTPS for this host
+(tls-acme) {
+	header Strict-Transport-Security "max-age=31536000"
+}
+
+(tls-internal) {
+	tls internal
+}
+
+{$INGRESS_DOMAIN} {
+	# MP_TLS_MODE is internal or acme, the caddy entry's tls-mode value
+	import tls-{$MP_TLS_MODE}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+{{- range .Clients.public}}{{$route := index .Values "route"}}{{if and $route (ne $route "/")}}
+
+	@{{.Instance}} path {$INGRESS_BASE_PATH}{{$route}} {$INGRESS_BASE_PATH}{{$route}}/*
+	handle @{{.Instance}} {
+{{- $stream := eq (index .Values "stream") "true"}}{{$tls := and (index .Values "server_name") $.Uses.trust.Bound}}
+{{- if or $stream $tls}}
+		reverse_proxy {{index .Values "upstream"}} {
+{{- if $stream}}
+			# the event stream reaches the browser as it is written
+			flush_interval -1
+{{- end}}
+{{- if $tls}}
+			# an https upstream serves a certificate from the internal issuer: trust only its
+			# root and check the backend's own name
+			transport http {
+				tls_trust_pool file /etc/caddy/trust/root.crt
+				tls_server_name {{index .Values "server_name"}}
+			}
+{{- end}}
+		}
+{{- else}}
+		reverse_proxy {{index .Values "upstream"}}
+{{- end}}
+	}
+{{- end}}{{end}}
+{{- range .Clients.public}}{{if eq (index .Values "route") "/"}}
+
+	# the site root; only the dev overlay sets MP_WEB_UPSTREAM, to the Vite dev server, so no
+	# catalog entry declares it
+	@{{.Instance}} path {$INGRESS_BASE_PATH} {$INGRESS_BASE_PATH}/*
+	handle @{{.Instance}} {
+		reverse_proxy {$MP_WEB_UPSTREAM:{{index .Values "upstream"}}}
+	}
+{{- end}}{{end}}
+
+	handle {
+		respond 404
+	}
+}

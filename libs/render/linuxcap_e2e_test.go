@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/racherom/modular-platform/libs/contract"
 	"github.com/racherom/modular-platform/libs/render"
 )
 
@@ -19,7 +18,7 @@ import (
 func TestLinuxCapsEndToEnd(t *testing.T) {
 	catalog := loadCatalog(t, "testdata/linuxcap/catalog")
 	plan := planFile(t, "testdata/linuxcap/graph.yaml", catalog)
-	m, err := render.Managed(plan, catalog, contract.Templates{}, testDeployment)
+	m, err := render.Managed(plan, catalog, builtinTemplates(t), testDeployment)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -50,7 +50,7 @@ func (s *stack) render(g contract.Graph) string {
 	if !plan.Ok {
 		s.t.Fatalf("plan: %+v", plan.Problems)
 	}
-	out, err := render.Render(plan, s.catalog, contract.Templates{})
+	out, err := render.Render(plan, s.catalog, builtinTemplates(s.t))
 	if err != nil {
 		s.t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestRevokeEndToEnd(t *testing.T) {
 func TestWaitAnchorImages(t *testing.T) {
 	images := map[string]bool{}
 	// the built in catalog with the paper platform over it, as the planner's platform test loads it
-	for _, k := range loadCatalog(t, "../../catalog", "../contract/testdata/platform").Capabilities {
+	for _, k := range loadCatalog(t, "../../catalog").Capabilities {
 		if k.Yields != nil && k.Yields.Job.Image != "" {
 			images[k.Yields.Job.Image] = true
 		}

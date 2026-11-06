@@ -169,6 +169,9 @@ func cleanBody(path string, data []byte) ([]byte, *contract.Problem) {
 		clean, _ := json.Marshal(g) //nolint:errchkjson // a decoded graph always encodes
 		return clean, nil
 	}
+	if !strings.HasSuffix(path, "/review") && !strings.HasSuffix(path, "/apply") {
+		return data, nil // a body without a graph, like remove's: the generated decoder reads it
+	}
 	var envelope map[string]json.RawMessage
 	dec := json.NewDecoder(bytes.NewReader(data))
 	if err := dec.Decode(&envelope); err != nil || dec.More() {

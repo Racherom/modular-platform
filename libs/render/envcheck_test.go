@@ -12,7 +12,6 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/compose-spec/compose-go/v2/types"
 
-	"github.com/racherom/modular-platform/libs/contract"
 	"github.com/racherom/modular-platform/libs/render"
 )
 
@@ -22,7 +21,7 @@ import (
 func envCheckOutput(t *testing.T) render.Output {
 	t.Helper()
 	catalog := loadCatalog(t, "testdata/env-check/catalog")
-	out, err := render.Render(planFile(t, "testdata/env-check/graph.yaml", catalog), catalog, contract.Templates{})
+	out, err := render.Render(planFile(t, "testdata/env-check/graph.yaml", catalog), catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}

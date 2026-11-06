@@ -1,0 +1,43 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: web
+description: The editor, served by a Caddy based image.
+# release-please bumps the version on this line
+image: ghcr.io/racherom/modular-platform/web:0.0.0 # x-release-please-version
+healthcheck:
+  test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+  interval: 10s
+  timeout: 3s
+  retries: 5
+  start_period: 30s
+provides:
+  site:
+    capability: http
+    version: "1.0"
+    port: 8080
+    fields:
+      host: {platform: host}
+      port: {platform: port}
+      url: {platform: url}
+uses:
+  public:
+    capability: http-ingress
+    fields:
+      route: {value: /}
+      upstream: {platform: url, provide: site}
+environment:
+  MP_MODE: managed
+  MP_BASE_PATH: "{public.base_path}"
+  # the planner contract's paths (/v1/catalog, ...) sit under api at <base>/api/v1/...
+  MP_API_ROOT: "{public.base_path}/api"
+config:
+  signed-out:
+    env: MP_SIGNED_OUT
+    type: enum
+    values: [index, sign-in]
+    default: index
+    description: What a signed out visitor sees first.
+hardening:
+  # the image's caddy binary carries the bind capability as a file capability
+  cap_add: [NET_BIND_SERVICE]
+  tmpfs: [/tmp]

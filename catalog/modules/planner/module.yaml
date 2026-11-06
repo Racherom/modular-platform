@@ -29,6 +29,7 @@ provides:
       ca: {platform: ca}
     env:
       token: MP_PLANNER_CLIENTS_DIR
+      caller_key: MP_CALLER_KEYS_DIR
 config:
   planner-mode:
     env: MP_PLANNER_MODE

@@ -20,6 +20,8 @@ secrets/
 
 # task dev:managed installs the platform here, secrets included
 .dev/
+# task managed:render (the platform folder, rendered from deploy/managed/graph.yaml)
+/build/
 # task managed:zip
 /dist/
 

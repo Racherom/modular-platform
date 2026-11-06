@@ -1,0 +1,86 @@
+# Modular Platform, managed mode
+
+This folder runs the Modular Platform on your own host. Once it runs, you sign in as the admin, plan a stack in the editor, deploy it to this host, and watch each module's state live.
+
+You need a Linux host with Docker Engine and the Docker Compose plugin. Nothing else.
+
+Every file here is rendered from `graph.yaml`, the platform's own graph: each platform service is a catalog module, bound to the others like the modules of any stack.
+
+## Install
+
+1. Unzip `modular-platform-<version>.zip` where the platform should live, for example `/opt/modular-platform`, and open that folder.
+2. Run `sh setup.sh`. It asks five things, in this order:
+   - the domain the platform answers on (it must contain a dot, like `platform.localhost`),
+   - the origin your browser sees (press Enter for `https://<domain>`),
+   - the admin email,
+   - the admin user name,
+   - the admin password (it is not shown as you type).
+
+   It writes `.env` and creates every secret in `secrets/` and every data folder in `data/`. It never prints a secret. Running it again changes no file that exists and asks nothing it asked before. To answer without a terminal, pipe the answers in, one per line, in the order above.
+3. Run `docker compose up -d --wait`.
+4. Open the origin and sign in.
+
+The platform makes its own certificate authority for HTTPS (`MP_INGRESS__TLS_MODE=internal`), so your browser warns about the certificate the first time. For a public certificate, set `MP_INGRESS__TLS_MODE=acme` in `.env` (the domain must be public), run `sh setup.sh` again, which checks every value, then `docker compose up -d`.
+
+The settings of the ingress, the editor and the identity provider are in `.env`; [`.env.example`](.env.example) lists each one with its default and what it does. The settings of `api`, `planner` and `deployer-docker` are in `config/<instance>.env`. Never put a secret in either: secrets live in `secrets/`.
+
+## Sign in
+
+Choose *Sign in* and sign in with the admin user name and password you gave `setup.sh`.
+
+The first sign in whose email equals the admin email (`MP_AUTHELIA__ADMIN_EMAIL` in `.env`) and is verified becomes the admin. From then on only that account gets in. Nobody else gets a session, even with a valid account at the identity provider.
+
+A session ends after `MP_SESSION_IDLE` without a request (default 1 hour), or `MP_SESSION_MAX` after sign in (default 12 hours), whichever comes first. Both are in `config/api.env`.
+
+*Sign out* ends your session at once, and the next sign in asks for your password again. The bundled identity provider (Authelia) has no sign out of its own, so its own session cookie stays in the browser until it expires. On a shared computer, close the browser after you sign out.
+
+## Change the admin
+
+The admin is bound once. Changing the admin email alone does nothing. To bind a new admin:
+
+1. Change `MP_AUTHELIA__ADMIN_EMAIL` in `.env` if the admin email changes, then run `docker compose up -d`.
+2. Run `docker compose exec api /api admin reset`. It deletes the admin binding and every session and prints one line. Open screens sign out within 30 seconds.
+3. Sign in with the account whose verified email is the new admin email. It becomes the admin.
+
+## Deploy a stack
+
+1. Open a graph in the editor and choose *Deploy*.
+2. Read the review. It lists every module with its image, the bindings between modules, and each credential you must supply. Nothing runs yet.
+3. Choose *Deploy* in the review. The deployment screen shows each step, then each module's state.
+
+If a changed stack fails to start, the platform returns to the last version that worked by itself, and the history says what failed. *Remove* stops the stack and keeps its data, so deploying it again brings it back with its data. *Delete data too* also deletes its volumes and secrets for good.
+
+Deployed stacks restart with Docker. After a host or Docker restart they come back without a new deploy.
+
+## What the deployer can do on your host
+
+The `deployer-docker` service holds the Docker socket and runs as root. That gives it full control of the host, so it does as little as possible:
+
+- It runs only the projects `api` sends, and only with the Compose settings the platform renders itself. It refuses anything else, such as privileged mode, host mounts, host networking, devices, added capabilities other than binding low ports, or the Docker socket.
+- It writes only inside `deployments/` in this folder, one folder per deployment.
+- It never joins a deployed stack to the platform's own networks.
+- No route from the internet reaches it. Only `api` can call it, with a token and the signed in admin's identity.
+
+Anyone who controls the admin account can run containers on this host. Keep the admin password strong.
+
+## Back up
+
+Back up these, with the platform stopped (`docker compose stop`):
+
+- `.env`, `config/` and `secrets/`: the settings and every platform secret.
+- `data/`: the database (with the admin, the sessions and every deployment's history), the certificates of the ingress and the certificate issuer's records.
+- `deployments/`: each deployed stack's files and secrets.
+- The volumes of your deployed stacks, named `mp-<deployment>_<volume>`.
+
+## Upgrade
+
+This version has no upgrade command. To upgrade by hand:
+
+1. Back up as above.
+2. Unzip the new version over this folder. It replaces the platform's own files. Your `.env`, `secrets/`, `data/` and `deployments/` are not in the zip, so they stay as they are. Compare your `config/` files with the new ones before you let the zip replace them.
+3. Run `sh setup.sh` again. It creates only what the new version adds.
+4. Run `docker compose up -d --wait --remove-orphans`.
+
+## After *Delete data too*
+
+A deployment removed with *Delete data too* keeps its folder in `deployments/` with the files it last ran, so you can see what ran. Its secrets are gone. Running `docker compose` by hand in that folder fails for that reason. Deploy it from the editor instead, which creates new secrets and asks again for the credentials you supply.

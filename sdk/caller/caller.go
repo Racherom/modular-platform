@@ -2,7 +2,8 @@
 // modules is made for (spec 0005, "MP-Caller token"). Only api holds the signing key and mints;
 // every other module checks: an EdDSA compact JWS whose kid is the RFC 7638 thumbprint of the
 // public key, for one audience (the receiving module's host name), living at most 5 minutes. A
-// token counts only on a call that passed binding token auth and whose iss is that calling module.
+// token counts only on a call that passed binding token auth, whose iss is that calling module,
+// and whose key is that module's own key (spec 0015, "Caller keys per consumer").
 package caller
 
 import (
@@ -17,6 +18,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +29,7 @@ import (
 
 	"github.com/racherom/modular-platform/sdk/auth"
 	"github.com/racherom/modular-platform/sdk/httpkit"
+	"github.com/racherom/modular-platform/sdk/manifest"
 )
 
 // Header carries the token on a call between modules.
@@ -112,18 +117,74 @@ func thumbprint(pub ed25519.PublicKey) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// Keys are the public keys allowed to sign tokens, by kid.
+// Keys are the public keys allowed to sign tokens, per consumer module and by kid: a token of
+// one consumer is checked against that consumer's keys only.
 type Keys struct {
-	byKID map[string]ed25519.PublicKey
+	byModule map[string]map[string]ed25519.PublicKey
 }
 
-// Len is the number of keys.
-func (k Keys) Len() int { return len(k.byKID) }
+// Len is the number of consumers with keys.
+func (k Keys) Len() int { return len(k.byModule) }
 
-// ParseKeys reads the PEM blocks of an MP_CALLER_KEY_FILE: one or more Ed25519 public keys
-// (PUBLIC KEY, PKIX). Any other block, or none, is an error.
-func ParseKeys(data []byte) (Keys, error) {
-	keys := Keys{byKID: map[string]ed25519.PublicKey{}}
+// LoadKeys reads the caller keys directory: one file per consumer, named by its instance, holding
+// that consumer's Ed25519 public keys as PEM. Its entry rules are those of the token clients
+// directory (auth.LoadClients): dot files are skipped, and every other entry must be a regular
+// file (a symlink to one counts) named by a valid instance name. A bad entry is an error and is
+// left out; the error names the file, never its content.
+func LoadKeys(dir string) (Keys, []error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return Keys{}, []error{fmt.Errorf("the caller keys directory %s cannot be read: %w", dir, err)}
+	}
+	keys := Keys{byModule: map[string]map[string]ed25519.PublicKey{}}
+	var errs []error
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		info, err := os.Stat(path) // follows a symlink, as Compose mounts can be either
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("%s cannot be read: %w", path, err))
+			continue
+		case !info.Mode().IsRegular():
+			errs = append(errs, fmt.Errorf("%s is not a regular file", path))
+			continue
+		case !manifest.ValidName(name):
+			errs = append(errs, fmt.Errorf("%s: the file name must be a consumer instance name", path))
+			continue
+		}
+		data, err := os.ReadFile(path) //nolint:gosec // an entry of the caller keys directory the module is configured with
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s cannot be read: %w", path, err))
+			continue
+		}
+		byKID, err := parseKeys(data)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", path, err))
+			continue
+		}
+		keys.byModule[name] = byKID
+	}
+	return keys, errs
+}
+
+// KeysOf returns keys holding only the PEM public keys in data, for the consumer module: what
+// LoadKeys reads from one file of the directory.
+func KeysOf(module string, data []byte) (Keys, error) {
+	byKID, err := parseKeys(data)
+	if err != nil {
+		return Keys{}, err
+	}
+	return Keys{byModule: map[string]map[string]ed25519.PublicKey{module: byKID}}, nil
+}
+
+// parseKeys reads PEM blocks of Ed25519 public keys (PUBLIC KEY, PKIX), by kid. Any other block,
+// or none, is an error.
+func parseKeys(data []byte) (map[string]ed25519.PublicKey, error) {
+	keys := map[string]ed25519.PublicKey{}
 	for {
 		var block *pem.Block
 		block, data = pem.Decode(data)
@@ -131,24 +192,24 @@ func ParseKeys(data []byte) (Keys, error) {
 			break
 		}
 		if block.Type != "PUBLIC KEY" {
-			return Keys{}, fmt.Errorf("a %s block is not an Ed25519 public key", block.Type)
+			return nil, fmt.Errorf("a %s block is not an Ed25519 public key", block.Type)
 		}
 		pub, err := x509.ParsePKIXPublicKey(block.Bytes)
 		if err != nil {
-			return Keys{}, fmt.Errorf("a public key cannot be parsed: %w", err)
+			return nil, fmt.Errorf("a public key cannot be parsed: %w", err)
 		}
 		k, ok := pub.(ed25519.PublicKey)
 		if !ok {
-			return Keys{}, fmt.Errorf("a %T public key is not Ed25519", pub)
+			return nil, fmt.Errorf("a %T public key is not Ed25519", pub)
 		}
 		kid, err := thumbprint(k)
 		if err != nil {
-			return Keys{}, err
+			return nil, err
 		}
-		keys.byKID[kid] = k
+		keys[kid] = k
 	}
-	if len(keys.byKID) == 0 {
-		return Keys{}, errors.New("it holds no PEM public key")
+	if len(keys) == 0 {
+		return nil, errors.New("it holds no PEM public key")
 	}
 	return keys, nil
 }
@@ -171,19 +232,20 @@ func ParseSigningKey(data []byte) (ed25519.PrivateKey, error) {
 	return k, nil
 }
 
-// Verify checks token for the module whose host name is self at now and returns its caller: only
-// EdDSA, a kid among keys, a valid signature, self as the one audience, exp and iat present with
-// 30 seconds leeway each (iat not in the future), a lifetime of at most 5 minutes, and a user.
-// Every refusal wraps ErrInvalidToken.
-func Verify(keys Keys, token, self string, now time.Time) (Caller, error) {
+// Verify checks token, sent by the consumer module, for the module whose host name is self at now
+// and returns its caller: only EdDSA, a kid among that module's keys, a valid signature, self as
+// the one audience, iss equal to module, exp and iat present with 30 seconds leeway each (iat not
+// in the future), a lifetime of at most 5 minutes, and a user. Every refusal wraps
+// ErrInvalidToken.
+func Verify(keys Keys, module, token, self string, now time.Time) (Caller, error) {
 	tok, err := jwt.ParseSigned(token, []jose.SignatureAlgorithm{jose.EdDSA})
 	if err != nil {
 		return Caller{}, refused("not an EdDSA compact JWS: %v", err)
 	}
 	kid := tok.Headers[0].KeyID
-	pub, ok := keys.byKID[kid]
+	pub, ok := keys.byModule[module][kid]
 	if !ok {
-		return Caller{}, refused("unknown kid %q", kid)
+		return Caller{}, refused("kid %q is not a key of the calling module %q", kid, module)
 	}
 	var (
 		std jwt.Claims
@@ -199,6 +261,8 @@ func Verify(keys Keys, token, self string, now time.Time) (Caller, error) {
 		return Caller{}, refused("exp and iat are required")
 	case std.Subject == "":
 		return Caller{}, refused("sub is empty")
+	case std.Issuer != module:
+		return Caller{}, refused("iss %q is not the calling module %q", std.Issuer, module)
 	}
 	if err := std.ValidateWithLeeway(jwt.Expected{Time: now}, leeway); err != nil {
 		return Caller{}, refused("%v", err)
@@ -216,8 +280,8 @@ func refused(format string, args ...any) error {
 // Middleware checks the MP-Caller header for the module whose host name is self and puts the
 // caller into the request context. A request without the header passes with no caller. A header
 // is refused with 401 (invalid_token) when it appears twice, when the request passed no binding
-// token auth, when Verify refuses it, or when its iss is not the module the binding token proved.
-// With no keys (MP_CALLER_KEY_FILE unset) the header is ignored, and logged once.
+// token auth, or when Verify refuses it for the module the binding token proved. With no keys (no
+// caller keys directory) the header is ignored, and logged once.
 func Middleware(keys Keys, self string, log *slog.Logger, next http.Handler) http.Handler {
 	var ignored sync.Once
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -229,7 +293,7 @@ func Middleware(keys Keys, self string, log *slog.Logger, next http.Handler) htt
 		ctx := r.Context()
 		if keys.Len() == 0 {
 			ignored.Do(func() {
-				log.WarnContext(ctx, "caller token ignored: MP_CALLER_KEY_FILE is unset")
+				log.WarnContext(ctx, "caller token ignored: this module has no caller keys directory")
 			})
 			next.ServeHTTP(w, r)
 			return
@@ -245,10 +309,7 @@ func Middleware(keys Keys, self string, log *slog.Logger, next http.Handler) htt
 		case !authed:
 			err = refused("the call passed no binding token auth")
 		default:
-			c, err = Verify(keys, values[0], self, time.Now())
-			if err == nil && c.Issuer != module {
-				err = refused("iss %q is not the calling module %q", c.Issuer, module)
-			}
+			c, err = Verify(keys, module, values[0], self, time.Now())
 		}
 		if err != nil {
 			log.WarnContext(ctx, "caller token refused", slog.String("reason", err.Error()))
@@ -281,3 +342,22 @@ func (s *Signer) Format(f fmt.State, _ rune) { _, _ = fmt.Fprintf(f, "caller.Sig
 
 // LogValue shows the issuer only, never the key.
 func (s *Signer) LogValue() slog.Value { return slog.StringValue(s.issuer) }
+
+// GenerateKeyPair makes a new Ed25519 key pair in the forms the other side reads: the signing
+// key as PKCS 8 PEM (ParseSigningKey) and the public key as PKIX PEM (LoadKeys).
+func GenerateKeyPair() (signing, public []byte, err error) {
+	pub, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("caller: generate a key pair: %w", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("caller: encode the signing key: %w", err)
+	}
+	pubDER, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return nil, nil, fmt.Errorf("caller: encode the public key: %w", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}),
+		pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}), nil
+}

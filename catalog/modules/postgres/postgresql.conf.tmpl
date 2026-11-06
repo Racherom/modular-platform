@@ -1,0 +1,14 @@
+# PostgreSQL settings of {{.Instance}} (spec 0014); every setting not named here keeps the server
+# default. The data folder comes from the image's PGDATA.
+listen_addresses = '*'
+port = {{.Provides.server.Port}}
+hba_file = '/etc/postgresql/pg_hba.conf'
+password_encryption = scram-sha-256
+{{- if .Uses.tls.Bound}}
+
+# TLS with the certificate of the tls slot; pg_hba.conf then refuses a plain connection
+ssl = on
+ssl_cert_file = '/run/tls/server.crt'
+ssl_key_file = '/run/tls/server.key'
+ssl_min_protocol_version = 'TLSv1.3'
+{{- end}}

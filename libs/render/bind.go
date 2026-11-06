@@ -2,6 +2,8 @@ package render
 
 import (
 	"fmt"
+	"path"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,6 +15,9 @@ import (
 
 // sdkPort is where a runtime: sdk module listens in plain mode.
 const sdkPort = 8080
+
+// sdkTLSPort is where a runtime: sdk module listens when its acme slot is bound (spec 0005).
+const sdkTLSPort = 8443
 
 // The job labels of a one shot service, and of the wait anchor (spec 0013, "Labels").
 const (
@@ -27,12 +32,21 @@ const (
 const waitAnchorName = "mp_jobs"
 
 // value is what one field of a binding resolves to: text (a literal, or a Compose variable
-// reference when raw), or the project relative path of a file.
+// reference when raw), the project relative path of a file, or a file name in a folder of an
+// instance's data volume, which may appear only after that instance starts (a {volume} source).
 type value struct {
 	text string
 	raw  bool
 	file string
+
+	folder string // data/<owner>/<volume>/<dir>, mounted read only as a whole
+	name   string // the file in folder
+	owner  string // the instance whose volume holds folder
 }
+
+// isText reports whether v is a text value known when the plan is made: a file is a secret, a
+// volume file appears at run time, and a Compose variable is known only at run time.
+func (v value) isText() bool { return v.file == "" && v.folder == "" && !v.raw }
 
 // end is the provider side of a binding as the render sees it: one provide of a module instance
 // or of an external instance. b names the binding; for a provide's admin fields it names only
@@ -93,6 +107,21 @@ func (r *renderer) binding(b contract.Binding) error {
 			continue // a field the consumer does not map is not delivered
 		}
 		switch {
+		case k.Fields[f].IsFile() && v.folder != "":
+			if mount != "" {
+				return fmt.Errorf("%w: a fixed path for field %s of slot %s of %s, whose value is a file in a volume", ErrNotRendered, f, b.Slot, b.Consumer)
+			}
+			// the folder, not the file: the file may appear after the owner starts (spec 0013)
+			dir := "/run/volumes/" + b.Slot + "/" + f + "/"
+			consumer.Volumes = append(consumer.Volumes, types.ServiceVolumeConfig{
+				Type: types.VolumeTypeBind, Source: "./" + v.folder, Target: dir, ReadOnly: true,
+			})
+			if env != "" {
+				setEnv(&consumer, env, dir+v.name)
+			}
+			if v.owner != b.Consumer && v.owner != b.Provider {
+				dependOn(&consumer, v.owner, condition(r.modules[r.g.Modules[v.owner].Module]))
+			}
 		case k.Fields[f].IsFile():
 			if mount == "" {
 				mount = "/run/secrets/uses/" + b.Slot + "/" + f
@@ -244,11 +273,7 @@ func (r *renderer) values(e end, k contract.Capability) (map[string]value, error
 // source resolves one provider side field source (spec 0013, "Field sources").
 func (r *renderer) source(e end, k contract.Capability, f string, src contract.FieldSource) (value, bool, error) {
 	p, m := e.b.Provider, e.module
-	sdk := m.Runtime == contract.Sdk
-	port := e.provide.Port
-	if sdk {
-		port = sdkPort
-	}
+	port, scheme := r.address(p, e.provide, k)
 	perBinding := src.Generate || src.Platform == contract.FieldSourcePlatformConsumer
 	if perBinding && e.b.Consumer == "" {
 		return value{}, false, fmt.Errorf("render: field %s of %s.%s is per binding, but a provisioner's own fields are shared by all its bindings", f, p, e.b.Provide)
@@ -259,21 +284,35 @@ func (r *renderer) source(e end, k contract.Capability, f string, src contract.F
 	case src.Platform == contract.FieldSourcePlatformPort:
 		return value{text: strconv.Itoa(port)}, true, nil
 	case src.Platform == contract.FieldSourcePlatformUrl:
-		scheme := k.Scheme
-		if sdk {
-			scheme = "http"
-		}
 		return value{text: fmt.Sprintf("%s://%s:%d%s", scheme, r.host(p), port, src.Path)}, true, nil
 	case src.Platform == contract.FieldSourcePlatformConsumer:
 		return value{text: e.b.Consumer}, true, nil
 	case src.Platform == contract.FieldSourcePlatformTls, src.Platform == contract.FieldSourcePlatformCa:
-		if r.servesTLS(p) {
-			return value{}, false, fmt.Errorf("%w: TLS of provider %s", ErrNotRendered, p)
-		}
-		if src.Platform == contract.FieldSourcePlatformCa {
+		slot, tls, err := r.tlsSlot(p)
+		switch {
+		case err != nil:
+			return value{}, false, err
+		case !tls && src.Platform == contract.FieldSourcePlatformCa:
 			return value{}, false, nil // no TLS, so no root CA to trust
+		case !tls:
+			return value{text: src.Off}, true, nil
+		case src.Platform == contract.FieldSourcePlatformTls:
+			return value{text: src.On}, true, nil
 		}
-		return value{text: src.Off}, true, nil
+		ca, ok := r.bound[p][slot]["ca"]
+		return ca, ok, nil
+	case src.Uses != "" && src.Field != "":
+		v, ok := r.bound[p][src.Uses][src.Field] // delivered first: providers come before consumers
+		return v, ok, nil
+	case src.Uses != "":
+		return r.usesFormat(r.bound[p][src.Uses], src.Format), true, nil
+	case src.Volume != "":
+		dir, name := path.Split(src.Path)
+		folder := path.Join("data", p, src.Volume, dir)
+		if !slices.Contains(r.data.Folders, folder) {
+			r.data.Folders = append(r.data.Folders, folder) // a bind source must exist before up
+		}
+		return value{folder: folder, name: name, owner: p}, true, nil
 	case src.Value != "":
 		return value{text: src.Value}, true, nil
 	case src.Config != "":
@@ -287,26 +326,77 @@ func (r *renderer) source(e end, k contract.Capability, f string, src contract.F
 	case src.Generate:
 		return value{file: r.perBinding(e.b, f)}, true, nil
 	}
-	return value{}, false, fmt.Errorf("%w: field %s of %s.%s takes its value from another binding or a volume", ErrNotRendered, f, p, e.b.Provide)
+	return value{}, false, fmt.Errorf("render: field %s of %s.%s has a source this release does not know", f, p, e.b.Provide)
 }
 
-// servesTLS reports whether instance p binds a certificate source, an acme or tls-certificate
-// slot; its TLS fields are rendered from a later release.
-func (r *renderer) servesTLS(p string) bool {
-	gm := r.g.Modules[p]
-	if gm.Uses == nil {
-		return false
+// usesFieldRe finds the {<field>} references of a {uses, format} source (spec 0013).
+var usesFieldRe = regexp.MustCompile(`\{([a-z][a-z0-9_]*)\}`)
+
+// usesFormat fills format's {<field>} references from the fields of a binding (spec 0013, a
+// {uses, format} source); a field the binding does not give is empty. The result is a Compose
+// reference when any field it names is one, with the rest escaped.
+func (r *renderer) usesFormat(fields map[string]value, format string) value {
+	refs := usesFieldRe.FindAllStringSubmatchIndex(format, -1)
+	raw := false
+	for _, loc := range refs {
+		raw = raw || fields[format[loc[2]:loc[3]]].raw
 	}
-	slots := r.modules[gm.Module].Slots()
-	for s, b := range *gm.Uses {
-		if b == nil {
+	quote := func(s string) string { return s }
+	if raw {
+		quote = escape // a literal beside a Compose reference must not read as one
+	}
+	var b strings.Builder
+	last := 0
+	for _, loc := range refs {
+		b.WriteString(quote(format[last:loc[0]]))
+		if v := fields[format[loc[2]:loc[3]]]; v.raw {
+			b.WriteString(v.text)
+		} else {
+			b.WriteString(quote(v.text))
+		}
+		last = loc[1]
+	}
+	b.WriteString(quote(format[last:]))
+	return value{text: b.String(), raw: raw}
+}
+
+// tlsSlot names the slot instance p takes its serving certificate from, if it is bound: the
+// implicit acme slot of a runtime: sdk instance, which then serves TLS on 8443 (spec 0013).
+// A tls-certificate slot comes with its provisioner's job outputs (spec 0014, build task 21).
+func (r *renderer) tlsSlot(p string) (string, bool, error) {
+	gm := r.g.Modules[p]
+	if gm.External != nil || gm.Uses == nil {
+		return "", false, nil
+	}
+	m := r.modules[gm.Module]
+	slots := m.Slots()
+	for _, s := range sortedKeys(*gm.Uses) {
+		if (*gm.Uses)[s] == nil {
 			continue
 		}
-		if c := slots[s].Capability; c == "acme" || c == "tls-certificate" {
-			return true
+		switch slots[s].Capability {
+		case "tls-certificate":
+			return "", false, fmt.Errorf("%w: TLS of provider %s from a tls-certificate slot", ErrNotRendered, p)
+		case "acme":
+			if m.Runtime == contract.Sdk && s == contract.ACMESlot {
+				return s, true, nil
+			}
 		}
 	}
-	return false
+	return "", false, nil
+}
+
+// address is the port and URL scheme provide q of instance p is reached at: its declared port and
+// the capability's scheme, or for a runtime: sdk instance 8080 and http, or 8443 and https when
+// its acme slot is bound (spec 0013, Field sources).
+func (r *renderer) address(p string, q contract.Provide, k contract.Capability) (int, string) {
+	if r.modules[r.g.Modules[p].Module].Runtime != contract.Sdk {
+		return q.Port, k.Scheme
+	}
+	if _, tls, _ := r.tlsSlot(p); tls {
+		return sdkTLSPort, "https"
+	}
+	return sdkPort, "http"
 }
 
 // perBinding is the file of a per binding generated field, created by setup.sh or the deployer:
@@ -329,10 +419,8 @@ func (r *renderer) composeVar(i, v string, cv contract.ConfigValue) string {
 		return "${" + name + ":-" + escape(text) + "}"
 	case cv.Asked():
 		return "${" + name + "}"
-	case cv.Default == "{uid}":
-		return "${" + name + ":-${MP_UID}}"
-	case cv.Default == "{gid}":
-		return "${" + name + ":-${MP_GID}}"
+	case tokenDefault(cv.Default):
+		return "${" + name + ":-" + tokenText(cv.Default) + "}"
 	}
 	return "${" + name + ":-" + escape(cv.Default) + "}"
 }
@@ -484,7 +572,7 @@ func (r *renderer) waitAnchor() {
 	svc.Init = new(true) // so it stops at once on down
 	svc.NetworkMode = "none"
 	r.harden(&svc, nil)
-	if r.managed {
+	if r.flavor != flavorStatic {
 		svc.Restart = types.RestartPolicyUnlessStopped
 	}
 	for _, j := range alone {

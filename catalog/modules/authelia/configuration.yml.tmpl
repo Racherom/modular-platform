@@ -1,0 +1,79 @@
+# The identity provider of [[ .Graph ]] (spec 0015). Settings come from the environment through
+# Authelia's template filter; every secret is a file, named by an AUTHELIA_*_FILE variable or
+# read with the secret function below.
+server:
+  address: 'tcp://:[[ .Provides.oidc.Port ]]{{ env "BASE_PATH" }}/auth'
+
+log:
+  level: info
+
+theme: auto
+[[- if eq (index .Uses.db.Values "sslmode") "verify-full" ]]
+
+# the root CA of the database's certificate
+certificates_directory: /run/secrets/db
+[[- end ]]
+
+identity_validation:
+  reset_password:
+    # the key is read from AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE
+    jwt_lifespan: 5m
+
+authentication_backend:
+  # one admin from setup.sh; password reset needs a mail server, so it is off
+  password_reset:
+    disable: true
+  file:
+    path: /config/users.yml
+    watch: false
+
+access_control:
+  default_policy: one_factor
+
+session:
+  name: mp_authelia_session
+  cookies:
+    - domain: '{{ env "DOMAIN" }}'
+      authelia_url: '{{ env "ORIGIN" }}{{ env "BASE_PATH" }}/auth'
+
+storage:
+  postgres:
+    address: 'tcp://[[ index .Uses.db.Values "host" ]]:[[ index .Uses.db.Values "port" ]]'
+    database: '[[ index .Uses.db.Values "database" ]]'
+    username: '[[ index .Uses.db.Values "user" ]]'
+[[- if eq (index .Uses.db.Values "sslmode") "verify-full" ]]
+    tls:
+      server_name: '[[ index .Uses.db.Values "host" ]]'
+      skip_verify: false
+[[- end ]]
+
+notifier:
+  # no mail server; nothing is sent while password reset is off
+  filesystem:
+    filename: /tmp/notification.txt
+[[- if .Clients.oidc ]]
+
+identity_providers:
+  oidc:
+    jwks:
+      - key: {{ secret "/run/secrets/oidc-signing-key" | mindent 10 "|" | msquote }}
+    # one client per binding to the oidc provide; its id is the consumer's instance name
+    clients:
+[[- range .Clients.oidc ]]
+      - client_id: '[[ .Instance ]]'
+        client_name: '[[ .Instance ]]'
+        client_secret: '{{ secret "/run/secrets/client-digests/[[ .Instance ]]" }}'
+        public: false
+        # moves to two_factor with #14
+        authorization_policy: one_factor
+        consent_mode: implicit
+        require_pkce: true
+        pkce_challenge_method: S256
+        redirect_uris:
+          - '{{ env "ORIGIN" }}{{ env "BASE_PATH" }}[[ index .Values "redirect_path" ]]'
+        scopes: [openid, profile, email, groups]
+        response_types: [code]
+        grant_types: [authorization_code]
+        token_endpoint_auth_method: client_secret_basic
+[[- end ]]
+[[- end ]]

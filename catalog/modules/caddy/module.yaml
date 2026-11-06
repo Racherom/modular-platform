@@ -1,0 +1,95 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: caddy
+description: The platform's ingress, Caddy; serves each route a backend binding asks for, with TLS.
+image: caddy:2.11.7-alpine
+healthcheck:
+  # the admin endpoint answers once the config is loaded
+  test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+  interval: 10s
+  timeout: 3s
+  retries: 5
+  start_period: 30s
+provides:
+  public:
+    capability: http-ingress
+    version: "1.0"
+    port: 443
+    fields:
+      origin: {config: origin}
+      base_path: {config: base-path}
+      domain: {config: domain}
+      http_port: {config: http-port}
+      https_port: {config: https-port}
+      # Caddy's local root while tls-mode is internal; it appears after the first start
+      ca: {volume: data, path: caddy/pki/authorities/local/root.crt}
+uses:
+  trust:
+    # the internal root, to verify the https upstreams of sdk modules
+    capability: acme
+    files:
+      ca: /etc/caddy/trust/root.crt
+config:
+  domain:
+    env: INGRESS_DOMAIN
+    type: string
+    pattern: "[a-z0-9-]+(\\.[a-z0-9-]+)+"
+    setup: ask
+    description: The domain the platform answers on, with at least one dot (Authelia needs one).
+  origin:
+    env: INGRESS_ORIGIN
+    type: string
+    pattern: "https?://.+"
+    default: "https://{domain}"
+    setup: ask
+    description: Scheme, host and port the browser sees.
+  base-path:
+    env: INGRESS_BASE_PATH
+    type: string
+    optional: true
+    pattern: "(/[A-Za-z0-9._~-]+)+"
+    description: Path the platform is served under; unset at the site root.
+  http-port:
+    env: INGRESS_HTTP_PORT
+    type: int
+    default: "80"
+    min: 1
+    max: 65535
+    description: Host port for HTTP.
+  https-port:
+    env: INGRESS_HTTPS_PORT
+    type: int
+    default: "443"
+    min: 1
+    max: 65535
+    description: Host port for HTTPS.
+  tls-mode:
+    env: MP_TLS_MODE
+    type: enum
+    values: [internal, acme]
+    default: internal
+    description: Where the public certificate comes from, Caddy's own authority or ACME (the domain must be public).
+  acme-email:
+    env: MP_ACME_EMAIL
+    type: string
+    optional: true
+    description: Contact email for the ACME account.
+templates:
+  - file: Caddyfile.tmpl
+    path: /etc/caddy/Caddyfile
+volumes:
+  data: /data
+  config: /config
+publish:
+  - port: 443
+    host: {config: https-port}
+  - port: 80
+    host: {config: http-port}
+network:
+  egress: true
+  # a backend reaches the public origin, such as the issuer URL, through the ingress
+  aliases: [{config: domain}]
+hardening:
+  # the caddy binary carries the bind capability as a file capability
+  cap_add: [NET_BIND_SERVICE]
+  tmpfs: [/tmp]

@@ -1,0 +1,106 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: authelia
+description: The platform's identity provider, Authelia; owns the users and one OIDC client per binding.
+image: authelia/authelia:4.39.28
+healthcheck:
+  # the image's own check, which reads the address Authelia writes at start, base path included
+  test: ["CMD", "/app/healthcheck.sh"]
+  interval: 10s
+  timeout: 3s
+  retries: 10
+  start_period: 30s
+provides:
+  oidc:
+    capability: oidc
+    version: "1.0"
+    port: 9091
+    fields:
+      issuer: {uses: public, format: "{origin}{base_path}/auth"}
+      client_id: {platform: consumer}
+      client_secret: {generate: true}
+      admin_email: {config: admin-email}
+      ca: {uses: public, field: ca}
+  site:
+    capability: http
+    version: "1.0"
+    port: 9091
+    fields:
+      host: {platform: host}
+      port: {platform: port}
+      url: {platform: url}
+uses:
+  public:
+    capability: http-ingress
+    fields:
+      route: {value: /auth}
+      upstream: {platform: url, provide: site}
+  db:
+    capability: postgresql
+    env:
+      password: AUTHELIA_STORAGE_POSTGRES_PASSWORD_FILE
+    files:
+      ca: /run/secrets/db/ca.crt
+environment:
+  X_AUTHELIA_CONFIG_FILTERS: template
+  ORIGIN: "{public.origin}"
+  BASE_PATH: "{public.base_path}"
+  DOMAIN: "{public.domain}"
+config:
+  admin-email:
+    env: X_ADMIN_EMAIL
+    type: string
+    pattern: "[^@\\s]+@[^@\\s]+"
+    setup: ask
+    description: Email of the admin (the first verified sign in with it becomes the admin).
+secrets:
+  - {name: session-secret, env: AUTHELIA_SESSION_SECRET_FILE, description: Session cookie key.}
+  - {name: storage-key, env: AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE, description: Storage encryption key.}
+  - {name: jwt-secret, env: AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE, description: Reset password JWT key.}
+  - {name: oidc-hmac, env: AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE, description: OIDC HMAC key.}
+  - {name: users, from: setup, mount: /config/users.yml, description: The users file with the admin.}
+  - {name: signing-key, from: setup, mount: /run/secrets/oidc-signing-key, description: OIDC token signing key.}
+  - {name: client-digests/, from: setup, mount: /run/secrets/client-digests, description: One client secret digest per OIDC client.}
+setup:
+  - name: users
+    entrypoint: [sh, -c]
+    command:
+      - |
+        set -eu
+        IFS= read -r user
+        IFS= read -r pass
+        case $user in
+        *[!a-z0-9._-]* | "") echo "the admin user name may hold only a to z, 0 to 9, dot, underscore and hyphen" >&2; exit 1 ;;
+        esac
+        if [ "${#pass}" -lt 12 ]; then echo "the admin password must have at least 12 characters" >&2; exit 1; fi
+        hash=$(authelia crypto hash generate argon2 --password "$pass" | sed -n 's/^Digest: //p')
+        [ -n "$hash" ]
+        printf "users:\n  %s:\n    displayname: %s\n    password: '%s'\n    email: %s\n" "$user" "$user" "$hash" "$MP_ASK_ADMIN_EMAIL" > /out/users
+    asks:
+      - {name: admin-user, description: Admin user name (you sign in with it)}
+      - {name: admin-password, description: "Admin password (at least 12 characters, not shown)", secret: true}
+    writes: [{name: users}]
+  - name: signing-key
+    command: [authelia, crypto, pair, rsa, generate, --bits, "2048", --directory, /out, --file.private-key, signing-key, --file.public-key, signing-key.pub]
+    writes: [{name: signing-key}]
+  - name: client-digest
+    entrypoint: [sh, -c]
+    command:
+      - |
+        set -eu
+        digest=$(authelia crypto hash generate pbkdf2 --variant sha512 --password "$(cat /in/oidc/client_secret)" | sed -n 's/^Digest: //p')
+        [ -n "$digest" ]
+        printf '%s' "$digest" > "/out/client-digests/$CLIENT"
+    env: {CLIENT: "{client}"}
+    for_each: oidc
+    reads: [{provide: oidc, field: client_secret}]
+    writes: [{name: "client-digests/{client}"}]
+templates:
+  - file: configuration.yml.tmpl
+    path: /config/configuration.yml
+    # Authelia reads its own {{ env }} and {{ secret }} at start, so the platform's are [[ ]]
+    delims: ["[[", "]]"]
+hardening:
+  # Authelia writes /app/.healthcheck.env at every start and stops when it cannot
+  writable_root: true
+  tmpfs: [/tmp]

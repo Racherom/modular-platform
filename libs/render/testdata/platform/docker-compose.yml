@@ -1,0 +1,864 @@
+configs:
+  api_env:
+    file: ./config/api.env
+  authelia_configuration.yml:
+    file: ./config/authelia/configuration.yml
+  deployer-docker_env:
+    file: ./config/deployer-docker.env
+  ingress_Caddyfile:
+    file: ./config/ingress/Caddyfile
+  planner_env:
+    file: ./config/planner.env
+  postgres_pg_hba.conf:
+    file: ./config/postgres/pg_hba.conf
+  postgres_postgresql.conf:
+    file: ./config/postgres/postgresql.conf
+name: modular-platform
+networks:
+  egress: {}
+  internal:
+    internal: true
+secrets:
+  api_caller-public-key:
+    file: ./secrets/api/caller-public-key
+  api_caller-signing-key:
+    file: ./secrets/api/caller-signing-key
+  api_uses_acme_ca:
+    file: ./secrets/cert-issuer/root-ca
+  api_uses_deploy-target_ca:
+    file: ./secrets/cert-issuer/root-ca
+  api_uses_deploy-target_caller_key:
+    file: ./secrets/api/caller-public-key
+  api_uses_deploy-target_token:
+    file: ./secrets/api/uses_deploy-target_token
+  api_uses_main-db_password:
+    file: ./secrets/api/uses_main-db_password
+  api_uses_oidc_client_secret:
+    file: ./secrets/api/uses_oidc_client_secret
+  api_uses_planner_ca:
+    file: ./secrets/cert-issuer/root-ca
+  api_uses_planner_caller_key:
+    file: ./secrets/api/caller-public-key
+  api_uses_planner_token:
+    file: ./secrets/api/uses_planner_token
+  authelia_jwt-secret:
+    file: ./secrets/authelia/jwt-secret
+  authelia_oidc-hmac:
+    file: ./secrets/authelia/oidc-hmac
+  authelia_session-secret:
+    file: ./secrets/authelia/session-secret
+  authelia_signing-key:
+    file: ./secrets/authelia/signing-key
+  authelia_storage-key:
+    file: ./secrets/authelia/storage-key
+  authelia_users:
+    file: ./secrets/authelia/users
+  authelia_uses_db_password:
+    file: ./secrets/authelia/uses_db_password
+  cert-issuer_ca-json:
+    file: ./secrets/cert-issuer/ca-json
+  cert-issuer_intermediate-ca:
+    file: ./secrets/cert-issuer/intermediate-ca
+  cert-issuer_intermediate-ca-key:
+    file: ./secrets/cert-issuer/intermediate-ca-key
+  cert-issuer_jobs-password:
+    file: ./secrets/cert-issuer/jobs-password
+  cert-issuer_password:
+    file: ./secrets/cert-issuer/password
+  cert-issuer_root-ca:
+    file: ./secrets/cert-issuer/root-ca
+  cert-issuer_root-ca-key:
+    file: ./secrets/cert-issuer/root-ca-key
+  deployer-docker_uses_acme_ca:
+    file: ./secrets/cert-issuer/root-ca
+  ingress_uses_trust_ca:
+    file: ./secrets/cert-issuer/root-ca
+  planner_uses_acme_ca:
+    file: ./secrets/cert-issuer/root-ca
+  postgres_admin_server_admin_password:
+    file: ./secrets/postgres/password
+  postgres_password:
+    file: ./secrets/postgres/password
+services:
+  api:
+    cap_drop:
+    - ALL
+    configs:
+    - source: api_env
+      target: /etc/modular-platform/module.env
+    depends_on:
+      authelia:
+        condition: service_healthy
+        required: true
+      cert-issuer:
+        condition: service_healthy
+        required: true
+      deployer-docker:
+        condition: service_healthy
+        required: true
+      ingress:
+        condition: service_healthy
+        required: true
+      planner:
+        condition: service_healthy
+        required: true
+      postgres:
+        condition: service_healthy
+        required: true
+      postgres_provision_api_main-db:
+        condition: service_completed_successfully
+        required: true
+    environment:
+      MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
+      MP_ADMIN_EMAIL: ${MP_AUTHELIA__ADMIN_EMAIL}
+      MP_BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
+      MP_CA_FILE: /run/secrets/uses/acme/ca
+      MP_CALLER_SIGNING_KEY_FILE: /run/secrets/api_caller-signing-key
+      MP_DATABASE_NAME: platform_api
+      MP_DATABASE_PASSWORD_FILE: /run/secrets/uses/main-db/password
+      MP_DATABASE_SSLMODE: disable
+      MP_DATABASE_URL: postgres://postgres.modular-platform.internal:5432
+      MP_DATABASE_USER: api
+      MP_DEPLOY_TARGET_CA_FILE: /run/secrets/uses/deploy-target/ca
+      MP_DEPLOY_TARGET_TOKEN_FILE: /run/secrets/uses/deploy-target/token
+      MP_DEPLOY_TARGET_URL: https://deployer-docker.modular-platform.internal:8443
+      MP_DOMAIN: modular-platform.internal
+      MP_ENV_FILE: /etc/modular-platform/module.env
+      MP_INSTANCE: api
+      MP_OIDC_CA_FILE: /run/volumes/oidc/ca/root.crt
+      MP_OIDC_CLIENT_ID: api
+      MP_OIDC_CLIENT_SECRET_FILE: /run/secrets/uses/oidc/client_secret
+      MP_OIDC_ISSUER: ${MP_INGRESS__ORIGIN}${MP_INGRESS__BASE_PATH:-}/auth
+      MP_PLANNER_CA_FILE: /run/secrets/uses/planner/ca
+      MP_PLANNER_TOKEN_FILE: /run/secrets/uses/planner/token
+      MP_PLANNER_URL: https://planner.modular-platform.internal:8443
+      MP_PUBLIC_ORIGIN: ${MP_INGRESS__ORIGIN}
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 1m0s
+      test:
+      - CMD
+      - /api
+      - healthcheck
+      timeout: 3s
+    image: ghcr.io/racherom/modular-platform/api:0.0.0-test
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: api
+      io.github.racherom.modular-platform.module: api
+    networks:
+      internal:
+        aliases:
+        - api.modular-platform.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: api_caller-signing-key
+      target: /run/secrets/api_caller-signing-key
+    - source: api_caller-public-key
+      target: /run/secrets/caller-public-key
+    - source: api_uses_acme_ca
+      target: /run/secrets/uses/acme/ca
+    - source: api_uses_deploy-target_ca
+      target: /run/secrets/uses/deploy-target/ca
+    - source: api_uses_deploy-target_token
+      target: /run/secrets/uses/deploy-target/token
+    - source: api_uses_main-db_password
+      target: /run/secrets/uses/main-db/password
+    - source: api_uses_oidc_client_secret
+      target: /run/secrets/uses/oidc/client_secret
+    - source: api_uses_planner_ca
+      target: /run/secrets/uses/planner/ca
+    - source: api_uses_planner_token
+      target: /run/secrets/uses/planner/token
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - read_only: true
+      source: ./data/ingress/data/caddy/pki/authorities/local
+      target: /run/volumes/oidc/ca/
+      type: bind
+  authelia:
+    cap_drop:
+    - ALL
+    configs:
+    - source: authelia_configuration.yml
+      target: /config/configuration.yml
+    depends_on:
+      ingress:
+        condition: service_healthy
+        required: true
+      postgres:
+        condition: service_healthy
+        required: true
+      postgres_provision_authelia_db:
+        condition: service_completed_successfully
+        required: true
+    environment:
+      AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE: /run/secrets/authelia_oidc-hmac
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /run/secrets/authelia_jwt-secret
+      AUTHELIA_SESSION_SECRET_FILE: /run/secrets/authelia_session-secret
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /run/secrets/authelia_storage-key
+      AUTHELIA_STORAGE_POSTGRES_PASSWORD_FILE: /run/secrets/uses/db/password
+      BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
+      DOMAIN: ${MP_INGRESS__DOMAIN}
+      ORIGIN: ${MP_INGRESS__ORIGIN}
+      X_ADMIN_EMAIL: ${MP_AUTHELIA__ADMIN_EMAIL}
+      X_AUTHELIA_CONFIG_FILTERS: template
+    healthcheck:
+      interval: 10s
+      retries: 10
+      start_period: 30s
+      test:
+      - CMD
+      - /app/healthcheck.sh
+      timeout: 3s
+    image: authelia/authelia:4.39.28
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: authelia
+      io.github.racherom.modular-platform.module: authelia
+    networks:
+      internal:
+        aliases:
+        - authelia.modular-platform.internal
+    restart: unless-stopped
+    secrets:
+    - source: authelia_session-secret
+      target: /run/secrets/authelia_session-secret
+    - source: authelia_storage-key
+      target: /run/secrets/authelia_storage-key
+    - source: authelia_jwt-secret
+      target: /run/secrets/authelia_jwt-secret
+    - source: authelia_oidc-hmac
+      target: /run/secrets/authelia_oidc-hmac
+    - source: authelia_users
+      target: /config/users.yml
+    - source: authelia_signing-key
+      target: /run/secrets/oidc-signing-key
+    - source: authelia_uses_db_password
+      target: /run/secrets/uses/db/password
+    - source: api_uses_oidc_client_secret
+      target: /run/secrets/clients/oidc/client_secret/api
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - read_only: true
+      source: ./secrets/authelia/client-digests
+      target: /run/secrets/client-digests
+      type: bind
+  cert-issuer:
+    cap_add:
+    - NET_BIND_SERVICE
+    cap_drop:
+    - ALL
+    command:
+    - /home/step/config/ca.json
+    - --password-file=/home/step/secrets/password
+    - --insecure
+    - --acme-tls-port=8443
+    entrypoint:
+    - step-ca
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 30s
+      test:
+      - CMD
+      - step
+      - ca
+      - health
+      - --ca-url
+      - https://localhost:9000
+      - --root
+      - /home/step/certs/root_ca.crt
+      timeout: 3s
+    image: smallstep/step-ca:0.30.2
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: cert-issuer
+      io.github.racherom.modular-platform.module: cert-issuer
+    networks:
+      internal:
+        aliases:
+        - cert-issuer.modular-platform.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: cert-issuer_password
+      target: /home/step/secrets/password
+    - source: cert-issuer_root-ca
+      target: /home/step/certs/root_ca.crt
+    - source: cert-issuer_root-ca-key
+      target: /home/step/secrets/root_ca_key
+    - source: cert-issuer_intermediate-ca
+      target: /home/step/certs/intermediate_ca.crt
+    - source: cert-issuer_intermediate-ca-key
+      target: /home/step/secrets/intermediate_ca_key
+    - source: cert-issuer_jobs-password
+      target: /home/step/secrets/jobs-password
+    - source: cert-issuer_ca-json
+      target: /home/step/config/ca.json
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - source: ./data/cert-issuer/db
+      target: /home/step/db
+      type: bind
+  deployer-docker:
+    cap_add:
+    - CHOWN
+    - DAC_OVERRIDE
+    - FOWNER
+    cap_drop:
+    - ALL
+    configs:
+    - source: deployer-docker_env
+      target: /etc/modular-platform/module.env
+    depends_on:
+      cert-issuer:
+        condition: service_healthy
+        required: true
+      ingress:
+        condition: service_healthy
+        required: true
+    environment:
+      MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
+      MP_CA_FILE: /run/secrets/uses/acme/ca
+      MP_CALLER_KEYS_DIR: /run/secrets/clients/deploy/caller_key
+      MP_DEPLOY_TARGET_CLIENTS_DIR: /run/secrets/clients/deploy/token
+      MP_DEPLOYMENTS_DIR: ${MP_DIR}/deployments
+      MP_DOMAIN: modular-platform.internal
+      MP_ENV_FILE: /etc/modular-platform/module.env
+      MP_INSTANCE: deployer-docker
+      MP_PLATFORM_GID: ${MP_GID}
+      MP_PLATFORM_HTTP_PORT: ${MP_INGRESS__HTTP_PORT:-80}
+      MP_PLATFORM_HTTPS_PORT: ${MP_INGRESS__HTTPS_PORT:-443}
+      MP_PLATFORM_UID: ${MP_UID}
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 30s
+      test:
+      - CMD
+      - /deployer-docker
+      - healthcheck
+      timeout: 3s
+    image: ghcr.io/racherom/modular-platform/deployer-docker:0.0.0-test
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: deployer-docker
+      io.github.racherom.modular-platform.module: deployer-docker
+    networks:
+      internal:
+        aliases:
+        - deployer-docker.modular-platform.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: deployer-docker_uses_acme_ca
+      target: /run/secrets/uses/acme/ca
+    - source: api_uses_deploy-target_caller_key
+      target: /run/secrets/clients/deploy/caller_key/api
+    - source: api_uses_deploy-target_token
+      target: /run/secrets/clients/deploy/token/api
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: "0:0"
+    volumes:
+    - source: /var/run/docker.sock
+      target: /var/run/docker.sock
+      type: bind
+    - source: ${MP_DIR}/deployments
+      target: ${MP_DIR}/deployments
+      type: bind
+  ingress:
+    cap_add:
+    - NET_BIND_SERVICE
+    cap_drop:
+    - ALL
+    configs:
+    - source: ingress_Caddyfile
+      target: /etc/caddy/Caddyfile
+    depends_on:
+      cert-issuer:
+        condition: service_healthy
+        required: true
+    environment:
+      INGRESS_BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
+      INGRESS_DOMAIN: ${MP_INGRESS__DOMAIN}
+      INGRESS_HTTP_PORT: ${MP_INGRESS__HTTP_PORT:-80}
+      INGRESS_HTTPS_PORT: ${MP_INGRESS__HTTPS_PORT:-443}
+      INGRESS_ORIGIN: ${MP_INGRESS__ORIGIN}
+      MP_ACME_EMAIL: ${MP_INGRESS__ACME_EMAIL:-}
+      MP_TLS_MODE: ${MP_INGRESS__TLS_MODE:-internal}
+    healthcheck:
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      test:
+      - CMD
+      - wget
+      - -q
+      - -O
+      - /dev/null
+      - http://127.0.0.1:2019/config/
+      timeout: 3s
+    image: caddy:2.11.7-alpine
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: ingress
+      io.github.racherom.modular-platform.module: caddy
+    networks:
+      egress:
+        aliases:
+        - ingress.modular-platform.internal
+        - ${MP_INGRESS__DOMAIN}
+      internal:
+        aliases:
+        - ingress.modular-platform.internal
+        - ${MP_INGRESS__DOMAIN}
+    ports:
+    - published: ${MP_INGRESS__HTTPS_PORT:-443}
+      target: 443
+    - published: ${MP_INGRESS__HTTP_PORT:-80}
+      target: 80
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: ingress_uses_trust_ca
+      target: /etc/caddy/trust/root.crt
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - source: ./data/ingress/config
+      target: /config
+      type: bind
+    - source: ./data/ingress/data
+      target: /data
+      type: bind
+  mp_jobs:
+    cap_drop:
+    - ALL
+    depends_on:
+      postgres_revoke_server:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+    - sleep
+    - infinity
+    image: postgres:18.6
+    init: true
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.job: wait
+    network_mode: none
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  planner:
+    cap_drop:
+    - ALL
+    configs:
+    - source: planner_env
+      target: /etc/modular-platform/module.env
+    depends_on:
+      cert-issuer:
+        condition: service_healthy
+        required: true
+      ingress:
+        condition: service_healthy
+        required: true
+    environment:
+      MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
+      MP_CA_FILE: /run/secrets/uses/acme/ca
+      MP_CALLER_KEYS_DIR: /run/secrets/clients/planner/caller_key
+      MP_DOMAIN: modular-platform.internal
+      MP_ENV_FILE: /etc/modular-platform/module.env
+      MP_INSTANCE: planner
+      MP_PLANNER_CLIENTS_DIR: /run/secrets/clients/planner/token
+      MP_PLATFORM_HTTP_PORT: ${MP_INGRESS__HTTP_PORT:-80}
+      MP_PLATFORM_HTTPS_PORT: ${MP_INGRESS__HTTPS_PORT:-443}
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 30s
+      test:
+      - CMD
+      - /planner
+      - healthcheck
+      timeout: 3s
+    image: ghcr.io/racherom/modular-platform/planner:0.0.0-test
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: planner
+      io.github.racherom.modular-platform.module: planner
+    networks:
+      internal:
+        aliases:
+        - planner.modular-platform.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: planner_uses_acme_ca
+      target: /run/secrets/uses/acme/ca
+    - source: api_uses_planner_caller_key
+      target: /run/secrets/clients/planner/caller_key/api
+    - source: api_uses_planner_token
+      target: /run/secrets/clients/planner/token/api
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  postgres:
+    cap_drop:
+    - ALL
+    command:
+    - postgres
+    - -c
+    - config_file=/etc/postgresql/postgresql.conf
+    configs:
+    - source: postgres_postgresql.conf
+      target: /etc/postgresql/postgresql.conf
+    - source: postgres_pg_hba.conf
+      target: /etc/postgresql/pg_hba.conf
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 30s
+      test:
+      - CMD
+      - pg_isready
+      - -h
+      - 127.0.0.1
+      - -U
+      - postgres
+      timeout: 3s
+    image: postgres:18.6-alpine3.24
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: postgres
+      io.github.racherom.modular-platform.module: postgres
+    networks:
+      internal:
+        aliases:
+        - postgres.modular-platform.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: postgres_password
+      target: /run/secrets/postgres_password
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /var/run/postgresql
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - source: ./data/postgres/data
+      target: /var/lib/postgresql
+      type: bind
+  postgres_provision_api_main-db:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      PGPASSWORD=$$(cat "$$MP_ADMIN_ADMIN_PASSWORD_FILE")
+      export PGPASSWORD PGHOST="$$MP_ADMIN_HOST" PGPORT="$$MP_ADMIN_PORT" PGUSER="$$MP_ADMIN_ADMIN_USER"
+      export PGDATABASE=postgres PGSSLMODE="$$MP_ADMIN_SSLMODE" PGCONNECT_TIMEOUT=10 PGAPPNAME=mp-provision
+      if [ -n "$${MP_ADMIN_CA_FILE:-}" ]; then export PGSSLROOTCERT="$$MP_ADMIN_CA_FILE"; fi
+      echo "provision: database $$MP_DATABASE and login $$MP_USER for $$MP_CONSUMER (slot $$MP_SLOT)"
+      psql -X -q -v ON_ERROR_STOP=1 -v marker="$$MP_MARKER" -v login="$$MP_USER" -v db="$$MP_DATABASE" <<'SQL'
+      \set pw `cat "$$MP_PASSWORD_FILE"`
+      SELECT pg_advisory_lock(hashtext('modular-platform provisioner')) \g /dev/null
+      SELECT format('CREATE ROLE %I NOLOGIN', :'marker')
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'marker') \gexec
+      SELECT CASE
+          WHEN r.oid IS NULL THEN 'create'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = r.oid AND g.rolname = :'marker') THEN 'update'
+          ELSE 'foreign' END AS role_state
+        FROM (SELECT CAST(:'login' AS name) AS n) x LEFT JOIN pg_roles r ON r.rolname = x.n \gset
+      SELECT format('CREATE ROLE %I LOGIN PASSWORD %L IN ROLE %I', :'login', :'pw', :'marker')
+        WHERE :'role_state' = 'create' \gexec
+      SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', :'login', :'pw')
+        WHERE :'role_state' = 'update' \gexec
+      SELECT format('DO $$mp$$ BEGIN RAISE EXCEPTION %L; END $$mp$$',
+                    format('role %s exists and was not made by the platform', :'login'))
+        WHERE :'role_state' = 'foreign' \gexec
+      SELECT CASE
+          WHEN d.oid IS NULL THEN 'create'
+          WHEN o.rolname = :'login' THEN 'keep'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = d.datdba AND g.rolname = :'marker') THEN 'reown'
+          ELSE 'foreign' END AS db_state
+        FROM (SELECT CAST(:'db' AS name) AS n) x
+        LEFT JOIN pg_database d ON d.datname = x.n LEFT JOIN pg_roles o ON o.oid = d.datdba \gset
+      SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'login') WHERE :'db_state' = 'create' \gexec
+      SELECT format('ALTER DATABASE %I OWNER TO %I', :'db', :'login') WHERE :'db_state' = 'reown' \gexec
+      SELECT format('DO $$mp$$ BEGIN RAISE EXCEPTION %L; END $$mp$$',
+                    format('database %s exists and its owner was not made by the platform', :'db'))
+        WHERE :'db_state' = 'foreign' \gexec
+      SELECT format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', :'db') \gexec
+      SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'db', :'login') \gexec
+      REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+      REVOKE CONNECT ON DATABASE template1 FROM PUBLIC;
+      SELECT pg_reload_conf() \g /dev/null
+      SQL
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
+      MP_ADMIN_ADMIN_USER: postgres
+      MP_ADMIN_HOST: postgres.modular-platform.internal
+      MP_ADMIN_PORT: "5432"
+      MP_ADMIN_SSLMODE: disable
+      MP_ADMIN_URL: postgres://postgres.modular-platform.internal:5432
+      MP_CONSUMER: api
+      MP_CONSUMER_HOST: api.modular-platform.internal
+      MP_DATABASE: platform_api
+      MP_MARKER: mp_provisioned_52d73175
+      MP_PASSWORD_FILE: /run/secrets/bind/password
+      MP_SLOT: main-db
+      MP_USER: api
+    image: postgres:18.6
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: postgres
+      io.github.racherom.modular-platform.job: provision
+      io.github.racherom.modular-platform.module: postgres
+    networks:
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: postgres_admin_server_admin_password
+      target: /run/secrets/admin/admin_password
+    - source: api_uses_main-db_password
+      target: /run/secrets/bind/password
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  postgres_provision_authelia_db:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      PGPASSWORD=$$(cat "$$MP_ADMIN_ADMIN_PASSWORD_FILE")
+      export PGPASSWORD PGHOST="$$MP_ADMIN_HOST" PGPORT="$$MP_ADMIN_PORT" PGUSER="$$MP_ADMIN_ADMIN_USER"
+      export PGDATABASE=postgres PGSSLMODE="$$MP_ADMIN_SSLMODE" PGCONNECT_TIMEOUT=10 PGAPPNAME=mp-provision
+      if [ -n "$${MP_ADMIN_CA_FILE:-}" ]; then export PGSSLROOTCERT="$$MP_ADMIN_CA_FILE"; fi
+      echo "provision: database $$MP_DATABASE and login $$MP_USER for $$MP_CONSUMER (slot $$MP_SLOT)"
+      psql -X -q -v ON_ERROR_STOP=1 -v marker="$$MP_MARKER" -v login="$$MP_USER" -v db="$$MP_DATABASE" <<'SQL'
+      \set pw `cat "$$MP_PASSWORD_FILE"`
+      SELECT pg_advisory_lock(hashtext('modular-platform provisioner')) \g /dev/null
+      SELECT format('CREATE ROLE %I NOLOGIN', :'marker')
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'marker') \gexec
+      SELECT CASE
+          WHEN r.oid IS NULL THEN 'create'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = r.oid AND g.rolname = :'marker') THEN 'update'
+          ELSE 'foreign' END AS role_state
+        FROM (SELECT CAST(:'login' AS name) AS n) x LEFT JOIN pg_roles r ON r.rolname = x.n \gset
+      SELECT format('CREATE ROLE %I LOGIN PASSWORD %L IN ROLE %I', :'login', :'pw', :'marker')
+        WHERE :'role_state' = 'create' \gexec
+      SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', :'login', :'pw')
+        WHERE :'role_state' = 'update' \gexec
+      SELECT format('DO $$mp$$ BEGIN RAISE EXCEPTION %L; END $$mp$$',
+                    format('role %s exists and was not made by the platform', :'login'))
+        WHERE :'role_state' = 'foreign' \gexec
+      SELECT CASE
+          WHEN d.oid IS NULL THEN 'create'
+          WHEN o.rolname = :'login' THEN 'keep'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = d.datdba AND g.rolname = :'marker') THEN 'reown'
+          ELSE 'foreign' END AS db_state
+        FROM (SELECT CAST(:'db' AS name) AS n) x
+        LEFT JOIN pg_database d ON d.datname = x.n LEFT JOIN pg_roles o ON o.oid = d.datdba \gset
+      SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'login') WHERE :'db_state' = 'create' \gexec
+      SELECT format('ALTER DATABASE %I OWNER TO %I', :'db', :'login') WHERE :'db_state' = 'reown' \gexec
+      SELECT format('DO $$mp$$ BEGIN RAISE EXCEPTION %L; END $$mp$$',
+                    format('database %s exists and its owner was not made by the platform', :'db'))
+        WHERE :'db_state' = 'foreign' \gexec
+      SELECT format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', :'db') \gexec
+      SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'db', :'login') \gexec
+      REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+      REVOKE CONNECT ON DATABASE template1 FROM PUBLIC;
+      SELECT pg_reload_conf() \g /dev/null
+      SQL
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
+      MP_ADMIN_ADMIN_USER: postgres
+      MP_ADMIN_HOST: postgres.modular-platform.internal
+      MP_ADMIN_PORT: "5432"
+      MP_ADMIN_SSLMODE: disable
+      MP_ADMIN_URL: postgres://postgres.modular-platform.internal:5432
+      MP_CONSUMER: authelia
+      MP_CONSUMER_HOST: authelia.modular-platform.internal
+      MP_DATABASE: authelia
+      MP_MARKER: mp_provisioned_52d73175
+      MP_PASSWORD_FILE: /run/secrets/bind/password
+      MP_SLOT: db
+      MP_USER: authelia
+    image: postgres:18.6
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: postgres
+      io.github.racherom.modular-platform.job: provision
+      io.github.racherom.modular-platform.module: postgres
+    networks:
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: postgres_admin_server_admin_password
+      target: /run/secrets/admin/admin_password
+    - source: authelia_uses_db_password
+      target: /run/secrets/bind/password
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  postgres_revoke_server:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      PGPASSWORD=$$(cat "$$MP_ADMIN_ADMIN_PASSWORD_FILE")
+      export PGPASSWORD PGHOST="$$MP_ADMIN_HOST" PGPORT="$$MP_ADMIN_PORT" PGUSER="$$MP_ADMIN_ADMIN_USER"
+      export PGDATABASE=postgres PGSSLMODE="$$MP_ADMIN_SSLMODE" PGCONNECT_TIMEOUT=10 PGAPPNAME=mp-revoke
+      if [ -n "$${MP_ADMIN_CA_FILE:-}" ]; then export PGSSLROOTCERT="$$MP_ADMIN_CA_FILE"; fi
+      echo "revoke: logins made by the platform that no binding keeps lose sign in"
+      psql -X -q -v ON_ERROR_STOP=1 -v marker="$$MP_MARKER" -v keep="$$MP_KEEP" <<'SQL'
+      SELECT pg_advisory_lock(hashtext('modular-platform provisioner')) \g /dev/null
+      SELECT format('ALTER ROLE %I NOLOGIN', r.rolname)
+        FROM pg_roles r JOIN pg_auth_members m ON m.member = r.oid JOIN pg_roles g ON g.oid = m.roleid
+        WHERE g.rolname = :'marker' AND r.rolcanlogin
+          AND NOT r.rolname = ANY (string_to_array(:'keep', ',')) \gexec
+      SELECT pg_terminate_backend(a.pid)
+        FROM pg_stat_activity a JOIN pg_roles r ON r.oid = a.usesysid
+        JOIN pg_auth_members m ON m.member = r.oid JOIN pg_roles g ON g.oid = m.roleid
+        WHERE g.rolname = :'marker' AND NOT r.rolcanlogin \g /dev/null
+      SQL
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+      postgres_provision_api_main-db:
+        condition: service_completed_successfully
+        required: true
+      postgres_provision_authelia_db:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
+      MP_ADMIN_ADMIN_USER: postgres
+      MP_ADMIN_HOST: postgres.modular-platform.internal
+      MP_ADMIN_PORT: "5432"
+      MP_ADMIN_SSLMODE: disable
+      MP_ADMIN_URL: postgres://postgres.modular-platform.internal:5432
+      MP_KEEP: api,authelia
+      MP_MARKER: mp_provisioned_52d73175
+    image: postgres:18.6
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: postgres
+      io.github.racherom.modular-platform.job: revoke
+      io.github.racherom.modular-platform.module: postgres
+    networks:
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: postgres_admin_server_admin_password
+      target: /run/secrets/admin/admin_password
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  web:
+    cap_add:
+    - NET_BIND_SERVICE
+    cap_drop:
+    - ALL
+    depends_on:
+      ingress:
+        condition: service_healthy
+        required: true
+    environment:
+      MP_API_ROOT: ${MP_INGRESS__BASE_PATH:-}/api
+      MP_BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
+      MP_MODE: managed
+      MP_SIGNED_OUT: ${MP_WEB__SIGNED_OUT:-index}
+    healthcheck:
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      test:
+      - CMD
+      - wget
+      - -q
+      - -O
+      - /dev/null
+      - http://127.0.0.1:2019/config/
+      timeout: 3s
+    image: ghcr.io/racherom/modular-platform/web:0.0.0-test
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: web
+      io.github.racherom.modular-platform.module: web
+    networks:
+      internal:
+        aliases:
+        - web.modular-platform.internal
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}

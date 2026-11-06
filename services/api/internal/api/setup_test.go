@@ -135,18 +135,17 @@ func TestReadSettingsRefused(t *testing.T) {
 // (mp-api-root, a meta name of the editor, is another word).
 var oldClientID = regexp.MustCompile(`(^|[^a-z0-9-])` + "mp" + `-api($|[^a-z0-9-])`)
 
-// TestNoOldClientID covers task 4 of spec 0025: the rendered client id is api, so the old
-// default lives only in the hand written deploy/managed folder until it is retired.
+// TestNoOldClientID covers task 4 of spec 0025: the rendered client id is api, and the old
+// default left with the hand written deploy/managed folder (spec 0011, build task 19).
 func TestNoOldClientID(t *testing.T) {
 	t.Parallel()
 	root := filepath.Join("..", "..", "..", "..")
 	skip := map[string]bool{".git": true, "node_modules": true, "docs": true, "build": true, "dist": true, ".agents": true, ".claude": true}
-	managed := filepath.Join(root, "deploy", "managed")
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		switch {
 		case err != nil:
 			return err
-		case d.IsDir() && (skip[d.Name()] || path == managed):
+		case d.IsDir() && skip[d.Name()]:
 			return filepath.SkipDir
 		case d.IsDir() || !d.Type().IsRegular():
 			return nil
@@ -156,7 +155,7 @@ func TestNoOldClientID(t *testing.T) {
 			return err
 		}
 		if !bytes.ContainsRune(data, 0) && oldClientID.Match(data) {
-			t.Errorf("%s names the old OIDC client id; it may stay only in deploy/managed/", path)
+			t.Errorf("%s names the old OIDC client id", path)
 		}
 		return nil
 	})

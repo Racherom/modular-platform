@@ -26,7 +26,7 @@ type adminStore interface {
 // every session, so open screens sign out and the next verified sign in with the admin email
 // binds again. It runs beside a serving api, as `docker compose exec api /api admin reset`.
 func Admin(ctx context.Context, m *sdk.Module[config.Config, config.Uses], args []string, out io.Writer) error {
-	pool, err := m.Uses.Postgresql(ctx)
+	pool, err := m.Uses.MainDb(ctx)
 	if err != nil {
 		return err
 	}

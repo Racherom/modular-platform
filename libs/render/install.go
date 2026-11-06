@@ -17,8 +17,9 @@ import (
 // askedValue is one question setup.sh asks before anything else (spec 0013, Install time, steps
 // 2 and 3): a text value it writes into .env, or a secret it writes into its file.
 type askedValue struct {
-	Func string // the shell function that asks it: ask or ask_secret
-	Args string // its arguments, quoted
+	Func     string // the shell function that asks it: ask or ask_secret
+	Args     string // its arguments, quoted
+	instance string // whose value it is
 }
 
 // envBlock is the commented block .env holds for one value rendered as MP_<I>__<V> (spec 0025,
@@ -74,7 +75,7 @@ func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Mo
 	r.data.NeedEnvGet = true // check_env reads each line back
 	for _, name := range sortedKeys(m.Config) {
 		v := m.Config[name]
-		if strings.HasPrefix(v.Default, "{install}/") {
+		if strings.HasPrefix(v.Default, installPrefix) && r.flavor != flavorPlatform {
 			return fmt.Errorf("%w: {install} in config value %s of module %s belongs to the platform flavor", ErrNotRendered, name, m.Name)
 		}
 		check := envCheck{Var: contract.ComposeVar(i, name)}
@@ -85,12 +86,12 @@ func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Mo
 			r.mountSecret(svc, i+"_"+name, path, target)
 			setEnv(svc, v.Env+"_FILE", target)
 			r.declared[path] = true
-			r.data.Asked = append(r.data.Asked, askedValue{Func: "ask_secret", Args: askSecretArgs(path, v.Optional, v.Description)})
+			r.data.Asked = append(r.data.Asked, askedValue{Func: "ask_secret", Args: askSecretArgs(path, v.Optional, v.Description), instance: i})
 			r.data.NeedAsk = true
 		case slices.Contains(compose, name) || m.Runtime != contract.Sdk && v.Type != contract.ConfigValueTypeSecret && !tokenDefault(v.Default):
 			setEnvRaw(svc, v.Env, r.composeVar(i, name, v))
 			if tokenDefault(v.Default) {
-				break // the setup user's ids: no block, no rules (AC-25, AC-26)
+				break // the setup user's ids or the install folder: no block, no rules (AC-25, AC-26)
 			}
 			rules, values, err := r.ruleWords(name, m)
 			if err != nil {
@@ -105,7 +106,7 @@ func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Mo
 			switch {
 			case v.Asked() && set:
 				// the graph answers it: setup.sh says so and asks nothing (AC-28)
-				r.data.Asked = append(r.data.Asked, askedValue{Func: "graph_set", Args: check.Var + " " + shellQuote(text)})
+				r.data.Asked = append(r.data.Asked, askedValue{Func: "graph_set", Args: check.Var + " " + shellQuote(text), instance: i})
 				r.data.GraphSet = true
 			case v.Asked():
 				block.Asked = true
@@ -114,7 +115,7 @@ func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Mo
 			}
 			r.data.Blocks = append(r.data.Blocks, block)
 		case tokenDefault(v.Default):
-			setEnvRaw(svc, v.Env, map[string]string{"{uid}": "${MP_UID}", "{gid}": "${MP_GID}"}[v.Default])
+			setEnvRaw(svc, v.Env, tokenText(v.Default))
 		}
 		r.data.Checks = append(r.data.Checks, check)
 	}
@@ -122,7 +123,7 @@ func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Mo
 		if s.From == contract.SecretFromAsk {
 			path := "secrets/" + i + "/" + s.Name
 			r.declared[path] = true
-			r.data.AskedSecrets = append(r.data.AskedSecrets, askedValue{Func: "ask_secret", Args: askSecretArgs(path, false, s.Description)})
+			r.data.AskedSecrets = append(r.data.AskedSecrets, askedValue{Func: "ask_secret", Args: askSecretArgs(path, false, s.Description), instance: i})
 		}
 	}
 	return nil
@@ -156,9 +157,23 @@ func orEmpty(c *contract.InstanceConfig) *contract.InstanceConfig {
 	return c
 }
 
-// tokenDefault reports whether def is the setup user's id, {uid} or {gid}, which renders as
-// that user's variable rather than as a value of its own.
-func tokenDefault(def string) bool { return def == "{uid}" || def == "{gid}" }
+// installPrefix starts a default in the install folder, which only the platform flavor renders.
+const installPrefix = "{install}/"
+
+// tokenDefault reports whether def is the setup user's id, {uid} or {gid}, or a path in the
+// install folder, {install}/<relative>, which renders as a variable setup.sh writes rather than
+// as a value of its own (spec 0013).
+func tokenDefault(def string) bool {
+	return def == "{uid}" || def == "{gid}" || strings.HasPrefix(def, installPrefix)
+}
+
+// tokenText is a token default as Compose text: ${MP_UID}, ${MP_GID} or ${MP_DIR}/<relative>.
+func tokenText(def string) string {
+	if rel, ok := strings.CutPrefix(def, installPrefix); ok {
+		return "${MP_DIR}/" + escape(rel)
+	}
+	return map[string]string{"{uid}": "${MP_UID}", "{gid}": "${MP_GID}"}[def]
+}
 
 // ruleWords are the rules setup.sh checks text value name of m by, as the arguments of its valid
 // function: the type, min, max and pattern (as an ERE) as shell words, then the enum values.
@@ -195,7 +210,7 @@ func (r *renderer) askText(i, name string, m contract.Module, rules, values []st
 	v := m.Config[name]
 	words := slices.Concat([]string{contract.ComposeVar(i, name)}, rules,
 		[]string{strconv.FormatBool(v.Optional), shellQuote(v.Description), r.defaultWord(i, m, v.Default)}, values)
-	return askedValue{Func: "ask", Args: strings.Join(words, " ")}
+	return askedValue{Func: "ask", Args: strings.Join(words, " "), instance: i}
 }
 
 // nanoseconds writes a duration bound as whole nanoseconds, which setup.sh compares; "" stays.

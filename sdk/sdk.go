@@ -277,6 +277,7 @@ type loaded[C, U any] struct {
 	m        *Module[C, U]
 	res      load.Result
 	clients  auth.Clients
+	callers  caller.Keys
 	opened   map[string]Opened
 	values   *Values
 	bindings *Bindings
@@ -318,6 +319,14 @@ func loadModule[C, U any](ctx context.Context, d Declaration[C, U], o options, q
 			problems = append(problems, clientsProblem(p, load.CodeInvalidBinding, err.Error()))
 		}
 	}
+	var callerKeys caller.Keys
+	if p := d.Provides; p != nil && res.CallerKeysDir != "" {
+		var errs []error
+		callerKeys, errs = caller.LoadKeys(res.CallerKeysDir)
+		for _, err := range errs {
+			problems = append(problems, Problem{Value: "provides." + p.Capability + ".caller_keys_dir", Env: p.CallerKeysDirEnv, Code: load.CodeInvalidBinding, Message: err.Error()})
+		}
+	}
 	opened, openProblems := open(d.Bindings, res.Bindings)
 	problems = append(problems, openProblems...)
 	load.SortProblems(problems)
@@ -357,7 +366,7 @@ func loadModule[C, U any](ctx context.Context, d Declaration[C, U], o options, q
 	}
 
 	m := &Module[C, U]{Config: cfg, Uses: uses, Log: log, Instance: res.Bootstrap.Instance}
-	return loaded[C, U]{m: m, res: res, clients: clients, opened: opened, values: values, bindings: bindings}, nil
+	return loaded[C, U]{m: m, res: res, clients: clients, callers: callerKeys, opened: opened, values: values, bindings: bindings}, nil
 }
 
 func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], o options) (built, error) {
@@ -367,7 +376,7 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 		return built{}, err
 	}
 	m, res, clients, opened, values, bindings := l.m, l.res, l.clients, l.opened, l.values, l.bindings
-	serve := func() (http.Handler, error) { return wrap(ctx, d, setup, m, clients, res.Bootstrap) }
+	serve := func() (http.Handler, error) { return wrap(ctx, d, setup, m, clients, l.callers, res.Bootstrap) }
 	var (
 		app   atomic.Pointer[http.Handler]
 		first <-chan error
@@ -428,7 +437,7 @@ func build[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U]
 
 // wrap runs setup and puts the module's middleware around its handler: the access log, the rate
 // limit, the binding token check and the MP-Caller check, in that order.
-func wrap[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], m *Module[C, U], clients auth.Clients, bs load.Bootstrap) (http.Handler, error) {
+func wrap[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U], m *Module[C, U], clients auth.Clients, callerKeys caller.Keys, bs load.Bootstrap) (http.Handler, error) {
 	log := m.Log
 	h, err := setup(ctx, m)
 	if err != nil {
@@ -437,7 +446,7 @@ func wrap[C, U any](ctx context.Context, d Declaration[C, U], setup Setup[C, U],
 		}
 		return nil, ErrStart
 	}
-	h = caller.Middleware(bs.CallerKeys, bs.Host(), log, h)
+	h = caller.Middleware(callerKeys, bs.Host(), log, h)
 	if p := d.Provides; p != nil && p.Auth == manifest.AuthBindingToken {
 		switch {
 		case m.anonymous:

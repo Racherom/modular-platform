@@ -86,7 +86,7 @@ func Setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 	if err != nil {
 		return nil, err
 	}
-	pool, err := m.Uses.Postgresql(ctx)
+	pool, err := m.Uses.MainDb(ctx)
 	if err != nil {
 		return nil, err
 	}

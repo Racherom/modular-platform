@@ -1,0 +1,8 @@
+# Who may connect to {{.Instance}} (spec 0014). The local socket is the image's own, inside the
+# container; every connection over the network signs in with a password{{if .Uses.tls.Bound}} over TLS{{end}}.
+local all all trust
+{{- if .Uses.tls.Bound}}
+hostssl all all all scram-sha-256
+{{- else}}
+host all all all scram-sha-256
+{{- end}}

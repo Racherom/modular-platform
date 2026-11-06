@@ -1,0 +1,103 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: cert-issuer
+description: The platform's certificate authority, step-ca; ACME for sdk modules and a jobs provisioner for unchanged providers.
+image: smallstep/step-ca:0.30.2
+entrypoint: [step-ca]
+# sdk modules answer tls-alpn-01 on 8443, not 443; --insecure only unlocks that port flag
+command: [/home/step/config/ca.json, --password-file=/home/step/secrets/password, --insecure, --acme-tls-port=8443]
+healthcheck:
+  # its own certificate names its host name and localhost; the name policy issues neither to others
+  test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+  interval: 5s
+  timeout: 3s
+  retries: 10
+  start_period: 30s
+provides:
+  acme:
+    capability: acme
+    version: "1.0"
+    port: 9000
+    fields:
+      url: {platform: url, path: /acme/acme/directory}
+      ca: {secret: root-ca}
+  certs:
+    capability: tls-certificate-provisioner
+    version: "1.0"
+    port: 9000
+    fields:
+      url: {platform: url}
+      provisioner: {value: jobs}
+      password: {secret: jobs-password}
+      ca: {secret: root-ca}
+secrets:
+  - {name: password, from: setup, mount: /home/step/secrets/password, description: Password of the CA keys.}
+  - {name: root-ca, from: setup, mount: /home/step/certs/root_ca.crt, description: Root certificate.}
+  - {name: root-ca-key, from: setup, mount: /home/step/secrets/root_ca_key, description: Root key.}
+  - {name: intermediate-ca, from: setup, mount: /home/step/certs/intermediate_ca.crt, description: Intermediate certificate.}
+  - {name: intermediate-ca-key, from: setup, mount: /home/step/secrets/intermediate_ca_key, description: Intermediate key.}
+  - {name: jobs-password, from: setup, mount: /home/step/secrets/jobs-password, description: Password of the jobs provisioner.}
+  - {name: ca-json, from: setup, mount: /home/step/config/ca.json, description: "The whole ca.json, with both provisioners."}
+setup:
+  - name: ca
+    entrypoint: [sh, -c]
+    command:
+      - |
+        set -eu
+        umask 077
+        od -An -tx1 -N32 /dev/urandom | tr -d ' \n' > /out/password
+        step ca init --pki --name "Modular Platform internal CA" --password-file /out/password >/dev/null 2>&1
+        cp "$STEPPATH/certs/root_ca.crt" /out/root-ca
+        cp "$STEPPATH/secrets/root_ca_key" /out/root-ca-key
+        cp "$STEPPATH/certs/intermediate_ca.crt" /out/intermediate-ca
+        cp "$STEPPATH/secrets/intermediate_ca_key" /out/intermediate-ca-key
+    env: {STEPPATH: /tmp/step}
+    writes:
+      - {name: password}
+      - {name: root-ca, mode: "0644"}
+      - {name: root-ca-key}
+      - {name: intermediate-ca, mode: "0644"}
+      - {name: intermediate-ca-key}
+  - name: config
+    # the jobs provisioner's key pair exists only after setup, so ca.json is written here, not
+    # rendered (spec 0014)
+    entrypoint: [sh, -c]
+    command:
+      - |
+        set -eu
+        umask 077
+        od -An -tx1 -N32 /dev/urandom | tr -d ' \n' > /out/jobs-password
+        step crypto jwk create /tmp/jobs.pub /tmp/jobs.key --kty EC --crv P-256 --use sig --password-file /out/jobs-password >/dev/null 2>&1
+        key=$(step crypto jose format < /tmp/jobs.key)
+        pub=$(tr -d '\n' < /tmp/jobs.pub)
+        cat > /out/ca-json <<JSON
+        {
+          "root": "/home/step/certs/root_ca.crt",
+          "crt": "/home/step/certs/intermediate_ca.crt",
+          "key": "/home/step/secrets/intermediate_ca_key",
+          "address": ":9000",
+          "dnsNames": ["$MP_INSTANCE.$MP_GRAPH.internal", "localhost"],
+          "logger": {"format": "json"},
+          "db": {"type": "badgerv2", "dataSource": "/home/step/db"},
+          "authority": {
+            "policy": {"x509": {"allow": {"dns": ["*.$MP_GRAPH.internal"]}}},
+            "claims": {"minTLSCertDuration": "24h", "maxTLSCertDuration": "24h", "defaultTLSCertDuration": "24h"},
+            "provisioners": [
+              {"type": "ACME", "name": "acme", "challenges": ["tls-alpn-01"]},
+              {"type": "JWK", "name": "jobs", "key": $pub, "encryptedKey": "$key",
+               "claims": {"maxTLSCertDuration": "2160h", "defaultTLSCertDuration": "2160h"}}
+            ]
+          },
+          "tls": {"minVersion": 1.3, "maxVersion": 1.3}
+        }
+        JSON
+    env: {STEPPATH: /tmp/step}
+    writes:
+      - {name: jobs-password}
+      - {name: ca-json}
+volumes:
+  db: /home/step/db
+hardening:
+  # the step-ca binary carries the bind capability as a file capability
+  cap_add: [NET_BIND_SERVICE]
+  tmpfs: [/tmp]

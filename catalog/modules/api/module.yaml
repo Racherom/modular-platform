@@ -11,30 +11,14 @@ healthcheck:
   timeout: 3s
   retries: 10
   start_period: 60s
+provides:
+  api:
+    capability: platform-api
+    version: "1.0"
+    fields:
+      url: {platform: url}
+      ca: {platform: ca}
 uses:
-  planner:
-    capability: planner
-    client: http
-    env:
-      url: MP_PLANNER_URL
-      token: MP_PLANNER_TOKEN_FILE
-      ca: MP_PLANNER_CA_FILE
-  deploy-target:
-    capability: deploy-target
-    client: http
-    env:
-      url: MP_DEPLOY_TARGET_URL
-      token: MP_DEPLOY_TARGET_TOKEN_FILE
-      ca: MP_DEPLOY_TARGET_CA_FILE
-  postgresql:
-    capability: postgresql
-    client: postgresql
-    env:
-      url: MP_DATABASE_URL
-      database: MP_DATABASE_NAME
-      user: MP_DATABASE_USER
-      password: MP_DATABASE_PASSWORD_FILE
-      sslmode: MP_DATABASE_SSLMODE
   public:
     capability: http-ingress
     env:
@@ -42,6 +26,9 @@ uses:
       base_path: MP_BASE_PATH
     fields:
       route: {value: /api}
+      upstream: {platform: url, provide: api}
+      server_name: {platform: host, provide: api}
+      # the event stream
       stream: {value: "true"}
   oidc:
     capability: oidc
@@ -53,6 +40,50 @@ uses:
       admin_email: MP_ADMIN_EMAIL
     fields:
       redirect_path: {value: /api/v1/auth/callback}
+  main-db:
+    capability: postgresql
+    client: postgresql
+    env:
+      url: MP_DATABASE_URL
+      database: MP_DATABASE_NAME
+      user: MP_DATABASE_USER
+      password: MP_DATABASE_PASSWORD_FILE
+      sslmode: MP_DATABASE_SSLMODE
+      ca: MP_DATABASE_CA_FILE
+  planner:
+    capability: planner
+    client: http
+    env:
+      url: MP_PLANNER_URL
+      token: MP_PLANNER_TOKEN_FILE
+      ca: MP_PLANNER_CA_FILE
+    fields:
+      caller_key: {secret: caller-public-key}
+  deploy-target:
+    capability: deploy-target
+    client: http
+    env:
+      url: MP_DEPLOY_TARGET_URL
+      token: MP_DEPLOY_TARGET_TOKEN_FILE
+      ca: MP_DEPLOY_TARGET_CA_FILE
+    fields:
+      caller_key: {secret: caller-public-key}
+secrets:
+  - name: caller-signing-key
+    from: setup
+    env: MP_CALLER_SIGNING_KEY_FILE
+    description: Private key api signs MP-Caller tokens with.
+  - name: caller-public-key
+    from: setup
+    mount: /run/secrets/caller-public-key
+    description: Public key of the caller signing key, sent to planner and deployer-docker.
+setup:
+  # the image has no shell, so the api binary writes the pair itself
+  - name: caller-key
+    command: [caller-key, generate]
+    writes:
+      - {name: caller-signing-key}
+      - {name: caller-public-key, mode: "0644"}
 config:
   proxy-hops:
     env: MP_PROXY_HOPS

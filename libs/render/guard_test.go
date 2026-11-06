@@ -86,7 +86,7 @@ func noTemplates(plan func(*testing.T) (contract.PlanResult, contract.Catalog)) 
 	return func(t *testing.T) (contract.PlanResult, contract.Catalog, contract.Templates) {
 		t.Helper()
 		p, c := plan(t)
-		return p, c, contract.Templates{}
+		return p, c, builtinTemplates(t)
 	}
 }
 

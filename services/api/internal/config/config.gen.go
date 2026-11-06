@@ -39,6 +39,11 @@ func (u Uses) DeployTarget(ctx context.Context) (*httpclient.Client, error) {
 	return sdk.Client[*httpclient.Client](ctx, u.b, "deploy-target")
 }
 
+// MainDb is the client of the main-db binding.
+func (u Uses) MainDb(ctx context.Context) (*pgxpool.Pool, error) {
+	return sdk.Client[*pgxpool.Pool](ctx, u.b, "main-db")
+}
+
 // OidcBinding holds the fields of the oidc binding (capability oidc).
 type OidcBinding struct {
 	// AdminEmail is email of the provider's bootstrap admin. Nil when the binding does not deliver it.
@@ -73,11 +78,6 @@ func (u Uses) Planner(ctx context.Context) (*httpclient.Client, error) {
 	return sdk.Client[*httpclient.Client](ctx, u.b, "planner")
 }
 
-// Postgresql is the client of the postgresql binding.
-func (u Uses) Postgresql(ctx context.Context) (*pgxpool.Pool, error) {
-	return sdk.Client[*pgxpool.Pool](ctx, u.b, "postgresql")
-}
-
 // PublicBinding holds the fields of the public binding (capability http-ingress).
 type PublicBinding struct {
 	// BasePath is path the platform is served under; unset at the site root. Nil when the binding does not deliver it.
@@ -108,10 +108,11 @@ var Module = sdk.Declaration[Config, Uses]{
 	},
 	Bindings: []sdk.BindingSpec{
 		{Capability: "deploy-target", Client: "http", Env: map[string]string{"ca_file": "MP_DEPLOY_TARGET_CA_FILE", "token_file": "MP_DEPLOY_TARGET_TOKEN_FILE", "url": "MP_DEPLOY_TARGET_URL"}, Open: httpclient.Open},
+		{Capability: "main-db", Client: "postgresql", Env: map[string]string{"ca_file": "MP_DATABASE_CA_FILE", "database": "MP_DATABASE_NAME", "password_file": "MP_DATABASE_PASSWORD_FILE", "sslmode": "MP_DATABASE_SSLMODE", "url": "MP_DATABASE_URL", "user": "MP_DATABASE_USER"}, Open: pg.Open},
 		{Capability: "oidc", Env: map[string]string{"admin_email": "MP_ADMIN_EMAIL", "ca_file": "MP_OIDC_CA_FILE", "client_id": "MP_OIDC_CLIENT_ID", "client_secret_file": "MP_OIDC_CLIENT_SECRET_FILE", "issuer": "MP_OIDC_ISSUER"}, Fields: []sdk.FieldSpec{{Name: "admin_email", Env: "MP_ADMIN_EMAIL", Type: "string", Optional: true}, {Name: "ca", Env: "MP_OIDC_CA_FILE", Type: "certificate", Optional: true}, {Name: "client_id", Env: "MP_OIDC_CLIENT_ID", Type: "string"}, {Name: "client_secret", Env: "MP_OIDC_CLIENT_SECRET_FILE", Type: "secret"}, {Name: "issuer", Env: "MP_OIDC_ISSUER", Type: "url"}}},
 		{Capability: "planner", Client: "http", Env: map[string]string{"ca_file": "MP_PLANNER_CA_FILE", "token_file": "MP_PLANNER_TOKEN_FILE", "url": "MP_PLANNER_URL"}, Open: httpclient.Open},
-		{Capability: "postgresql", Client: "postgresql", Env: map[string]string{"database": "MP_DATABASE_NAME", "password_file": "MP_DATABASE_PASSWORD_FILE", "sslmode": "MP_DATABASE_SSLMODE", "url": "MP_DATABASE_URL", "user": "MP_DATABASE_USER"}, Open: pg.Open},
 		{Capability: "public", Env: map[string]string{"base_path": "MP_BASE_PATH", "origin": "MP_PUBLIC_ORIGIN"}, Fields: []sdk.FieldSpec{{Name: "base_path", Env: "MP_BASE_PATH", Type: "string", Optional: true}, {Name: "origin", Env: "MP_PUBLIC_ORIGIN", Type: "url"}}},
 	},
-	New: func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },
+	Provides: &sdk.ProvideSpec{Capability: "api"},
+	New:      func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },
 }

@@ -1,12 +1,13 @@
-# task dev:managed: the platform's own images are built from this checkout, and the ingress serves
-# the Vite dev server on the host instead of the web image, so hot reload runs on the real origin.
+# task dev:managed: applied over the rendered build/managed/docker-compose.yml. The platform's own
+# images are built from this checkout, and the ingress serves the Vite dev server on the host
+# instead of the web image, so hot reload runs on the real origin. MP_WEB_UPSTREAM is a dev hook
+# only this overlay sets (spec 0025).
 services:
   ingress:
     environment:
       MP_WEB_UPSTREAM: host.docker.internal:5173
     extra_hosts:
       - host.docker.internal:host-gateway
-    depends_on: !reset {}
 
   web:
     # not started in dev; the Vite dev server takes its place

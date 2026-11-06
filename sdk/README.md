@@ -115,7 +115,7 @@ config: uses.postgresql.user (NOTES_DB_USER): missing: a value is required; set 
 
 A good start logs one `config loaded` line that shows where each value came from (never the value itself), the host name, the TLS mode and each binding's client kind.
 
-The SDK also reads a few bootstrap names from the process env, which the render fills in for you: `MP_INSTANCE`, `MP_DOMAIN`, `MP_ENV_FILE`, `MP_ACME_URL`, `MP_CA_FILE`, `MP_CALLER_KEY_FILE` and `MP_CALLER_SIGNING_KEY_FILE` ([CONTRACT.md, section 2](CONTRACT.md#2-bootstrap-names)).
+The SDK also reads a few bootstrap names from the process env, which the render fills in for you: `MP_INSTANCE`, `MP_DOMAIN`, `MP_ENV_FILE`, `MP_ACME_URL`, `MP_CA_FILE` and `MP_CALLER_SIGNING_KEY_FILE` ([CONTRACT.md, section 2](CONTRACT.md#2-bootstrap-names)).
 
 ## Test a module
 
