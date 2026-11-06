@@ -2,7 +2,7 @@
 
 **Date**: 2026-11-03
 **Parent**: [0006. Managed mode control plane](index.md)
-**Extended by**: [0022](../0011-capability-module-contract/0022-deployed-cap-add.md) (#3): `cap_add` items equal to `NET_BIND_SERVICE` only, and `cap_drop: [ALL]` and `security_opt: [no-new-privileges:true]` required on every service.
+**Extended by**: [0020](../0017-external-capability-providers/0020-holdings-list-revoke.md) and [0021](../0017-external-capability-providers/0021-waiting-flag.md) (#10): the job run endpoint, `profiles` and the `login` job in the guard, the `mp_jobs` rules removed, `waiting` in state. [0022](../0011-capability-module-contract/0022-deployed-cap-add.md) (#3): `cap_add` items equal to `NET_BIND_SERVICE` only, and `cap_drop: [ALL]` and `security_opt: [no-new-privileges:true]` required on every service.
 
 ## Summary
 

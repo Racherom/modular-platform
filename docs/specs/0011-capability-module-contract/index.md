@@ -14,6 +14,7 @@ This spec writes the public contract every module author builds against (scope #
 - [0014. Provisioners and their jobs](0014-provisioners-jobs.md): provisioner capabilities with `yields`, the provision and revoke jobs, named field defaults, `postgresql-provisioner` and the certificate provisioner; supports AC-5, AC-6, AC-7, AC-17.
 - [0015. Platform graph and rendered managed zip](0015-platform-graph-managed-zip.md): the platform capabilities, the eight platform entries, `deploy/managed/graph.yaml`, the platform render flavor that writes the managed folder and its `setup.sh`, caller keys as a binding field, and retiring the hand written folder; supports AC-16, AC-17, AC-18.
 - [0022. Linux capabilities a deployed module may add](0022-deployed-cap-add.md): only `NET_BIND_SERVICE` on a deployed graph, the `invalid_hardening` catalog rule, `cap_add` in the `host_access` warning, refusal and guard, and the guard requiring `cap_drop: [ALL]` and `no-new-privileges` on every deployed service; supports AC-2, AC-11, AC-21.
+- [0025. Slot fields in the SDK and config values for every module](0025-slot-fields-config-delivery.md): typed SDK getters for slots with no client, every non SDK config value as an `.env` variable with its default, config values carried by the graph and set in the editor; supports AC-10, AC-11, AC-22 to AC-30.
 
 Contracts shared by the children live in *Cross child contracts* below.
 
@@ -35,8 +36,8 @@ Contracts shared by the children live in *Cross child contracts* below.
 - **AC-7**: Planning a graph whose binding to a provisioner names no resources writes the default names (0014's rule) into the resolved graph in object form, listed with `named: true` in `bindings`; renaming the consumer instance afterwards keeps those names. Two bindings to one provisioner provide with the same login or database name give `duplicate_named_value`; a value breaking the field's pattern gives `invalid_named_value`.
 - **AC-8**: In a rendered service, every non secret field arrives as the env value the consumer mapped, every `secret` or `certificate` field arrives only as a mounted file (its env holds the path, or it sits at the declared fixed path), and `docker inspect` of every service shows no secret value.
 - **AC-9**: A module template renders with graph facts only (0013's template data); a template that names a missing key, or fails to parse, is a catalog problem (`invalid_template`) found at catalog load, never at render. Rendering the same graph twice gives byte identical zips, templates included.
-- **AC-10**: `setup.sh` from a rendered zip asks every asked config value and every setup step question once, in 0013's order, runs each setup step in its module's own image as you, with `--network none`, its own secrets folder read write and only its declared reads read only, and skips a step whose outputs all exist. A `for_each` step runs once per client still missing its files, and gets the client only where its entry places `{client}`. Running it again asks nothing new and changes no file.
-- **AC-11**: A graph with a module declaring `publish`, `host_mounts`, or a `hardening.cap_add` name other than `NET_BIND_SERVICE` (0022) plans with warning `host_access` at that instance, one problem naming every reason. `POST /v1/render/managed` of such a graph answers 422 with error `host_access`; a graph needing a setup step, an asked value or an asked secret answers 422 with `setup_required` (until #9). The deployer's guard still refuses any key the managed render does not emit.
+- **AC-10**: `setup.sh` from a rendered zip asks every asked config value the graph does not set (0025) and every setup step question once, in 0013's order, runs each setup step in its module's own image as you, with `--network none`, its own secrets folder read write and only its declared reads read only, and skips a step whose outputs all exist. A `for_each` step runs once per client still missing its files, and gets the client only where its entry places `{client}`. Running it again asks nothing new and changes no file.
+- **AC-11**: A graph with a module declaring `publish`, `host_mounts`, or a `hardening.cap_add` name other than `NET_BIND_SERVICE` (0022) plans with warning `host_access` at that instance, one problem naming every reason. `POST /v1/render/managed` of such a graph answers 422 with error `host_access`; a graph needing a setup step, an asked value the graph does not set (0025) or an asked secret answers 422 with `setup_required` (until #9). The deployer's guard still refuses any key the managed render does not emit.
 - **AC-12**: Every rendered service, unless its entry opts out of that item, has `read_only: true`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]` and `user: "${MP_UID}:${MP_GID}"`; joins the `internal` network (`internal: true`) with the alias `<instance>.<graph>.internal` (the wait anchor `mp_jobs` of 0014 is exempt: it has the hardening but `network_mode: none`); and joins `egress` only when its entry declares `network.egress` or `publish`, or one of its slots is bound to an external instance (directly or through an external provisioner). The golden files show each case.
 - **AC-13**: `per_caller: true` on a slot is accepted only on a `runtime: sdk` entry (`per_caller_not_allowed` otherwise), and appears in the catalog answer.
 - **AC-14**: An entry or graph whose `formatVersion` minor is above what this planner reads gets `format_too_new` naming the needed version. A `v0alpha1` graph sent to plan, render or managed render is converted to v1 (each `uses` key becomes the slot of the same name), planned, answered in v1 with warning `converted_from_v0alpha1`, and digested as v1.
@@ -47,6 +48,7 @@ Contracts shared by the children live in *Cross child contracts* below.
 - **AC-19**: The editor reads the v1 catalog and graph: one handle per slot (`uses:<slot>`) and per provide (`provides:<provide>`), an edge per bound slot (string or object form) ending at the named provide, external instances drawn as nodes marked external, and each provide's version shown in the catalog. Its canonical v1 writer and the Go writer give byte identical text for every fixture in `contracts/fixtures/graphs/`, and parsing that text on either side gives back the same graph.
 - **AC-20**: `sdkgen` reads a v1 entry plus the capability files and generates the same getters as before for the built in modules; binding env keys are the capability's field names; `sdk/CONTRACT.md` states the v1 catalog fields it reads, each backed by a test; spec 0005's acceptance criteria still hold.
 - **AC-21**: The guard accepts a deployed service only when it has `cap_drop: [ALL]` and `security_opt: [no-new-privileges:true]`, and `cap_add` items equal to `NET_BIND_SERVICE` only (0022); a missing key or any other item is `host_access` at that key or item. An e2e shows a deployed root service adding `NET_BIND_SERVICE` with `CapEff` `0x400` and `NoNewPrivs: 1`.
+- **AC-22** to **AC-30**: written in full in [0025](0025-slot-fields-config-delivery.md): SDK getters for slots with no client (AC-22, AC-23), the platform services on them (AC-24), non SDK config values as `.env` variables (AC-25) checked by `setup.sh` (AC-26), graph config values (AC-27, AC-28) edited in the inspector (AC-29), and the platform's Caddy and `web` values (AC-30).
 
 ## Decision
 
@@ -122,6 +124,8 @@ catalog/
 | Render | external field values | the graph's `external.provides.<p>.fields`, or a file you place for secret fields |
 | Render | template output | the template file plus 0013's template data |
 | Render | asked value variable names | `MP_<INSTANCE>__<VALUE>`, upper case, `-` as `_` (0013) |
+| Render | a non SDK config value's env, an SDK env file line | graph `modules.<i>.config.<v>`, else the catalog `default`, else empty (0025) |
+| SDK start | fields of a slot with no client | the env its slot maps, typed by the capability file through `sdkgen` (0025) |
 | Setup | asked answers, setup step outputs | you at `setup.sh`; the step's command in the module's image |
 | Provision job | admin fields, named values, binding password | the provisioner provide's fields; the graph binding; the per binding generated file |
 | Revoke job | logins to keep | the `login` named values of every current binding to that provide |
@@ -148,7 +152,7 @@ catalog/
 ### Configuration required
 
 - `MP_DIR` (`.env`, written once by the platform flavor's `setup.sh`): the install folder, for `{install}` paths.
-- `MP_<INSTANCE>__<VALUE>` (`.env`): each asked config value, and each config value a Compose field names (0013).
+- `MP_<INSTANCE>__<VALUE>` (`.env`): each asked config value, each config value a Compose field names (0013), and every non secret config value of a non SDK instance (0025).
 - `MP_CALLER_KEYS_DIR` (provider env from its `caller_key` field) replaces the bootstrap name `MP_CALLER_KEY_FILE`, which is removed.
 - Provision and revoke jobs read `MP_CONSUMER`, `MP_SLOT`, `MP_CONSUMER_HOST`, `MP_MARKER`, `MP_KEEP`, `MP_ADMIN_<F>[_FILE]`, `MP_<F>[_FILE]` (0014); these are job inputs, not settings you set.
 - `PLATFORM_*` settings of the hand written managed folder go away with it; their answers become asked values of `ingress` and `authelia` (0015).
@@ -183,14 +187,19 @@ Tracer Bullet: milestone 1 runs the whole v1 thread (catalog, planner, render, `
 16b. [x] Linux capabilities on deployed graphs (0022): the `Hardening.cap_add` description in `contracts/openapi/planner.yaml`, then `task generate`; `libs/contract`'s kernel name list, `IsLinuxCap`, `DeployableLinuxCap`, `Module.UndeployableLinuxCaps` and the `invalid_hardening` rule with one fixture per case; the planner warning and the managed refusal name every reason; the guard's `cap_add` case, so `TestGuardAcceptsEveryRender` drops the `notifier` exception; update the guard steps in `verify.md`, satisfies **AC-2**, **AC-11**, **AC-21**
 16c. [x] The guard requires `cap_drop` and `security_opt` on every service, with one test each for a service, a job and `mp_jobs`; the `CapEff` e2e `TestLinuxCapsEndToEnd` with its fixture catalog; 0007's guard list points to 0022, satisfies **AC-21**
 
+**Milestone 3b: slot fields and config values (0025, before task 17)**
+16d. [x] 0025 tasks 1 to 4: the Caddy and Compose spike, SDK getters for slots with no client, `planner`, `deployer-docker` and `api` on them, satisfies **AC-22**, **AC-23**, **AC-24**
+16e. [x] 0025 tasks 5 to 7: non SDK config values as `.env` variables, the `.env` check, the graph `config` field through contract, planner and render, satisfies **AC-25**, **AC-26**, **AC-27**, **AC-28**, **AC-10**, **AC-11**
+16f. [x] 0025 tasks 8 and 9: the inspector's config section, the paper platform entries and graph, satisfies **AC-29**, **AC-30**
+
 **Milestone 4: the platform is a graph**
-17. Turn the paper platform into real entries with their templates and setup steps (0015): the Caddyfile, Authelia and Postgres templates, the `cert-issuer` and `authelia` steps, `api caller-key generate`; `deploy/managed/graph.yaml`, satisfies **AC-16**
-18. Caller keys as the `caller_key` field: `sdk/caller` checks per consumer keys, `MP_CALLER_KEY_FILE` removed, satisfies **AC-18**
-19. The platform render flavor, `task managed:render` into `build/managed/`, the zip task and release on it, the overlays applied on top, `scripts/smoke-managed.sh` fed the new question order; delete the retired files once `smoke-managed` passes on the rendered zip in the same change, satisfies **AC-16**
+17. [x] Turn the paper platform into real entries with their templates and setup steps (0015): the Caddyfile, Authelia and Postgres templates, the `cert-issuer` and `authelia` steps, `api caller-key generate`; `deploy/managed/graph.yaml`, satisfies **AC-16**
+18. [x] Caller keys as the `caller_key` field: `sdk/caller` checks per consumer keys, `MP_CALLER_KEY_FILE` removed, satisfies **AC-18**
+19. [x] The platform render flavor, `task managed:render` into `build/managed/`, the zip task and release on it, the overlays applied on top, `scripts/smoke-managed.sh` fed the new question order; delete the retired files once `smoke-managed` passes on the rendered zip in the same change, satisfies **AC-16**
 
 **Milestone 5: TLS for unchanged providers**
 20. Spike: `postgres` running as the setup user with its `data/` folder (initdb as a user with no passwd entry), reading a 0600 key written by the certificate job, and picking up a reissued certificate on `pg_reload_conf()`; record in rationale.md, satisfies **AC-17**
-21. The certificate provisioner (the `jobs` provisioner in the setup written `ca.json`, the `tls-certificate-provisioner` job), the `postgres` entry's optional `tls` slot and its two templates, the reload in the provision job, `api` with `verify-full`, satisfies **AC-17**
+21. The certificate provisioner (the `jobs` provisioner in the setup written `ca.json`, the `tls-certificate-provisioner` job), the `postgres` entry's optional `tls` slot and its two templates, the reload in the provision job, `api` with `verify-full`, and `postgres.tls: cert-issuer.certs` in `deploy/managed/graph.yaml` (milestone 4 ships it `null`, 0015 *Milestone 4 build findings*); replace the `tls-certificate` case of `tlsSlot` in `libs/render/bind.go`, and raise the job count in `scripts/smoke-managed.sh` to four (or derive it from the plan), satisfies **AC-17**
 
 ## Migration plan
 
@@ -220,6 +229,7 @@ Tracer Bullet: milestone 1 runs the whole v1 thread (catalog, planner, render, `
 - Revoking needs a marker in the provider (a role membership in Postgres), so a provisioner capability must define how it marks what it made.
 - 90 day certificates on unchanged providers expire if a platform runs over 90 days with no `up`; #25's upgrades and an expiry warning are the mitigation.
 - Existing test installs of the managed platform must be reinstalled at milestone 4.
+- Dev and CI render the platform with `-image-tag`, so the smoke job tests a folder whose platform image tags differ from the release render's; everything else in the two renders is the same, and the golden pins the rest (0015 *Milestone 4 build findings*).
 - Network isolation gets weaker in one way: today `web` and `ingress` sit only on `edge`, away from `postgres` and `deployer-docker`; with one `internal` network per stack every module can reach every other by address, and only binding tokens, database logins and TLS stand between them. Accepted for #3; per binding networks are a follow up.
 
 **Neutral**:
@@ -240,4 +250,5 @@ Tracer Bullet: milestone 1 runs the whole v1 thread (catalog, planner, render, `
 - [ ] The deployer's live state (0007, `deploy/state.go`) lists every container as a module row by its `instance` label, so provision and revoke jobs show as exited rows under their provisioner (`mp_jobs` is left out, task 10). Decide with task 16 (or in 0007) whether job containers become their own list or are left out too.
 - [ ] Decide whether a deployed graph may run a module as root (`hardening.user: root`, rendered `user: "0:0"`) or with `writable_root`; the guard accepts both today. 0022 kept this out of its scope.
 - [ ] #8 should weigh narrowing `egress` for consumers of an external instance to that server alone.
+- [ ] `sdk/CONTRACT.md` CALL-6 names the problem path `provides.<p>.caller_keys_dir`; the code (`sdk/sdk.go`) uses the capability name, so CALL-6 should say `provides.<capability>.caller_keys_dir` (0015 *Milestone 4 build findings*).
 - [ ] `/sync`: note the catalog layout in root `AGENTS.md` and `sdk/AGENTS.md`, and the platform render in `deploy/managed/AGENTS.md` once it exists.

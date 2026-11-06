@@ -1,6 +1,7 @@
 # 0012. Capabilities, versions and matching
 
 **Parent**: [0011. Capability and module contract](index.md)
+**Extended by**: [0018](../0017-external-capability-providers/0018-identity-providers-grants.md) (#10): identity slots may bind their own instance, external `uses`, `same_as` fields, `adopt` and `shared_resource`.
 
 ## Summary
 

@@ -2,6 +2,7 @@
 
 **Date**: 2026-10-30
 **Status**: In Progress
+**Extended by**: [0019](../0017-external-capability-providers/0019-s3-seaweedfs-aws.md) and [0021](../0017-external-capability-providers/0021-waiting-flag.md) (#10): `access_key_id` of an `s3` binding as a file, the `/readyz` body naming waiting slots. [0025](../0011-capability-module-contract/0025-slot-fields-config-delivery.md) (#3): a typed getter per slot with no `client`, checked at start; a graph config value writes an uncommented line into `config/<instance>.env`.
 
 ## Summary
 

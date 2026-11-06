@@ -1,6 +1,7 @@
 # 0014. Provisioners and their jobs
 
 **Parent**: [0011. Capability and module contract](index.md)
+**Later replaced in part by**: [0017. External capability providers](../0017-external-capability-providers/index.md) (#10): `yields.login`, the revoke job at `up`, the wait anchor `mp_jobs`, and the `postgresql-provisioner` scripts (now split with `postgresql-roles`, [0018](../0017-external-capability-providers/0018-identity-providers-grants.md)).
 
 ## Summary
 
