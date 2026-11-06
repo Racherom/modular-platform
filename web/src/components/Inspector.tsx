@@ -1,8 +1,9 @@
-import { Search, Unlink } from 'lucide-react'
-import type { Catalog, Graph, PlanResult, Problem } from '../api/client'
-import { bind, candidates, letPlannerChoose, unbind } from '../graph/edit'
+import { Search, Trash2, Unlink } from 'lucide-react'
+import { type ReactNode, useState } from 'react'
+import type { Catalog, Graph, Module, PlanResult, Problem } from '../api/client'
+import { bind, candidates, clearConfig, letPlannerChoose, setConfig, unbind } from '../graph/edit'
 import { markOf, problemInstance } from '../graph/flow'
-import { bindingText, boundProvide, isExternal, moduleOf, offersOf, slotsOf } from '../graph/model'
+import { bindingText, boundProvide, type ConfigField, isExternal, moduleOf, offersOf, settableConfig, slotsOf } from '../graph/model'
 import { useEditor } from '../lib/store'
 import type { GraphEdit } from './GraphView'
 import styles from './Inspector.module.css'
@@ -11,6 +12,7 @@ import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 import { Panel } from './ui/Panel'
 import { Select, type SelectOption } from './ui/Select'
+import { TextField } from './ui/TextField'
 
 interface Props {
   graph: Graph
@@ -47,7 +49,8 @@ function ModuleDetails({ instance, ...ctx }: Ctx & { instance: string }) {
   const m = ctx.graph.modules[instance]!
   const external = isExternal(ctx.graph, instance)
   const entry = moduleOf(ctx.graph, ctx.catalog, instance)
-  const problems = ctx.plan.problems.filter((p) => problemInstance(p) === instance)
+  const configPaths = external || !entry ? new Set<string>() : shownConfigPaths(ctx.graph, instance, entry)
+  const problems = ctx.plan.problems.filter((p) => problemInstance(p) === instance && !configPaths.has(p.path))
   const slots = Object.entries(external ? {} : slotsOf(entry)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
   const offers = offersOf(ctx.graph, ctx.catalog, instance)
   return (
@@ -85,6 +88,8 @@ function ModuleDetails({ instance, ...ctx }: Ctx & { instance: string }) {
           )}
         </section>
       )}
+
+      {!external && entry && <ConfigSection instance={instance} entry={entry} {...ctx} />}
 
       <section aria-labelledby={`provides-${instance}`} className={styles.section}>
         <h4 id={`provides-${instance}`} className={styles.heading}>
@@ -211,6 +216,181 @@ function SlotRow({
         </Button>
       </div>
     </div>
+  )
+}
+
+const configPath = (instance: string, value: string) => `modules.${instance}.config.${value}`
+
+/** The config paths the Config section shows: each value the graph may set, and each key it holds. */
+function shownConfigPaths(graph: Graph, instance: string, entry: Module): Set<string> {
+  const names = [...settableConfig(entry).map((f) => f.name), ...Object.keys(graph.modules[instance]?.config ?? {})]
+  return new Set(names.map((v) => configPath(instance, v)))
+}
+
+/**
+ * The config values of a module instance that the graph may set, each with its plan problems
+ * under it, and the keys the graph holds that the entry does not offer, each with a remove
+ * button (spec 0025, AC-29). Values are checked only by the plan.
+ */
+function ConfigSection({ instance, entry, ...ctx }: Ctx & { instance: string; entry: Module }) {
+  const set = ctx.graph.modules[instance]?.config ?? {}
+  const fields = settableConfig(entry)
+  const settable = new Set(fields.map((f) => f.name))
+  const unknown = Object.keys(set)
+    .filter((k) => !settable.has(k))
+    .sort()
+  const problemsAt = (v: string) => ctx.plan.problems.filter((p) => p.path === configPath(instance, v))
+  return (
+    <section aria-labelledby={`config-${instance}`} className={styles.section}>
+      <h4 id={`config-${instance}`} className={styles.heading}>
+        Config
+      </h4>
+      {fields.length === 0 ? (
+        <p className={styles.muted}>No values to set.</p>
+      ) : (
+        <ul className={styles.list}>
+          {fields.map((f) => (
+            <li key={f.name} className={styles.item}>
+              <ConfigRow
+                instance={instance}
+                field={f}
+                text={Object.hasOwn(set, f.name) ? set[f.name] : undefined}
+                problems={problemsAt(f.name)}
+                onEdit={ctx.onEdit}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      {unknown.length > 0 && (
+        <div className={styles.section}>
+          <h5 className={styles.heading}>Unknown values</h5>
+          <ul className={styles.list} aria-label="Unknown values">
+            {unknown.map((k) => (
+              <li key={k} className={styles.need}>
+                <span>
+                  <span className={styles.mono}>{k}</span> <span className={styles.muted}>{set[k]}</span>
+                </span>
+                {problemsAt(k).length > 0 && <ProblemItems problems={problemsAt(k)} />}
+                {ctx.onEdit && (
+                  <div>
+                    <Button variant="ghost" size="sm" onPress={() => ctx.onEdit?.((g) => clearConfig(g, instance, k))}>
+                      <Trash2 aria-hidden="true" />
+                      Remove <span className="visually-hidden">{k}</span>
+                    </Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
+}
+
+const UNSET = 'unset'
+const choiceOption = (v: string) => `value:${v}`
+
+/** One config value: a select for enum and bool, a text field otherwise (AC-29). */
+function ConfigRow({
+  instance,
+  field,
+  text,
+  problems,
+  onEdit,
+}: {
+  instance: string
+  field: ConfigField
+  /** The graph's text, or undefined when the graph leaves the value out. */
+  text: string | undefined
+  problems: Problem[]
+  onEdit: Props['onEdit']
+}) {
+  const { name, value: v } = field
+  const mark = markOf(problems)
+  const hint = `${v.description} ${v.default !== undefined ? `Default ${v.default}.` : v.optional ? 'No default, optional.' : 'No default.'}`
+  const write = (next: string | undefined) => {
+    if (!onEdit || next === text) return
+    onEdit((g) => (next === undefined ? clearConfig(g, instance, name) : setConfig(g, instance, name, next)))
+  }
+  const choices = v.type === 'enum' ? (v.values ?? []) : v.type === 'bool' ? ['true', 'false'] : undefined
+  let control: ReactNode
+  if (choices) {
+    const options: SelectOption[] = [{ id: UNSET, label: v.default !== undefined ? `Default (${v.default})` : 'Not set' }]
+    if (text !== undefined && !choices.includes(text))
+      options.push({ id: choiceOption(text), label: `${text} (invalid)`, isDisabled: true })
+    options.push(...choices.map((c) => ({ id: choiceOption(c), label: c })))
+    control = (
+      <Select
+        label={name}
+        size="sm"
+        options={options}
+        value={text === undefined ? UNSET : choiceOption(text)}
+        onChange={(id) => write(id === UNSET ? undefined : id.slice('value:'.length))}
+        isDisabled={!onEdit}
+        description={hint}
+      />
+    )
+  } else {
+    // a remount on a changed graph text drops the draft, so undo shows the restored value
+    control = (
+      <ConfigText
+        key={text === undefined ? 'unset' : `set:${text}`}
+        name={name}
+        text={text}
+        hint={hint}
+        placeholder={v.default}
+        onWrite={write}
+        isDisabled={!onEdit}
+        isInvalid={problems.some((p) => p.severity === 'error')}
+      />
+    )
+  }
+  return (
+    <div className={styles.need}>
+      <div className={styles.needHead}>
+        {mark && <ProblemMark mark={mark} />}
+        <Badge>{v.type}</Badge>
+        {v.optional && <Badge>optional</Badge>}
+      </div>
+      {control}
+      {problems.length > 0 && <ProblemItems problems={problems} />}
+    </div>
+  )
+}
+
+/** A text config value: typed into a draft, written on Enter or blur; clearing it removes the key. */
+function ConfigText({
+  name,
+  text,
+  hint,
+  placeholder,
+  onWrite,
+  isDisabled,
+  isInvalid,
+}: {
+  name: string
+  text: string | undefined
+  hint: string
+  placeholder: string | undefined
+  onWrite: (next: string | undefined) => void
+  isDisabled: boolean
+  isInvalid: boolean
+}) {
+  const [draft, setDraft] = useState(text ?? '')
+  return (
+    <TextField
+      label={name}
+      size="sm"
+      value={draft}
+      onChange={setDraft}
+      onCommit={(t) => onWrite(t === '' ? undefined : t)}
+      description={hint}
+      placeholder={placeholder}
+      isDisabled={isDisabled}
+      isInvalid={isInvalid}
+    />
   )
 }
 

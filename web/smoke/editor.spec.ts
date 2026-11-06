@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { expect, type Page, test } from '@playwright/test'
 
@@ -53,6 +54,30 @@ test('downloading the sample saves its zip (AC-3)', async ({ page }) => {
   const file = await download
   expect(file.suggestedFilename()).toBe('whoami-postgres.zip')
   await file.saveAs(process.env.SMOKE_ZIP ?? 'results/whoami-postgres.zip')
+})
+
+test('a config value set in the inspector reaches the downloaded zip (spec 0025, AC-29)', async ({ page }) => {
+  test.skip(base !== '', 'the zip is checked once, at the site root')
+  await page.goto(`${base}/`)
+  const graph = 'apiVersion: modular-platform/v1\nkind: Graph\nmodules:\n  planner:\n    module: planner\nname: config-smoke\n'
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles({ name: 'config-smoke.yaml', mimeType: 'application/yaml', buffer: Buffer.from(graph) })
+  await page.getByTestId('node-planner').click()
+
+  const field = page.getByRole('region', { name: 'Config' }).getByRole('textbox', { name: 'proxy-hops' })
+  const plan = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/planner/v1/plan')
+  await field.fill('2')
+  await field.press('Enter')
+  expect((await plan).postDataJSON().modules.planner.config).toEqual({ 'proxy-hops': '2' })
+  await expect(page.getByText('Checking the graph…')).toHaveCount(0)
+
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download zip' }).click()
+  const zip = await (await download).path()
+  const env = execFileSync('unzip', ['-p', zip, 'config/planner.env'], { encoding: 'utf8' })
+  expect(env).toContain('\nMP_PROXY_HOPS=2\n')
+  expect(execFileSync('unzip', ['-p', zip, 'graph.yaml'], { encoding: 'utf8' })).toContain('    config:\n      proxy-hops: "2"\n')
 })
 
 test('everything stays under the base path (AC-7, AC-12)', async ({ page }) => {

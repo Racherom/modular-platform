@@ -1,6 +1,6 @@
 // The v1 graph as the editor reads it (spec 0012): slots, provides and binding text. Pure, no
 // React. The planner is the one judge of a graph; these helpers only find what to draw.
-import type { Catalog, Graph, GraphBinding, Module, Slot } from '../api/client'
+import type { Catalog, ConfigValue, Graph, GraphBinding, Module, Slot } from '../api/client'
 
 /** One provide an instance offers: a module's provide or an external's. */
 export interface Offer {
@@ -84,4 +84,33 @@ export function boundProvide(
 export function textFor(graph: Graph, catalog: Catalog, provider: string, provide: string, capability: string): string {
   const serving = offersOf(graph, catalog, provider).filter((o) => serves(catalog, o.capability, capability))
   return serving.length === 1 ? provider : `${provider}.${provide}`
+}
+
+/** One config value of an entry that a graph may set, with its declaration. */
+export interface ConfigField {
+  name: string
+  value: ConfigValue
+}
+
+/**
+ * The config values of an entry that a graph may set (spec 0025, AC-27), sorted by name: not a
+ * secret, no default the render fills at install time ({uid}, {gid}, {install}/...), and not a
+ * host path a host_mounts source names. Whether a text is valid is the planner's to say.
+ */
+export function settableConfig(entry: Module | undefined): ConfigField[] {
+  if (!entry?.config) return []
+  const hostPaths = new Set<string>()
+  for (const h of entry.host_mounts ?? []) {
+    for (const ref of [h.host, h.path]) {
+      if (typeof ref === 'object' && ref.config) hostPaths.add(ref.config)
+    }
+  }
+  return Object.entries(entry.config)
+    .filter(([name, v]) => v.type !== 'secret' && !installToken(v.default) && !hostPaths.has(name))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([name, value]) => ({ name, value }))
+}
+
+function installToken(d: string | undefined): boolean {
+  return d === '{uid}' || d === '{gid}' || (d?.startsWith('{install}/') ?? false)
 }

@@ -61,6 +61,28 @@ export function candidates(graph: Graph, catalog: Catalog, consumer: string, slo
   return out
 }
 
+/**
+ * Sets config value `value` of an instance to `text` (spec 0025, AC-29). The text is the planner's
+ * to check; setting the same text again changes nothing. An empty text is kept: on an optional
+ * value it means empty on purpose.
+ */
+export function setConfig(graph: Graph, instance: string, value: string, text: string): Graph {
+  const m = instanceOf(graph, instance)
+  if (!m) return graph
+  if (m.config && Object.hasOwn(m.config, value) && m.config[value] === text) return graph
+  return { ...graph, modules: { ...graph.modules, [instance]: { ...m, config: { ...m.config, [value]: text } } } }
+}
+
+/** Removes config value `value` of an instance, and the config map once it is empty (AC-29). */
+export function clearConfig(graph: Graph, instance: string, value: string): Graph {
+  const m = instanceOf(graph, instance)
+  if (!m?.config || !Object.hasOwn(m.config, value)) return graph
+  const { [value]: _, ...config } = m.config
+  const { config: __, ...rest } = m
+  const next = Object.keys(config).length > 0 ? { ...rest, config } : rest
+  return { ...graph, modules: { ...graph.modules, [instance]: next } }
+}
+
 function setSlot(graph: Graph, consumer: string, slot: string, value: GraphBinding): Graph {
   const m = instanceOf(graph, consumer)!
   return { ...graph, modules: { ...graph.modules, [consumer]: { ...m, uses: { ...m.uses, [slot]: value } } } }

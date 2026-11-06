@@ -1,1 +1,24 @@
-# Placeholder for the paper platform of {{.Instance}}; spec 0011 build task 17 writes the real template.
+# The ingress of {{.Graph}} (spec 0015). Spec 0011 build task 17 adds the route of every backend;
+# this holds the certificate source and the site root (spec 0025, AC-30).
+
+# a real certificate: browsers may keep to HTTPS for this host
+(tls-acme) {
+	header Strict-Transport-Security "max-age=31536000"
+}
+
+(tls-internal) {
+	tls internal
+}
+
+{$INGRESS_DOMAIN} {
+	# MP_TLS_MODE is internal or acme, the caddy entry's tls-mode value
+	import tls-{$MP_TLS_MODE}
+{{- range .Clients.public}}{{if eq (index .Values "route") "/"}}
+
+	# the site root goes to the web binding; only the dev overlay sets MP_WEB_UPSTREAM, to the
+	# Vite dev server, so no catalog entry declares it
+	handle {
+		reverse_proxy {$MP_WEB_UPSTREAM:{{index .Values "upstream"}}}
+	}
+{{- end}}{{end}}
+}

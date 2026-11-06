@@ -14,6 +14,7 @@ import { Panel } from '../components/ui/Panel'
 import { SearchField } from '../components/ui/SearchField'
 import { Select } from '../components/ui/Select'
 import { StatusBadge, type StatusTone } from '../components/ui/StatusBadge'
+import { TextField } from '../components/ui/TextField'
 import { ThemeToggle } from '../components/ui/ThemeToggle'
 import { Toolbar } from '../components/ui/Toolbar'
 import tooltipStyles from '../components/ui/Tooltip.module.css'
@@ -313,6 +314,10 @@ export function Showcase() {
         <SearchDemo />
       </Section>
 
+      <Section title="TextField">
+        <TextDemo />
+      </Section>
+
       <Section title="Badge and StatusBadge">
         <div className={styles.matrix}>
           <span className={styles.rowLabel}>Badge</span>
@@ -443,6 +448,19 @@ function SearchDemo() {
       <SearchField label="Filter the catalog" value={empty} onChange={setEmpty} placeholder="Name or capability" />
       <SearchField label="Filter, with text" value={filled} onChange={setFilled} />
       <SearchField label="Filter, label hidden" hideLabel value="" onChange={() => undefined} placeholder="Label hidden" />
+    </div>
+  )
+}
+
+function TextDemo() {
+  const [empty, setEmpty] = useState('')
+  const [filled, setFilled] = useState('8')
+  return (
+    <div className={styles.columns}>
+      <TextField label="proxy-hops" value={empty} onChange={setEmpty} placeholder="1" description="Proxies in front. Default 1." />
+      <TextField label="level, small" size="sm" value={filled} onChange={setFilled} />
+      <TextField label="level, invalid" size="sm" value="12" onChange={() => undefined} isInvalid />
+      <TextField label="level, disabled" size="sm" value="3" onChange={() => undefined} isDisabled />
     </div>
   )
 }

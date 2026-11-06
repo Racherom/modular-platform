@@ -14,6 +14,7 @@ healthcheck:
 uses:
   ingress:
     capability: http-ingress
+    optional: true
     env:
       http_port: MP_PLATFORM_HTTP_PORT
       https_port: MP_PLATFORM_HTTPS_PORT

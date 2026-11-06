@@ -65,11 +65,6 @@ config:
     type: string
     optional: true
     description: Contact email for the ACME account.
-  web-upstream:
-    env: MP_WEB_UPSTREAM
-    type: url
-    optional: true
-    description: Upstream for the site root instead of the web module, like the Vite dev server.
 templates:
   - file: Caddyfile.tmpl
     path: /etc/caddy/Caddyfile
