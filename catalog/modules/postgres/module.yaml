@@ -19,7 +19,7 @@ provides:
       ca: {platform: ca}
 uses:
   tls:
-    # its certificate from a tls-certificate-provisioner (spec 0014, build task 21)
+    # its certificate from a tls-certificate-provisioner (spec 0014); unbound, it serves plain
     capability: tls-certificate
     optional: true
     files:

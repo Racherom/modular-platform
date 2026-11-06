@@ -14,8 +14,8 @@ const platformGraph = "../../deploy/managed/graph.yaml"
 
 // TestPlatformGraph covers spec 0015: the managed platform's eight modules are built in catalog
 // entries, and the platform graph plans ok with warnings host_access at ingress and
-// deployer-docker only, every binding where 0015 puts it (AC-16, AC-2). postgres.tls stays
-// unbound until the certificate provisioner lands (spec 0011, build task 21).
+// deployer-docker only, every binding where 0015 puts it, postgres.tls on the certificate
+// provisioner included (AC-16, AC-17, AC-2).
 func TestPlatformGraph(t *testing.T) {
 	t.Parallel()
 	catalog := testCatalog(t)
@@ -53,6 +53,7 @@ func TestPlatformGraph(t *testing.T) {
 		"deployer-docker.acme cert-issuer.acme", "deployer-docker.ingress ingress.public",
 		"ingress.trust cert-issuer.acme",
 		"planner.acme cert-issuer.acme", "planner.ingress ingress.public",
+		"postgres.tls cert-issuer.certs",
 		"web.public ingress.public",
 	}
 	if !slices.Equal(got, want) {

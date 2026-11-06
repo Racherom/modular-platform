@@ -307,8 +307,22 @@ new_secret() {
 	(set -C && printf '%s' "$value" > "$1")
 	echo "created $1"
 }
+{{- if .HasOutputs}}
+
+# A file a provision job writes is made empty, mode 0600, so Compose finds it at the first up; the job
+# fills it in place at every up.
+new_output() {
+	if [ -e "$1" ]; then
+		echo "kept    $1"
+		return 0
+	fi
+	mkdir -p "$(dirname "$1")"
+	(set -C && : > "$1")
+	echo "created $1"
+}
+{{- end}}
 {{range .Secrets}}
-new_secret {{.Path}}
+{{if .Output}}new_output{{else}}new_secret{{end}} {{.Path}}
 {{- end}}
 {{- if not (or .Secrets .Asked .AskedSecrets .Steps)}}
 echo "This stack needs no secret files."

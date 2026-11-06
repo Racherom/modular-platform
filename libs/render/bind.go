@@ -205,7 +205,10 @@ func (r *renderer) provisioned(e end) (map[string]value, error) {
 		case contract.YieldGenerate:
 			values[f] = value{file: r.perBinding(e.b, f)}
 		case contract.YieldOutput:
-			return nil, fmt.Errorf("%w: job outputs of %s", ErrNotRendered, e.offered)
+			if r.flavor == flavorManaged {
+				return nil, fmt.Errorf("%w: job outputs of %s on a deployed graph (spec 0011, follow up #31)", ErrNotRendered, e.offered)
+			}
+			values[f] = value{file: r.output(e.b, f)}
 		}
 	}
 	key := e.b.Provider + "." + e.b.Provide
@@ -361,8 +364,9 @@ func (r *renderer) usesFormat(fields map[string]value, format string) value {
 }
 
 // tlsSlot names the slot instance p takes its serving certificate from, if it is bound: the
-// implicit acme slot of a runtime: sdk instance, which then serves TLS on 8443 (spec 0013).
-// A tls-certificate slot comes with its provisioner's job outputs (spec 0014, build task 21).
+// implicit acme slot of a runtime: sdk instance, which then serves TLS on 8443, or a bound
+// tls-certificate slot, whose certificate and key an unchanged server reads from files (spec
+// 0013, 0014).
 func (r *renderer) tlsSlot(p string) (string, bool, error) {
 	gm := r.g.Modules[p]
 	if gm.External != nil || gm.Uses == nil {
@@ -376,7 +380,7 @@ func (r *renderer) tlsSlot(p string) (string, bool, error) {
 		}
 		switch slots[s].Capability {
 		case "tls-certificate":
-			return "", false, fmt.Errorf("%w: TLS of provider %s from a tls-certificate slot", ErrNotRendered, p)
+			return s, true, nil
 		case "acme":
 			if m.Runtime == contract.Sdk && s == contract.ACMESlot {
 				return s, true, nil
@@ -397,6 +401,18 @@ func (r *renderer) address(p string, q contract.Provide, k contract.Capability) 
 		return sdkTLSPort, "https"
 	}
 	return sdkPort, "http"
+}
+
+// output is the file a provision job writes for field f of binding b, secrets/<consumer>/
+// uses_<slot>_<field>: setup.sh makes it empty (mode 0600) so Compose finds it at the first up, and
+// the job fills it in place, so the consumer's mount sees every reissue (spec 0014).
+func (r *renderer) output(b contract.Binding, f string) string {
+	path := "secrets/" + b.Consumer + "/uses_" + b.Slot + "_" + f
+	if !r.declared[path] {
+		r.declared[path] = true
+		r.data.Secrets = append(r.data.Secrets, secret{Instance: b.Consumer, Path: path, PerBinding: true, Output: true})
+	}
+	return path
 }
 
 // perBinding is the file of a per binding generated field, created by setup.sh or the deployer:
@@ -460,12 +476,17 @@ func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues ma
 		setEnv(&svc, "MP_"+strings.ToUpper(f), named[f])
 	}
 	for _, f := range sortedKeys(y.Fields) {
-		if y.Fields[f].Kind != contract.YieldGenerate {
-			continue
+		switch y.Fields[f].Kind {
+		case contract.YieldGenerate:
+			target := "/run/secrets/bind/" + f
+			r.mountSecret(&svc, b.Consumer+"_uses_"+b.Slot+"_"+f, r.perBinding(b, f), target)
+			setEnv(&svc, "MP_"+strings.ToUpper(f)+"_FILE", target)
+		case contract.YieldOutput:
+			// a bind mount, not a secret: the job writes it
+			svc.Volumes = append(svc.Volumes, types.ServiceVolumeConfig{
+				Type: types.VolumeTypeBind, Source: "./" + r.output(b, f), Target: "/out/" + f,
+			})
 		}
-		target := "/run/secrets/bind/" + f
-		r.mountSecret(&svc, b.Consumer+"_uses_"+b.Slot+"_"+f, r.perBinding(b, f), target)
-		setEnv(&svc, "MP_"+strings.ToUpper(f)+"_FILE", target)
 	}
 	r.project.Services[name] = svc
 	r.jobs[name] = job{instance: b.Provider, module: e.module.Name, kind: jobProvision}

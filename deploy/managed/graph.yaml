@@ -42,7 +42,7 @@ modules:
   postgres:
     module: postgres
     uses:
-      tls: null
+      tls: cert-issuer.certs
   web:
     module: web
     uses:

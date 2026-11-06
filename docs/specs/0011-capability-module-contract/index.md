@@ -198,8 +198,8 @@ Tracer Bullet: milestone 1 runs the whole v1 thread (catalog, planner, render, `
 19. [x] The platform render flavor, `task managed:render` into `build/managed/`, the zip task and release on it, the overlays applied on top, `scripts/smoke-managed.sh` fed the new question order; delete the retired files once `smoke-managed` passes on the rendered zip in the same change, satisfies **AC-16**
 
 **Milestone 5: TLS for unchanged providers**
-20. Spike: `postgres` running as the setup user with its `data/` folder (initdb as a user with no passwd entry), reading a 0600 key written by the certificate job, and picking up a reissued certificate on `pg_reload_conf()`; record in rationale.md, satisfies **AC-17**
-21. The certificate provisioner (the `jobs` provisioner in the setup written `ca.json`, the `tls-certificate-provisioner` job), the `postgres` entry's optional `tls` slot and its two templates, the reload in the provision job, `api` with `verify-full`, and `postgres.tls: cert-issuer.certs` in `deploy/managed/graph.yaml` (milestone 4 ships it `null`, 0015 *Milestone 4 build findings*); replace the `tls-certificate` case of `tlsSlot` in `libs/render/bind.go`, and raise the job count in `scripts/smoke-managed.sh` to four (or derive it from the plan), satisfies **AC-17**
+20. [x] Spike: `postgres` running as the setup user with its `data/` folder (initdb as a user with no passwd entry), reading a 0600 key written by the certificate job, and picking up a reissued certificate on `pg_reload_conf()`; record in rationale.md, satisfies **AC-17**
+21. [x] The certificate provisioner (the `jobs` provisioner in the setup written `ca.json`, the `tls-certificate-provisioner` job), the `postgres` entry's optional `tls` slot and its two templates, the reload in the provision job, `api` with `verify-full`, and `postgres.tls: cert-issuer.certs` in `deploy/managed/graph.yaml` (milestone 4 ships it `null`, 0015 *Milestone 4 build findings*); replace the `tls-certificate` case of `tlsSlot` in `libs/render/bind.go`, and raise the job count in `scripts/smoke-managed.sh` to four (or derive it from the plan), satisfies **AC-17**
 
 ## Migration plan
 

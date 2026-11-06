@@ -243,6 +243,18 @@ new_secret() {
 	echo "created $1"
 }
 
+# A file a provision job writes is made empty, mode 0600, so Compose finds it at the first up; the job
+# fills it in place at every up.
+new_output() {
+	if [ -e "$1" ]; then
+		echo "kept    $1"
+		return 0
+	fi
+	mkdir -p "$(dirname "$1")"
+	(set -C && : > "$1")
+	echo "created $1"
+}
+
 new_secret secrets/authelia/jwt-secret
 new_secret secrets/authelia/oidc-hmac
 new_secret secrets/authelia/session-secret
@@ -253,6 +265,8 @@ new_secret secrets/api/uses_main-db_password
 new_secret secrets/api/uses_oidc_client_secret
 new_secret secrets/api/uses_planner_token
 new_secret secrets/authelia/uses_db_password
+new_output secrets/postgres/uses_tls_cert
+new_output secrets/postgres/uses_tls_key
 
 # Setup steps run once each, in the module's own image, as you and with no network. A step whose
 # files all exist is skipped; one that fails, or leaves a file missing, stops setup.sh.

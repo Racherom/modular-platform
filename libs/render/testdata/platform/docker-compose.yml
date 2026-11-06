@@ -31,6 +31,8 @@ secrets:
     file: ./secrets/api/caller-public-key
   api_uses_deploy-target_token:
     file: ./secrets/api/uses_deploy-target_token
+  api_uses_main-db_ca:
+    file: ./secrets/cert-issuer/root-ca
   api_uses_main-db_password:
     file: ./secrets/api/uses_main-db_password
   api_uses_oidc_client_secret:
@@ -53,8 +55,14 @@ secrets:
     file: ./secrets/authelia/storage-key
   authelia_users:
     file: ./secrets/authelia/users
+  authelia_uses_db_ca:
+    file: ./secrets/cert-issuer/root-ca
   authelia_uses_db_password:
     file: ./secrets/authelia/uses_db_password
+  cert-issuer_admin_certs_ca:
+    file: ./secrets/cert-issuer/root-ca
+  cert-issuer_admin_certs_password:
+    file: ./secrets/cert-issuer/jobs-password
   cert-issuer_ca-json:
     file: ./secrets/cert-issuer/ca-json
   cert-issuer_intermediate-ca:
@@ -77,8 +85,14 @@ secrets:
     file: ./secrets/cert-issuer/root-ca
   postgres_admin_server_admin_password:
     file: ./secrets/postgres/password
+  postgres_admin_server_ca:
+    file: ./secrets/cert-issuer/root-ca
   postgres_password:
     file: ./secrets/postgres/password
+  postgres_uses_tls_cert:
+    file: ./secrets/postgres/uses_tls_cert
+  postgres_uses_tls_key:
+    file: ./secrets/postgres/uses_tls_key
 services:
   api:
     cap_drop:
@@ -114,9 +128,10 @@ services:
       MP_BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
       MP_CA_FILE: /run/secrets/uses/acme/ca
       MP_CALLER_SIGNING_KEY_FILE: /run/secrets/api_caller-signing-key
+      MP_DATABASE_CA_FILE: /run/secrets/uses/main-db/ca
       MP_DATABASE_NAME: platform_api
       MP_DATABASE_PASSWORD_FILE: /run/secrets/uses/main-db/password
-      MP_DATABASE_SSLMODE: disable
+      MP_DATABASE_SSLMODE: verify-full
       MP_DATABASE_URL: postgres://postgres.modular-platform.internal:5432
       MP_DATABASE_USER: api
       MP_DEPLOY_TARGET_CA_FILE: /run/secrets/uses/deploy-target/ca
@@ -165,6 +180,8 @@ services:
       target: /run/secrets/uses/deploy-target/ca
     - source: api_uses_deploy-target_token
       target: /run/secrets/uses/deploy-target/token
+    - source: api_uses_main-db_ca
+      target: /run/secrets/uses/main-db/ca
     - source: api_uses_main-db_password
       target: /run/secrets/uses/main-db/password
     - source: api_uses_oidc_client_secret
@@ -240,6 +257,8 @@ services:
       target: /config/users.yml
     - source: authelia_signing-key
       target: /run/secrets/oidc-signing-key
+    - source: authelia_uses_db_ca
+      target: /run/secrets/db/ca.crt
     - source: authelia_uses_db_password
       target: /run/secrets/uses/db/password
     - source: api_uses_oidc_client_secret
@@ -315,6 +334,72 @@ services:
     volumes:
     - source: ./data/cert-issuer/db
       target: /home/step/db
+      type: bind
+  cert-issuer_provision_postgres_tls:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      if [ -s /out/cert ]; then
+        rc=0
+        step certificate needs-renewal /out/cert --expires-in 720h || rc=$$?
+        if [ "$$rc" -eq 1 ]; then
+          echo "certificate for $$MP_CONSUMER_HOST has more than 30 days left: kept"
+          exit 0
+        fi
+      fi
+      echo "certificate for $$MP_CONSUMER_HOST from $$MP_ADMIN_URL"
+      umask 077
+      export STEPPATH=/dev/shm/step
+      step ca certificate "$$MP_CONSUMER_HOST" /dev/shm/cert /dev/shm/key --force \
+        --ca-url "$$MP_ADMIN_URL" --root "$$MP_ADMIN_CA_FILE" \
+        --provisioner "$$MP_ADMIN_PROVISIONER" --provisioner-password-file "$$MP_ADMIN_PASSWORD_FILE" \
+        --not-after 2160h
+      cat /dev/shm/key > /out/key
+      cat /dev/shm/cert > /out/cert
+      rm -f /dev/shm/cert /dev/shm/key
+    depends_on:
+      cert-issuer:
+        condition: service_healthy
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_CA_FILE: /run/secrets/admin/ca
+      MP_ADMIN_PASSWORD_FILE: /run/secrets/admin/password
+      MP_ADMIN_PROVISIONER: jobs
+      MP_ADMIN_URL: https://cert-issuer.modular-platform.internal:9000
+      MP_CONSUMER: postgres
+      MP_CONSUMER_HOST: postgres.modular-platform.internal
+      MP_MARKER: mp_provisioned_52d73175
+      MP_SLOT: tls
+    image: smallstep/step-cli:0.30.2
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: cert-issuer
+      io.github.racherom.modular-platform.job: provision
+      io.github.racherom.modular-platform.module: cert-issuer
+    networks:
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: cert-issuer_admin_certs_ca
+      target: /run/secrets/admin/ca
+    - source: cert-issuer_admin_certs_password
+      target: /run/secrets/admin/password
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - source: ./secrets/postgres/uses_tls_cert
+      target: /out/cert
+      type: bind
+    - source: ./secrets/postgres/uses_tls_key
+      target: /out/key
       type: bind
   deployer-docker:
     cap_add:
@@ -543,6 +628,13 @@ services:
       target: /etc/postgresql/postgresql.conf
     - source: postgres_pg_hba.conf
       target: /etc/postgresql/pg_hba.conf
+    depends_on:
+      cert-issuer:
+        condition: service_healthy
+        required: true
+      cert-issuer_provision_postgres_tls:
+        condition: service_completed_successfully
+        required: true
     environment:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     healthcheck:
@@ -572,6 +664,10 @@ services:
     secrets:
     - source: postgres_password
       target: /run/secrets/postgres_password
+    - source: postgres_uses_tls_cert
+      target: /run/tls/server.crt
+    - source: postgres_uses_tls_key
+      target: /run/tls/server.key
     security_opt:
     - no-new-privileges:true
     tmpfs:
@@ -640,9 +736,10 @@ services:
     environment:
       MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
       MP_ADMIN_ADMIN_USER: postgres
+      MP_ADMIN_CA_FILE: /run/secrets/admin/ca
       MP_ADMIN_HOST: postgres.modular-platform.internal
       MP_ADMIN_PORT: "5432"
-      MP_ADMIN_SSLMODE: disable
+      MP_ADMIN_SSLMODE: verify-full
       MP_ADMIN_URL: postgres://postgres.modular-platform.internal:5432
       MP_CONSUMER: api
       MP_CONSUMER_HOST: api.modular-platform.internal
@@ -665,6 +762,8 @@ services:
     secrets:
     - source: postgres_admin_server_admin_password
       target: /run/secrets/admin/admin_password
+    - source: postgres_admin_server_ca
+      target: /run/secrets/admin/ca
     - source: api_uses_main-db_password
       target: /run/secrets/bind/password
     security_opt:
@@ -728,9 +827,10 @@ services:
     environment:
       MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
       MP_ADMIN_ADMIN_USER: postgres
+      MP_ADMIN_CA_FILE: /run/secrets/admin/ca
       MP_ADMIN_HOST: postgres.modular-platform.internal
       MP_ADMIN_PORT: "5432"
-      MP_ADMIN_SSLMODE: disable
+      MP_ADMIN_SSLMODE: verify-full
       MP_ADMIN_URL: postgres://postgres.modular-platform.internal:5432
       MP_CONSUMER: authelia
       MP_CONSUMER_HOST: authelia.modular-platform.internal
@@ -753,6 +853,8 @@ services:
     secrets:
     - source: postgres_admin_server_admin_password
       target: /run/secrets/admin/admin_password
+    - source: postgres_admin_server_ca
+      target: /run/secrets/admin/ca
     - source: authelia_uses_db_password
       target: /run/secrets/bind/password
     security_opt:
@@ -796,9 +898,10 @@ services:
     environment:
       MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
       MP_ADMIN_ADMIN_USER: postgres
+      MP_ADMIN_CA_FILE: /run/secrets/admin/ca
       MP_ADMIN_HOST: postgres.modular-platform.internal
       MP_ADMIN_PORT: "5432"
-      MP_ADMIN_SSLMODE: disable
+      MP_ADMIN_SSLMODE: verify-full
       MP_ADMIN_URL: postgres://postgres.modular-platform.internal:5432
       MP_KEEP: api,authelia
       MP_MARKER: mp_provisioned_52d73175
@@ -816,6 +919,8 @@ services:
     secrets:
     - source: postgres_admin_server_admin_password
       target: /run/secrets/admin/admin_password
+    - source: postgres_admin_server_ca
+      target: /run/secrets/admin/ca
     security_opt:
     - no-new-privileges:true
     user: ${MP_UID}:${MP_GID}

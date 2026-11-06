@@ -261,10 +261,30 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 - [ ] `task dev:managed`, stop it with Ctrl-C, run it again → the second run prints no password line, and `.env`, `secrets/`, `data/` and `deployments/` in `.dev/managed` are unchanged
 - [ ] In a scratch copy of `build/managed`, `printf 'x.test\n\na@b.co\nAdmin!\nlongenough12\n' | sh setup.sh`, then the same with user `admin` and the password `short11char` → each time the `users` step stops with its message and writes no `secrets/authelia/users`
 
-### Not yet covered
-
-- AC-17 (postgres TLS through the certificate provisioner): milestone 5. `postgres.tls` is `null` in `deploy/managed/graph.yaml` until task 21 binds it.
-
 ### Acceptance-criteria coverage
 
 - AC-16: the golden, planner, render, folder, zip and smoke steps, and the build findings steps · AC-18: the SDK caller steps and the `MP_CALLER_KEYS_DIR` check · AC-9, AC-11: the golden's refusal checks · AC-25: the platform `.env.example` step under build findings
+
+## Milestone 5: TLS for unchanged providers, tasks 20 and 21 (updated 2026-11-06)
+
+_AC-17 was not covered before this milestone. It changes two numbers in the milestone 4 steps above: the platform graph now has 15 bindings (`postgres.tls cert-issuer.certs` is the new one), and `smoke-managed` waits for four jobs (the certificate job of `postgres`, two provision jobs and the revoke job)._
+
+### Commands
+
+- [ ] `go test -race -count=1 ./libs/render/ -run 'TestPostgresCertificateJob|TestPostgresWithoutCertificate|TestManagedRefusesJobOutputs|TestRenderPlatformGolden'` → passes: the certificate job asks for `postgres.modular-platform.internal` and writes `/out/cert` and `/out/key` through bind mounts, `postgres` starts only after it, `api` connects with `verify-full` and the internal root, `setup.sh` makes the two files with `new_output`, `pg_hba.conf` has `hostssl` lines only; with `postgres.tls` unbound there is no job, `sslmode` is `disable` and `pg_hba.conf` has `host` lines; a deployed graph with a certificate output is `ErrNotRendered` → AC-17
+- [ ] `go test -race -count=1 ./libs/planner/ -run TestPlatformGraph` → passes with `postgres.tls cert-issuer.certs` among the 15 bindings → AC-17, AC-16
+- [ ] `task images IMAGE_TAG=ci && task smoke:managed` (run it in the background, with `</dev/null` and a timeout) → `smoke-managed passed`, which now includes its `tls_checks` step: a plain connection to `postgres` is refused, `api` and `authelia` show `ssl = t` in `pg_stat_ssl`, the server certificate has more than 60 days left, a certificate replaced by one with 10 days left is reissued by the next `up` with a new serial and `postgres` keeps its start time, and the log scan still finds no secret value (the `*_cert` file is skipped as public, `uses_tls_key` is checked) → AC-17, AC-16
+- [ ] `grep -n -B2 -A12 "new_output" libs/render/testdata/platform/setup.sh` → `new_output secrets/postgres/uses_tls_cert` and `..._key` are listed after the module secrets, the function makes an empty file with mode 0600 (`umask 077` at the top of the script) and keeps an existing one → AC-17
+- [ ] Unzip `build/managed` into a scratch folder, run `setup.sh`, `docker compose up -d --wait` twice → the second `up` prints `has more than 30 days left: kept` in `docker compose logs cert-issuer_provision_postgres_tls`, and `sha256sum secrets/postgres/uses_tls_cert` is the same before and after → AC-17
+
+### Value sourcing
+
+- [ ] `sslmode` of the provided `server` field (`{platform: tls, on: verify-full, off: disable}`): in `deploy/managed/graph.yaml` set `postgres.tls: null`, run `task managed:render` → `MP_DATABASE_SSLMODE: disable`, no `MP_DATABASE_CA_FILE`, no `cert-issuer_provision_postgres_tls`; set it back → `verify-full` on `api`, `MP_ADMIN_SSLMODE: verify-full` on the three database jobs → AC-17
+- [ ] `ca` of that field (`{platform: ca}`): with `tls` bound it is `./secrets/cert-issuer/root-ca` on `api` (`api_uses_main-db_ca`), `authelia` (`/run/secrets/db/ca.crt`) and the database jobs (`MP_ADMIN_CA_FILE`) → AC-17
+- [ ] the yielded `cert` and `key` (`output`): the files are `secrets/postgres/uses_tls_cert` and `uses_tls_key`, mounted read only on `postgres` at `/run/tls/server.crt` and `server.key`, and writable at `/out/cert` and `/out/key` on the job only → AC-17
+- [ ] the certificate's name (`MP_CONSUMER_HOST`): rename the instance `postgres` to `db` in a scratch copy of the graph and render → the job asks for `db.modular-platform.internal` and the files move to `secrets/db/` (setup.sh makes them empty, so the first `up` issues a new certificate) → AC-17
+- [ ] the issuing settings (`url`, `provisioner`, `password`, `ca` of `cert-issuer`'s `certs` provide): `https://cert-issuer.modular-platform.internal:9000`, `jobs`, `secrets/cert-issuer/jobs-password`, `secrets/cert-issuer/root-ca` in the job's env and mounts → AC-17
+
+### Acceptance-criteria coverage
+
+- AC-17: the render tests, the planner test, `smoke-managed`'s `tls_checks` (plain refused, TLS on `api` and `authelia`, 90 day certificate, reissue and reload without a restart, second `up` keeps the file), and the value sourcing steps · AC-16: the planner test and the smoke job with the derived job count

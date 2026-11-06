@@ -16,8 +16,26 @@ yields:
     ca: {admin: ca}
   job:
     image: smallstep/step-cli:0.30.2
-    # spec 0014, "Certificate provisioner"; the real script lands with build task 21
+    # Spec 0014, "Certificate provisioner". step certificate needs-renewal exits 0 when the
+    # certificate needs renewing, 1 when it does not and 2 or 255 on an error, so only 1 keeps it.
+    # /dev/shm is writable under read_only; the pair reaches /out only after the authority issued
+    # it, and is written in place so the consumer's mount sees it (a reload loads it).
     provision: |
-      if [ -s /out/cert ] && ! step certificate needs-renewal /out/cert --expires-in 720h; then exit 0; fi
-      echo "paper platform: issuing is build task 21" >&2
-      exit 1
+      if [ -s /out/cert ]; then
+        rc=0
+        step certificate needs-renewal /out/cert --expires-in 720h || rc=$?
+        if [ "$rc" -eq 1 ]; then
+          echo "certificate for $MP_CONSUMER_HOST has more than 30 days left: kept"
+          exit 0
+        fi
+      fi
+      echo "certificate for $MP_CONSUMER_HOST from $MP_ADMIN_URL"
+      umask 077
+      export STEPPATH=/dev/shm/step
+      step ca certificate "$MP_CONSUMER_HOST" /dev/shm/cert /dev/shm/key --force \
+        --ca-url "$MP_ADMIN_URL" --root "$MP_ADMIN_CA_FILE" \
+        --provisioner "$MP_ADMIN_PROVISIONER" --provisioner-password-file "$MP_ADMIN_PASSWORD_FILE" \
+        --not-after 2160h
+      cat /dev/shm/key > /out/key
+      cat /dev/shm/cert > /out/cert
+      rm -f /dev/shm/cert /dev/shm/key
