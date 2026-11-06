@@ -9,6 +9,9 @@ log:
 
 theme: auto
 
+# the root CA of the database's certificate
+certificates_directory: /run/secrets/db
+
 identity_validation:
   reset_password:
     # the key is read from AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE
@@ -36,6 +39,9 @@ storage:
     address: 'tcp://postgres.modular-platform.internal:5432'
     database: 'authelia'
     username: 'authelia'
+    tls:
+      server_name: 'postgres.modular-platform.internal'
+      skip_verify: false
 
 notifier:
   # no mail server; nothing is sent while password reset is off

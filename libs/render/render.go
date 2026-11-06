@@ -67,6 +67,7 @@ type secret struct {
 	Instance          string
 	Path              string // secrets/<instance>/<name>
 	PerBinding        bool   // generated for one binding, after the module secrets
+	Output            bool   // a file a provision job writes: setup.sh makes it empty (spec 0014)
 	Capability, Field string // placed only: the external provide's capability and field
 	Description       string // placed only: the field's description
 }
@@ -91,6 +92,11 @@ type templateData struct {
 	NeedDuration bool // setup.sh checks a duration
 	WaitAnchor   bool // the stack has the wait anchor mp_jobs (spec 0014, "Waiting")
 	Platform     bool // the platform flavor: setup.sh writes MP_DIR, .env.example holds the blocks
+}
+
+// HasOutputs reports whether setup.sh makes a file a provision job writes.
+func (d templateData) HasOutputs() bool {
+	return slices.ContainsFunc(d.Secrets, func(s secret) bool { return s.Output })
 }
 
 // Render renders the resolved graph of an ok plan. catalog must hold every module and
