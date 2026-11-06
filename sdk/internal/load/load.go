@@ -58,7 +58,6 @@ const (
 	EnvEnvFile          = "MP_ENV_FILE"
 	EnvACMEURL          = "MP_ACME_URL"
 	EnvCAFile           = "MP_CA_FILE"
-	EnvCallerKeyFile    = "MP_CALLER_KEY_FILE"
 	EnvCallerSigningKey = "MP_CALLER_SIGNING_KEY_FILE"
 )
 
@@ -121,6 +120,9 @@ type ProvideSpec struct {
 	Capability    string
 	Auth          string // manifest.AuthBindingToken or empty
 	ClientsDirEnv string
+	// CallerKeysDirEnv names the directory of the consumers' MP-Caller public keys, one file per
+	// consumer: the provide's env for its caller_key field (spec 0015); empty when it has none.
+	CallerKeysDirEnv string
 }
 
 // Problem is one line of a refused start: config: <value> (<ENV>): <code>: <message>.
@@ -177,11 +179,7 @@ type Bootstrap struct {
 	Domain            string // empty in plain mode without a host name suffix
 	ACMEURL, CAFile   string
 	Roots             *x509.CertPool // the certificates in CAFile; nil in plain mode
-	CallerKeyFile     string
 	CallerSigningFile string
-	// CallerKeys are the keys in CallerKeyFile; empty when it is unset. Load reads them, and
-	// ReadBootstrap does not.
-	CallerKeys caller.Keys
 	// CallerSigner mints with the key in CallerSigningFile as Instance; nil when it is unset. Load
 	// reads it, and ReadBootstrap does not.
 	CallerSigner *caller.Signer
@@ -245,13 +243,14 @@ const (
 // Result is a finished load. Values holds the parsed value of every set value, by name (a Secret
 // for a secret); Sources the source label of every value.
 type Result struct {
-	Bootstrap  Bootstrap
-	Values     map[string]any
-	Sources    map[string]string
-	Bindings   []Binding
-	ClientsDir string // empty when unset
-	Warnings   []Warning
-	Problems   []Problem // sorted; Load refuses the start when any is present
+	Bootstrap     Bootstrap
+	Values        map[string]any
+	Sources       map[string]string
+	Bindings      []Binding
+	ClientsDir    string // empty when unset
+	CallerKeysDir string // empty when unset
+	Warnings      []Warning
+	Problems      []Problem // sorted; Load refuses the start when any is present
 }
 
 // level is one source of env style keys: the process env or one env file.
@@ -283,6 +282,7 @@ func Load(ctx context.Context, in Input) Result {
 		l.binding(b)
 	}
 	l.clientsDir()
+	l.callerKeysDir()
 	SortProblems(l.res.Problems)
 	return l.res
 }
@@ -333,7 +333,7 @@ func (l *loader) bootstrap() {
 			l.problem(EnvDomain, EnvDomain, CodeTLSConfig, "TLS mode needs the host name's domain; set %s, like <graph>.internal", EnvDomain)
 		}
 	}
-	b.CallerKeyFile, b.CallerSigningFile = l.env(EnvCallerKeyFile), l.env(EnvCallerSigningKey)
+	b.CallerSigningFile = l.env(EnvCallerSigningKey)
 
 	l.levels = append(l.levels, level{lookup: func(key string) (string, int, bool) {
 		v, ok := l.in.LookupEnv(key)
@@ -341,19 +341,11 @@ func (l *loader) bootstrap() {
 	}})
 }
 
-// callerKeys reads the MP-Caller key files: the public keys a token may be signed with, and the
-// key this module signs with. An unreadable file or one that holds no such key is invalid.
+// callerKeys reads the key this module signs MP-Caller tokens with. An unreadable file or one
+// that holds no such key is invalid. The keys a token is checked against are one file per
+// consumer in the caller keys directory, which the sdk reads beside the clients directory.
 func (l *loader) callerKeys() {
 	b := &l.res.Bootstrap
-	if path := b.CallerKeyFile; path != "" {
-		data, err := l.in.ReadFile(path)
-		if err == nil {
-			b.CallerKeys, err = caller.ParseKeys(data)
-		}
-		if err != nil {
-			l.problem(EnvCallerKeyFile, EnvCallerKeyFile, CodeInvalid, "the key file %s: %s", path, keyFileReason(err))
-		}
-	}
 	if path := b.CallerSigningFile; path != "" {
 		data, err := l.in.ReadFile(path)
 		var key ed25519.PrivateKey
@@ -460,6 +452,9 @@ func (l *loader) knownKeys() map[string]bool {
 	}
 	if p := l.in.Provides; p != nil && p.ClientsDirEnv != "" {
 		known[p.ClientsDirEnv] = true
+	}
+	if p := l.in.Provides; p != nil && p.CallerKeysDirEnv != "" {
+		known[p.CallerKeysDirEnv] = true
 	}
 	return known
 }
@@ -644,6 +639,14 @@ func (l *loader) clientsDir() {
 		return
 	}
 	l.res.ClientsDir = l.key(p.ClientsDirEnv)
+}
+
+// callerKeysDir finds the directory of the consumers' MP-Caller public keys, when the provide
+// maps its caller_key field.
+func (l *loader) callerKeysDir() {
+	if p := l.in.Provides; p != nil && p.CallerKeysDirEnv != "" {
+		l.res.CallerKeysDir = l.key(p.CallerKeysDirEnv)
+	}
 }
 
 // urlSchemes are the schemes a binding url may have, per client kind.

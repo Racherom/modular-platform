@@ -17,6 +17,18 @@ set_id() {
 }
 set_id MP_UID "$(id -u)"
 set_id MP_GID "$(id -g)"
+{{- if .Platform}}
+
+# The install folder, as an absolute path: the platform mounts its deployments folder at the same
+# path inside the deployer, so the host's Docker finds every file a deployment names.
+case $(pwd) in
+*"'"* | *\\* | *'$'*)
+	echo "setup.sh: the path of this folder holds ', \\ or \$, which .env cannot keep; move the folder" >&2
+	exit 1
+	;;
+esac
+set_id MP_DIR "'$(pwd)'"
+{{- end}}
 {{- if .NeedEnvGet}}
 
 # env_get NAME prints the value of NAME in .env, without the quotes setup.sh writes around it.
@@ -405,4 +417,10 @@ if [ "$missing" -ne 0 ]; then
 	echo "setup.sh: place the files above, then run it again" >&2
 	exit 1
 fi
+{{- end}}
+{{- if .Platform}}
+
+echo
+echo "Done. Start the platform with: docker compose up -d --wait"
+echo "Then open the origin you gave and sign in as the admin."
 {{- end}}

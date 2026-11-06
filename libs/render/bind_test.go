@@ -32,7 +32,7 @@ func renderServices(t *testing.T, g contract.Graph, catalog contract.Catalog) ma
 	if !plan.Ok {
 		t.Fatalf("plan: %+v", plan.Problems)
 	}
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}

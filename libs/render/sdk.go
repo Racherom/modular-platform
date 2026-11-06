@@ -66,6 +66,8 @@ func envFile(i string, m contract.Module, set *contract.InstanceConfig) []byte {
 			line = v.Env + "=" + text
 		case v.Default == "{uid}" || v.Default == "{gid}":
 			line = fmt.Sprintf("# set to the id of the user setup.sh ran as (%s)", strings.Trim(v.Default, "{}"))
+		case strings.HasPrefix(v.Default, installPrefix):
+			line = fmt.Sprintf("# set to %s in the folder setup.sh is in", strings.TrimPrefix(v.Default, installPrefix))
 		case v.Default != "":
 			line = fmt.Sprintf("# %s=%s", v.Env, v.Default)
 		case v.Optional:

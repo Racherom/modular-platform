@@ -1,4 +1,5 @@
-# The smoke-managed CI job: the platform's own images as task images built them, tagged ci.
+# The smoke-managed CI job: the platform's own images as task images built them, tagged ci,
+# applied over the rendered build/managed/docker-compose.yml.
 services:
   web:
     image: ghcr.io/racherom/modular-platform/web:ci

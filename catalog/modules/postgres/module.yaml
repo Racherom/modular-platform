@@ -1,8 +1,9 @@
 apiVersion: modular-platform/v1
 kind: Module
 name: postgres
-description: PostgreSQL database server, official image; creates a database and login per consumer.
-image: postgres:18.6
+description: PostgreSQL server, official image; creates a database and login per consumer, with TLS when its tls slot is bound.
+image: postgres:18.6-alpine3.24
+command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
 provides:
   server:
     capability: postgresql-provisioner
@@ -14,12 +15,25 @@ provides:
       url: {platform: url}
       admin_user: {value: postgres}
       admin_password: {secret: password}
-      # TLS arrives with the optional tls slot (spec 0014, build task 21)
-      sslmode: {value: disable}
+      sslmode: {platform: tls, "on": verify-full, "off": disable}
+      ca: {platform: ca}
+uses:
+  tls:
+    # its certificate from a tls-certificate-provisioner (spec 0014, build task 21)
+    capability: tls-certificate
+    optional: true
+    files:
+      cert: /run/tls/server.crt
+      key: /run/tls/server.key
 secrets:
   - name: password
     env: POSTGRES_PASSWORD_FILE
     description: Superuser password.
+templates:
+  - file: postgresql.conf.tmpl
+    path: /etc/postgresql/postgresql.conf
+  - file: pg_hba.conf.tmpl
+    path: /etc/postgresql/pg_hba.conf
 volumes:
   data: /var/lib/postgresql
 hardening:

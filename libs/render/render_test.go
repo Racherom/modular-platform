@@ -5,12 +5,14 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 
@@ -36,6 +38,26 @@ func loadCatalog(t *testing.T, dirs ...string) contract.Catalog {
 	c, _ := loadCatalogTemplates(t, dirs...)
 	return c
 }
+
+// builtinTemplates returns the templates of the built in catalog, loaded once: a module without
+// templates never reads them, so every test may pass them.
+func builtinTemplates(t testing.TB) contract.Templates {
+	t.Helper()
+	tmpls, err := builtinTemplatesOnce()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tmpls
+}
+
+var builtinTemplatesOnce = sync.OnceValues(func() (contract.Templates, error) {
+	fsys := os.DirFS("../../catalog")
+	c, problems := contract.LoadCatalog(fsys)
+	if len(problems) > 0 {
+		return contract.Templates{}, fmt.Errorf("built in catalog: %v", problems)
+	}
+	return contract.LoadTemplates(fsys, c)
+})
 
 // loadCatalogTemplates is loadCatalog plus the templates of its modules.
 func loadCatalogTemplates(t *testing.T, dirs ...string) (contract.Catalog, contract.Templates) {
@@ -101,7 +123,7 @@ func samplePlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
 // Run with -update after an intended change.
 func TestRenderSampleGolden(t *testing.T) {
 	plan, catalog := samplePlan(t)
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +142,7 @@ func bindingsPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
 // TestRenderBindingsGolden pins every rendered file of the bindings case (AC-8, AC-12, AC-15).
 func TestRenderBindingsGolden(t *testing.T) {
 	plan, catalog := bindingsPlan(t)
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +161,7 @@ func installPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
 // TestRenderInstallGolden pins every rendered file of the install case (AC-10).
 func TestRenderInstallGolden(t *testing.T) {
 	plan, catalog := installPlan(t)
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +203,7 @@ func TestRenderTemplatesGolden(t *testing.T) {
 		t.Error("two renders of one graph differ")
 	}
 
-	if _, err := render.Render(plan, catalog, contract.Templates{}); !errors.Is(err, contract.ErrNoTemplate) {
+	if _, err := render.Render(plan, catalog, builtinTemplates(t)); !errors.Is(err, contract.ErrNoTemplate) {
 		t.Errorf("render without its templates: err = %v, want ErrNoTemplate", err)
 	}
 }
@@ -199,7 +221,7 @@ func hostAccessPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
 // AC-11, AC-12): ports, bind mounts and egress for the instance that publishes.
 func TestRenderHostAccessGolden(t *testing.T) {
 	plan, catalog := hostAccessPlan(t)
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +254,7 @@ func TestRenderManagedRefuses(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			plan, catalog := c.plan(t)
-			_, err := render.Managed(plan, catalog, contract.Templates{}, "d1")
+			_, err := render.Managed(plan, catalog, builtinTemplates(t), "d1")
 			var refused *render.RefusedError
 			if !errors.As(err, &refused) {
 				t.Fatalf("err = %v, want a *RefusedError", err)
@@ -256,7 +278,7 @@ func TestRenderManagedRefuses(t *testing.T) {
 func TestRenderManagedRefusesLinuxCap(t *testing.T) {
 	t.Parallel()
 	plan, catalog := linuxCapPlan(t)
-	_, err := render.Managed(plan, catalog, contract.Templates{}, "d1")
+	_, err := render.Managed(plan, catalog, builtinTemplates(t), "d1")
 	var refused *render.RefusedError
 	if !errors.As(err, &refused) || len(refused.Problems) != 1 {
 		t.Fatalf("err = %v, want one refusal", err)
@@ -265,7 +287,7 @@ func TestRenderManagedRefusesLinuxCap(t *testing.T) {
 	if got := refused.Problems[0].Message; got != want {
 		t.Errorf("message = %q, want %q", got, want)
 	}
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +351,7 @@ func checkGolden(t *testing.T, dir string, out render.Output) {
 func TestRenderSampleRules(t *testing.T) {
 	t.Parallel()
 	plan, catalog := samplePlan(t)
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +425,7 @@ func TestZipDeterministic(t *testing.T) {
 	plan, catalog := samplePlan(t)
 	var zips [2]bytes.Buffer
 	for i := range zips {
-		out, err := render.Render(plan, catalog, contract.Templates{})
+		out, err := render.Render(plan, catalog, builtinTemplates(t))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -432,7 +454,7 @@ func TestZipDeterministic(t *testing.T) {
 			t.Errorf("%s holds a password value", f.Name)
 		}
 	}
-	if got := strings.Join(names, " "); got != ".env README.md docker-compose.yml graph.yaml setup.sh" {
+	if got := strings.Join(names, " "); got != ".env README.md config/postgres/pg_hba.conf config/postgres/postgresql.conf docker-compose.yml graph.yaml setup.sh" {
 		t.Errorf("zip entries = %s", got)
 	}
 }
@@ -449,7 +471,7 @@ func TestSecretComposeNamesNeverCollide(t *testing.T) {
 		Name:    "collide",
 		Modules: map[string]contract.GraphModule{"a-b": {Module: "one"}, "a": {Module: "two"}},
 	}}
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +502,7 @@ func TestSecretComposeNamesNeverCollide(t *testing.T) {
 
 func TestRenderRefusesErrors(t *testing.T) {
 	t.Parallel()
-	_, err := render.Render(contract.PlanResult{Ok: false}, contract.Catalog{}, contract.Templates{})
+	_, err := render.Render(contract.PlanResult{Ok: false}, contract.Catalog{}, builtinTemplates(t))
 	if !errors.Is(err, render.ErrPlanHasErrors) {
 		t.Errorf("err = %v, want ErrPlanHasErrors", err)
 	}

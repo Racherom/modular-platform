@@ -8,10 +8,10 @@
       "package-name": "modular-platform",
       "extra-files": [
         "deploy/online/versions.env",
-        "catalog/planner.yaml",
-        "deploy/managed/compose.yaml",
-        "catalog/deployer-docker.yaml",
-        "catalog/api.yaml",
+        "catalog/modules/planner/module.yaml",
+        "catalog/modules/deployer-docker/module.yaml",
+        "catalog/modules/api/module.yaml",
+        "catalog/modules/web/module.yaml",
         {
           "type": "json",
           "path": "web/package.json",

@@ -79,10 +79,7 @@ func (r *renderer) templateData(i string, m contract.Module, bound map[string]co
 		Clients:  map[string][]contract.TemplateClient{},
 	}
 	for name, q := range m.Provides {
-		port := q.Port
-		if m.Runtime == contract.Sdk {
-			port = sdkPort
-		}
+		port, _ := r.address(i, q, r.caps[q.Capability])
 		d.Provides[name] = contract.TemplateProvide{Port: port}
 		d.Clients[name] = append([]contract.TemplateClient{}, clients[name]...)
 	}
@@ -103,7 +100,7 @@ func (r *renderer) templateData(i string, m contract.Module, bound map[string]co
 func (r *renderer) templateSlot(b contract.Binding) contract.TemplateSlot {
 	values := map[string]string{}
 	for f, v := range r.bound[b.Consumer][b.Slot] {
-		if v.file == "" && !v.raw { // a file is a secret; a Compose variable is known only at run time
+		if v.isText() {
 			values[f] = v.text
 		}
 	}
@@ -114,11 +111,9 @@ func (r *renderer) templateSlot(b contract.Binding) contract.TemplateSlot {
 		s.Port, _ = strconv.Atoi(values["port"])
 		return s
 	}
-	s.Host, s.Port = r.host(b.Provider), e.provide.Port
-	scheme := r.caps[e.offered].Scheme
-	if e.module.Runtime == contract.Sdk {
-		s.Port, scheme = sdkPort, "http"
-	}
+	s.Host = r.host(b.Provider)
+	var scheme string
+	s.Port, scheme = r.address(b.Provider, e.provide, r.caps[e.offered])
 	if scheme != "" {
 		s.URL = scheme + "://" + s.Host + ":" + strconv.Itoa(s.Port)
 	}
@@ -148,7 +143,7 @@ func (r *renderer) clientValues(b contract.Binding) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if set && v.file == "" && !v.raw {
+		if set && v.isText() {
 			out[f] = v.text
 		}
 	}

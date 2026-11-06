@@ -44,10 +44,11 @@ func newKey(t *testing.T) ed25519.PrivateKey {
 	return key
 }
 
-// keys returns the Keys of an MP_CALLER_KEY_FILE holding the public keys of keys.
+// keys returns the Keys of the consumer api: one file of a caller keys directory holding the
+// public keys of keys.
 func keys(t *testing.T, keys ...ed25519.PrivateKey) caller.Keys {
 	t.Helper()
-	k, err := caller.ParseKeys(publicPEM(t, keys...))
+	k, err := caller.KeysOf("api", publicPEM(t, keys...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +117,7 @@ func TestMintVerify(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := caller.Verify(keys(t, newKey(t), key), token, self, now)
+	got, err := caller.Verify(keys(t, newKey(t), key), "api", token, self, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +149,7 @@ func TestMintVerify(t *testing.T) {
 	if again.Jti == claims.Jti {
 		t.Error("two tokens share a jti")
 	}
-	if c, err := caller.Verify(keys(t, key), other, self, now); err != nil || c.Groups == nil || len(c.Groups) != 0 {
+	if c, err := caller.Verify(keys(t, key), "api", other, self, now); err != nil || c.Groups == nil || len(c.Groups) != 0 {
 		t.Errorf("no groups: %+v, %v; want an empty list", c, err)
 	}
 }
@@ -233,10 +234,11 @@ func TestVerifyRefusals(t *testing.T) {
 		"a tampered payload":          {token: tampered(), at: now},
 		"not a token":                 {token: "not.a.token", at: now},
 		"a JWS in JSON serialization": {token: `{"payload":"e30","signatures":[]}`, at: now},
+		"iss is another module":       {token: edsa(with(good(), "iss", "web")), at: now},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			c, err := caller.Verify(ks, tc.token, self, tc.at)
+			c, err := caller.Verify(ks, "api", tc.token, self, tc.at)
 			switch {
 			case tc.ok && err != nil:
 				t.Errorf("refused: %v", err)
@@ -254,7 +256,7 @@ func TestVerifyRefusals(t *testing.T) {
 func TestKeyFiles(t *testing.T) {
 	t.Parallel()
 	a, b := newKey(t), newKey(t)
-	if k, err := caller.ParseKeys(publicPEM(t, a, b)); err != nil || k.Len() != 2 {
+	if k, err := caller.KeysOf("api", publicPEM(t, a, b)); err != nil || k.Len() != 1 {
 		t.Errorf("two keys: %d, %v", k.Len(), err)
 	}
 	ec, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -269,8 +271,8 @@ func TestKeyFiles(t *testing.T) {
 		"a broken block":   pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: []byte("x")}),
 		"one good, one EC": append(publicPEM(t, a), pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: ecPub})...),
 	} {
-		if _, err := caller.ParseKeys(data); err == nil {
-			t.Errorf("ParseKeys(%s) passed", name)
+		if _, err := caller.KeysOf("api", data); err == nil {
+			t.Errorf("KeysOf(%s) passed", name)
 		}
 	}
 
@@ -302,7 +304,7 @@ func TestSignerHidesKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c, err := caller.Verify(keys(t, key), token, self, now); err != nil || c.Issuer != "api" {
+	if c, err := caller.Verify(keys(t, key), "api", token, self, now); err != nil || c.Issuer != "api" {
 		t.Errorf("Verify = %+v, %v; want iss api", c, err)
 	}
 	var logs bytes.Buffer
@@ -437,5 +439,77 @@ func TestMiddlewareWithoutKeys(t *testing.T) {
 	}
 	if n := strings.Count(logs.String(), "caller token ignored"); n != 1 {
 		t.Errorf("%d ignored lines, want 1\n%s", n, logs)
+	}
+}
+
+// TestLoadKeys covers the caller keys directory (spec 0015): one file per consumer, the entry
+// rules of the token clients directory, and a token checked only against its own consumer's keys
+// (AC-18).
+func TestLoadKeys(t *testing.T) {
+	t.Parallel()
+	apiKey, webKey := newKey(t), newKey(t)
+	dir := t.TempDir()
+	write := func(name string, data []byte) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("api", publicPEM(t, apiKey))
+	write("web", publicPEM(t, webKey))
+	write(".hidden", []byte("skipped"))
+	if err := os.Mkdir(filepath.Join(dir, "folder"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	write("Not_A_Name", publicPEM(t, apiKey))
+	write("broken", []byte("not PEM"))
+
+	ks, errs := caller.LoadKeys(dir)
+	if ks.Len() != 2 || len(errs) != 3 {
+		t.Fatalf("LoadKeys = %d consumers, errors %v; want 2 consumers and 3 errors", ks.Len(), errs)
+	}
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "not PEM") {
+			t.Errorf("an error shows a file's content: %v", err)
+		}
+	}
+	token, err := caller.Mint(webKey, caller.Caller{Issuer: "api", User: "ada"}, self, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := caller.Verify(ks, "api", token, self, now); !errors.Is(err, caller.ErrInvalidToken) {
+		t.Errorf("api's token signed with web's key: %v, want ErrInvalidToken", err)
+	}
+	if _, err := caller.Verify(ks, "web", token, self, now); !errors.Is(err, caller.ErrInvalidToken) {
+		t.Errorf("a token whose iss is api, sent by web: %v, want ErrInvalidToken", err)
+	}
+	own, _ := caller.Mint(apiKey, caller.Caller{Issuer: "api", User: "ada"}, self, now)
+	if c, err := caller.Verify(ks, "api", own, self, now); err != nil || c.User != "ada" {
+		t.Errorf("api's own token = %+v, %v", c, err)
+	}
+	if _, errs := caller.LoadKeys(filepath.Join(dir, "missing")); len(errs) != 1 {
+		t.Errorf("a missing directory: %v, want one error", errs)
+	}
+}
+
+// TestGenerateKeyPair covers the pair api's setup step writes: each half parses as the other side
+// reads it, and a token minted with one verifies with the other.
+func TestGenerateKeyPair(t *testing.T) {
+	t.Parallel()
+	signing, public, err := caller.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := caller.ParseSigningKey(signing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ks, err := caller.KeysOf("api", public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _ := caller.Mint(key, caller.Caller{Issuer: "api", User: "ada"}, self, now)
+	if _, err := caller.Verify(ks, "api", token, self, now); err != nil {
+		t.Errorf("Verify: %v", err)
 	}
 }

@@ -1,0 +1,50 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  api:
+    module: api
+    uses:
+      acme: cert-issuer.acme
+      deploy-target: deployer-docker
+      main-db:
+        database: platform_api
+        provider: postgres
+        user: api
+      oidc: authelia.oidc
+      planner: planner
+      public: ingress
+  authelia:
+    module: authelia
+    uses:
+      db:
+        database: authelia
+        provider: postgres
+        user: authelia
+      public: ingress
+  cert-issuer:
+    module: cert-issuer
+  deployer-docker:
+    module: deployer-docker
+    uses:
+      acme: cert-issuer.acme
+      ingress: ingress
+  ingress:
+    module: caddy
+    uses:
+      trust: cert-issuer.acme
+  planner:
+    config:
+      planner-mode: "internal"
+    module: planner
+    uses:
+      acme: cert-issuer.acme
+      ingress: ingress
+  postgres:
+    module: postgres
+    uses:
+      tls: null
+  web:
+    module: web
+    uses:
+      public: ingress
+name: modular-platform

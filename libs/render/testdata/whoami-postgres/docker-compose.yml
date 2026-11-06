@@ -1,3 +1,8 @@
+configs:
+  postgres_pg_hba.conf:
+    file: ./config/postgres/pg_hba.conf
+  postgres_postgresql.conf:
+    file: ./config/postgres/postgresql.conf
 name: whoami-postgres
 networks:
   internal:
@@ -30,6 +35,15 @@ services:
   postgres:
     cap_drop:
     - ALL
+    command:
+    - postgres
+    - -c
+    - config_file=/etc/postgresql/postgresql.conf
+    configs:
+    - source: postgres_postgresql.conf
+      target: /etc/postgresql/postgresql.conf
+    - source: postgres_pg_hba.conf
+      target: /etc/postgresql/pg_hba.conf
     environment:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     healthcheck:
@@ -44,7 +58,7 @@ services:
       - -U
       - postgres
       timeout: 3s
-    image: postgres:18.6
+    image: postgres:18.6-alpine3.24
     networks:
       internal:
         aliases:

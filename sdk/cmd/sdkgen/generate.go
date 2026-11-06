@@ -341,6 +341,9 @@ func (g *generator) declaration(b *bytes.Buffer, names, caps []string, hasUses b
 		if dir := p.Env["token"]; dir != "" {
 			fields = append(fields, "ClientsDirEnv: "+strconv.Quote(dir))
 		}
+		if dir := p.Env["caller_key"]; dir != "" {
+			fields = append(fields, "CallerKeysDirEnv: "+strconv.Quote(dir))
+		}
 		fmt.Fprintf(b, "\tProvides: &sdk.ProvideSpec{%s},\n", strings.Join(fields, ", "))
 	}
 	v, cfg, bnd, uses := "_", "Config{}", "_", "Uses{}"
@@ -419,7 +422,9 @@ func valueSpec(name string, v manifest.Value) string {
 		"Env: " + strconv.Quote(v.Env),
 		"Type: " + strconv.Quote(v.Type),
 	}
-	if v.Default != nil {
+	// an install token ({uid}, {gid}, {install}/...) is filled by the render as the value's env,
+	// so the module never sees the token itself: unset, the value is missing (spec 0013)
+	if v.Default != nil && !manifest.InstallToken(*v.Default) {
 		fields = append(fields, "Default: "+strconv.Quote(*v.Default))
 	}
 	if v.Optional {

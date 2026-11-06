@@ -77,6 +77,9 @@ func TestCleanBody(t *testing.T) {
 		"apply":                   {"/api/v1/deployments/s/apply", `{"graph":` + graph + `,"planDigest":"x","placed":[]}`, ""},
 		"apply, bad graph":        {"/api/v1/deployments/s/apply", `{"graph":{"kind":"Graph"},"planDigest":"x"}`, "unsupported_version"},
 		"two objects":             {"/api/v1/deployments/s/apply", `{} {}`, "invalid_request"},
+		// remove carries no graph, so its keys are not the graph envelope's
+		"remove":           {"/api/v1/deployments/s/remove", `{"deleteData":false}`, ""},
+		"remove with data": {"/api/v1/deployments/s/remove", `{"deleteData":true,"confirmName":"s"}`, ""},
 	} {
 		_, problem := cleanBody(tc.path, []byte(tc.body))
 		got := ""

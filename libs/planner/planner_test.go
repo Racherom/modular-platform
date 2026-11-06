@@ -26,7 +26,7 @@ func testCatalog(t *testing.T) contract.Catalog {
 	for _, dir := range []string{"../../catalog", "testdata/catalog"} {
 		fsys := os.DirFS(dir)
 		err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".yaml") {
+			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".tmpl") {
 				return err
 			}
 			data, err := fs.ReadFile(fsys, path)

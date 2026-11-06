@@ -1,0 +1,59 @@
+# The ingress of modular-platform (spec 0015): one origin for every backend bound to it. Each route
+# keeps its path: a backend serves under <base path><route>.
+{
+	email "{$MP_ACME_EMAIL}"
+	servers {
+		# only TCP 80 and 443 are published
+		protocols h1 h2
+	}
+}
+
+# a real certificate: browsers may keep to HTTPS for this host
+(tls-acme) {
+	header Strict-Transport-Security "max-age=31536000"
+}
+
+(tls-internal) {
+	tls internal
+}
+
+{$INGRESS_DOMAIN} {
+	# MP_TLS_MODE is internal or acme, the caddy entry's tls-mode value
+	import tls-{$MP_TLS_MODE}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	@api path {$INGRESS_BASE_PATH}/api {$INGRESS_BASE_PATH}/api/*
+	handle @api {
+		reverse_proxy https://api.modular-platform.internal:8443 {
+			# the event stream reaches the browser as it is written
+			flush_interval -1
+			# an https upstream serves a certificate from the internal issuer: trust only its
+			# root and check the backend's own name
+			transport http {
+				tls_trust_pool file /etc/caddy/trust/root.crt
+				tls_server_name api.modular-platform.internal
+			}
+		}
+	}
+
+	@authelia path {$INGRESS_BASE_PATH}/auth {$INGRESS_BASE_PATH}/auth/*
+	handle @authelia {
+		reverse_proxy http://authelia.modular-platform.internal:9091
+	}
+
+	# the site root; only the dev overlay sets MP_WEB_UPSTREAM, to the Vite dev server, so no
+	# catalog entry declares it
+	@web path {$INGRESS_BASE_PATH} {$INGRESS_BASE_PATH}/*
+	handle @web {
+		reverse_proxy {$MP_WEB_UPSTREAM:http://web.modular-platform.internal:8080}
+	}
+
+	handle {
+		respond 404
+	}
+}

@@ -47,7 +47,6 @@ var BootstrapNames = []string{
 	"MP_ENV_FILE",
 	"MP_ACME_URL",
 	"MP_CA_FILE",
-	"MP_CALLER_KEY_FILE",
 	"MP_CALLER_SIGNING_KEY_FILE",
 }
 

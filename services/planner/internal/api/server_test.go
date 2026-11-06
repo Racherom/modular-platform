@@ -132,7 +132,7 @@ func TestCatalogSorted(t *testing.T) {
 	for _, c := range cat.Capabilities {
 		capabilities = append(capabilities, c.Name)
 	}
-	if !slices.Equal(modules, []string{"api", "deployer-docker", "planner", "postgres", "whoami"}) {
+	if !slices.Equal(modules, []string{"api", "authelia", "caddy", "cert-issuer", "deployer-docker", "planner", "postgres", "web", "whoami"}) {
 		t.Errorf("modules = %q", modules)
 	}
 	if !slices.IsSorted(capabilities) || !slices.Contains(capabilities, "postgresql-provisioner") {
@@ -215,7 +215,8 @@ func TestRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(zr.File) != 5 {
+	// docker-compose.yml, graph.yaml, setup.sh, .env, README.md and postgres's two config files
+	if len(zr.File) != 7 {
 		t.Errorf("zip has %d files", len(zr.File))
 	}
 

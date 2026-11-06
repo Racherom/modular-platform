@@ -73,6 +73,6 @@ var Module = sdk.Declaration[Config, Uses]{
 	Bindings: []sdk.BindingSpec{
 		{Capability: "ingress", Env: map[string]string{"http_port": "MP_PLATFORM_HTTP_PORT", "https_port": "MP_PLATFORM_HTTPS_PORT"}, Fields: []sdk.FieldSpec{{Name: "http_port", Env: "MP_PLATFORM_HTTP_PORT", Type: "int"}, {Name: "https_port", Env: "MP_PLATFORM_HTTPS_PORT", Type: "int"}}},
 	},
-	Provides: &sdk.ProvideSpec{Capability: "deploy-target", Auth: "binding-token", ClientsDirEnv: "MP_DEPLOY_TARGET_CLIENTS_DIR"},
+	Provides: &sdk.ProvideSpec{Capability: "deploy", Auth: "binding-token", ClientsDirEnv: "MP_DEPLOY_TARGET_CLIENTS_DIR", CallerKeysDirEnv: "MP_CALLER_KEYS_DIR"},
 	New:      func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },
 }

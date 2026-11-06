@@ -6,3 +6,4 @@ fields:
   url: {type: url, description: Base URL.}
   token: {type: secret, direction: both, description: Binding token.}
   ca: {type: certificate, optional: true, description: Root CA.}
+  caller_key: {type: certificate, direction: to_provider, optional: true, description: Public key that signs the consumer's MP-Caller tokens.}

@@ -16,7 +16,6 @@ import (
 	tcexec "github.com/testcontainers/testcontainers-go/exec"
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 
-	"github.com/racherom/modular-platform/libs/contract"
 	"github.com/racherom/modular-platform/libs/render"
 )
 
@@ -32,7 +31,7 @@ func TestSDKPairEndToEnd(t *testing.T) {
 	}
 
 	plan, catalog := pairPlan(t)
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}

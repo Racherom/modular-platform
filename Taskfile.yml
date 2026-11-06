@@ -153,38 +153,56 @@ tasks:
       MP_DEV_PROXY: "1"
       MP_MODE: managed
       MP_API_ROOT: /api
+    vars:
+      COMPOSE: docker compose --project-directory .dev/managed -f .dev/managed/docker-compose.yml -f deploy/managed/compose.dev.yaml
     cmds:
       - task: dev:managed:install
-      - defer: docker compose --project-directory .dev/managed -f .dev/managed/compose.yaml -f .dev/managed/compose.dev.yaml down
-      - docker compose --project-directory .dev/managed -f .dev/managed/compose.yaml -f .dev/managed/compose.dev.yaml up -d --build
+      - defer: "{{.COMPOSE}} down"
+      - "{{.COMPOSE}} up -d --build"
       - pnpm --dir web dev
 
   dev:managed:install:
     internal: true
-    # once: a copy of deploy/managed outside the tracked folder, so no secret lands in git
+    deps: [{task: managed:render, vars: {MANAGED_IMAGE_TAG: dev}}]
+    # the rendered folder copied outside the tracked tree, so no secret lands in git; each run
+    # copies a new render over it and keeps .env, secrets/, data/ and deployments/
     cmds:
-      - mkdir -p .dev
-      - cp -R deploy/managed .dev/managed
+      - mkdir -p .dev/managed
+      - cp -R build/managed/. .dev/managed/
+      # setup.sh runs api's caller-key step in the api image, before up builds it
+      - docker build -q -f services/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:dev . >/dev/null
       - |
-        password=$(od -An -tx1 -N12 /dev/urandom | tr -d ' \n')
-        printf 'platform.localhost\nadmin@platform.localhost\nadmin\n%s\n' "$password" | sh .dev/managed/setup.sh
-        echo "Sign in as admin with the password $password (kept nowhere else; delete .dev/managed to start over)."
-    status:
-      - test -f .dev/managed/.env
+        if [ -f .dev/managed/.env ] && [ -f .dev/managed/secrets/authelia/users ]; then
+          sh .dev/managed/setup.sh </dev/null >/dev/null
+        else
+          password=$(od -An -tx1 -N12 /dev/urandom | tr -d ' \n')
+          # domain, origin (empty: https://<domain>), admin email, admin user name, admin password
+          printf 'platform.localhost\n\nadmin@platform.localhost\nadmin\n%s\n' "$password" | sh .dev/managed/setup.sh
+          echo "Sign in as admin with the password $password (kept nowhere else; delete .dev/managed to start over)."
+        fi
+
+  managed:render:
+    desc: Render deploy/managed/graph.yaml with the built in catalog into build/managed, the folder the release zip ships
+    vars:
+      # empty for a release: every image tag from the catalog; dev and ci for a local or CI run
+      MANAGED_IMAGE_TAG: '{{.MANAGED_IMAGE_TAG | default ""}}'
+    cmds:
+      - go run ./catalog/cmd/render-platform -graph deploy/managed/graph.yaml -out build/managed{{if .MANAGED_IMAGE_TAG}} -image-tag {{.MANAGED_IMAGE_TAG}}{{end}}
 
   managed:zip:
-    desc: Pack deploy/managed into dist/modular-platform-<version>.zip; the same version gives the same bytes
+    desc: Pack the rendered build/managed into dist/modular-platform-<version>.zip; the same version gives the same bytes
     vars:
       VERSION:
         sh: |
           sed -n 's/.*"\.": "\(.*\)".*/\1/p' .release-please-manifest.json
+    deps: [managed:render]
     cmds:
       - mkdir -p dist
-      - python3 scripts/managed_zip.py deploy/managed "modular-platform-{{.VERSION}}" "dist/modular-platform-{{.VERSION}}.zip"
+      - python3 scripts/managed_zip.py build/managed "modular-platform-{{.VERSION}}" "dist/modular-platform-{{.VERSION}}.zip"
 
   smoke:managed:
     desc: Install the managed platform with setup.sh, sign in, deploy the sample, see it running, remove it with its data (needs the images tagged ci and Chromium; SMOKE_DOCKER_RESTART=1 also restarts Docker in between)
-    deps: [web:install]
+    deps: [web:install, {task: managed:render, vars: {MANAGED_IMAGE_TAG: ci}}]
     cmds:
       - sh scripts/smoke-managed.sh
 

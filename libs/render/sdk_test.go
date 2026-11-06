@@ -22,7 +22,7 @@ func pairPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
 func renderPair(t *testing.T) map[string]render.File {
 	t.Helper()
 	plan, catalog := pairPlan(t)
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func renderPair(t *testing.T) map[string]render.File {
 // intended change.
 func TestRenderSDKGolden(t *testing.T) {
 	plan, catalog := pairPlan(t)
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestRenderExternal(t *testing.T) {
 	if !plan.Ok {
 		t.Fatalf("plan: %+v", plan.Problems)
 	}
-	out, err := render.Render(plan, catalog, contract.Templates{})
+	out, err := render.Render(plan, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}

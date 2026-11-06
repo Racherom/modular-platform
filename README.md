@@ -18,7 +18,7 @@ architecture lives in [docs/specs/0001-platform-stack-architecture](docs/specs/0
 | `web/` | The editor (React, Vite), and its `web` image |
 | `samples/` | The sample graph used by the editor and the smoke job |
 | `deploy/online/` | The online tool: ingress, web and planner on one origin |
-| `deploy/managed/` | The managed platform: its Compose stack, `setup.sh`, and its own README |
+| `deploy/managed/` | The managed platform's own graph, which `task managed:render` renders into the release folder, and its dev overlays |
 
 ## Develop
 
@@ -57,15 +57,18 @@ Each release carries `modular-platform-<version>.zip`. To install it, we recomme
 
 1. Unzip it where the platform should live, for example `/opt/modular-platform`, and open that
    folder.
-2. Run `sh setup.sh`. It asks for the domain (default `platform.localhost`), the admin email, the
-   admin user name, and the admin password (at least 12 characters). It writes `.env` and every
-   secret in `secrets/`, and never prints a secret.
-3. Run `docker compose up -d`.
-4. Open `https://<your domain>/` and sign in with the admin user name and password.
+2. Run `sh setup.sh`. It asks for the domain (it must contain a dot, like `platform.localhost`),
+   the origin your browser sees (press Enter for `https://<domain>`), the admin email, the admin
+   user name, and the admin password (at least 12 characters). It writes `.env`, every secret in
+   `secrets/` and every data folder in `data/`, and never prints a secret.
+3. Run `docker compose up -d --wait`.
+4. Open the origin and sign in with the admin user name and password.
 
 The platform makes its own certificate authority, so your browser warns about the certificate on
-first visit. [deploy/managed/README.md](deploy/managed/README.md) covers the rest: a public
-certificate, deploying a stack, changing the admin, backups, and upgrades.
+first visit. The `README.md` in the unzipped folder covers the rest: a public certificate,
+deploying a stack, changing the admin, backups, and upgrades. Every file in that folder is
+rendered from [deploy/managed/graph.yaml](deploy/managed/graph.yaml), the platform's own graph,
+with the built in catalog (`task managed:render` writes it into `build/managed/`).
 
 No release exists yet (the version still reads `0.0.0`), so for now you can start the platform from
 this checkout instead.
@@ -80,8 +83,9 @@ This builds the `api`, `planner` and `deployer-docker` images from your checkout
 platform on `https://platform.localhost`, and serves the editor from the Vite dev server with hot
 reload. It binds ports 80 and 443. When the task ends, it stops the platform's containers again.
 
-The first run copies `deploy/managed` to `.dev/managed` (outside git, so no secret lands in a
-commit), runs `setup.sh` there, and prints the admin password once. Sign in as `admin` with that
+Each run renders the platform into `build/managed`, copies it over `.dev/managed` (outside git, so
+no secret lands in a commit; your `.env`, `secrets/` and `data/` there stay), and runs `setup.sh`
+there. The first run prints the admin password once. Sign in as `admin` with that
 password. To set it up again with a new password, delete `.dev/managed` and run the task again.
 
 To check the whole install the way CI does, you can build the images tagged `ci` and run the

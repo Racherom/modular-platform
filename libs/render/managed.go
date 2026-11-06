@@ -122,6 +122,28 @@ func refusals(plan contract.PlanResult, catalog contract.Catalog) []contract.Pro
 	return out
 }
 
+// label writes the platform labels on every service of project p of graph g (spec 0013,
+// "Labels"): graph and deployment on each, instance and module on a module's service, and on a
+// job those of its provisioner plus the job label.
+func label(p *types.Project, g contract.Graph, jobs map[string]job, deployment string) {
+	for name, svc := range p.Services {
+		labels := types.Labels{LabelGraph: g.Name, LabelDeployment: deployment}
+		if j, ok := jobs[name]; ok {
+			labels[LabelJob] = j.kind
+			if j.instance != "" { // the wait anchor belongs to no instance
+				labels[LabelInstance] = j.instance
+			}
+			if j.module != "" { // an external provisioner, or the wait anchor, has no module
+				labels[LabelModule] = j.module
+			}
+		} else {
+			labels[LabelInstance], labels[LabelModule] = name, g.Modules[name].Module
+		}
+		svc.Labels = labels
+		p.Services[name] = svc
+	}
+}
+
 // Managed renders an ok plan for the managed deployer (spec 0006, grown by 0013): the static
 // output plus the platform labels on every service (and the job label on each one shot job),
 // restart: unless-stopped on every long running service, and the project named mp-<graph>.
@@ -134,25 +156,9 @@ func Managed(plan contract.PlanResult, catalog contract.Catalog, templates contr
 	if problems := refusals(plan, catalog); len(problems) > 0 {
 		return ManagedProject{}, &RefusedError{Problems: problems}
 	}
-	r, err := renderProject(plan, catalog, templates, true, func(p *types.Project, jobs map[string]job) {
-		graph := p.Name
-		p.Name = ProjectPrefix + graph
-		for name, svc := range p.Services {
-			labels := types.Labels{LabelGraph: graph, LabelDeployment: deployment}
-			if j, ok := jobs[name]; ok {
-				labels[LabelJob] = j.kind
-				if j.instance != "" { // the wait anchor belongs to no instance
-					labels[LabelInstance] = j.instance
-				}
-				if j.module != "" { // an external provisioner, or the wait anchor, has no module
-					labels[LabelModule] = j.module
-				}
-			} else {
-				labels[LabelInstance], labels[LabelModule] = name, plan.Graph.Modules[name].Module
-			}
-			svc.Labels = labels
-			p.Services[name] = svc
-		}
+	r, err := renderProject(plan, catalog, templates, flavorManaged, func(p *types.Project, jobs map[string]job) {
+		label(p, plan.Graph, jobs, deployment)
+		p.Name = ProjectPrefix + p.Name
 	})
 	if err != nil {
 		return ManagedProject{}, err

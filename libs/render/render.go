@@ -90,17 +90,27 @@ type templateData struct {
 	NeedEnvGet   bool // setup.sh reads an answer back from .env
 	NeedDuration bool // setup.sh checks a duration
 	WaitAnchor   bool // the stack has the wait anchor mp_jobs (spec 0014, "Waiting")
+	Platform     bool // the platform flavor: setup.sh writes MP_DIR, .env.example holds the blocks
 }
 
 // Render renders the resolved graph of an ok plan. catalog must hold every module and
 // capability the graph uses, and templates the templates of those modules.
 func Render(plan contract.PlanResult, catalog contract.Catalog, templates contract.Templates) (Output, error) {
-	r, err := renderProject(plan, catalog, templates, false, nil)
+	r, err := renderProject(plan, catalog, templates, flavorStatic, nil)
 	if err != nil {
 		return Output{}, err
 	}
 	return r.out, nil
 }
+
+// flavor is one of the three renders over one core (spec 0011, "Render flavors").
+type flavor int
+
+const (
+	flavorStatic   flavor = iota // the zip from POST /v1/render
+	flavorManaged                // a deployed graph for deployer-docker
+	flavorPlatform               // the managed platform's own folder (spec 0015)
+)
 
 // rendered is a render's output plus what the managed flavor reports beside it.
 type rendered struct {
@@ -117,7 +127,7 @@ type job struct {
 // renderer holds one render in progress.
 type renderer struct {
 	g         contract.Graph
-	managed   bool
+	flavor    flavor
 	templates contract.Templates
 	modules   map[string]contract.Module
 	caps      map[string]contract.Capability
@@ -133,19 +143,20 @@ type renderer struct {
 	egress     bool                                   // some service joins the egress network
 }
 
-// renderProject renders plan in the static flavor, or the managed one: restart: unless-stopped
-// on every long running service, and finish called on the project before it is written.
-func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates contract.Templates, managed bool, finish func(*types.Project, map[string]job)) (rendered, error) {
+// renderProject renders plan in flavor f: the managed and platform flavors set restart:
+// unless-stopped on every long running service, and finish is called on the project before it
+// is written.
+func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates contract.Templates, f flavor, finish func(*types.Project, map[string]job)) (rendered, error) {
 	if !plan.Ok {
 		return rendered{}, ErrPlanHasErrors
 	}
 	r := renderer{
 		g:          plan.Graph,
-		managed:    managed,
+		flavor:     f,
 		templates:  templates,
 		modules:    make(map[string]contract.Module, len(catalog.Modules)),
 		caps:       make(map[string]contract.Capability, len(catalog.Capabilities)),
-		data:       templateData{Name: plan.Graph.Name},
+		data:       templateData{Name: plan.Graph.Name, Platform: f == flavorPlatform},
 		jobs:       map[string]job{},
 		declared:   map[string]bool{},
 		bound:      map[string]map[string]map[string]value{},
@@ -181,7 +192,7 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates
 		}
 		r.project.Services[i] = svc
 	}
-	for _, b := range plan.Bindings {
+	for _, b := range deliveryOrder(instances, plan.Bindings) {
 		if err := r.binding(b); err != nil {
 			return rendered{}, err
 		}
@@ -191,6 +202,9 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates
 	}
 	if err := r.steps(plan.Bindings); err != nil {
 		return rendered{}, err
+	}
+	if f == flavorPlatform {
+		r.askInBindingOrder(instances, plan.Bindings)
 	}
 	for _, i := range instances {
 		if gm := r.g.Modules[i]; gm.External == nil {
@@ -237,8 +251,8 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates
 		mode           fs.FileMode
 	}{
 		{"setup.sh", "setup.sh.tmpl", 0o755},
-		{".env", "env.tmpl", 0o644},
-		{"README.md", "README.md.tmpl", 0o644},
+		{envName(f), "env.tmpl", 0o644},
+		{"README.md", readmeTemplate(f), 0o644},
 	} {
 		var buf bytes.Buffer
 		if err := projectTemplates.ExecuteTemplate(&buf, t.template, r.data); err != nil {
@@ -254,6 +268,50 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates
 	files = append(files, configs...)
 	slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
 	return rendered{out: Output{Name: r.project.Name, Files: files}, data: r.data, jobs: r.jobs}, nil
+}
+
+// askInBindingOrder sorts the asked values by their instance's place in the binding order, so a
+// provider's answers come before its consumers' (the platform flavor, spec 0015); each
+// instance's values keep their name order.
+func (r *renderer) askInBindingOrder(instances []string, bindings []contract.Binding) {
+	place := map[string]int{}
+	for n, i := range contract.BindingOrder(instances, bindings) {
+		place[i] = n
+	}
+	byPlace := func(a, b askedValue) int { return place[a.instance] - place[b.instance] }
+	slices.SortStableFunc(r.data.Asked, byPlace)
+	slices.SortStableFunc(r.data.AskedSecrets, byPlace)
+}
+
+// envName is the file the .env blocks go to: .env, or .env.example in the platform flavor, whose
+// setup.sh writes .env itself, so an unzipped release never overwrites one you filled.
+func envName(f flavor) string {
+	if f == flavorPlatform {
+		return ".env.example"
+	}
+	return ".env"
+}
+
+// readmeTemplate is the README of flavor f: the platform's own guide, or the stack's.
+func readmeTemplate(f flavor) string {
+	if f == flavorPlatform {
+		return "platform-README.md.tmpl"
+	}
+	return "README.md.tmpl"
+}
+
+// deliveryOrder sorts bindings by their consumer's place in the binding order (providers before
+// consumers, spec 0013), keeping the plan's slot order per consumer. A provider's own bindings
+// are then delivered before any binding to it, so a field source that reads one of them (its
+// TLS certificate source, a {uses} field) finds it resolved.
+func deliveryOrder(instances []string, bindings []contract.Binding) []contract.Binding {
+	place := map[string]int{}
+	for n, i := range contract.BindingOrder(instances, bindings) {
+		place[i] = n
+	}
+	out := slices.Clone(bindings)
+	slices.SortStableFunc(out, func(a, b contract.Binding) int { return place[a.Consumer] - place[b.Consumer] })
+	return out
 }
 
 // service builds the Compose service of module instance i: image, command, healthcheck, host
@@ -303,7 +361,7 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 	if m.Runtime == contract.Sdk {
 		r.sdkInstance(&svc, i, m)
 	}
-	if r.managed {
+	if r.flavor != flavorStatic {
 		svc.Restart = types.RestartPolicyUnlessStopped
 	}
 	return svc, nil
@@ -349,6 +407,11 @@ func (r *renderer) environment(i string, m contract.Module) error {
 				b.WriteString("${MP_UID}")
 			case contract.EnvGID:
 				b.WriteString("${MP_GID}")
+			case contract.EnvInstall:
+				if r.flavor != flavorPlatform {
+					return fmt.Errorf("%w: {install} in the environment of module %s belongs to the platform flavor", ErrNotRendered, m.Name)
+				}
+				b.WriteString("${MP_DIR}")
 			case contract.EnvConfig:
 				b.WriteString(r.composeVar(i, part.Name, m.Config[part.Name]))
 			case contract.EnvUses:
