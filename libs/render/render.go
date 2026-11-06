@@ -73,14 +73,18 @@ type secret struct {
 
 type templateData struct {
 	Name         string
-	Asked        []askedValue  // asked config values, instances then values in name order
-	AskedSecrets []askedValue  // secrets with from: ask, in the same order
-	Secrets      []secret      // the secret files setup.sh generates
-	Steps        []installStep // setup steps in binding order
-	Placed       []secret      // the files you place
-	EnvFiles     []string      // config/<instance>.env of each sdk instance
-	Folders      []string      // data/<instance>/<volume> folders setup.sh creates
+	Asked        []askedValue    // asked config values, instances then values in name order
+	AskedSecrets []askedValue    // secrets with from: ask, in the same order
+	Secrets      []secret        // the secret files setup.sh generates
+	Steps        []installStep   // setup steps in binding order
+	Placed       []secret        // the files you place
+	EnvFiles     []string        // config/<instance>.env of each sdk instance
+	Folders      []string        // data/<instance>/<volume> folders setup.sh creates
+	Blocks       []envBlock      // the .env blocks, instances then values in name order
+	Checks       []envCheck      // the .env checks, in the same order
+	Known        []knownInstance // the variable prefix of each instance in the stack
 
+	NeedValid    bool // setup.sh checks a value by its rules
 	NeedEnvGet   bool // setup.sh reads an answer back from .env
 	NeedDuration bool // setup.sh checks a duration
 	WaitAnchor   bool // the stack has the wait anchor mp_jobs (spec 0014, "Waiting")

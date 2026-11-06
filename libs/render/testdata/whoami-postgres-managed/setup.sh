@@ -18,6 +18,24 @@ set_id() {
 set_id MP_UID "$(id -u)"
 set_id MP_GID "$(id -g)"
 
+# env_get NAME prints the value of NAME in .env, without the quotes setup.sh writes around it.
+env_get() {
+	sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1 | sed "s/^'\(.*\)'\$/\1/"
+}
+
+# check_env checks every MP_<instance>__<value> line already in .env by that value's rules, before
+# anything is asked or created, so a value you edited by hand never reaches a module unchecked.
+check_env() {
+	[ -f .env ] || return 0
+	for var in $(sed -n 's/^\(MP_[A-Z0-9_]*\)=.*/\1/p' .env | awk '!seen[$0]++'); do
+		case $var in
+		MP_POSTGRES__*) echo "setup.sh: warning: $var in .env names no value of postgres" >&2 ;;
+		MP_WHOAMI__*) echo "setup.sh: warning: $var in .env names no value of whoami" >&2 ;;
+		esac
+	done
+}
+check_env
+
 new_secret() {
 	if [ -e "$1" ]; then
 		echo "kept    $1"

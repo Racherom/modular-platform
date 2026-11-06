@@ -93,10 +93,13 @@ services:
     - sleep
     - infinity
     environment:
+      KEEPER_BANNER: '${MP_KEEPER__BANNER:-costs $$5 #1}'
       KEEPER_DOMAIN: ${MP_KEEPER__DOMAIN}
+      KEEPER_LEVEL: ${MP_KEEPER__LEVEL:-info}
       KEEPER_LICENSE_FILE: /run/secrets/keeper_license
       KEEPER_MASTER_KEY_FILE: /run/secrets/keeper_master-key
       KEEPER_MODE: ${MP_KEEPER__MODE}
+      KEEPER_MOTD: ${MP_KEEPER__MOTD:-}
       KEEPER_NOTE: ${MP_KEEPER__NOTE}
       KEEPER_ORIGIN: ${MP_KEEPER__ORIGIN}
       KEEPER_PORT: ${MP_KEEPER__PORT}

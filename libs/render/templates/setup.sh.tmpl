@@ -24,35 +24,6 @@ env_get() {
 	sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1 | sed "s/^'\(.*\)'\$/\1/"
 }
 {{- end}}
-{{- if or .Asked .AskedSecrets}}
-
-# A question is asked once: an answer already in .env, or a secret file that exists, is kept.
-# With answers piped in, one per line, a wrong answer stops setup.sh; on a terminal it asks again.
-retry_or_stop() {
-	if [ ! -t 0 ]; then
-		echo "setup.sh: $1: the answer $2" >&2
-		exit 1
-	fi
-	echo "The answer $2; try again." >&2
-}
-
-# read_answer PROMPT SECRET reads one line into $answer, without echo for a secret.
-read_answer() {
-	printf '%s: ' "$1" >&2
-	if [ "$2" = true ] && [ -t 0 ]; then
-		stty -echo
-		trap 'stty echo' EXIT
-	fi
-	answer=
-	IFS= read -r answer || true
-	if [ "$2" = true ] && [ -t 0 ]; then
-		stty echo
-		trap - EXIT
-		echo >&2
-	fi
-}
-{{- end}}
-{{- if .Asked}}
 {{- if .NeedDuration}}
 
 # nanoseconds DURATION prints a duration like 1m30s in nanoseconds, or fails.
@@ -76,6 +47,7 @@ nanoseconds() {
 	}'
 }
 {{- end}}
+{{- if .NeedValid}}
 
 # valid TYPE VALUE MIN MAX PATTERN [VALUES...] checks an answer by the value's type and rules,
 # as the module itself does; a failure sets $why.
@@ -145,6 +117,74 @@ valid() {
 	esac
 	return 0
 }
+{{- end}}
+{{- if .Known}}
+
+# check_env checks every MP_<instance>__<value> line already in .env by that value's rules, before
+# anything is asked or created, so a value you edited by hand never reaches a module unchecked.
+check_env() {
+	[ -f .env ] || return 0
+	for var in $(sed -n 's/^\(MP_[A-Z0-9_]*\)=.*/\1/p' .env | awk '!seen[$0]++'); do
+		case $var in
+{{- range .Checks}}
+		{{.Var}}){{if .Args}} check_value {{.Var}} {{.Args}}{{end}} ;;
+{{- end}}
+{{- range .Known}}
+		{{.Glob}}) echo "setup.sh: warning: $var in .env names no value of {{.Name}}" >&2 ;;
+{{- end}}
+		esac
+	done
+}
+{{- if .NeedValid}}
+
+# check_value VAR TYPE MIN MAX PATTERN OPTIONAL [VALUES...] stops setup.sh when the last VAR line
+# of .env breaks the value's rules; an empty value passes only when the value is optional.
+check_value() {
+	var=$1 rule_type=$2 rule_min=$3 rule_max=$4 rule_pattern=$5 optional=$6
+	shift 6
+	value=$(env_get "$var")
+	if [ -z "$value" ]; then
+		[ "$optional" = true ] && return 0
+		echo "setup.sh: $var in .env: the answer is empty" >&2
+		exit 1
+	fi
+	if ! valid "$rule_type" "$value" "$rule_min" "$rule_max" "$rule_pattern" "$@"; then
+		echo "setup.sh: $var in .env: the answer $why" >&2
+		exit 1
+	fi
+}
+{{- end}}
+check_env
+{{- end}}
+{{- if or .Asked .AskedSecrets}}
+
+# A question is asked once: an answer already in .env, or a secret file that exists, is kept.
+# With answers piped in, one per line, a wrong answer stops setup.sh; on a terminal it asks again.
+retry_or_stop() {
+	if [ ! -t 0 ]; then
+		echo "setup.sh: $1: the answer $2" >&2
+		exit 1
+	fi
+	echo "The answer $2; try again." >&2
+}
+
+# read_answer PROMPT SECRET reads one line into $answer, without echo for a secret.
+read_answer() {
+	printf '%s: ' "$1" >&2
+	if [ "$2" = true ] && [ -t 0 ]; then
+		stty -echo
+		trap 'stty echo' EXIT
+	fi
+	answer=
+	IFS= read -r answer || true
+	if [ "$2" = true ] && [ -t 0 ]; then
+		stty echo
+		trap - EXIT
+		echo >&2
+	fi
+}
+{{- end}}
+{{- if .Asked}}
 
 # ask VAR TYPE MIN MAX PATTERN OPTIONAL DESCRIPTION DEFAULT [VALUES...] asks a value and writes
 # it into .env as VAR. An empty answer takes the default.

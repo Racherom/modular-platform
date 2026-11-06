@@ -1,0 +1,22 @@
+name: envcheck
+networks:
+  internal:
+    internal: true
+services:
+  ingress:
+    cap_drop:
+    - ALL
+    environment:
+      GATE_BANNER: '${MP_INGRESS__BANNER:-pay $$5 # now}'
+      GATE_NOTE: ${MP_INGRESS__NOTE:-}
+      GATE_PORT: ${MP_INGRESS__PORT:-8080}
+      GATE_TLS_MODE: ${MP_INGRESS__TLS_MODE:-internal}
+    image: traefik/whoami:v1.11.0
+    networks:
+      internal:
+        aliases:
+        - ingress.envcheck.internal
+    read_only: true
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}

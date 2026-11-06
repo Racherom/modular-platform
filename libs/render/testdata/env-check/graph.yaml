@@ -1,0 +1,5 @@
+apiVersion: modular-platform/v1
+kind: Graph
+name: envcheck
+modules:
+  ingress: {module: gate}

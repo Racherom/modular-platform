@@ -317,13 +317,13 @@ func (r *renderer) perBinding(b contract.Binding, f string) string {
 	return path
 }
 
-// composeVar is the Compose variable of config value v of instance i (spec 0013): an asked
-// value plain, since setup.sh always writes its answer; any other with its default, {uid} and
-// {gid} as the setup user's variables.
+// composeVar is the Compose variable of config value v of instance i (spec 0013, spec 0025 AC-25):
+// an asked value bare, so a missing answer fails up; any other with its default, empty when it
+// has none, so the env name is always set; {uid} and {gid} as the setup user's variables.
 func composeVar(i, v string, cv contract.ConfigValue) string {
 	name := contract.ComposeVar(i, v)
 	switch {
-	case cv.Asked() || cv.Default == "":
+	case cv.Asked():
 		return "${" + name + "}"
 	case cv.Default == "{uid}":
 		return "${" + name + ":-${MP_UID}}"
