@@ -2,6 +2,7 @@
 
 **Date**: 2026-11-03
 **Status**: In Progress
+**Extended by**: [0020](../0017-external-capability-providers/0020-holdings-list-revoke.md) (#10): the `record` and `holdings` apply steps, `deployments.marker`, `operations.flags`, revoke before remove.
 
 ## Summary
 

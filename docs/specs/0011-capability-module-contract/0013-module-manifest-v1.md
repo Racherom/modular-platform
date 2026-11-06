@@ -1,6 +1,7 @@
 # 0013. Module manifest v1 and its render
 
 **Parent**: [0011. Capability and module contract](index.md)
+**Extended by**: [0018](../0017-external-capability-providers/0018-identity-providers-grants.md) (#10): the login job, and one placed file per `same_as` chain (at the end of the chain). [0025](0025-slot-fields-config-delivery.md): every non secret config value of a non SDK entry renders as `${MP_<I>__<V>:-<default>}`, graph config values, and asked values the graph sets are not asked.
 
 ## Summary
 
@@ -103,7 +104,7 @@ healthcheck:
 | `{generate: true}` | a per binding file, 32 random bytes hex, made by `setup.sh` (static, platform) or the deployer (managed) | file |
 | `{platform: consumer}` | the consumer's instance name, per binding (an OIDC client id) | *plan* |
 | `{uses: <slot>, field: <f>}` | that field of the provider's own binding on `<slot>`, text or file, passed through | as that field |
-| `{uses: <slot>, format: "{origin}{base_path}/auth"}` | the format with each `{field}` replaced by that field of the provider's own binding on `<slot>` (text fields only) | as the fields it names |
+| `{uses: <slot>, format: "{origin}{base_path}/auth"}` | the format with each `{field}` replaced by that field of the provider's own binding on `<slot>` (text fields only). A field that binding does not give is empty, with no error. When any field it names is a Compose variable, the result is one too, with the literal parts escaped | as the fields it names |
 | `{volume: <name>, path: <relative file>}` | a file the provider writes into its own data folder (Caddy's local root CA); the consumer gets the containing folder mounted read only at `/run/volumes/<s>/<f>/` and its env the file path in it, so the file may appear after start; the consumer depends on the provider being healthy | file |
 
 **Catalog rules** added (path in the entry): `unknown_capability`, `unknown_field`, `missing_field_source`, `invalid_field_source` (a source whose type does not fit, like `{secret}` on a `string`, `platform: url` without a scheme), `reserved_slot`, `per_caller_not_allowed`, `invalid_hardening` (a `cap_add` name, 0022), `invalid_template`, `invalid_setup_step`, `invalid_mount` (relative path, two mounts on one path), plus every 0002 and 0005 rule still in force.
@@ -148,7 +149,7 @@ At catalog load each template is parsed and executed twice, once with every slot
 
 `setup.sh` (static and platform flavors) runs in this order, never overwriting a file and never printing a secret:
 1. write `MP_UID`, `MP_GID` into `.env` once (0005);
-2. asked config values, in the order the flavor states (static: instances in name order, values in name order; platform: 0015's list): prompt = the value's `description`, default = its `default` (which may contain `{<other asked value of the same instance>}`, filled from the answer given), answer written as `MP_<I>__<V>=` into `.env`; secret typed values without echo into their file. An answer breaking the value's `pattern`, `min`, `max` or `values` is asked again on a terminal and stops `setup.sh` with a message naming the value when stdin is piped; an empty answer takes the default (an optional value with no default stays empty);
+2. asked config values, in the order the flavor states (static: instances in name order, values in name order; platform: instances in binding order, providers first, values in name order, which gives 0015's list): prompt = the value's `description`, default = its `default` (which may contain `{<other asked value of the same instance>}`, filled from the answer given), answer written as `MP_<I>__<V>=` into `.env`; secret typed values without echo into their file. An answer breaking the value's `pattern`, `min`, `max` or `values` is asked again on a terminal and stops `setup.sh` with a message naming the value when stdin is piped; an empty answer takes the default (an optional value with no default stays empty);
 3. secrets with `from: ask`, same order, without echo;
 4. every `generate` file: module secrets, then per binding files, in path order; then the empty output files of provision jobs (0014), mode 0600;
 5. setup steps, instances in binding order (providers before consumers, ties by name), steps in declared order;

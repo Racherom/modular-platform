@@ -1,4 +1,4 @@
-# Verify: capability and module contract · spec 0011 · updated 2026-11-05
+# Verify: capability and module contract · spec 0011 · updated 2026-11-06
 
 _Steps derived from spec 0011 acceptance criteria. `/check verify` runs these; `/test` locks the durable ones._
 
@@ -146,3 +146,125 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 ## Acceptance criteria coverage (milestone 3, tasks 16b and 16c)
 
 - AC-2: the `cap_add` catalog rule step · AC-11: the plan warning step, the managed refusal step and the first value sourcing step · AC-21: the guard step, the deployer step, the e2e step and the last two value sourcing steps
+
+## Milestone 3b: slot fields (0025, task 16d)
+
+### Commands
+- [ ] `go test -race -run 'TestField|TestRequiredFieldBinding' ./sdk/` → passes: the optional `realm` slot of the test module returns one typed value per field, nil for an optional field not delivered, and `false` when nothing is set → AC-22
+- [ ] `go test -race -run 'TestGenerateFields|TestGenerateUses|TestGenerateRefuses' ./sdk/cmd/sdkgen/` → passes: `<Slot>Binding`, `Uses.<Slot>`, the enum types, `Fields` in the binding spec, a slot that maps nothing gets no getter, and a Go name clash is refused → AC-22
+- [ ] `task generate` twice, then `git diff --stat` → no `config.gen.go` changes on the second run → AC-22
+- [ ] Start a module on the sdk with a bound slot holding a required field unset, an `int` field `abc`, an enum miss, a missing secret file and a plain text certificate file → one line each, `config: uses.<slot>.<field> (<ENV>): <code>: <message>`, sorted, exit 1, no `config loaded` line (`TestFieldBindingProblems`) → AC-23
+- [ ] Start it with the slot bound → the `config loaded` line's `values` lists `uses.<slot>.<field>` as `binding` or `unset`, and no secret or PEM content shows in any log line → AC-23
+- [ ] A `BindingResolver` answer with a missing required field, a text `port`, a pattern miss, an enum miss, a non PEM certificate or an unmapped field → the getter returns an error that is not `ErrCallerSource` and no value; a resolver slower than 200 ms → `ErrCallerSource` (`TestFieldBindingResolver`) → AC-23
+- [ ] `go test -race -run TestStartRefused ./services/planner/internal/api/` → internal mode without `MP_PLATFORM_HTTP_PORT` logs exactly `config: uses.ingress (MP_PLATFORM_HTTP_PORT): missing: internal mode needs the ingress binding`; with only the HTTP port set, `uses.ingress.https_port` is `missing` → AC-24
+- [ ] Start `planner` in public mode with no `MP_PLATFORM_*` env (as `deploy/online/compose.yaml` does) → it starts → AC-24
+- [ ] `go test -race -run 'TestReadSettings|TestNoOldClientID' ./services/api/internal/api/` → `MP_BASE_PATH` empty starts at the site root, `/platform` sets the base path and redirect URL, `MP_OIDC_ISSUER` unset is `config: uses.oidc.issuer (MP_OIDC_ISSUER): missing`, and `mp-api` appears only in `deploy/managed/` → AC-24
+- [ ] `grep -n "platform-http-port\|platform-https-port\|oidc-issuer\|oidc-client\|oidc-ca\|public-origin\|base-path\|admin-email" catalog/modules/{api,planner,deployer-docker}/module.yaml` → no match → AC-24
+- [ ] `task smoke:managed` → `@deploy` passes (install, sign in through the `oidc` slot, deploy). The `@after-restart` remove step fails the same way on commit 2a9ee81, before this change → AC-24
+
+### Value sourcing
+- [ ] SDK start, a slot field's value: set `TM_REALM_PORT=9443` in an env file listed in `MP_ENV_FILE` instead of the process env → `Realm().Port` is 9443; set it in both → the process env wins
+- [ ] SDK start, slot bound or not: set only `TM_REALM_HINT` → the start is refused with a `missing` line for each required realm field; set none, or every one to empty → unbound, no line
+- [ ] SDK call, a slot field for a caller: a resolver answer for `alice` → `alice` gets it, `bob` and a call with no caller get the start values, and a second call for `alice` does not ask the resolver again
+- [ ] `planner` start, platform ports: internal mode with `MP_PLATFORM_HTTP_PORT=8080` → `POST /v1/render/managed` of a graph that publishes host port 8080 is refused as reserved, and port 80 is no longer reserved
+- [ ] `deployer-docker` start: without `MP_PLATFORM_HTTP_PORT` → `config: uses.ingress.http_port (MP_PLATFORM_HTTP_PORT): missing`, exit 1
+- [ ] `api` start, origin, base path, issuer, client id, client secret, CA, admin email: change each env name in `deploy/managed/compose.yaml` one at a time → api reads the new value (the redirect URL follows `MP_PUBLIC_ORIGIN` and `MP_BASE_PATH`); `MP_OIDC_CA_FILE` naming a file with no certificate → `config: uses.oidc.ca (MP_OIDC_CA_FILE): invalid`
+
+## Acceptance criteria coverage (milestone 3b, task 16d)
+
+- AC-22: the first three command steps · AC-23: the next three command steps and the first three value sourcing steps · AC-24: the planner, api, catalog and smoke steps and the last three value sourcing steps
+
+## Milestone 3b, task 5 of 0025: non SDK values as `.env` variables, the `.env` check (updated 2026-11-06)
+
+### Commands
+- [ ] `go test -race -run 'TestRenderEnvCheckGolden|TestRenderInstallGolden' ./libs/render/` → passes; in `testdata/env-check/golden/docker-compose.yml` every value of `ingress` is `<ENV>: ${MP_INGRESS__<V>:-<d>}`, the optional `note` is `${MP_INGRESS__NOTE:-}`, the `$` in the banner default is `$$`; in the install golden the asked values stay bare (`${MP_KEEPER__DOMAIN}`) and `run-uid` stays `${MP_UID}` → AC-25
+- [ ] Open `testdata/env-check/golden/.env` and `testdata/install/golden/.env` → one block per rendered value in instance then value order: the description, then `# MP_<I>__<V>=<d>` (the default as typed, `$` not doubled), or `# asked by setup.sh`; no block for `run-uid` or a secret → AC-25
+- [ ] `go test -race -run TestNonSDKValuesReachTheService ./libs/render/` → compose-go reads `GATE_BANNER` as `pay $5 # now` and `GATE_NOTE` as empty with no `.env` line; `MP_INGRESS__TLS_MODE=acme` gives `acme`; an empty `MP_INGRESS__PORT` gives the default → AC-25
+- [ ] `go test -race -tags e2e -run TestInstallSetupEndToEnd ./libs/render/` (Docker) → keeper's env holds `KEEPER_LEVEL=info`, `KEEPER_BANNER=costs $5 #1` and an empty `KEEPER_MOTD`; after `MP_KEEPER__LEVEL=debug` is added to `.env`, `setup.sh` passes and `up -d` gives `KEEPER_LEVEL=debug` → AC-25
+- [ ] `go test -race -run TestComposeEnvHoldsNoPlatformVariable ./services/deployer-docker/internal/docker/` → the deployer's Compose env is `PATH` and `HOME` only, whatever `MP_*` its own process has → AC-25
+- [ ] `go test -race -run 'TestSetupChecksEnvLines|TestSetupWithoutEnvFile' ./libs/render/` → `MP_INGRESS__TLS_MODE=acmee` stops `setup.sh` with exit 1 and `setup.sh: MP_INGRESS__TLS_MODE in .env: the answer is not one of: internal acme`, and no file changes; `acme`, `'acme'`, a commented bad line, a bad line then a good one, and an empty optional value pass and a second run changes nothing; a good line then a bad one, `0` and `80a` for the port, and an empty port stop (`is empty`); `MP_INGRESS__TLS_MDE=acme` prints `setup.sh: warning: MP_INGRESS__TLS_MDE in .env names no value of ingress` and goes on; with no `.env` it passes → AC-26
+- [ ] Render the sample zip, unzip it, `sh setup.sh`, then add `MP_<I>__<V>=<bad>` for any rendered value and run `sh setup.sh` again → it stops naming the line before it asks or creates anything → AC-26
+- [ ] Open any rendered `README.md` with a `.env` block → it says to run `./setup.sh` again after you edit `.env` → AC-26
+
+### Value sourcing
+- [ ] Render, a non SDK value's Compose default: change a catalog `default` in the env-check fixture and render → the Compose line and the `.env` hint change together (the graph value source lands with task 7)
+- [ ] Render, env file blocks: change a value's `description` → its `.env` block changes, nothing else does
+- [ ] `setup.sh`, the check of `.env` lines: tighten a `pattern`, `min`, `max` or `values` in the fixture and render → the `check_value` line in `setup.sh` carries the new rule, and a `.env` line that passed before now stops `setup.sh`
+
+### Not yet covered
+- The platform flavor's `.env.example` (AC-25) waits for the platform render flavor (milestone "The platform is a graph").
+- The managed flavor renders the same Compose lines and `.env` blocks (see `testdata/bindings/golden-managed/`); the guard reads them after interpolation, as before.
+
+## Acceptance criteria coverage (milestone 3b, task 5 of 0025)
+
+- AC-25: the first five command steps and the first two value sourcing steps; the platform `.env.example` part is open · AC-26: the last three command steps and the third value sourcing step
+
+## Milestone 3b, tasks 6 to 9 of 0025: graph config values, the inspector, the paper Caddyfile (updated 2026-11-06)
+
+### Commands
+
+- [ ] `go test -race -count=1 -run 'TestCanonicalRoundTrip|TestConfigText|TestDecodeGraphRejects' ./libs/contract/` → passes: `config-set`, `config-problems` and `config-quotes` round trip byte for byte; each config value is written double quoted, `config: {}` and `config: null` are left out, a long line is never wrapped; `port: 5432`, `on: yes`, a null value and a list are `invalid_graph`; a v0alpha1 graph with `config` is `invalid_graph` at `modules.a.config` → AC-27
+- [ ] `pnpm --dir web exec vitest run src/test/yaml.test.ts` → the editor's writer gives the same bytes for every fixture, the config ones included, and leaves an empty or null `config` out → AC-27
+- [ ] `go test -race -count=1 -run 'TestPlan$|TestGraphTextRule|TestConfigMessages|TestConfigInDigest' ./libs/planner/` → `config-problems` gives one problem per path in the AC-27 order (`unknown_config`, `invalid_config` for `{`, `12`, `medium` and an empty required value, `config_not_settable` for the secret set to `{`, the `{uid}` value and the `host_mounts` source, `config_not_allowed` on the external, `missing_config` as an error on a non SDK instance and a warning on the SDK one); `"q"`, `'q'`, `""`, `"é"` and a tab are `invalid_config` on both runtimes while ` "q"`, `"q`, `a"b`, `"q'`, `"`, `yes` and `0x1` plan ok; messages name the rule, never the text; a changed value changes the digest → AC-27
+- [ ] `go test -race -count=1 ./sdk/manifest/ ./libs/contract/` → the catalog case `enum value in matching quotes` is `invalid_rule` at `config.mode.values.1` in both checkers → AC-27
+- [ ] `go test -race -count=1 -run 'TestRenderGraphConfigGolden|TestGraphValuesReachTheService|TestSDKGraphValuesRoundTrip' ./libs/render/` → in `testdata/graph-config/golden/docker-compose.yml` each graph value is the variable's default (`$` as `$$`), `TELLER_MOTD` is `${MP_TELLER__MOTD:-}` (empty on purpose), the asked `mode` and `origin` the graph leaves out stay bare; compose-go reads `TELLER_NOTE` as `a'b`, `TELLER_MOTTO` as `$x`, `TELLER_TAGLINE` as `a #b`, and a `.env` line still wins; `config/tally.env` holds `TALLY_GREETING=a"b` and `TALLY_NOTE="q` uncommented and `sdk/envfile` reads them back unchanged → AC-25, AC-27
+- [ ] `go test -race -count=1 -run 'TestSetupGraphAnswers|TestManagedGraphAnswersSetup' ./libs/render/` → `setup.sh` asks only `mode` and `origin`, prints `set by the graph  MP_TELLER__NOTE=a'b` (and the same for `$x`, `a #b`, `example.org`), writes none of them into `.env`, defaults `origin` to `https://example.org`, and hands every text to the setup step as typed in `MP_ASK_<V>`; with `MP_TELLER__DOMAIN='other.org'` in `.env` it prints `.env overrides the graph  MP_TELLER__DOMAIN` and the origin default follows `other.org`; a managed render of `simple` with `domain` set is not refused, without it `setup_required` → AC-28, AC-11, AC-10
+- [ ] `pnpm --dir web exec vitest run src/test/inspector-config.test.tsx src/test/edit.test.ts` → the Config section lists `label`, `level`, `mode`, `verbose` (no secret, `{uid}` or host path value), typing writes on Enter only, clearing removes the key and then `config`, an `invalid_config` problem shows once, under its field, an unknown key shows in *Unknown values* with a working remove button, and an external instance has no Config section → AC-29
+- [ ] `task smoke` → `a config value set in the inspector reaches the downloaded zip` passes: the plan request holds `config: {proxy-hops: "2"}`, the zip's `config/planner.env` holds `MP_PROXY_HOPS=2` and its `graph.yaml` `proxy-hops: "2"` → AC-29
+- [ ] `go test -race -count=1 -run 'TestPaperPlatform|TestPaperCaddyfile' ./libs/planner/` → the platform graph (with `planner-mode: "internal"`) plans ok with only the two `host_access` warnings; the Caddyfile holds both snippets, `import tls-{$MP_TLS_MODE}` and one `reverse_proxy {$MP_WEB_UPSTREAM:http://web.modular-platform.internal:8080}`; the caddy entry declares no `web-upstream` → AC-30
+
+### UI / manual
+
+- [ ] `task dev`, open a graph file with a `planner` instance, select it → the inspector shows Config with `planner-mode` (a select: Not set, public, internal), `planner-rate` and `proxy-hops` (text, placeholder the default); set `proxy-hops` to `abc`, press Enter → after the plan, `Config value proxy-hops of instance planner: "abc" is not a whole number.` shows under the field and the field has a danger border; Undo restores the field → AC-29
+- [ ] Same screen with the keyboard only: Tab reaches each field, Enter writes, the select opens with arrow keys; `/design` shows the TextField states in both themes → AC-29
+
+### Value sourcing
+
+- [ ] Render, a non SDK value's default: set `level: "debug"` in the graph and no `.env` line → `TELLER_LEVEL` is `debug`; remove it from the graph → the catalog default `info`; an optional value with neither → empty → AC-25
+- [ ] Render, an SDK env file line: a graph value → `<ENV>=<text>`; none → the commented default → AC-27
+- [ ] `setup.sh`, a value set by the graph: the default baked into the Compose line and the `graph_set` line match the graph text byte for byte, `'` and `$` included → AC-28
+- [ ] Plan, the config problems: change the entry (drop a value the graph sets) → `unknown_config` at that path, and the inspector moves it to *Unknown values* → AC-27, AC-29
+- [ ] Editor, settable values and defaults: a catalog value with `default: "{uid}"` or named by `host_mounts` never shows a field → AC-29
+
+### Acceptance-criteria coverage
+
+- AC-25: the graph-config golden and compose-go steps, first value sourcing step · AC-27: the contract, writer, planner, catalog and SDK env file steps · AC-28: the setup.sh and managed steps · AC-29: the inspector Vitest, smoke and manual steps · AC-30: the paper platform step · AC-10, AC-11: the setup.sh and managed steps
+
+## Milestone 4: the platform is a graph, tasks 17 to 19 (updated 2026-11-06)
+
+### Commands
+
+- [ ] `go test -race ./libs/render/ -run 'Platform'` → the platform golden in `libs/render/testdata/platform/` matches (Compose file, `setup.sh`, `.env.example`, README, `graph.yaml`, one golden per rendered template), two renders give byte identical zips, the static render refuses `{install}` with `ErrNotRendered`, and the managed render refuses `host_access` at `ingress` and `deployer-docker` and `setup_required` at `authelia` and `cert-issuer` → AC-16, AC-9, AC-11
+- [ ] `go test -race ./libs/planner/ -run TestPlatformGraph` → the eight platform modules are built in entries, `deploy/managed/graph.yaml` plans `ok` with warnings `host_access` at `ingress` and `deployer-docker` only, the 14 bindings sit where 0015 puts them, and the file is in canonical form → AC-16
+- [ ] `task managed:render`, then `ls -a build/managed` → `docker-compose.yml`, `config/`, `setup.sh`, `.env.example`, `README.md`, `graph.yaml`, and no `.env`; running it twice and diffing the folders shows no change → AC-16
+- [ ] `ls -a deploy/managed` → only `graph.yaml`, `compose.dev.yaml`, `compose.ci.yaml` and `README.md`: `compose.yaml`, `setup.sh`, `db-init/`, `Caddyfile`, `authelia/`, `cert-issuer/` and `.env.example` are gone → AC-16
+- [ ] `task managed:zip VERSION=0.0.0`, then `unzip -l dist/modular-platform-0.0.0.zip` → every file under `modular-platform-0.0.0/` is one of `build/managed/` → AC-16
+- [ ] `task images IMAGE_TAG=ci && SMOKE_DOCKER_RESTART=1 task smoke:managed` → `smoke-managed passed`: install with the rendered `setup.sh` (domain, empty origin, admin email, user name, password), the eight services healthy and the two provision jobs and the revoke job exited 0, sign in through Authelia, deploy the sample, running again after the Docker restart, remove with *Delete data too*, no secret in any log → AC-16
+- [ ] `go test -race ./sdk/ -run TestCallerEndToEnd` → a token signed with a second key, one the provider holds for another consumer, sent with the caller's binding token, is 401 `invalid_token`; the caller's own token passes → AC-18
+- [ ] `go test -race ./sdk/caller/ -run 'TestLoadKeys|TestGenerateKeyPair'` → the caller keys directory follows the token clients directory's entry rules, a token is checked only against its own consumer's keys, and `api caller-key generate`'s pair verifies → AC-18
+- [ ] `grep -rn MP_CALLER_KEY_FILE --include='*.go' --include='*.md' sdk services libs` → no hit; `grep -n MP_CALLER_KEYS_DIR build/managed/docker-compose.yml` → set on `planner` and `deployer-docker`, each with `api`'s public key mounted at `/run/secrets/clients/<provide>/caller_key/api` → AC-18
+
+### Value sourcing
+
+- [ ] `api`'s `MP_OIDC_ISSUER` in `build/managed/docker-compose.yml` is `${MP_INGRESS__ORIGIN}${MP_INGRESS__BASE_PATH:-}/auth` (`{uses: public, format}` through `authelia`); set `MP_INGRESS__BASE_PATH='/platform'` in `.env` and check sign in still lands on `<origin>/platform/auth`
+- [ ] `api`'s `MP_OIDC_CA_FILE` is `/run/volumes/oidc/ca/root.crt` with `./data/ingress/data/caddy/pki/authorities/local` mounted read only (a `{volume}` source passed through `{uses, field}`), and `setup.sh` creates that folder before `up`
+- [ ] `MP_PLANNER_URL` and `MP_DEPLOY_TARGET_URL` are `https://<instance>.modular-platform.internal:8443`, and `MP_*_CA_FILE` is `cert-issuer`'s `root-ca` (SDK TLS from the bound `acme` slot)
+- [ ] `MP_DEPLOYMENTS_DIR` and `deployer-docker`'s deployments mount are `${MP_DIR}/deployments` on both sides, and `setup.sh` writes `MP_DIR` as the folder it sits in; run `setup.sh` from a folder whose path holds `'` → it stops with a message
+- [ ] the question order follows the binding order: answer the domain `example.test` and an empty origin → `.env` holds `MP_INGRESS__ORIGIN='https://example.test'`
+
+### Build findings (0015, *Milestone 4 build findings*)
+
+- [ ] `go run ./catalog/cmd/render-platform -out build/managed -image-tag ci`, then `grep -n "image:" build/managed/docker-compose.yml` → `api`, `planner`, `deployer-docker` and `web` end in `:ci`; `caddy`, `authelia`, `step-ca` and `postgres` keep their catalog tags; without `-image-tag` the four take the catalog's release tag
+- [ ] Point `-graph` at a copy of the platform graph with one binding removed → it prints the plan problem, exits 1, and `build/managed` is unchanged
+- [ ] `grep -n -A3 "cap_add" build/managed/docker-compose.yml` → `deployer-docker` has `CHOWN`, `DAC_OVERRIDE`, `FOWNER` and `cap_drop: [ALL]`; `ingress`, `web` and `cert-issuer` have `NET_BIND_SERVICE` only; `go run ./catalog/cmd/render-platform -out build/managed 2>&1 | grep host_access` → the warning at `deployer-docker` names the three
+- [ ] Copy `build/managed` to a scratch folder and run `setup.sh` there; run `task managed:zip VERSION=0.0.0`, unzip it, and copy the contents of its `modular-platform-0.0.0/` folder over the scratch folder → `.env` is byte identical (the zip holds only `.env.example`) → AC-25's platform part, open since 0025 task 5
+- [ ] `task dev:managed`, stop it with Ctrl-C, run it again → the second run prints no password line, and `.env`, `secrets/`, `data/` and `deployments/` in `.dev/managed` are unchanged
+- [ ] In a scratch copy of `build/managed`, `printf 'x.test\n\na@b.co\nAdmin!\nlongenough12\n' | sh setup.sh`, then the same with user `admin` and the password `short11char` → each time the `users` step stops with its message and writes no `secrets/authelia/users`
+
+### Not yet covered
+
+- AC-17 (postgres TLS through the certificate provisioner): milestone 5. `postgres.tls` is `null` in `deploy/managed/graph.yaml` until task 21 binds it.
+
+### Acceptance-criteria coverage
+
+- AC-16: the golden, planner, render, folder, zip and smoke steps, and the build findings steps · AC-18: the SDK caller steps and the `MP_CALLER_KEYS_DIR` check · AC-9, AC-11: the golden's refusal checks · AC-25: the platform `.env.example` step under build findings

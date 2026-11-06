@@ -76,6 +76,12 @@ You also chose: every write of a `for_each` step carries `{client}` (a shared wr
 
 To be filled by build task 20: `postgres` running as the setup user with its key file written by the certificate job, and its reload of a reissued certificate.
 
+**0025 task 1, default texts in Compose and env files (2026-11-06, compose-go v2.16.2).**
+
+- compose-go: `environment: {E: "${V:-<d>}"}` read back by `loader.LoadWithContext`, with `V` unset and with `V` set to empty (both give `<d>`). These texts round trip: `$` written `$$`, `#`, `"`, `'`, spaces at either end, `{`, `{x}`, `:-`, `=`, `\`, non ASCII letters. A `}` anywhere but at the very end does not: `a}b` reads back as `ab}`, `x}y}z` as `xy}z}`. 0025 already refuses `{` and `}`.
+- `sdk/envfile`: a line `K=<text>` round trips every text above, `}` included, except a text that starts and ends with the same quote: `"q"` and `'q'` read back as `q`, as EF-2 says. One sided quotes round trip. So an SDK instance's `config/<i>.env` line `<ENV>=<text>` (AC-27) changes such a text unless it is refused too. You chose to refuse it as `invalid_config` on every instance, SDK or not (0025, *Graph text rules*).
+- Also seen, `caddy:2.11.7-alpine`: `{$VAR:default}` takes the default only when the variable is unset; set to empty, Caddy keeps the empty value. This is why 0025 never renders `MP_WEB_UPSTREAM`.
+
 ## References
 
 **Project sources**:

@@ -17,19 +17,23 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 27 | Module SDK | Slice 1 | in-progress |
 | 16 | Managed mode control plane | Slice 1 | in-progress |
 | 3 | Capability and module contract | Slice 2 | in-progress |
+| 10 | External capability providers | Slice 2 | in-progress |
 | 4 | Platform data model | Slice 2 | planned |
 | 6 | Design online, download, compose up | Slice 3 | planned |
+| 34 | Edit layer and gated apply | Slice 3 | planned |
+| 35 | Apply history and diff | Slice 3 | planned |
+| 32 | Start the platform from one container | Slice 4 | in-progress |
 | 23 | Replace the platform's own modules | Slice 4 | planned |
 | 24 | Planner website standalone or in your site | Slice 4 | planned |
 | 25 | Upgrade a managed install | Slice 4 | planned |
 | 28 | Exchangeable sign in methods | Slice 4 | planned |
+| 37 | First run setup on the web | Slice 4 | planned |
 | 30 | Sign in protocol an app requires | Slice 4 | planned |
 | 31 | TLS for deployed stacks | Slice 4 | planned |
 | 7 | Exchange a provider | Slice 5 | planned |
 | 8 | Capability conformance checks | Slice 6 | planned |
 | 9 | Secrets handling | Slice 7 | planned |
 | 26 | Config and secrets wired from the network | Slice 7 | planned |
-| 10 | External capability providers | Slice 8 | planned |
 | 12 | Plan from files and command line | Slice 9 | planned |
 | 13 | Shared catalog repositories | Slice 10 | planned |
 | 14 | Roles and permissions | Slice 11 | planned |
@@ -38,9 +42,12 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 18 | Users, groups and permissions modules | Slice 13 | planned |
 | 29 | Sign in policy and tenant issuers | Slice 13 | planned |
 | 19 | Live graph changes | Slice 14 | planned |
+| 36 | Live health and binding statistics | Slice 14 | planned |
 | 20 | Scale modules | Slice 15 | planned |
 | 21 | Per user provider routing | Slice 16 | planned |
 | 22 | Run the public online tool | Deferred | planned |
+| 33 | Managed network on Kubernetes | Deferred | planned |
+| 38 | Sample graphs for Nextcloud and WordPress | Deferred | planned |
 | 11 | Standalone export | | dropped |
 
 ## Foundations
@@ -124,19 +131,36 @@ spec [0006](../specs/0006-managed-mode-control-plane/index.md) · [0007](../spec
 ### 3. Capability and module contract · in-progress
 The public contract every module author builds against: how a capability is named and versioned (protocol plus version), how a module manifest wraps an existing container image and declares what it provides and uses, how a binding reaches the container (address, config, credentials), and how an external provider is described. It also covers provisioning capabilities (a provider that creates, for example, a database and role per consumer), per binding credentials, how a module declares the secrets it needs so `setup.sh` can create them, and the platform's own services as catalog modules (asked by spec 0001), replaceable through the same contract, so nothing in the platform assumes a specific image behind a capability (#23). Config and identity (users, groups, permissions) are capabilities like any other, and the contract plans for managed mode from day one. Comes after #16 (spec 0004), so it is designed against a running platform and replaces the provisional format and the hand written managed zip.
 **Done when:** two different modules can declare the same capability and a consumer binds to either without changing; config reaches an unchanged container as files and env vars; a module can declare that it is aware of per user providers; the format carries its own version so it can grow without breaking published modules. (basis: standard container image format; semantic versioning)
-spec [0011](../specs/0011-capability-module-contract/index.md) · [0012](../specs/0011-capability-module-contract/0012-capabilities-versions-matching.md) (capabilities, versions, matching) · [0013](../specs/0011-capability-module-contract/0013-module-manifest-v1.md) (module manifest v1 and render) · [0014](../specs/0011-capability-module-contract/0014-provisioners-jobs.md) (provisioners and jobs) · [0015](../specs/0011-capability-module-contract/0015-platform-graph-managed-zip.md) (platform graph and rendered managed zip) · [0022](../specs/0011-capability-module-contract/0022-deployed-cap-add.md) (Linux capabilities on deployed graphs) · code in `catalog/`, `libs/contract/`, `libs/planner/`, `libs/render/`, `sdk/manifest/`, `sdk/cmd/sdkgen/`, `web/src/graph/`
+spec [0011](../specs/0011-capability-module-contract/index.md) · [0012](../specs/0011-capability-module-contract/0012-capabilities-versions-matching.md) (capabilities, versions, matching) · [0013](../specs/0011-capability-module-contract/0013-module-manifest-v1.md) (module manifest v1 and render) · [0014](../specs/0011-capability-module-contract/0014-provisioners-jobs.md) (provisioners and jobs) · [0015](../specs/0011-capability-module-contract/0015-platform-graph-managed-zip.md) (platform graph and rendered managed zip) · [0022](../specs/0011-capability-module-contract/0022-deployed-cap-add.md) (Linux capabilities on deployed graphs) · [0025](../specs/0011-capability-module-contract/0025-slot-fields-config-delivery.md) (slot fields in the SDK, config values for every module) · code in `catalog/`, `libs/contract/`, `libs/planner/`, `libs/render/`, `sdk/`, `services/api/`, `services/planner/`, `services/deployer-docker/`, `deploy/managed/`, `web/src/graph/`
 - [x] Design it (spec): `/architect capability and module contract`
 - [ ] Build it: `/develop capability and module contract`
    - [x] v1 thread on the sample: the `--wait` spike, v1 contract and catalog layout, matching with versions, slots and named provides, the provision job, the v0alpha1 converter, `sdkgen` and the editor on v1, the paper platform (AC-1, AC-2, AC-3, AC-4, AC-5, AC-7, AC-8, AC-12, AC-14, AC-16, AC-19, AC-20)
    - [x] Bindings in full: the revoke job, external instances, fixed path and `to_provider` fields, `per_caller`, networks, hardening, labels and `environment` (AC-1, AC-4, AC-6, AC-8, AC-12, AC-13, AC-14, AC-15, AC-18, AC-19)
    - [x] Install time: secrets, asked values, setup steps and the `setup.sh` assembly, templates, host access and the managed refusals (AC-9, AC-10, AC-11, AC-12)
    - [x] Linux capabilities on deployed graphs (0022): only `NET_BIND_SERVICE`, the `invalid_hardening` rule, `cap_add` in `host_access`, the guard requiring `cap_drop` and `no-new-privileges`, the `CapEff` e2e (AC-2, AC-11, AC-21)
-   - [ ] The platform is a graph: the eight platform entries, per consumer caller keys, the platform render flavor, the release zip and `smoke-managed` on it (AC-16, AC-18)
+   - [x] Slot fields and config values (0025): typed SDK getters for slots with no client and `planner`, `deployer-docker`, `api` on them; non SDK values as `.env` variables with the `setup.sh` check; graph `config` values through planner, render and the editor's inspector; the paper platform entries (AC-10, AC-11, AC-22 to AC-30)
+   - [x] The platform is a graph: the eight platform entries, per consumer caller keys, the platform render flavor, the release zip and `smoke-managed` on it (AC-16, AC-18)
    - [ ] TLS for unchanged providers: the postgres spike, the certificate provisioner, `api` with `verify-full` (AC-17)
 - [ ] Verify it: `/check verify capability and module contract`
 - [ ] Test it: `/test capability and module contract`
 - [ ] Review it (fresh model): `/check review capability and module contract`
 - [ ] Document it: `/document capability and module contract`
+
+### 10. External capability providers · in-progress
+Register a service outside the deployment as a provider: its endpoint, its credentials, and a health check that it is reachable and passes its capability check. Consumers cannot tell it apart from an internal module. Its spec decides where the health check runs: the public planner must never call addresses that users supply. A provisioning provider offers the same commands to list, add and remove what it holds (for S3: buckets and their logins), whether it runs in the stack (MinIO) or outside it (an AWS S3 account). The only difference is where its admin settings come from: an internal module's are generated, while for an external you enter them once and the platform reuses them (#26). Today's provision and revoke jobs (spec 0014) cover add and remove for Postgres; this adds list, and providers whose admin APIs differ (MinIO and AWS make logins in different ways) behind one interface. Designed with #3, so the capability file format settles before modules are published against it.
+**Done when:** a consumer binds to an external provider exactly like to a module; the same list, add and remove commands work on the bundled S3 module and on an AWS S3 account, and give the same result shape; the only extra step for the external is entering its admin settings once; an unreachable or failing external is flagged on the graph; switching between an external and an internal provider is an ordinary exchange. (basis: health check API pattern)
+spec [0017](../specs/0017-external-capability-providers/index.md) · [0018](../specs/0017-external-capability-providers/0018-identity-providers-grants.md) (identity providers and grants) · [0019](../specs/0017-external-capability-providers/0019-s3-seaweedfs-aws.md) (S3 on SeaweedFS and AWS) · [0020](../specs/0017-external-capability-providers/0020-holdings-list-revoke.md) (holdings, list and managed revoke) · [0021](../specs/0017-external-capability-providers/0021-waiting-flag.md) (the waiting flag) · [0023](../specs/0017-external-capability-providers/0023-access-actions.md) (access actions) · [0024](../specs/0017-external-capability-providers/0024-key-rotation-reload.md) (key rotation and live reload) · code in `catalog/`, `libs/contract/`, `libs/planner/`, `libs/render/`, `sdk/`, `services/api/`, `services/deployer-docker/`, `web/src/`
+- [x] Design it (spec): `/architect external capability providers`
+- [ ] Build it: `/develop external capability providers`
+   - [ ] S3 thread on SeaweedFS: the spikes, the identity contract, `s3`, `s3-provisioner`, `iam`, the `seaweedfs` module, access declarations and grants, the login job, two consumers in a static zip (AC-1, AC-2, AC-3, AC-16) · spikes done 2026-11-05
+   - [ ] AWS, rotation, adoption and links: the AWS external on Moto, the path fence and date free key rules, SDK live reload, the retire job, external `uses`, `same_as`, `adopt` and sharing (AC-1, AC-3, AC-4, AC-6, AC-7, AC-14, AC-16, AC-17, AC-18)
+   - [ ] Postgres split and no revoke at `up`: `postgresql-provisioner` and `postgresql-roles`, the 0014 take over, `mp_jobs` removed, list jobs (AC-2, AC-5, AC-6, AC-8)
+   - [ ] The managed record: holdings tables and marker, the deployer run endpoint, pending holdings, revoke after apply and before remove, retire after a confirmed rotation, the list API and the editor panel (AC-9, AC-10, AC-11, AC-15, AC-18)
+   - [ ] The waiting flag: `/readyz` names waiting slots, deployer `waiting`, flags on the graph and on failed operations (AC-12, AC-13)
+- [ ] Verify it: `/check verify external capability providers`
+- [ ] Test it: `/test external capability providers`
+- [ ] Review it (fresh model): `/check review external capability providers`
+- [ ] Document it: `/document external capability providers`
 
 ### 4. Platform data model · needs a decision
 The graph text file format that the editor saves and every zip carries (replacing the provisional one from spec 0002), then how the managed platform stores catalogs, plans, deployments, users and roles, secret references and audit entries, and whether files or the database are the source of truth. Static mode stores nothing on the platform side. In managed mode it also tracks the running graph, and the per group and per user provider mappings, while users and groups may live in an identity module instead of the platform. It builds on the few tables #16 creates (sessions, the admin binding, deployments, apply history) without breaking them.
@@ -150,7 +174,32 @@ Graph editing in the editor (spec 0004): load the catalog, place a consumer modu
 **Done when:** you build a two module graph in the editor, the planner rejects an unmet need and accepts a bound one, the graph saves as a text file, the same graph deploys from the managed editor, and the downloaded zip starts both containers wired together on a clean host without the platform, with secrets created by `setup.sh` and never inside the zip.
 - [ ] Design it (spec): `/architect design online, download, compose up`
 
+### 34. Edit layer and gated apply · needs a decision
+In managed mode the graph shows the running stack by default. You switch on an edit layer to change it: add, remove or rebind modules as a draft drawn on top of the running stack, with every change marked against what runs. Switching the layer off shows the running stack again, untouched by the draft. Apply stays locked until every capability each module uses is bound to a provider, and the editor names what is still missing. Until #19 lands, apply deploys the whole draft as #16 does today; #19 later applies only the difference and shows its impact on this layer. Managed mode only: the online tool has no running stack. Its spec decides where the draft lives (one browser or the platform, one per admin or shared) and what happens when the running stack changes under an open draft.
+**Done when:** in managed mode you switch the edit layer on, change the graph, and see each added, removed and rebound part marked against the running stack; switching it off shows the running stack unchanged; apply is disabled while any need is unbound and names the missing capabilities; once every need is bound, apply deploys the draft, and with the layer off the graph then shows the new running stack.
+- [ ] Design it (spec): `/architect edit layer and gated apply`
+
+### 35. Apply history and diff · needs a decision
+Every apply writes one history entry: who applied it, when, the full graph and whether it succeeded. You pick any two entries and see the difference between them (modules, bindings and config added, removed or changed) on the graph and as a list. Restoring an entry loads it as the draft in the edit layer (#34), so it passes the same checks and the same apply button. It builds on the apply history table #16 creates; the audit log (#15) records that an apply happened, this keeps the graphs themselves. Managed mode only.
+**Done when:** each apply adds one entry with who, when, the graph and the result; you compare any two entries and see every added, removed and changed module, binding and config value, with secret values never shown; restoring an entry opens it as the draft, and applying it runs the same checks as any other draft.
+- [ ] Design it (spec): `/architect apply history and diff`
+
 ## Slice 4: Own the platform
+
+### 32. Start the platform from one container · in-progress
+The managed platform starts from one container, most likely the deployer, instead of one `docker compose up` for every service. It reads the platform's starting state from its files (the platform graph and render of spec 0015, plus what `setup.sh` wrote). Then it looks for the platform's containers on the host: it starts the ones that exist and match, recreates the ones that no longer match the files, and creates the ones that are missing. Only the platform's own modules: deployed stacks keep relying on Docker's restart policy. Comes after #3's milestone 4 (the platform is a graph), and gives #23, #25 and #19 one entry point that brings the platform up from its files. Its spec decides how this first container is started and restarted, how it finds the platform's containers (labels), what counts as no longer matching, and how it keeps from stopping itself.
+**Done when:** on a clean host, `setup.sh` and starting the one container bring up the whole platform, and you sign in and deploy as today; on a host where the platform already ran, starting it again reuses the existing containers and volumes and creates no duplicates; a container changed by hand or deleted is recreated from the files at the next start; and no deployed stack's container is touched.
+spec [0016](../specs/0016-platform-one-container/index.md) · code in `services/deployer-docker/`, `libs/render/`, `libs/contract/`, `contracts/openapi/planner.yaml`, `catalog/`, `deploy/managed/`, `scripts/smoke-managed.sh`
+- [x] Design it (spec): `/architect start the platform from one container`
+- [ ] Build it: `/develop start the platform from one container`
+   - [ ] Spike and contract: `COMPOSE_FILE` from the state `.env`, a second keeper project, self removal; `keeper`, `show: once`, `format: password` and the platform refusals; the `deployer-docker` and `authelia` entries (AC-3, AC-5, AC-6, AC-10, AC-12)
+   - [ ] Render: `docker-compose.yml` without the keeper, `keeper.yml`, `setup.json` and the root `setup.sh` with the seed and the one time print (AC-1, AC-10, AC-11)
+   - [ ] The keeper thread: seed, lock, atomic prepare, reconcile, self check and handover, then dev and smoke switched to it (AC-1, AC-2, AC-3, AC-12)
+   - [ ] Starting again, drift, untouched stacks, failure paths and the README (AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9)
+- [ ] Verify it: `/check verify start the platform from one container`
+- [ ] Test it: `/test start the platform from one container`
+- [ ] Review it (fresh model): `/check review start the platform from one container`
+- [ ] Document it: `/document start the platform from one container`
 
 ### 23. Replace the platform's own modules · needs a decision
 Every module the managed platform ships with is only a default: ingress, database, event bus, identity provider, deployer, and even web, planner and api. At install you choose another provider of the same capability (for example your own reverse proxy, an existing database, or another sign in provider) and the managed zip is rendered with your choice; setup steps that belong to one provider (such as a password hash) travel with that module. Swapping on a running platform comes with #19.
@@ -171,6 +220,11 @@ Move a running managed platform to a newer version: new images, database migrati
 How someone proves who they are is exchangeable, not only the container behind it (#23). Each sign in method (passkey, FIDO security key, username and password, OIDC through another identity provider, OID4VP with a wallet credential) comes from a module that provides a sign in method capability, and one module may provide several methods. You enable several at once, each user picks one, and two can stack as two factors (#14). The managed platform's own sign in uses them, and apps in the stack can bind to the same capability. A method the platform does not ship with plugs in as a new module, with no platform change. Its spec decides the seam: what the platform and apps learn after a sign in (who, by which methods, how strong), and how methods relate to the identity modules of #18.
 **Done when:** you sign in to the managed platform with at least two different methods enabled side by side; a user can combine two methods as two factors; you remove one method module and add another with no change to the platform or any app; an app in the stack signs its users in through the same capability; a fresh install starts with one bundled method, and the planner refuses to remove the last one or a module that does not provide what sign in needs.
 - [ ] Design it (spec): `/architect exchangeable sign in methods`
+
+### 37. First run setup on the web · needs a decision · from spec 0016
+All install setup moves to the web. After the first start, the platform shows a one time setup site, protected by a generated setup code with no user name (a `show: once` secret that `setup.sh` prints, spec 0016). It collects the install answers `setup.sh` asks today (domain, origin, admin email), and the first admin enrolls through whichever identity module is installed, so it works when the replacement for Authelia offers no username and password, only OID4VP with a wallet. It replaces the generated Authelia admin password of spec 0016, and `setup.sh` then asks nothing. Designed together with #28, so the enrollment seam and the sign in method seam are decided once. Its spec decides where the site runs before the domain is known, how the code is checked and retired, and the seam an identity module offers for enrolling its first admin.
+**Done when:** on a clean host `setup.sh` asks nothing and prints only the setup code; the setup site accepts that code once and refuses it afterwards; you enter the install answers there and enroll the first admin with the bundled module, and with a second identity module that has no password; you then sign in and deploy as today.
+- [ ] Design it (spec): `/architect first run setup on the web`
 
 ### 30. Sign in protocol an app requires · needs a decision
 Some apps in the stack speak only one sign in protocol to their users (for example only LDAP, only SAML, only OIDC, or only forward auth headers from the ingress). Such a module declares that it requires exactly that protocol, and the planner binds it only to a provider that speaks it. By default the app shares the users of the platform's own sign in, reached through a provider that bridges to that protocol (for example LDAP served from the identity module, #18). Per app you can instead point it at its own separate provider with its own users, apart from the platform login. Its spec decides how a required protocol is named in the contract (#3), what a bridge provider is, which sign in methods (#28) a protocol can carry, and how the shared and the separate choice meet policy (#29) and roles (#14).
@@ -210,10 +264,7 @@ In managed mode, a compatible module's config and secrets come from the network 
 
 ## Slice 8: External providers
 
-### 10. External capability providers · needs a decision
-Register a service outside the deployment as a provider: its endpoint, its credentials, and a health check that it is reachable and passes its capability check. Consumers cannot tell it apart from an internal module. Its spec decides where the health check runs: the public planner must never call addresses that users supply. An external that offers a provisioning capability follows #26: you give its admin login once, and the platform reuses or creates resources and module logins from it.
-**Done when:** a consumer binds to an external provider exactly like to a module, an unreachable or failing external is flagged on the graph, and switching between an external and an internal provider is an ordinary exchange. (basis: health check API pattern)
-- [ ] Design it (spec): `/architect external capability providers`
+External providers moved into Slice 2 (#10), so they are designed together with the contract.
 
 ## Slice 9: Files and command line
 
@@ -260,12 +311,17 @@ Config decides which sign in methods (#28) count for what: per app in the stack,
 **Done when:** two apps in the stack accept different methods for the same user; deploying asks for a step up that viewing does not; two tenants each trust only their own OID4VP issuer, and a credential from tenant A's issuer is refused for tenant B; a policy change takes effect without a redeploy; and the planner refuses a policy that leaves an app, action or tenant with no enabled method.
 - [ ] Design it (spec): `/architect sign in policy and tenant issuers`
 
-## Slice 14: Live graph changes
+## Slice 14: Live graph changes and health
 
 ### 19. Live graph changes · needs a decision
 Change the running stack without a full redeploy: swap a provider, add a module or remove one. The platform compares the running graph to the new plan and applies only the difference, rewiring consumers as it goes. This includes the platform's own graph (#23), so the deployer applies such a change without stopping itself mid apply.
 **Done when:** in managed mode a swap, an add and a remove each apply while the rest of the stack keeps running, a platform module (for example the ingress) can be swapped on a running platform, the planner shows the impact before you apply, and a failed change leaves the previous graph running.
 - [ ] Design it (spec): `/architect live graph changes`
+
+### 36. Live health and binding statistics · needs a decision
+The graph shows how the running stack is doing: each module's health, and on each binding its request rate, the share of requests that fail, and how slow they are, updated while you watch. Modules wrap existing container images, so the numbers must come without changing those containers. It thickens the per module state #16 already shows, and replaces the deferred Observability idea for health and metrics (logs stay deferred). Managed mode only. Its spec decides where the numbers come from, how often they refresh, and how long they are kept.
+**Done when:** in managed mode the graph shows each module's health and each binding's request rate, error share and latency, refreshing on its own; an unhealthy module or a binding with a high error share stands out without opening anything; the numbers stay visible on the running parts while the edit layer (#34) is on; and no module's container changed to report them.
+- [ ] Design it (spec): `/architect live health and binding statistics`
 
 ## Slice 15: Scaling
 
@@ -294,18 +350,33 @@ Operate the online tool on your own network as a public service: choose the publ
 **Done when:** the online tool answers on its public domain over TLS, only the ingress is reachable from outside, a flood is stopped before it reaches the planner, and the privacy note is published and true.
 - [ ] Design it (spec): `/architect run the public online tool`
 
+### 33. Managed network on Kubernetes · needs a decision
+A managed network runs on a Kubernetes cluster, not only on one Docker host. You install the platform itself on the cluster, and it deploys your stacks to the same cluster, spread across its machines; Kubernetes is a second deploy target beside the Docker host, behind the same target seam (spec 0001), so no module and no graph changes to move between the two. Static mode stays a Compose zip. Replaces the deferred idea of a cluster deploy target. Its spec decides how the platform is installed and upgraded on a cluster (#25), how the starting state from files (#32) maps onto it, how modules, bindings, config, secrets and volumes become cluster resources, how ingress and TLS (#31) work there, how host level refusals (#8) translate, and how it meets scaling (#20) and live changes (#19).
+**Done when:** you install the managed platform on a Kubernetes cluster, sign in, deploy a stack to that cluster from the editor and see each module's live state; the same graph deploys unchanged to a Docker host install; a platform module or a module of a stack keeps working when its machine in the cluster goes away; and removing a deployment leaves nothing of it on the cluster.
+- [ ] Design it (spec): `/architect managed network on Kubernetes`
+
+### 38. Sample graphs for Nextcloud and WordPress · needs a decision
+Two real world sample graphs beside today's one edge sample, so you can open a familiar app in the editor, see how its needs are bound, and run it. Each wraps the unchanged official images as catalog modules, with the providers they need (a database, ingress, and for Nextcloud a cache and storage). They show the contract on apps nobody built for the platform. Its spec decides which capabilities and provider modules each app needs, how much setup each sample carries, and whether both ship together or one at a time.
+**Done when:** both samples open from the editor's samples route with every need bound; each downloads as a zip that starts on a clean host with `setup.sh` and `docker compose up` and serves its app's first page; the same graphs deploy from the managed editor; and swapping one of their providers for another of the same capability works without a change to the app module.
+- [ ] Design it (spec): `/architect sample graphs for nextcloud and wordpress`
+
 Other deferred ideas, not yet numbered:
 - **Live control plane**: now planned as managed mode, starting with #16 in slice 1
 - **Save and share graphs in the online tool**: the online tool has no accounts, so graphs stay in one browser or in files you keep; no sync across devices · needs a decision
 - **Planner widget in another site**: embed the managed planner inside a page of another website (iframe or web component), possibly cross origin, where third party cookie limits hit sign in · needs a decision
 - **Per user providers for unchanged containers**: a routing step between consumer and providers that reads the user from each request · needs a decision
-- **Cluster deploy target**: deploy one graph across several machines · needs a decision
+- **Cluster deploy target**: now #33, the managed network on Kubernetes (deferred)
 - **Live swap without downtime**: replace a running provider with little or no interruption · needs a decision
-- **Observability**: health, logs and metrics of each module shown on the graph · needs a decision
+- **Observability**: health and metrics are now #36 in slice 14; logs of each module shown on the graph stay here · needs a decision
 - **External to internal failover**: fall back to an internal module when an external provider fails · needs a decision
+- **More identity providers**: LDAP or OIDC backed logins and certificate logins (SeaweedFS, Postgres `cert` auth), each one more identity capability granting existing resource types · from spec 0017 · needs a decision
+- **Start check for unchanged images**: a check job per binding for consumers not built on the SDK, so their broken bindings are flagged too · from spec 0017 · needs a decision
+- **TLS for the bundled S3 module**: an optional `tls` slot on `seaweedfs`, like `postgres` · from spec 0017
+- **Real AWS check**: a manual job against a real AWS account that verifies the least privilege admin policy and what Moto does not model · from spec 0017
 - **Accessibility**: the graph editor works by keyboard and with screen readers (WCAG AA) · needs a decision
 - **Multiple languages**: translatable UI text · needs a decision
 - **Usage analytics**: opt in, anonymous counts of feature use · needs a decision
+- **Private registries for platform images**: registry credentials in the keeper, so setup steps and the keeper image can come from a private registry · from spec 0016 · needs a decision
 - **Planner CPU protection**: a cap on requests in flight or a global limit for the public planner, against floods from many addresses; would add a 503 to the planner contract · from spec 0003 · needs a decision
 
 ## Legend
@@ -344,6 +415,9 @@ Other deferred ideas, not yet numbered:
 - Your answers in the `/scope` add pass (2026-10-31): the sign in method is exchangeable, not only its container (passkey, FIDO, username and password, OIDC, OID4VP); used by the platform's own sign in and by apps in the stack; several methods at once, combinable as two factors; a new method is a module with no platform change; new #28 in slice 4, next to #23, with #16 keeping its one method behind a seam.
 - Your answers in the `/scope` add pass (2026-10-31, second): some sign in modules offer several methods; config decides which methods count per app, per action (step up) and per tenant; a tenant is a group or org of users from #18, each trusting its own OID4VP issuers; new #29 in slice 13, after #18, keeping #28 small.
 - Your answers in the `/scope` add pass (2026-11-03): a module can require one sign in protocol for its users when the protocol allows no other (LDAP, SAML, OIDC, forward auth); by default it shares the platform's users through a bridge, and per app you can separate it onto its own provider and users; new #30 in slice 4, after #28.
+- Your answers in the `/scope` add pass (2026-11-05): the managed platform starts from one container (most likely the deployer) that reads its starting state from files, starts existing containers, recreates ones that no longer match the files, and creates missing ones; platform modules only, deployed stacks keep Docker's restart policy; new #32 first in slice 4, after #3's milestone 4.
+- Your answers in the `/scope` add pass (2026-11-05, second): a managed network must also run on a Kubernetes cluster; both the platform and the stacks it deploys run on the cluster; static mode stays Compose only; numbered as #33 but kept deferred, replacing the unnumbered cluster deploy target idea.
+- Your answers in the `/scope` add pass (2026-11-05, third): the graph shows the running stack's health and per binding requests, errors and latency; the admin edits on a switchable layer over the same view and can apply only when every need is bound; every apply is kept in a history where any two entries can be compared and one restored as the draft; split into three features: #34 and #35 at the end of slice 3, #36 in slice 14 after #19, replacing the Observability idea for health and metrics.
 
 **Practices & standards**
 - Vertical slices ship real value early (tracer bullet development)
