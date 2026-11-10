@@ -28,6 +28,7 @@ _Steps derived from spec 0027 and child 0028 acceptance criteria. `/check verify
 - [ ] `go test -race -tags integration ./services/api/internal/store/ -run TestMigrationStacks` → ok: two stacks seeded at `00001` keep every row, link and digest through `up`, and `down` brings back the old names → AC-5
 - [ ] `go test -race ./libs/render/ -update && git diff --stat libs/render/testdata` → no change → AC-11
 - [ ] `git log --format=%B main..HEAD | grep -c 'BREAKING CHANGE:'` → one per renaming slice; the stack slice names the folder move to `<install>/stacks` and the label refresh, the recommendation slice says to review again after `graph_changed` → AC-6
+- [ ] `sh scripts/vocabulary.sh | grep 'docs/specs'` → no line: every spec `index.md`, child spec and `verify.md` uses the glossary's words, and a line that names an old word on purpose carries the marker (rationale files are skipped) → AC-13
 - [ ] `task generate && git status --short` → no diff; `task lint`, `task test`, `task test:integration`, `task smoke` and `task smoke:managed` → pass → AC-14
 
 ## Value sourcing
@@ -38,4 +39,4 @@ _Steps derived from spec 0027 and child 0028 acceptance criteria. `/check verify
 
 ## Acceptance-criteria coverage
 
-- AC-1: glossary step · AC-2: renderer start, online editor text, check script · AC-3: required-one check step · AC-4: managed mode navigation step, the 404 step · AC-5: migration test · AC-6: start refusals, 404s, commit footers · AC-7: required-one step and Go test · AC-8: render refusal step · AC-9: the UI steps · AC-10: ambiguous and optional steps · AC-11: golden diff and Go tests · AC-12: the two check script steps · AC-13: covered once slice 6 lands (the Markdown rewrite, `/sync`, `/scope`) · AC-14: the full gate step
+- AC-1: glossary step · AC-2: renderer start, online editor text, check script · AC-3: required-one check step · AC-4: managed mode navigation step, the 404 step · AC-5: migration test · AC-6: start refusals, 404s, commit footers · AC-7: required-one step and Go test · AC-8: render refusal step · AC-9: the UI steps · AC-10: ambiguous and optional steps · AC-11: golden diff and Go tests · AC-12: the two check script steps · AC-13: the spec text step (the READMEs, `/sync` for `AGENTS.md` and `/scope` for the scope rows are checked once they land) · AC-14: the full gate step

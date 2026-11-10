@@ -6,18 +6,18 @@
 
 ## Summary
 
-The module SDK is a Go kit for building a module container, so a module only describes what it needs and the SDK does the rest. A module declares its config values and its bindings once, in its catalog entry; a generator turns that into typed Go getters; the SDK fills the values from env vars, files and secrets, opens ready clients for HTTP, PostgreSQL and S3 bindings, checks a token per binding on incoming calls, serves TLS with short lived certificates when an issuer is bound, and signs and checks an internal token that says which user is calling. It comes first because the platform's own services (`planner` now, `api` and `deployer-docker` in #16) are built on it, and later sources (a config server, a policy server for per user values) plug in without changing module code.
+The module SDK is a Go kit for building a module container, so a module only describes what it needs and the SDK does the rest. A module declares its config values and its bindings once, in its catalog entry; a generator turns that into typed Go getters; the SDK fills the values from env vars, files and secrets, opens ready clients for HTTP, PostgreSQL and S3 bindings, checks a token per binding on incoming calls, serves TLS with short lived certificates when an issuer is bound, and signs and checks an internal token that says which user is calling. It comes first because the platform's own services (`renderer` now, `api` and `deployer-docker` in #16) are built on it, and later sources (a config server, a policy server for per user values) plug in without changing module code.
 
 ## Requirements
 
 **User stories**:
 - As a module author, I want to declare my config and bindings in one place, so that my module has no parsing, connection or credential code of its own.
-- As a platform contributor, I want `planner`, `api` and `deployer-docker` to start, connect and protect themselves the same way, so that a mistake is fixed once in the SDK.
+- As a platform contributor, I want `renderer`, `api` and `deployer-docker` to start, connect and protect themselves the same way, so that a mistake is fixed once in the SDK.
 - As an operator, I want a wrong or missing setting to stop the module at start with a message that names it, so that I fix everything in one pass.
 - As a future author of a config server, policy server or second language SDK, I want the conventions written down, so that I can build against them without reading the Go code.
 
 **Acceptance criteria**:
-- **AC-1**: The planner's config is declared only in the `config:` section of `catalog/planner.yaml`. `task generate` runs `sdkgen` and writes `services/planner/internal/config/config.gen.go`, and `git diff --exit-code` is clean after it. No package outside `sdk/` calls `os.Getenv`, `os.LookupEnv` or reads a `*_FILE` path for a declared value, and `services/planner/internal/config/config.go` is gone.
+- **AC-1**: The renderer's config is declared only in the `config:` section of `catalog/capabilities/renderer.yaml`. `task generate` runs `sdkgen` and writes `services/renderer/internal/config/config.gen.go`, and `git diff --exit-code` is clean after it. No package outside `sdk/` calls `os.Getenv`, `os.LookupEnv` or reads a `*_FILE` path for a declared value, and `services/renderer/internal/config/config.go` is gone.
 - **AC-2**: A declared value is taken from its env var, or from the file its `<ENV>_FILE` names, else from the env files listed in `MP_ENV_FILE` (colon separated, a later file overriding an earlier one), else from its `default`. Each case is covered by a test of the generated loader for every type in the core set (`string`, `int`, `bool`, `duration`, `url`, `enum`, `secret`).
 - **AC-3**: With several bad values at once (a missing required value, a number below `min`, a string that misses its `pattern`, an enum value not in `values`, both `MP_X` and `MP_X_FILE` set, a bad env file line), the module logs exactly one line per problem as `config: <value> (<ENV>): <code>: <message>` (env file problems carry `<file>:<line>` in the message), one line per value (its first failing rule), sorted by name, then file, then line, and exits with code 1 before it listens on any port.
 - **AC-4**: A `secret` value given as a plain env var stops the start (`secret_in_env`). A secret's value never appears in any log line, in `fmt` output (`%v`, `%s`, `%+v`) or in `slog` output of the generated struct or of the `sdk.Secret` type.
@@ -28,8 +28,8 @@ The module SDK is a Go kit for building a module container, so a module only des
 - **AC-9**: `/readyz` answers 503 until every required binding (a `uses` entry that is not `optional`) has answered once (HTTP `GET <url>/readyz` with any status below 500, PostgreSQL ping, S3 bucket exists; not rechecked after that) and, in TLS mode, until a certificate is held; it answers 503 again when the held certificate has less than 2 hours left. A provider that is down at start does not stop the consumer from starting; it becomes ready once the provider answers.
 - **AC-10**: Without changing module code, a test adds (through `sdk.Run` options) a start source whose answer beats the process env, `<ENV>_FILE`, the env files and the default and shows as `source` in the start log, a push source that replaces the value snapshot while the module runs, and a caller source that answers one value differently for one caller. A start source that fails or misses its 10 second deadline stops the start (`source_error`). A pushed snapshot with any bad value or an undeclared value name (`unknown_key`) is refused as a whole and the previous one stays; no first snapshot within 30 seconds exits 1 with `config: push (push): no_snapshot: ...`. While a push source is set, a declared value found in an env var or env file stops the start (`managed_env`); only the SDK's bootstrap names are read from env. When the caller source cannot answer within 200 ms, the getter returns an error and the test module answers 503.
 - **AC-11**: `api` style minting (`caller.Mint`) and checking in another SDK module work end to end: a valid `MP-Caller` token puts `sdk.Caller{Issuer, User, Groups}` into ctx. A token is refused with 401 (`invalid_token`) when its `aud` is not the receiving module's host name, its `iss` is not the `CallerModule` the binding token proved, the request passed no binding token auth, it expired or its `iat` lies in the future (30 seconds leeway each), it lives longer than 5 minutes, its `sub` is empty, its `kid` is unknown, its algorithm is not EdDSA, its signature is wrong, or the header appears more than once. A request without the header has no caller and is not an error.
-- **AC-12**: The planner's catalog check accepts the new fields (`runtime`, `config`, `uses.<cap>.client` and its env keys, `provides.<cap>.auth`, `provides.<cap>.env.clients_dir`) and reports every rule in *Catalog rules for the new fields* with its code. Rendering a graph of two SDK test modules (a consumer bound to a provider) gives each side the per binding token, runs both as `user: "${MP_UID}:${MP_GID}"` (which `setup.sh` writes into `.env`, so the 0600 secret files stay readable), gives each instance its `config/<instance>.env` with every required value as an empty `KEY=` line plus `MP_ENV_FILE`, `MP_INSTANCE` and `MP_DOMAIN`, gives each SDK instance the network alias `<instance>.<graph>.internal` and points the consumer's binding URL at that name, and after `setup.sh` and `docker compose up`, the consumer's call to the provider answers 200 while a call without the token answers 401.
-- **AC-13**: The planner runs on `sdk.Run`. Everything spec 0001 and its children require of it still holds (AC-2 to AC-5 and AC-8 to AC-11 of 0001, all of 0003), except that internal mode now refuses to start unless `MP_PLANNER_CLIENTS_DIR` holds at least one token (it replaces `MP_PLANNER_TOKEN_FILE`). `libs/platform` is deleted, and `task lint`, `task test` and `task smoke` pass.
+- **AC-12**: The renderer's catalog check accepts the new fields (`runtime`, `config`, `uses.<cap>.client` and its env keys, `provides.<cap>.auth`, `provides.<cap>.env.clients_dir`) and reports every rule in *Catalog rules for the new fields* with its code. Rendering a graph of two SDK test modules (a consumer bound to a provider) gives each side the per binding token, runs both as `user: "${MP_UID}:${MP_GID}"` (which `setup.sh` writes into `.env`, so the 0600 secret files stay readable), gives each instance its `config/<instance>.env` with every required value as an empty `KEY=` line plus `MP_ENV_FILE`, `MP_INSTANCE` and `MP_DOMAIN`, gives each SDK instance the network alias `<instance>.<graph>.internal` and points the consumer's binding URL at that name, and after `setup.sh` and `docker compose up`, the consumer's call to the provider answers 200 while a call without the token answers 401.
+- **AC-13**: The renderer runs on `sdk.Run`. Everything spec 0001 and its children require of it still holds (AC-2 to AC-5 and AC-8 to AC-11 of 0001, all of 0003), except that internal mode now refuses to start unless `MP_RENDERER_CLIENTS_DIR` holds at least one token (it replaces `MP_RENDERER_TOKEN_FILE`). `libs/platform` is deleted, and `task lint`, `task test` and `task smoke` pass.
 - **AC-14**: `sdk/CONTRACT.md` states every convention a second language SDK must follow (the catalog fields it reads, env and file naming, the env file syntax, source precedence, the problem line format, the bootstrap names, the binding token paths, the TLS and ACME rules, the `MP-Caller` token format and checks, and readiness), and each statement in it is backed by a Go test named in it.
 
 ## Decision
@@ -70,11 +70,11 @@ sdk/                                 Go module github.com/racherom/modular-platf
 A module's `main`:
 
 ```go
-//go:generate go tool sdkgen -entry ../../../../catalog/planner.yaml -package config -out config.gen.go
+//go:generate go tool sdkgen -entry ../../../../catalog/capabilities/renderer.yaml -package config -out config.gen.go
 func main() { sdk.Run(config.Module, setup) }
 
 func setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http.Handler, error) {
-	rate, err := m.Config.PlannerRate(ctx)
+	rate, err := m.Config.RendererRate(ctx)
 	...
 }
 ```
@@ -83,34 +83,34 @@ func setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 
 ### Data model sketch (catalog entry additions, `modular-platform/v0alpha1`)
 
-Confirmed in the design conversation. These fields join 0002's catalog entry, are added to the `CatalogEntry` schema in `contracts/openapi/planner.yaml`, and are decoded strictly like the rest.
+Confirmed in the design conversation. These fields join 0002's catalog entry, are added to the `CatalogEntry` schema in `contracts/openapi/renderer.yaml`, and are decoded strictly like the rest.
 
 ```yaml
 apiVersion: modular-platform/v0alpha1
 kind: Module
-name: planner
+name: renderer
 description: Checks a graph and renders it to a Compose project.
-image: ghcr.io/racherom/modular-platform/planner:<exact version>
+image: ghcr.io/racherom/modular-platform/renderer:<exact version>
 runtime: sdk
 healthcheck:
-  test: ["CMD", "/planner", "healthcheck"]
+  test: ["CMD", "/renderer", "healthcheck"]
   interval: 5s
   timeout: 3s
   retries: 10
   start_period: 30s
 provides:
-  planner:
+  renderer:
     auth: binding-token
     env:
-      clients_dir: MP_PLANNER_CLIENTS_DIR
+      clients_dir: MP_RENDERER_CLIENTS_DIR
 config:
-  planner-mode:
-    env: MP_PLANNER_MODE
+  renderer-mode:
+    env: MP_RENDERER_MODE
     type: enum
     values: [public, internal]
-    description: Where the planner runs, public behind the online tool or internal inside the platform.
-  planner-rate:
-    env: MP_PLANNER_RATE
+    description: Where the renderer runs, public behind the online editor or internal inside the platform.
+  renderer-rate:
+    env: MP_RENDERER_RATE
     type: int
     default: "60"
     min: 1
@@ -120,7 +120,7 @@ config:
     type: int
     default: "1"
     min: 0
-    description: Proxies in front of the planner that append X-Forwarded-For.
+    description: Proxies in front of the renderer that append X-Forwarded-For.
 ```
 
 | Where | Field | Rule |
@@ -153,34 +153,34 @@ config:
 | `MP_CALLER_KEY_FILE` | no | PEM file with one or more Ed25519 public keys allowed to sign `MP-Caller` tokens; unset means the module accepts no caller token (the header is ignored and logged once) |
 | `MP_CALLER_SIGNING_KEY_FILE` | no | PEM (PKCS 8) Ed25519 private key; only `api` gets it |
 
-**Host name**: `<MP_INSTANCE>.<MP_DOMAIN>` when `MP_DOMAIN` is set, else `MP_INSTANCE` alone (plain mode only, such as the hand written `deploy/online/compose.yaml`). It is the one name a module goes by: its certificate name, the server name clients verify, its Compose network alias, the host in binding URLs that point at it, and the `aud` it accepts. TLS mode requires `MP_DOMAIN` so the name is unique per stack: once one issuer serves several stacks (#16), a certificate for a bare `planner` would be valid in every stack, and a validation by bare name would be ambiguous on an issuer joined to several stack networks. The ACME client itself accepts single label names. The server presents its one certificate whatever server name a client sends (none, the bare instance or an IP included); a client that verifies a name the certificate does not carry refuses it on its own side, so a TLS client must still call a module by its host name. Like the other bootstrap names, `MP_DOMAIN` is read from the process env only. The hand written `deploy/online/compose.yaml` sets no `MP_DOMAIN` on purpose: the online planner runs plain, and Caddy calls it by service name.
+**Host name**: `<MP_INSTANCE>.<MP_DOMAIN>` when `MP_DOMAIN` is set, else `MP_INSTANCE` alone (plain mode only, such as the hand written `deploy/online/compose.yaml`). It is the one name a module goes by: its certificate name, the server name clients verify, its Compose network alias, the host in binding URLs that point at it, and the `aud` it accepts. TLS mode requires `MP_DOMAIN` so the name is unique per stack: once one issuer serves several stacks (#16), a certificate for a bare `renderer` would be valid in every stack, and a validation by bare name would be ambiguous on an issuer joined to several stack networks. The ACME client itself accepts single label names. The server presents its one certificate whatever server name a client sends (none, the bare instance or an IP included); a client that verifies a name the certificate does not carry refuses it on its own side, so a TLS client must still call a module by its host name. Like the other bootstrap names, `MP_DOMAIN` is read from the process env only. The hand written `deploy/online/compose.yaml` sets no `MP_DOMAIN` on purpose: the online renderer runs plain, and Caddy calls it by service name.
 
 Relationships: an entry has 0..N config values, 0..N `uses` (one binding each, as 0002) and 0..1 `provides` when `runtime: sdk`. Each binding whose provider says `auth: binding-token` has exactly one token, mounted on both sides. Each rendered `runtime: sdk` instance has exactly one `config/<instance>.env`.
 
-**Generated code** (`sdkgen`, one file per module, checked in): a `Config` type with one getter per value, named in Go case from the value name (`planner-rate` → `PlannerRate(ctx) (int, error)`; enum values become typed constants, `secret` returns `sdk.Secret`); a `Uses` type with one getter per `client` binding (`Postgresql(ctx) (*pgxpool.Pool, error)`, `Planner(ctx) (*httpclient.Client, error)`, `Storage(ctx) (*minio.Client, error)` with the bucket on `s3.Client`); and a `Module` value holding the declaration for `sdk.Run`. `sdkgen` refuses an entry that breaks a rule, with the same lines as the catalog check.
+**Generated code** (`sdkgen`, one file per module, checked in): a `Config` type with one getter per value, named in Go case from the value name (`renderer-rate` → `RendererRate(ctx) (int, error)`; enum values become typed constants, `secret` returns `sdk.Secret`); a `Uses` type with one getter per `client` binding (`Postgresql(ctx) (*pgxpool.Pool, error)`, `Renderer(ctx) (*httpclient.Client, error)`, `Storage(ctx) (*minio.Client, error)` with the bucket on `s3.Client`); and a `Module` value holding the declaration for `sdk.Run`. `sdkgen` refuses an entry that breaks a rule, with the same lines as the catalog check.
 
-Generated getter names are the value or capability name in upper camel case (`object-store` → `ObjectStore`); a clash between two names after that conversion is an `sdkgen` error. The file starts with `// Code generated by sdkgen from <entry path>. DO NOT EDIT.`, is gofmt formatted, lists values and bindings in name order, and imports only the client packages the entry uses. Each module's own `go.mod` carries `tool github.com/racherom/modular-platform/sdk/cmd/sdkgen`, and `task generate` runs `go generate ./...` in each module. Skeleton for the planner:
+Generated getter names are the value or capability name in upper camel case (`object-store` → `ObjectStore`); a clash between two names after that conversion is an `sdkgen` error. The file starts with `// Code generated by sdkgen from <entry path>. DO NOT EDIT.`, is gofmt formatted, lists values and bindings in name order, and imports only the client packages the entry uses. Each module's own `go.mod` carries `tool github.com/racherom/modular-platform/sdk/cmd/sdkgen`, and `task generate` runs `go generate ./...` in each module. Skeleton for the renderer:
 
 ```go
-// Code generated by sdkgen from catalog/planner.yaml. DO NOT EDIT.
+// Code generated by sdkgen from catalog/capabilities/renderer.yaml. DO NOT EDIT.
 package config
 
-type PlannerMode string
+type RendererMode string
 
 const (
-	PlannerModePublic   PlannerMode = "public"
-	PlannerModeInternal PlannerMode = "internal"
+	RendererModePublic   RendererMode = "public"
+	RendererModeInternal RendererMode = "internal"
 )
 
-// Config holds the planner's declared values; read them only through the getters.
+// Config holds the renderer's declared values; read them only through the getters.
 type Config struct{ v *sdk.Values }
 
-// PlannerMode is where the planner runs, public behind the online tool or internal inside the platform.
-func (c Config) PlannerMode(ctx context.Context) (PlannerMode, error) { ... }
-func (c Config) PlannerRate(ctx context.Context) (int, error)         { ... }
+// RendererMode is where the renderer runs, public behind the online editor or internal inside the platform.
+func (c Config) RendererMode(ctx context.Context) (RendererMode, error) { ... }
+func (c Config) RendererRate(ctx context.Context) (int, error)         { ... }
 func (c Config) ProxyHops(ctx context.Context) (int, error)           { ... }
 
-// Uses holds the planner's binding clients (none).
+// Uses holds the renderer's binding clients (none).
 type Uses struct{ b *sdk.Bindings }
 
 // Module is the declaration sdk.Run loads.
@@ -245,7 +245,7 @@ type BindingResolver interface {
 - **HTTP client**: built on `net/http` with the module's TLS client config; base URL from `url`; adds `Authorization: Bearer <token_file content>`; adds `MP-Caller` when the module holds a signing key and a caller is in ctx (minted per call for `aud` = the URL's `Hostname()` without the port, lowercased, which is the provider's host name; a bare name or an IP is minted as it is and simply fails the provider's `aud` check). It does not retry requests (callers decide); only readiness polls retry, with backoff from 1 to 30 seconds.
 - **PostgreSQL**: a `pgxpool.Pool` from `url` (host and port), `database`, `user`, the password file, and `sslmode`. In TLS mode, or when `sslmode` is `verify-full`, it trusts `ca_file` (or `MP_CA_FILE`); `sslmode` values other than `disable` and `verify-full` are `invalid_binding`.
 - **S3**: a `minio.Client` with path style addressing, the endpoint from `url`, static credentials from `access_key_id` and the secret key file, `region` (default `us-east-1`), and a custom transport that trusts `ca_file` for an `https` URL. `s3.Client` carries the bucket name.
-- **Per binding token** (provider side): the SDK reads the clients directory at start. Each entry must be a regular file or a symlink to one (Compose mounts can be either); hidden entries (starting with `.`) are skipped; any other entry, a file name that breaks the instance naming rule, an empty file, a token under 32 characters after trimming, or two files with the same token is `invalid_binding`. File name = consumer instance name, content = token. An unset `clients_dir` env or an empty directory with `auth: binding-token` refuses the start, unless the module calls `m.AllowAnonymous()` in setup (the planner does in public mode, with one warning line), in which case `clients_dir` may be unset. Checked with `crypto/subtle` against each token. Changes take effect at the next start.
+- **Per binding token** (provider side): the SDK reads the clients directory at start. Each entry must be a regular file or a symlink to one (Compose mounts can be either); hidden entries (starting with `.`) are skipped; any other entry, a file name that breaks the instance naming rule, an empty file, a token under 32 characters after trimming, or two files with the same token is `invalid_binding`. File name = consumer instance name, content = token. An unset `clients_dir` env or an empty directory with `auth: binding-token` refuses the start, unless the module calls `m.AllowAnonymous()` in setup (the renderer does in public mode, with one warning line), in which case `clients_dir` may be unset. Checked with `crypto/subtle` against each token. Changes take effect at the next start.
 - **TLS**: the SDK's own certificate manager in `sdk/tlsacme`, on the plain `x/crypto/acme` protocol client (no `autocert`). Three parts:
   - **`tlsacme.Issuer`** (the seam the manager orders through): `Issue(ctx, name) (*tls.Certificate, error)` returns a new certificate for `name` with `Leaf` set; `Challenge(hello) (*tls.Certificate, error)` answers a tls-alpn-01 validation of a pending `Issue`. Tests replace it with a fake that signs with a test CA.
   - **`tlsacme.Client`** (the ACME engine, implements `Issuer`; `tlsacme.NewClient(directory, roots)`): an `acme.Client{DirectoryURL: MP_ACME_URL, Key: <fresh ECDSA P-256 account key per start, memory only>}` whose HTTP client trusts `MP_CA_FILE` (TLS 1.2 minimum toward the issuer), ignores proxy env vars (the issuer is internal) and waits at most 30 seconds for response headers; the attempt's context bounds the whole order. `Issue` holds a mutex for its whole run, so two calls never overlap and there is one pending answer slot. One `Issue`, in this order: register the account if this client has not yet (`Register` with `acme.AcceptTOS`, which is only called when the directory has terms; no external account binding; `acme.ErrAccountAlreadyExists` counts as success, since the client has then cached the account URL); `AuthorizeOrder` for one DNS identifier, the name, with no profile (the issuer picks the lifetime), and fail the attempt unless the order's identifiers are exactly that name; for each of the order's authorization URLs, `GetAuthorization`: `valid` needs nothing, `pending` gets its `tls-alpn-01` challenge (none offered fails the attempt): hold `TLSALPN01ChallengeCert(token, name)` as the pending answer, `Accept`, `WaitAuthorization`, and empty the slot once that returns, whatever the outcome; any other status (`invalid`, `expired`, `deactivated`, `revoked`) fails the attempt, and the next attempt starts a new order; `WaitOrder` (an `*acme.OrderError` fails the attempt); make a fresh ECDSA P-256 key and a CSR with an empty subject, `DNSNames: [name]` only, signed with ECDSA SHA 256; `CreateCertFromOrder(ctx, order, csr, true)` on the order `WaitOrder` returned (not `CreateOrderCert`, which fails against pebble); return the chain with the key and the parsed `Leaf`. When any call inside `Issue` fails with an `*acme.Error` (found with `errors.As`) whose `ProblemType` is `urn:ietf:params:acme:error:accountDoesNotExist` (the issuer lost its state), the client marks itself unregistered, still under the mutex, so the next attempt calls `Register` again with the same key, which replaces the cached account URL. `Challenge(hello)` returns the pending answer when one is held and `hello.ServerName`, lowercased with a trailing dot trimmed, equals its name; anything else is an error.
@@ -256,9 +256,9 @@ type BindingResolver interface {
 
 ### Middleware order and readiness
 
-`sdk.Run` builds the handler chain in this order: access log (from `httpkit`), the rate limit if the module set one with `m.WithRateLimit` (the planner does in public mode, with its client IP rule), binding token auth, `MP-Caller` check, then the module's handler. `/healthz` and `/readyz` sit before auth and the rate limit, as today.
+`sdk.Run` builds the handler chain in this order: access log (from `httpkit`), the rate limit if the module set one with `m.WithRateLimit` (the renderer does in public mode, with its client IP rule), binding token auth, `MP-Caller` check, then the module's handler. `/healthz` and `/readyz` sit before auth and the rate limit, as today.
 
-Readiness: each required binding is polled with backoff from 1 to 30 seconds until it answers once; each failed attempt logs one warning line naming the capability and the error (never a credential). An HTTP answer below 500 counts (a provider without `/readyz` answers 404, which is fine). A PostgreSQL sign in failure or a missing S3 bucket keeps polling, with the same warning. The render keeps 0002's `depends_on` rule (`service_healthy` when the provider has a healthcheck); no start deadlock is possible because the planner refuses binding cycles. A `runtime: sdk` entry declares its `healthcheck` like any entry (the planner's: `test: ["CMD", "/planner", "healthcheck"]`, `start_period: 30s`).
+Readiness: each required binding is polled with backoff from 1 to 30 seconds until it answers once; each failed attempt logs one warning line naming the capability and the error (never a credential). An HTTP answer below 500 counts (a provider without `/readyz` answers 404, which is fine). A PostgreSQL sign in failure or a missing S3 bucket keeps polling, with the same warning. The render keeps 0002's `depends_on` rule (`service_healthy` when the provider has a healthcheck); no start deadlock is possible because the renderer refuses binding cycles. A `runtime: sdk` entry declares its `healthcheck` like any entry (the renderer's: `test: ["CMD", "/renderer", "healthcheck"]`, `start_period: 30s`).
 
 ### Render additions (`libs/render`, plain mode only in this feature)
 
@@ -297,7 +297,7 @@ For every binding consumer `c`, capability `C`, provider `p`, besides 0002's `de
 - `password_file`, `secret_access_key_file`: a Compose secret `<c>_uses_<C>_password` or `<c>_uses_<C>_secret_key` from `./secrets/<c>/uses_<C>_password` or `..._secret_key`, mounted at `/run/secrets/uses/<C>/password` or `/secret_key`, whose path goes into the mapped env. `setup.sh` does not create these; the README lists them as files you place, and `docker compose up` fails on a missing one, as 0001 AC-4 does today;
 - `sslmode`: `disable` (no unchanged provider has TLS before #3); `ca_file`: not written in plain mode.
 
-Planner rule added: a binding to a provider with `auth: binding-token` whose consumer entry does not map `token_file` is error `missing_token_mapping` at `modules.<c>.uses.<C>`.
+Check rule added: a binding to a provider with `auth: binding-token` whose consumer entry does not map `token_file` is error `missing_token_mapping` at `modules.<c>.uses.<C>`.
 
 ### Catalog rules for the new fields
 
@@ -372,11 +372,11 @@ Reported like 0002 (`catalog/<file>: <dotted.path>: <code>: <message>`, exit 1):
 
 **Configuration required**:
 - `MP_INSTANCE`, `MP_DOMAIN`, `MP_ENV_FILE`, `MP_ACME_URL`, `MP_CA_FILE`, `MP_CALLER_KEY_FILE`, `MP_CALLER_SIGNING_KEY_FILE`: the bootstrap names above.
-- `MP_PLANNER_CLIENTS_DIR`: replaces `MP_PLANNER_TOKEN_FILE` for the planner in internal mode.
-- `deploy/online/compose.yaml` adds `MP_INSTANCE=planner` to the planner service.
+- `MP_RENDERER_CLIENTS_DIR`: replaces `MP_RENDERER_TOKEN_FILE` for the renderer in internal mode.
+- `deploy/online/compose.yaml` adds `MP_INSTANCE=renderer` to the renderer service.
 
 **Critical test scenarios**:
-- Happy path: the planner starts from `catalog/planner.yaml` with values from env, an env file and defaults, logs one `config loaded` line, and the online tool smoke test passes, verifies **AC-1**, **AC-2**, **AC-5**, **AC-13**
+- Happy path: the renderer starts from `catalog/capabilities/renderer.yaml` with values from env, an env file and defaults, logs one `config loaded` line, and the online editor smoke test passes, verifies **AC-1**, **AC-2**, **AC-5**, **AC-13**
 - Many problems: six bad values give six lines in name order and exit 1 before listening, verifies **AC-3**
 - Secret leak: a secret set as a plain env var stops the start; a secret value is absent from every log line, `%+v` and `slog` output, verifies **AC-4**
 - Clients: HTTP, PostgreSQL and MinIO clients reach real servers with binding credentials, verifies **AC-6**
@@ -391,15 +391,15 @@ Reported like 0002 (`catalog/<file>: <dotted.path>: <code>: <message>`, exit 1):
 
 ## Build plan
 
-Tracer Bullet: the first three tasks put the planner on a thin SDK end to end (catalog entry, generator, loader, `sdk.Run`), and each later task thickens one strand of that running thread.
+Tracer Bullet: the first three tasks put the renderer on a thin SDK end to end (catalog entry, generator, loader, `sdk.Run`), and each later task thickens one strand of that running thread.
 
 Tests that need Docker (testcontainers) carry the build tag `integration`, and the rendered Compose test carries `e2e`. `task test` stays Docker free; a new `task test:integration` runs both tags, and CI runs it. Library and image versions (pgx, minio-go, go-jose, `x/crypto`, testcontainers and its modules, `pebble`, MinIO) are pinned to their latest stable release at build time, never `latest`.
 
-1. [x] Create the `sdk` module in `go.work`, move `libs/platform` into `sdk/httpkit` unchanged, point the planner at it, delete `libs/platform`, and add `sdk` to `task lint`, `task test`, the Dockerfiles and the release config, satisfies **AC-13**
-2. [x] Add the new fields to the `CatalogEntry` schema in `contracts/openapi/planner.yaml` (regenerate Go and TypeScript), write `sdk/manifest` with the config rules and call it from the catalog check in `libs/contract`, with a test per rule code, satisfies **AC-12**, **AC-1**
-3. [x] Write `sdk/envfile`, `sdk/internal/load` (precedence, types, rules, problem lines, the start log, `sdk.Secret`), `cmd/sdkgen` with its `tool` directive and `task generate` step, and `sdk.Run`; add `catalog/planner.yaml`; move the planner onto generated getters and `sdk.Run`; delete `services/planner/internal/config/config.go`; add `MP_INSTANCE` to `deploy/online/compose.yaml`; update tests that list the built in catalog, satisfies **AC-1**, **AC-2**, **AC-3**, **AC-4**, **AC-5**, **AC-13**
-4. [x] Add `sdk/auth` (clients directory, `CallerModule`, `AllowAnonymous`), `sdk/httpclient` with the binding token, and readiness polling; switch the planner's internal mode to `MP_PLANNER_CLIENTS_DIR`, satisfies **AC-6**, **AC-7**, **AC-9**, **AC-13**
-5. [x] Extend the planner rules (`missing_token_mapping`) and `libs/render` with the render additions (env file per instance, `configs`, bootstrap env, binding token secrets, credential file secrets, `generate` secrets, README lines), update golden files, and add an `e2e` tagged test in `libs` that renders two SDK test modules (one small test image, two catalog entries under its `testdata/`), runs `setup.sh` and `docker compose up` through testcontainers' compose module, and checks 200 and 401, satisfies **AC-12**
+1. [x] Create the `sdk` module in `go.work`, move `libs/platform` into `sdk/httpkit` unchanged, point the renderer at it, delete `libs/platform`, and add `sdk` to `task lint`, `task test`, the Dockerfiles and the release config, satisfies **AC-13**
+2. [x] Add the new fields to the `CatalogEntry` schema in `contracts/openapi/renderer.yaml` (regenerate Go and TypeScript), write `sdk/manifest` with the config rules and call it from the catalog check in `libs/contract`, with a test per rule code, satisfies **AC-12**, **AC-1**
+3. [x] Write `sdk/envfile`, `sdk/internal/load` (precedence, types, rules, problem lines, the start log, `sdk.Secret`), `cmd/sdkgen` with its `tool` directive and `task generate` step, and `sdk.Run`; add `catalog/capabilities/renderer.yaml`; move the renderer onto generated getters and `sdk.Run`; delete `services/renderer/internal/config/config.go`; add `MP_INSTANCE` to `deploy/online/compose.yaml`; update tests that list the built in catalog, satisfies **AC-1**, **AC-2**, **AC-3**, **AC-4**, **AC-5**, **AC-13**
+4. [x] Add `sdk/auth` (clients directory, `CallerModule`, `AllowAnonymous`), `sdk/httpclient` with the binding token, and readiness polling; switch the renderer's internal mode to `MP_RENDERER_CLIENTS_DIR`, satisfies **AC-6**, **AC-7**, **AC-9**, **AC-13**
+5. [x] Extend the check rules (`missing_token_mapping`) and `libs/render` with the render additions (env file per instance, `configs`, bootstrap env, binding token secrets, credential file secrets, `generate` secrets, README lines), update golden files, and add an `e2e` tagged test in `libs` that renders two SDK test modules (one small test image, two catalog entries under its `testdata/`), runs `setup.sh` and `docker compose up` through testcontainers' compose module, and checks 200 and 401, satisfies **AC-12**
 6. [x] Give SDK modules their host name, then TLS, satisfies **AC-8**, **AC-9**, **AC-12**:
    - Read `MP_DOMAIN` in `sdk/internal/load` (its syntax check in both modes, `MP_INSTANCE`'s naming check, the `tls_config` rule for TLS without it), derive the host name and log it as `host`; extend `libs/render` with `MP_DOMAIN`, the network alias on `default` (the only network the static render writes) and host name URLs for SDK providers; update the `sdk-pair` golden files, keep `TestSDKPairEndToEnd` green on the dotted URL, and refresh the stale lines in `verify.md`.
    - Add `sdk/tlsacme` (autocert on the issuer for the host name, the client hello rewrite, TLS server on 8443, client trust, the TLS setting rules, the hourly `NotAfter` read for readiness), the TLS branch of the `healthcheck` subcommand, and the downgrade refusal (`.<MP_DOMAIN>` hosts) in `httpclient`. The 2 hour readiness rule reads time through a clock the tests replace; renewal itself is autocert's and is not faked (its timer uses the real clock).
@@ -417,14 +417,14 @@ Tests that need Docker (testcontainers) carry the build tag `integration`, and t
 ## Consequences
 
 **Positive**:
-- Planner, `api` and `deployer-docker` share one start, config, client and protection path; a fix lands once.
-- The catalog entry is the single description of a module for the planner, the render and the module's own code, so they cannot drift, and #3 adopts a section that already runs.
+- Renderer, `api` and `deployer-docker` share one start, config, client and protection path; a fix lands once.
+- The catalog entry is the single description of a module for the renderer, the render and the module's own code, so they cannot drift, and #3 adopts a section that already runs.
 - Bad config never reaches traffic: every problem shows at start, in one pass, naming the value.
 - Later sources (#17 config server, #21 policy server and per user providers) plug in behind getters modules already call.
 - `sdk/CONTRACT.md` lets a second language SDK follow without reverse engineering Go.
 
 **Negative / tradeoffs**:
-- This feature is large for slice 1: generator, loader, three clients, ACME TLS, token minting, render changes and the planner migration all land before #16 starts.
+- This feature is large for slice 1: generator, loader, three clients, ACME TLS, token minting, render changes and the renderer migration all land before #16 starts.
 - Every getter takes ctx and returns an error, even when no per caller source exists; module code is a little noisier, and a policy outage later stops per user calls (503) instead of serving base values.
 - Short lived certificates make the issuer (in `deployer-docker`, #16) a dependency of every SDK module's start in managed mode; while it is down, a restarting module cannot serve, and the CA key sits in the service with the Docker socket.
 - tls-alpn-01 on 8443 differs from the RFC 8737 default of 443, so the issuer must validate on a configurable port (to check in #16).
@@ -442,22 +442,22 @@ Tests that need Docker (testcontainers) carry the build tag `integration`, and t
 
 **Neutral**:
 - `libs/platform` disappears; its code lives on in `sdk/httpkit`.
-- The planner joins the built in catalog, so the editor lists it like any module (0001 principle 2).
+- The renderer joins the built in catalog, so the editor lists it like any module (0001 principle 2).
 - 0002's catalog entry and render grow; 0002 carries a pointer to this spec.
-- The planner's internal mode setting changes name (`MP_PLANNER_CLIENTS_DIR`).
+- The renderer's internal mode setting changes name (`MP_RENDERER_CLIENTS_DIR`).
 - The ACME engine sits behind `tlsacme.Issuer`; replacing it (lego, a future x/crypto manager) touches only `sdk/tlsacme`.
 - pebble v2.10.1 and step-ca 0.30.2 both issue single label names (checked 2026-10-31), so dotted names are a policy for uniqueness across stacks, not a client limit; dropping them later changes only the render and `sdk/internal/load`.
 
 ## Follow-up
 
-- [x] Update spec 0001 on confirmation (done 2026-10-30; the release config line is left to task 1): AC-5 and the "Planner modes" row move from `MP_PLANNER_TOKEN_FILE` to `MP_PLANNER_CLIENTS_DIR`; the repository layout swaps `libs/platform` for `sdk/`; the release builds the `sdk` module with the shared version.
-- [x] Update spec 0002 on confirmation with a one paragraph pointer (done 2026-10-30): the new catalog fields, the planner rule `missing_token_mapping` and the render additions are defined in 0005.
+- [x] Update spec 0001 on confirmation (done 2026-10-30; the release config line is left to task 1): AC-5 and the "Renderer modes" row move from `MP_RENDERER_TOKEN_FILE` to `MP_RENDERER_CLIENTS_DIR`; the repository layout swaps `libs/platform` for `sdk/`; the release builds the `sdk` module with the shared version.
+- [x] Update spec 0002 on confirmation with a one paragraph pointer (done 2026-10-30): the new catalog fields, the check rule `missing_token_mapping` and the render additions are defined in 0005.
 - [x] ~~Check at build time (task 8) for pebble~~ (checked 2026-11-01, evidence in [rationale.md](rationale.md)): pebble v2.10.1 answers a lost account with `urn:ietf:params:acme:error:accountDoesNotExist`, and does not backdate `NotBefore`, so `TestTLSAgainstPebble`'s 25 to 35 second window stands.
 - [ ] (carried by spec [0006](../0006-managed-mode-control-plane/index.md), build plan task 15) Spec #16 must check that step-ca 0.30.2 answers a lost account with `urn:ietf:params:acme:error:accountDoesNotExist` (RFC 8555 names it; not yet probed), and how much it backdates `NotBefore` (the 1 minute skew tolerance and the 30 second renewal floor cover small amounts).
 - [x] (answered by spec [0006](../0006-managed-mode-control-plane/index.md), 2026-11-03: `cert-issuer` is its own module on the step-ca image, not embedded in the deployer, falling back to a small image from step-ca's Go packages only if the binary cannot validate on 8443; it serves the platform's own services only, and deployed graphs stay plain until scope #31) Spec #16 must: embed step-ca's Go packages in `deployer-docker` as the `cert-issuer` (ACME, tls-alpn-01 only, names limited to `<instance>.<graph>.internal` for the graph's SDK instances, 24 hour leaves, validation on port 8443 by setting `acme.InsecurePortTLSALPN01 = 8443`; the `step-ca` binary needs `--acme-tls-port 8443 --insecure` for the same; keep `--acme-strict-fqdn` off), create the CA in `setup.sh`, render managed TLS wiring (`MP_ACME_URL`, `MP_CA_FILE`, `https://<p>.<graph>.internal:8443` URLs, `ca_file`), keep each SDK service's alias on every network its peers use, refuse a second stack with a graph name already deployed (or key the issuer's name policy per stack, since the graph name alone then no longer keeps names apart), create the Ed25519 caller key pair (private key to `api` only), let the deployer create binding tokens at apply, and let 0004's refused graph guard accept render generated `configs` mounts.
 - [ ] Spec #17 designs the config server's push protocol behind `PushSource` and turns on the `managed_env` rule for managed SDK modules.
 - [ ] Spec #21 designs the policy server protocol behind `CallerSource` and `BindingResolver`, and how a caller passes on to onward calls.
 - [x] (answered by spec [0011](../0011-capability-module-contract/index.md), 2026-11-04: adopted into v1, binding keys become capability field names, provisioners fill the credentials, `postgres` gets a certificate through the certificate provisioner; `MP_CALLER_KEY_FILE` is replaced by per consumer caller keys) Spec #3 adopts `runtime`, `config`, `uses.<cap>.client` and `provides.<cap>.auth` into `v1`, adds provisioning that fills the credential keys, and gives unchanged providers certificates so `sslmode` can move to `verify-full`.
-- [ ] `catalog/planner.yaml` pins the planner image to an exact version; release-please must bump it with each release (extra file).
+- [ ] `catalog/capabilities/renderer.yaml` pins the renderer image to an exact version; release-please must bump it with each release (extra file).
 - [ ] Check at build time (unverified in the research): minio-go custom CA through `Options.Transport`; go-jose key selection by `kid`; pgx root CA settings; the testcontainers postgres and minio module versions; ~~a pinned `pebble` release tag~~ (v2.10.1, `ghcr.io/letsencrypt/pebble@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199`, checked 2026-10-31); whether smallstep states its Go packages as a stable API (#16).
 - [ ] No root `AGENTS.md` exists; `/audit` or `/sync` should record the installed skill `golang-dependency-management` (project wide Go module work), the `sdk/` conventions (getters only, no env reads outside `sdk`), and the declined skill search results (no credible skill for go-jose, ACME, step-ca, pebble, minio-go).

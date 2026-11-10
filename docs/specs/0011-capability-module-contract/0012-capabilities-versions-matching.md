@@ -5,7 +5,7 @@
 
 ## Summary
 
-A capability is now a file that names a protocol and lists the fields a binding of it carries, such as host, port, database and password, each with a type and a direction. A provide states the version it speaks, a slot (one named need of a module) states the range it accepts, and the planner binds a slot only to a provide whose capability matches (or is yielded by a provisioner) inside that range. The graph writes a binding as `instance`, `instance.provide`, or an object that also carries named values like a database name, and an instance can be an external service instead of a module.
+A capability is now a file that names a protocol and lists the fields a binding of it carries, such as host, port, database and password, each with a type and a direction. A provide states the version it speaks, a slot (one named need of a module) states the range it accepts, and the checks bind a slot only to a provide whose capability matches (or is yielded by a provisioner) inside that range. The graph writes a binding as `instance`, `instance.provide`, or an object that also carries named values like a database name, and an instance can be an external service instead of a module.
 
 ## Capability kind
 
@@ -34,9 +34,9 @@ fields:
 | `fields.<f>.type` | `string`, `int`, `bool`, `url`, `enum`, `secret`, `certificate` | yes | `secret` and `certificate` always travel as files; the others as text |
 | `fields.<f>.description` | text | yes | one line, shown in the editor and in env file comments |
 | `fields.<f>.optional` | bool | no, default `false` | a provider may leave an optional field without a source; a required field must have one |
-| `fields.<f>.pattern` | RE2 | no | `string` only, matched whole; checked on every value the planner knows (named values, `value` sources, external values) |
+| `fields.<f>.pattern` | RE2 | no | `string` only, matched whole; checked on every value the renderer knows (named values, `value` sources, external values) |
 | `fields.<f>.values` | list | `enum` only | as 0005's enum rule |
-| `fields.<f>.direction` | `to_consumer` (default), `to_provider`, `both` | no | `both` (`secret` or `certificate` only): the same file mounted on both sides (the binding token). `to_provider`: the consumer fills it; a file field reaches the provider as one file per consumer, a text field only as plan time template data (`.Clients`, 0013), so its consumer source must be known at plan time |
+| `fields.<f>.direction` | `to_consumer` (default), `to_provider`, `both` | no | `both` (`secret` or `certificate` only): the same file mounted on both sides (the binding token). `to_provider`: the consumer fills it; a file field reaches the provider as one file per consumer, a text field only as check time template data (`.Clients`, 0013), so its consumer source must be known at check time |
 | `yields` | object | provisioners only | see [0014](0014-provisioners-jobs.md) |
 
 **Catalog rules** (problem line as 0002, path `catalog/capabilities/<name>.yaml`): `missing_field`, `invalid_name`, `name_mismatch`, `duplicate_name`, `invalid_type`, `invalid_rule` (bad pattern, empty or duplicate `values`, `pattern` on a non string), `invalid_direction` (`both` on a type other than `secret` or `certificate`), plus 0014's `yields` rules.
@@ -48,8 +48,8 @@ fields:
 | `http` | host, port (int), url | `scheme: http` |
 | `postgresql` | as above | yielded by `postgresql-provisioner` |
 | `postgresql-provisioner` | host, port (int), url, admin_user, admin_password (secret), sslmode (enum), ca (certificate, optional) | yields `postgresql` |
-| `planner` | url, token (secret, both), ca (certificate, optional), caller_key (certificate, to_provider, optional) | the planner's REST contract |
-| `deploy-target` | same as `planner` | 0007's contract |
+| `renderer` | url, token (secret, both), ca (certificate, optional), caller_key (certificate, to_provider, optional) | the renderer's REST contract |
+| `deploy-target` | same as `renderer` | 0007's contract |
 | `platform-api` | url, ca (certificate, optional) | `api` behind the ingress |
 | `oidc` | issuer (url), client_id, client_secret (secret, both), ca (certificate, optional), admin_email (optional), redirect_path (to_provider) | an OIDC provider and one client per binding; `admin_email` is the provider's bootstrap admin, which `api` binds as its first admin; `redirect_path` is the consumer's callback path under the public origin and base path (`/api/v1/auth/callback`), which the provider joins to its own origin at run time |
 | `http-ingress` | origin (url), base_path, domain, http_port (int), https_port (int), ca (certificate, optional), route (to_provider, optional), upstream (url, to_provider, optional), server_name (to_provider, optional), stream (bool, to_provider, optional) | the public entry a browser sees (principle 12). A consumer that sets `route` (a path prefix like `/auth`) and `upstream` (its own url) is served there; one that sets neither only learns the origin and ports. `server_name` is the TLS name the ingress verifies for an `https` upstream; `stream: true` turns off response buffering (server sent events). Backends bind to the ingress, not the other way round, so routing never forms a binding cycle |
@@ -79,7 +79,7 @@ modules:
         provider: postgres
         database: platform_api
         user: api
-      planner: planner
+      renderer: renderer
   billing-db:
     external:
       provides:
@@ -106,7 +106,7 @@ name: modular-platform
 
 Canonical text as 0002 (sorted keys, two space indent). A binding is written as a string when it carries no named values, else as an object. Port and other numbers in `external` fields are strings, so both writers agree.
 
-**Conversion from v0alpha1** (in `libs/contract`, used by `DecodeGraph`): `apiVersion` becomes `modular-platform/v1`; every `uses` key and value stay as written (a v0alpha1 capability key becomes the slot of the same name, which every built in v1 entry keeps for this reason). The plan answer carries warning `converted_from_v0alpha1` at path `apiVersion`. Then normal planning applies, so a key with no such slot is `unknown_use`.
+**Conversion from v0alpha1** (in `libs/contract`, used by `DecodeGraph`): `apiVersion` becomes `modular-platform/v1`; every `uses` key and value stay as written (a v0alpha1 capability key becomes the slot of the same name, which every built in v1 entry keeps for this reason). The check answer carries warning `converted_from_v0alpha1` at path `apiVersion`. Then the normal checks apply, so a key with no such slot is `unknown_use`.
 
 ## Matching rules
 
@@ -129,10 +129,10 @@ For every instance in name order, then every slot of its entry in name order. `<
 | required slot `null` | error `unbound_required` |
 | required slot missing, no candidate, but some instance has `C` outside `R` | error `version_mismatch`, `candidates` lists those |
 | required slot missing, no candidate at all | error `unmet_need` |
-| required slot missing, exactly one provide match in the whole graph | **auto bind**: written as `p` (or `p.q` when `p` has two or more provides of `C` or yielding it); `auto: true` |
+| required slot missing, exactly one provide match in the whole graph | **recommendation**: error `binding_recommended` with `p` (or `p.q` when `p` has two or more provides of `C` or yielding it) as the one candidate; the graph is not changed until you accept it (0028) |
 | required slot missing, two or more provide matches | error `ambiguous_provider`, `candidates` lists `p` or `p.q` |
 | optional slot missing, one or more matches | warning `optional_unbound` with `candidates` |
-| a binding to a provisioner with named values missing | the planner fills them (0014) and marks the binding `named: true` |
+| a binding to a provisioner with named values missing | the checks fill them (0014) and mark the binding `named: true` |
 | one consumer binding two slots to the same provide | error `duplicate_binding` at the second slot in name order |
 
 Then: `duplicate_named_value` (0014) per provisioner provide; `binding_cycle` as 0002; `external_field_missing` at `modules.<i>.external.provides.<p>.fields.<f>` for a required non secret field with no value, and `invalid_named_value` for an external value breaking its pattern; `format_too_new` and the request level codes as 0011. Direct provides and yielded ones count the same for ambiguity: an instance providing both `postgresql` and `postgresql-provisioner` is two matches (#6 adds preferences).
@@ -141,13 +141,13 @@ Then: `duplicate_named_value` (0014) per provisioner provide; `binding_cycle` as
 
 ## Critical test scenarios
 
-Table tests in `libs/planner` over fixtures in `contracts/fixtures/graphs/` (all verify **AC-3** unless named):
+Table tests in `libs/check` over fixtures in `contracts/fixtures/graphs/` (all verify **AC-3** unless named):
 - Sample v1 as written (`whoami` slot `postgresql` bound to `postgres`): `ok`, one binding with `provisioned: true`, named values filled and written back (**AC-7**).
-- A required slot with range `>=15` and one provider at `18.6`: auto bind. With the provider at `14.2`: `version_mismatch` listing it.
+- A required slot with range `>=15` and one provider at `18.6`: `binding_recommended` with that provider. With the provider at `14.2`: `version_mismatch` listing it.
 - An instance with provides `primary` and `replica`, both `postgresql`: bound as `postgres` gives `ambiguous_provide`; as `postgres.replica` binds; as `postgres.nope` gives `unknown_provide`.
 - Two slots of one capability on one consumer, bound to two different providers: two bindings (**AC-4**); bound to the same provide: `duplicate_binding`.
 - Named values on a direct `postgresql` provide: `named_not_allowed`. A named key `owner`: `unknown_named_field`. `database: Bad-Name`: `invalid_named_value`.
-- An external `postgresql` provide with all fields: candidate and auto bind (**AC-15**); without `host`: `external_field_missing`.
+- An external `postgresql` provide with all fields: candidate and recommendation (**AC-15**); without `host`: `external_field_missing`.
 - A v0alpha1 graph: answered v1, warning `converted_from_v0alpha1`, digest equal to the same graph sent as v1 (**AC-14**). A graph with `formatVersion: "1.9"`: `format_too_new` (**AC-14**).
 - `per_caller` on a non sdk entry: catalog problem `per_caller_not_allowed` (**AC-13**).
 - Every 0002 scenario, rewritten in v1, gives the same codes.

@@ -4,7 +4,7 @@
 
 ## Summary
 
-A module built on the SDK already checks, at start, that each binding answers and accepts its login, and stays not ready until it does (0005). Now it also says which slots it waits on. Docker keeps that line from the healthcheck, the deployer passes it on, and `api` turns each waiting slot into a badge on the edge and on the provider it is bound to, whether that provider runs in the stack or outside it. The public planner never calls an address you supply; only the consumer does, from inside the stack.
+A module built on the SDK already checks, at start, that each binding answers and accepts its login, and stays not ready until it does (0005). Now it also says which slots it waits on. Docker keeps that line from the healthcheck, the deployer passes it on, and `api` turns each waiting slot into a badge on the edge and on the provider it is bound to, whether that provider runs in the stack or outside it. The public renderer never calls an address you supply; only the consumer does, from inside the stack.
 
 ## SDK (`sdk`, spec 0005 readiness)
 
@@ -16,12 +16,12 @@ A module built on the SDK already checks, at start, that each binding answers an
 
 ## Deployer (0007)
 
-- `GET /v1/projects/{project}/state` gains `waiting: [string]` per service: from the newest entry of Docker's `State.Health.Log`, the slots of a line matching `^mp-waiting: ([a-z0-9-]+(,[a-z0-9-]+)*)$` when the service is `starting` or `unhealthy`, else empty. Any other output is ignored, so an unchanged image's healthcheck text never becomes a flag.
+- `GET /v1/stacks/{stack}/state` gains `waiting: [string]` per service: from the newest entry of Docker's `State.Health.Log`, the slots of a line matching `^mp-waiting: ([a-z0-9-]+(,[a-z0-9-]+)*)$` when the service is `starting` or `unhealthy`, else empty. Any other output is ignored, so an unchanged image's healthcheck text never becomes a flag.
 
 ## `api` and the contract
 
 - `ModuleState` gains `waiting: [string]` (copied).
-- The deployment view gains `flags: [{provider, consumer, slot, reason, service?}]`, computed by `api`'s application layer from the bindings of the graph whose containers are running (during an apply, the graph being applied; otherwise the last succeeded one): `reason: waiting` for each waiting slot (its bound provider; a binding through a provisioner flags the resource provider), and `reason: job_failed` with the service for a resource or login job whose `lastExitCode` is non zero (flags that job's provider). External providers are flagged the same way, though they have no container.
+- The stack view gains `flags: [{provider, consumer, slot, reason, service?}]`, computed by `api`'s application layer from the bindings of the graph whose containers are running (during an apply, the graph being applied; otherwise the last succeeded one): `reason: waiting` for each waiting slot (its bound provider; a binding through a provisioner flags the resource provider), and `reason: job_failed` with the service for a resource or login job whose `lastExitCode` is non zero (flags that job's provider). External providers are flagged the same way, though they have no container.
 - **A failed apply**: when `up` fails, `api` asks the deployer for state once more before it starts the rollback (the deployer keeps the failed containers until `down` of the rollback runs), maps it against the failed graph, and stores the result in `operations.flags`. The `Operation` contract gains `flags`; the failed operation's view draws the failed graph with those badges. Since checks run only at start (#36 decides later re checks), this is where a broken external shows.
 
 ## Editor

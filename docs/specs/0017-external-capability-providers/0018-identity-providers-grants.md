@@ -68,8 +68,8 @@ A capability has `yields` or `identity`, never both. Catalog code `invalid_ident
 - An external names it the same way, `external.provides.<q>.identity: <slot>`, and gains `external.uses.<slot>: {provider: <instance>.<provide>, capability: <identity capability>, version: <range>}` (all three required, nothing inferred). An external's `uses` may hold only slots its provides name: anything else is `invalid_external_use`. The bound provider may be an external or a module (an AWS bucket manager with logins from a module is allowed when that module's identity grants `s3-bucket`).
 - One identity provide may serve the identity slots of several resource providers; its login names stay unique per identity provide across all of them (`duplicate_named_value`).
 - The slot delivers nothing to the container: no env, no files, no `depends_on`. Only the jobs read it.
-- It may bind a provide of its own instance (the one exception to 0012's `p ≠ i`). For an identity slot, 0012's provide match counts the own instance as a candidate; auto bind: when the own instance has exactly one fitting provide, that provide is chosen and no ambiguity is reported; otherwise 0002's rules apply over all candidates (own instance included). 0012 gets a pointer to this rule. The cycle check ignores identity slots, since they add no `depends_on`.
-- Plan checks on the binding: the bound provide's `identity.grants` holds the resource type, else `identity_not_granting`; every `{identity: f}` names a credential the identity has with the same type, else `identity_credentials_mismatch`. Both at `modules.<p>.uses.<slot>`.
+- It may bind a provide of its own instance (the one exception to 0012's `p ≠ i`). For an identity slot, 0012's provide match counts the own instance as a candidate; recommendation: when the own instance has exactly one fitting provide, the checks recommend that provide and report no ambiguity; otherwise 0002's rules apply over all candidates (own instance included). 0012 gets a pointer to this rule. The cycle check ignores identity slots, since they add no `depends_on`.
+- Checks on the binding: the bound provide's `identity.grants` holds the resource type, else `identity_not_granting`; every `{identity: f}` names a credential the identity has with the same type, else `identity_credentials_mismatch`. Both at `modules.<p>.uses.<slot>`.
 
 ## The login job
 
@@ -89,7 +89,7 @@ Every login job is an "ensure", like 0014: a second run adds no login, keeps the
 
 - A binding object may say `adopt: true`. The resource job then accepts a resource it did not make (no marker) and leaves it without a marker; without `adopt`, an existing resource with no marker or another stack's marker fails the job with "<type> <name> exists and was not made by this stack".
 - The login is always fresh: adoption never takes over an existing login. An existing login is used through a direct external instance of the yielded capability (0012, AC-15 of 0011), which is the "add one with url and login" path.
-- Sharing: per resource provide, two bindings may name the same resource value when every later binding (consumer, then slot order) says `adopt: true`: plan warning `shared_resource` at the later binding. Without it, 0014's `duplicate_named_value` stays. Login named values are always unique per identity provide.
+- Sharing: per resource provide, two bindings may name the same resource value when every later binding (consumer, then slot order) says `adopt: true`: check warning `shared_resource` at the later binding. Without it, 0014's `duplicate_named_value` stays. Login named values are always unique per identity provide.
 
 ## `same_as`
 
@@ -103,7 +103,7 @@ Every login job is an "ensure", like 0014: a second run adds no login, keeps the
 
 - `postgresql-provisioner` keeps its admin fields; `yields: {capability: postgresql, resource: postgresql-database, named: [database], fields: {host, port, url, sslmode, ca: {admin: ...}, database: named, user: {identity: user}, password: {identity: password}}}`, job `provision` and `list`.
 - `postgresql-roles` as above, `grants: [postgresql-database]`.
-- The `postgres` module provides `server` (`postgresql-provisioner`, `identity: identity`) and `roles` (`postgresql-roles`), with the same field sources; `uses.identity` binds `postgres.roles` automatically. An external Postgres server is one external with both provides and `same_as` for the shared admin fields.
+- The `postgres` module provides `server` (`postgresql-provisioner`, `identity: identity`) and `roles` (`postgresql-roles`), with the same field sources; `uses.identity` is bound to `postgres.roles` in the graph (the checks recommend it, 0028). An external Postgres server is one external with both provides and `same_as` for the shared admin fields.
 
 **Normative script behavior** (exact SQL is the build's; names only through psql variables and `\gexec`, passwords read inside psql, as 0014):
 
@@ -125,7 +125,7 @@ List: one `resource` row per database (`stack` = the marker its owner role belon
 
 ## Critical test scenarios
 
-- Planner: identity slot auto bound to its own instance; `identity_not_granting` (an `iam` provide on a Postgres slot); `identity_credentials_mismatch`; `missing_identity_slot`; `invalid_external_use`; `invalid_same_as` for each cause; `shared_resource` warning; a duplicate login name stays `duplicate_named_value`; bucket default name from the template and its 63 character cut (**AC-3**, **AC-6**, **AC-7**).
+- Checks: identity slot auto bound to its own instance; `identity_not_granting` (an `iam` provide on a Postgres slot); `identity_credentials_mismatch`; `missing_identity_slot`; `invalid_external_use`; `invalid_same_as` for each cause; `shared_resource` warning; a duplicate login name stays `duplicate_named_value`; bucket default name from the template and its 63 character cut (**AC-3**, **AC-6**, **AC-7**).
 - Golden: a binding through `postgres` renders the resource job, then the login job, then the consumer, with the env and mounts above; a binding through an external Postgres has both jobs on `egress` and no `depends_on` on the external (**AC-2**, **AC-14**).
 - e2e (real `postgres`): 0014's two consumer scenarios on the split (**AC-2**); a database made by the 0014 shape is taken over with its rows and its login's password intact; adopt a hand made database with tables, a sequence and a schema: the new login reads and writes them and the hand made role still owns nothing outside it (**AC-6**); two consumers share one adopted database, each creates a table, each reads the other's (**AC-6**); `ALTER ROLE ... IN DATABASE ... SET role` takes effect on Postgres 18.6 for a new session of each login (**AC-2**); an adopted database on an external test server: the server's other databases keep their `CONNECT` grants to `PUBLIC`, and an extension owned object is left and logged (**AC-6**).
 
