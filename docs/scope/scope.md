@@ -120,7 +120,7 @@ One name for each thing, the same in code, contracts, specs, editor text and thi
 spec [0027](../specs/0027-one-vocabulary/index.md) · code in `libs/planner` → `libs/check`, `services/planner` → `services/renderer`, `contracts/openapi/`, `services/api/`, `services/deployer-docker/`, `libs/render/`, `catalog/`, `web/src/`, `deploy/`, `scripts/vocabulary.sh`
 - [x] Design it (spec): `/architect one vocabulary`
 - [ ] Build it: `/develop one vocabulary`
-   - [ ] Glossary in spec 0001 and the retired word check, report only (AC-1, AC-12)
+   - [x] Glossary in spec 0001 and the retired word check, report only (AC-1, AC-12)
    - [ ] planner to renderer, plan to check and resolved graph: service, catalog, settings, image, CI, contracts, `libs/check`, editor text (AC-2, AC-3, AC-6)
    - [ ] deployments and projects to stacks: both contracts, migration `00002`, store, deployer folder, managed label, editor routes (AC-4, AC-5, AC-6)
    - [ ] Recommended bindings instead of automatic binding, every shipped graph explicit (spec 0028; AC-7, AC-8, AC-9, AC-10, AC-11)

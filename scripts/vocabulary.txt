@@ -1,0 +1,12 @@
+# Retired words (spec 0027). One rule per line, three columns separated by " | ":
+# an extended regex, the path globs it applies to (separated by spaces, * for all), and the
+# word to use instead. A pattern with a capital letter matches case sensitively, every other
+# pattern ignores case. scripts/vocabulary.sh reads this file; the file itself is never checked.
+planner | * | renderer (service, module, capability) or checks (libs/check)
+running graph | * | stack
+online tool | * | online editor (the site) or renderer in public mode (the service)
+managed editor | * | stack editor
+\bdeployments?\b | * | stack
+\bplan(s|ning|ned)?\b | *.go *.ts *.tsx *.yaml *.yml *.sql *.sh *.tmpl | check (verb), resolved graph (noun)
+Plan[A-Z]|plan[A-Z]|[a-z]Plan\b | *.go *.ts *.tsx *.yaml *.yml *.sql *.sh *.tmpl | CheckResult, digest and the Rename map of spec 0027
+the plan\b|plan digest|/v1/plan | *.md | resolved graph, digest, /v1/check
