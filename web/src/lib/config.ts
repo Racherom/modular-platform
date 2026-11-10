@@ -11,10 +11,10 @@ function meta(name: string, fallback: string): string {
 /** Empty for the site root, else like `/platform`. */
 export const basePath = meta('mp-base-path', '')
 
-/** Where the planning API lives, like `/renderer` or `/platform/renderer`. */
+/** Where the checking API lives, like `/renderer` or `/platform/renderer`. */
 export const apiRoot = meta('mp-api-root', '/renderer')
 
-/** `online` for the online tool, `managed` inside the managed platform, with sign in and deploy. */
+/** `online` for the online editor, `managed` inside the managed platform, with sign in and deploy. */
 export const mode: 'online' | 'managed' = meta('mp-mode', 'online') === 'managed' ? 'managed' : 'online'
 
 /** Managed mode, signed out: `index` shows the index with a sign in button, `sign-in` goes straight to the provider. */

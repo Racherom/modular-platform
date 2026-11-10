@@ -30,14 +30,14 @@ func TestBearer(t *testing.T) {
 	base, _ := url.Parse(own.URL + "/api")
 	c := New(base, token)
 
-	req, err := c.NewRequest(t.Context(), http.MethodGet, "/plan?x=1", nil)
+	req, err := c.NewRequest(t.Context(), http.MethodGet, "/items?x=1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.Do(req); err != nil {
 		t.Fatal(err)
 	}
-	if want := "/api/plan?x=1 Bearer " + token; fmt.Sprint(*ownSeen) != "["+want+"]" {
+	if want := "/api/items?x=1 Bearer " + token; fmt.Sprint(*ownSeen) != "["+want+"]" {
 		t.Errorf("provider saw %q, want %q", *ownSeen, want)
 	}
 

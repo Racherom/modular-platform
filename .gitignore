@@ -9,7 +9,7 @@ web/playwright-report/
 *.out
 /bin/
 
-# per host settings of the online tool (copied from .env.example)
+# per host settings of the online editor (copied from .env.example)
 deploy/online/.env
 
 # never commit generated secrets

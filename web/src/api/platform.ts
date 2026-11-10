@@ -104,10 +104,10 @@ export async function reviewDeployment(graph: Graph): Promise<Review> {
   return data
 }
 
-export async function applyDeployment(graph: Graph, planDigest: string, placed: PlacedInput[]): Promise<Operation> {
+export async function applyDeployment(graph: Graph, digest: string, placed: PlacedInput[]): Promise<Operation> {
   const { data, error, response } = await client.POST('/api/v1/deployments/{name}/apply', {
     params: { path: { name: graph.name } },
-    body: { graph, planDigest, placed },
+    body: { graph, digest, placed },
   })
   if (!data) throw failure(response.status, error)
   return data

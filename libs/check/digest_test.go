@@ -1,12 +1,12 @@
-package planner_test
+package check_test
 
 import (
 	"regexp"
 	"slices"
 	"testing"
 
+	"github.com/racherom/modular-platform/libs/check"
 	"github.com/racherom/modular-platform/libs/contract"
-	"github.com/racherom/modular-platform/libs/planner"
 )
 
 var digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
@@ -15,9 +15,9 @@ func TestDigest(t *testing.T) {
 	t.Parallel()
 	catalog := testCatalog(t)
 	g := readFixture(t, "sample")
-	base := planner.Plan(g, catalog)
+	base := check.Graph(g, catalog)
 	if !base.Ok || !digestPattern.MatchString(base.Digest) {
-		t.Fatalf("ok plan: ok=%v digest=%q", base.Ok, base.Digest)
+		t.Fatalf("ok result: ok=%v digest=%q", base.Ok, base.Digest)
 	}
 
 	t.Run("same input, same digest, whatever the catalog order", func(t *testing.T) {
@@ -25,7 +25,7 @@ func TestDigest(t *testing.T) {
 		reversed := contract.Catalog{Modules: slices.Clone(catalog.Modules), Capabilities: slices.Clone(catalog.Capabilities)}
 		slices.Reverse(reversed.Modules)
 		slices.Reverse(reversed.Capabilities)
-		if got := planner.Plan(g, reversed).Digest; got != base.Digest {
+		if got := check.Graph(g, reversed).Digest; got != base.Digest {
 			t.Errorf("digest = %s, want %s", got, base.Digest)
 		}
 	})
@@ -35,7 +35,7 @@ func TestDigest(t *testing.T) {
 			Modules:      append(slices.Clone(catalog.Modules), contract.Module{Name: "unused", Image: "unused:1"}),
 			Capabilities: append(slices.Clone(catalog.Capabilities), contract.Capability{Name: "unused"}),
 		}
-		if got := planner.Plan(g, extra).Digest; got != base.Digest {
+		if got := check.Graph(g, extra).Digest; got != base.Digest {
 			t.Errorf("digest = %s, want %s", got, base.Digest)
 		}
 	})
@@ -47,7 +47,7 @@ func TestDigest(t *testing.T) {
 				changed.Modules[i].Image = "traefik/whoami:v9.9.9"
 			}
 		}
-		if got := planner.Plan(g, changed).Digest; got == base.Digest {
+		if got := check.Graph(g, changed).Digest; got == base.Digest {
 			t.Error("digest did not change with the image")
 		}
 	})
@@ -61,7 +61,7 @@ func TestDigest(t *testing.T) {
 				changed.Capabilities[i].Yields = &y
 			}
 		}
-		if got := planner.Plan(g, changed).Digest; got == base.Digest {
+		if got := check.Graph(g, changed).Digest; got == base.Digest {
 			t.Error("digest did not change with the job image")
 		}
 	})
@@ -69,7 +69,7 @@ func TestDigest(t *testing.T) {
 		t.Parallel()
 		old := contract.CloneGraph(g)
 		old.ApiVersion = contract.APIVersionV0alpha1
-		got := planner.Plan(old, catalog)
+		got := check.Graph(old, catalog)
 		if got.Digest != base.Digest {
 			t.Errorf("digest = %s, want %s", got.Digest, base.Digest)
 		}
@@ -81,15 +81,15 @@ func TestDigest(t *testing.T) {
 		t.Parallel()
 		renamed := contract.CloneGraph(g)
 		renamed.Name = "other"
-		if got := planner.Plan(renamed, catalog).Digest; got == base.Digest {
+		if got := check.Graph(renamed, catalog).Digest; got == base.Digest {
 			t.Error("digest did not change with the name")
 		}
 	})
-	t.Run("a plan with an error has none", func(t *testing.T) {
+	t.Run("a check result with an error has none", func(t *testing.T) {
 		t.Parallel()
 		bad := contract.CloneGraph(g)
 		bad.Name = "Not A Label"
-		if got := planner.Plan(bad, catalog); got.Ok || got.Digest != "" {
+		if got := check.Graph(bad, catalog); got.Ok || got.Digest != "" {
 			t.Errorf("ok=%v digest=%q, want no digest", got.Ok, got.Digest)
 		}
 	})

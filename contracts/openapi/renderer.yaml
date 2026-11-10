@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Modular Platform renderer
   version: 0.1.0
-  summary: Plans a graph of modules against the built in catalog and renders it as a runnable zip.
+  summary: Checks a graph of modules against the built in catalog and renders it as a runnable zip.
   description: |
     The renderer is stateless. Every request carries the whole graph; nothing is stored.
     Formats are `modular-platform/v1` (spec 0011). A `v0alpha1` graph is still read and converted.
@@ -37,9 +37,9 @@ paths:
           $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/TimedOut"
-  /v1/plan:
+  /v1/check:
     post:
-      operationId: plan
+      operationId: check
       summary: Check a graph and fill in its automatic bindings
       requestBody:
         required: true
@@ -49,11 +49,11 @@ paths:
               $ref: "#/components/schemas/Graph"
       responses:
         "200":
-          description: The plan. `ok` is false when a problem has severity `error`.
+          description: The check result. `ok` is false when a problem has severity `error`.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PlanResult"
+                $ref: "#/components/schemas/CheckResult"
         "400":
           $ref: "#/components/responses/BadGraph"
         "401":
@@ -94,11 +94,11 @@ paths:
         "413":
           $ref: "#/components/responses/TooLarge"
         "422":
-          description: The plan has an error, so nothing was rendered.
+          description: The graph has an error, so nothing was rendered.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PlanResult"
+                $ref: "#/components/schemas/CheckResult"
         "429":
           $ref: "#/components/responses/RateLimited"
         "503":
@@ -138,7 +138,7 @@ paths:
           $ref: "#/components/responses/TooLarge"
         "422":
           description: |
-            The plan has an error, so nothing was rendered. Besides the plan's own errors, a
+            The graph has an error, so nothing was rendered. Besides the graph's own errors, a
             deployed graph is refused with error `host_access` at `modules.<instance>` for each
             instance whose module publishes ports or mounts host paths, and with error
             `setup_required` for each instance that needs `setup.sh` (an asked value, an asked
@@ -147,7 +147,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PlanResult"
+                $ref: "#/components/schemas/CheckResult"
         "503":
           $ref: "#/components/responses/TimedOut"
 components:
@@ -960,7 +960,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Problem"
-    PlanResult:
+    CheckResult:
       type: object
       additionalProperties: false
       required: [ok, graph, bindings, problems]
@@ -998,13 +998,13 @@ components:
     RenderedProject:
       type: object
       additionalProperties: false
-      required: [project, plan, images, publishedPorts, secrets, files]
+      required: [project, check, images, publishedPorts, secrets, files]
       properties:
         project:
           type: string
           description: The Compose project name, `mp-<graph name>`.
-        plan:
-          $ref: "#/components/schemas/PlanResult"
+        check:
+          $ref: "#/components/schemas/CheckResult"
         images:
           type: array
           description: One entry per instance, sorted by instance.

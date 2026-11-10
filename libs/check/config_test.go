@@ -1,11 +1,11 @@
-package planner_test
+package check_test
 
 import (
 	"strings"
 	"testing"
 
+	"github.com/racherom/modular-platform/libs/check"
 	"github.com/racherom/modular-platform/libs/contract"
-	"github.com/racherom/modular-platform/libs/planner"
 )
 
 // TestGraphTextRule checks the three graph text rules of spec 0025 on the exact text, nothing
@@ -21,7 +21,7 @@ func TestGraphTextRule(t *testing.T) {
 		"\"{\"": brace, "\"\t\"": control,
 	}
 	for text, want := range tests {
-		got := planner.GraphTextRule(text)
+		got := check.GraphTextRule(text)
 		if want == "" && got != "" || want != "" && !strings.Contains(got, want) {
 			t.Errorf("GraphTextRule(%q) = %q, want %q", text, got, want)
 		}
@@ -36,7 +36,7 @@ func TestGraphTextRule(t *testing.T) {
 // an enum miss the value's own rule (AC-27).
 func TestConfigMessages(t *testing.T) {
 	t.Parallel()
-	got := planner.Plan(readFixture(t, "config-problems"), testCatalog(t))
+	got := check.Graph(readFixture(t, "config-problems"), testCatalog(t))
 	want := map[string]string{
 		"modules.a.config.label": "{ or }",
 		"modules.a.config.mode":  "is not one of fast, slow",
@@ -66,13 +66,13 @@ func TestConfigInDigest(t *testing.T) {
 	t.Parallel()
 	catalog := testCatalog(t)
 	g := readFixture(t, "config-set")
-	first := planner.Plan(g, catalog)
+	first := check.Graph(g, catalog)
 	if !first.Ok || (*first.Graph.Modules["a"].Config)["level"] != "7" {
-		t.Fatalf("plan ok=%v, graph config %v", first.Ok, first.Graph.Modules["a"].Config)
+		t.Fatalf("result ok=%v, graph config %v", first.Ok, first.Graph.Modules["a"].Config)
 	}
 	changed := contract.CloneGraph(g)
 	(*changed.Modules["a"].Config)["level"] = "8"
-	if planner.Plan(changed, catalog).Digest == first.Digest {
+	if check.Graph(changed, catalog).Digest == first.Digest {
 		t.Error("a changed config value keeps the digest")
 	}
 	if (*g.Modules["a"].Config)["level"] != "7" {

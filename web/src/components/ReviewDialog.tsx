@@ -9,9 +9,9 @@ import { Button } from './ui/Button'
 import { Failure } from './ui/Failure'
 
 /**
- * Plan review (spec 0006): what an apply of graph would run, the modules with their images, the
+ * The review (spec 0006): what an apply of graph would run, the modules with their images, the
  * bindings, the published ports and a field for each placed credential. Deploy applies exactly
- * the reviewed plan; when the plan changed since, the dialog reviews again.
+ * the reviewed check result; when the check result changed since, the dialog reviews again.
  */
 export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -25,12 +25,12 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
       const placed: PlacedInput[] = (review.data?.placed ?? [])
         .filter((p) => !p.exists || replacing[p.path])
         .map((p) => ({ path: p.path, value: values[p.path] ?? '', replace: p.exists }))
-      return applyDeployment(graph, review.data?.plan.digest ?? '', placed)
+      return applyDeployment(graph, review.data?.check.digest ?? '', placed)
     },
     onSuccess: () => void navigate({ to: '/deployments/$name', params: { name: graph.name } }),
     onError: (error) => {
-      if (error instanceof ApiError && error.code === 'plan_changed') {
-        setNotice('The plan changed since you reviewed it, for example after a platform upgrade. Review it again below.')
+      if (error instanceof ApiError && error.code === 'graph_changed') {
+        setNotice('The graph changed since you reviewed it, for example after a platform upgrade. Review it again below.')
         void review.refetch()
       }
     },
@@ -42,7 +42,7 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
 
   const needed = (review.data?.placed ?? []).filter((p) => !p.exists || replacing[p.path])
   const complete = needed.every((p) => (values[p.path] ?? '') !== '')
-  const planChanged = apply.error instanceof ApiError && apply.error.code === 'plan_changed'
+  const graphChanged = apply.error instanceof ApiError && apply.error.code === 'graph_changed'
 
   return (
     <dialog ref={dialog} className={m.dialog} aria-labelledby="review-title" onClose={onClose}>
@@ -59,9 +59,9 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
           ) : (
             <Failure error={review.error} onRetry={() => void review.refetch()} />
           ))}
-        {review.isPending && <p>Reviewing the plan…</p>}
-        {review.data && !review.data.plan.ok && <ProblemList problems={review.data.plan.problems} />}
-        {review.data?.plan.ok && (
+        {review.isPending && <p>Reviewing the graph…</p>}
+        {review.data && !review.data.check.ok && <ProblemList problems={review.data.check.problems} />}
+        {review.data?.check.ok && (
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -121,7 +121,7 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
               </div>
             ))}
             {apply.isError &&
-              !planChanged &&
+              !graphChanged &&
               (isRefusal(apply.error) ? (
                 <ProblemList problems={apply.error.problems} />
               ) : (
@@ -135,7 +135,7 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
             </div>
           </form>
         )}
-        {(review.isError || (review.data && !review.data.plan.ok)) && (
+        {(review.isError || (review.data && !review.data.check.ok)) && (
           <div className={m.actions}>
             <Button onPress={() => dialog.current?.close()}>Close</Button>
           </div>

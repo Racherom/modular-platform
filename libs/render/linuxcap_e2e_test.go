@@ -17,8 +17,8 @@ import (
 // is on (spec 0022, AC-21).
 func TestLinuxCapsEndToEnd(t *testing.T) {
 	catalog := loadCatalog(t, "testdata/linuxcap/catalog")
-	plan := planFile(t, "testdata/linuxcap/graph.yaml", catalog)
-	m, err := render.Managed(plan, catalog, builtinTemplates(t), testDeployment)
+	result := checkFile(t, "testdata/linuxcap/graph.yaml", catalog)
+	m, err := render.Managed(result, catalog, builtinTemplates(t), testDeployment)
 	if err != nil {
 		t.Fatal(err)
 	}

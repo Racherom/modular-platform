@@ -1,4 +1,4 @@
-package planner
+package check
 
 import (
 	"crypto/sha256"
@@ -10,7 +10,7 @@ import (
 	"github.com/racherom/modular-platform/libs/contract"
 )
 
-// digestInput is what a digest covers: the planned v1 graph, its bindings, the module entries
+// digestInput is what a digest covers: the resolved v1 graph, its bindings, the module entries
 // the graph uses and the capability files those entries name, so a changed entry or capability
 // (a new image tag, a new job script) changes the digest too.
 type digestInput struct {
@@ -20,14 +20,14 @@ type digestInput struct {
 	Capabilities []contract.Capability `json:"capabilities"`
 }
 
-// Digest is `sha256:<hex>` over the canonical JSON of plan's graph, its sorted bindings, the
+// Digest is `sha256:<hex>` over the canonical JSON of result's graph, its sorted bindings, the
 // modules the graph uses and the capabilities they name (with the capability each yields),
 // sorted by name (spec 0011). Equal digests mean the same project is rendered; api compares the
 // reviewed digest with a fresh one before an apply.
-func Digest(plan contract.PlanResult, catalog contract.Catalog) string {
+func Digest(result contract.CheckResult, catalog contract.Catalog) string {
 	used := map[string]bool{}
 	named := map[string]bool{}
-	for _, m := range plan.Graph.Modules {
+	for _, m := range result.Graph.Modules {
 		used[m.Module] = true
 		if m.External != nil {
 			for _, ep := range m.External.Provides {
@@ -36,8 +36,8 @@ func Digest(plan contract.PlanResult, catalog contract.Catalog) string {
 		}
 	}
 	in := digestInput{
-		Graph:        plan.Graph,
-		Bindings:     slices.Clone(plan.Bindings),
+		Graph:        result.Graph,
+		Bindings:     slices.Clone(result.Bindings),
 		Modules:      []contract.Module{},
 		Capabilities: []contract.Capability{},
 	}

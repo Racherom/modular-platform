@@ -2,7 +2,7 @@ import { useMutation } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { FolderOpen, Workflow } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { planGraph } from '../api/client'
+import { checkGraph } from '../api/client'
 import { GraphScreen, useCatalog } from '../components/GraphScreen'
 import { useReplaceGuard } from '../components/ReplaceDialog'
 import { Button } from '../components/ui/Button'
@@ -16,8 +16,8 @@ export const Route = createFileRoute('/')({ component: Editor })
 
 function Editor() {
   const working = useEditor((s) => s.working)
-  const planState = useEditor((s) => s.planState)
-  const planError = useEditor((s) => s.planError)
+  const checkState = useEditor((s) => s.checkState)
+  const checkError = useEditor((s) => s.checkError)
   const storageFailed = useEditor((s) => s.storageFailed)
   const canUndo = useEditor((s) => s.history.past.length > 0)
   const canRedo = useEditor((s) => s.history.future.length > 0)
@@ -44,12 +44,12 @@ function Editor() {
     else if (handoff) select(handoff)
   }, [])
 
-  // one plan per open: it validates the file and writes the automatic bindings into the graph
+  // one check per open: it validates the file and writes the automatic bindings into the graph
   const open = useMutation({
     mutationFn: async (file: File): Promise<WorkingGraph> => {
       if (file.size > MAX_FILE_BYTES) throw new Error('The file is over 1 MB.')
-      const plan = await planGraph(parseGraph(await file.text()))
-      return { fileName: file.name, graph: plan.graph, plan }
+      const check = await checkGraph(parseGraph(await file.text()))
+      return { fileName: file.name, graph: check.graph, check }
     },
     onSuccess: (w) => {
       setOpens((n) => n + 1)
@@ -87,14 +87,14 @@ function Editor() {
         <GraphScreen
           key={opens}
           graph={working.graph}
-          plan={working.plan}
+          check={working.check}
           fileName={working.fileName}
           toolbar={opener}
           editing={{
             positions: working.positions ?? {},
             edited: working.edited ?? false,
-            planState,
-            planError,
+            checkState,
+            checkError,
             onRetry: retry,
             onEdit: edit,
             onSaved: saved,

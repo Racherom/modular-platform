@@ -5,7 +5,7 @@ import { drag, handle } from '../helpers'
 import { graphFile, mockRenderer } from '../mock-renderer'
 
 // AC-7: on the production build, with a 50 module, 100 binding graph, a selection and a connect
-// each update the screen within 100 ms (median of 5 runs). The plan call is not counted: its
+// each update the screen within 100 ms (median of 5 runs). The check call is not counted: its
 // reply is held back until after the measurement.
 const BUDGET_MS = 100
 const RUNS = 5

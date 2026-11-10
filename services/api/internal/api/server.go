@@ -23,8 +23,8 @@ const (
 // Renderer is the part of the renderer the editor reaches through api.
 type Renderer interface {
 	Catalog(ctx context.Context) (contract.Catalog, error)
-	Plan(ctx context.Context, g contract.Graph) (contract.PlanResult, error)
-	Render(ctx context.Context, g contract.Graph) (zip []byte, disposition string, plan *contract.PlanResult, err error)
+	Check(ctx context.Context, g contract.Graph) (contract.CheckResult, error)
+	Render(ctx context.Context, g contract.Graph) (zip []byte, disposition string, result *contract.CheckResult, err error)
 }
 
 // Server implements the strict part of api's contract.
@@ -52,29 +52,29 @@ func (s *Server) GetCatalog(ctx context.Context, _ GetCatalogRequestObject) (Get
 	return GetCatalog200JSONResponse(cat), nil
 }
 
-// Plan plans a graph through the renderer.
-func (s *Server) Plan(ctx context.Context, req PlanRequestObject) (PlanResponseObject, error) {
-	plan, err := s.renderer.Plan(ctx, *req.Body)
+// Check checks a graph through the renderer.
+func (s *Server) Check(ctx context.Context, req CheckRequestObject) (CheckResponseObject, error) {
+	result, err := s.renderer.Check(ctx, *req.Body)
 	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
-		return Plan400JSONResponse{BadRequestJSONResponse{Problems: refused.Problems}}, nil
+		return Check400JSONResponse{BadRequestJSONResponse{Problems: refused.Problems}}, nil
 	}
 	if err != nil {
-		return Plan502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
+		return Check502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	}
-	return Plan200JSONResponse(plan), nil
+	return Check200JSONResponse(result), nil
 }
 
 // Render answers the static zip, byte for byte what the renderer gives.
 func (s *Server) Render(ctx context.Context, req RenderRequestObject) (RenderResponseObject, error) {
-	zip, disposition, plan, err := s.renderer.Render(ctx, *req.Body)
+	zip, disposition, result, err := s.renderer.Render(ctx, *req.Body)
 	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
 		return Render400JSONResponse{BadRequestJSONResponse{Problems: refused.Problems}}, nil
 	}
 	if err != nil {
 		return Render502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	}
-	if plan != nil {
-		return Render422JSONResponse(*plan), nil
+	if result != nil {
+		return Render422JSONResponse(*result), nil
 	}
 	return Render200ApplicationzipResponse{
 		Body: bytes.NewReader(zip), ContentLength: int64(len(zip)),
@@ -158,7 +158,7 @@ func (s *Server) ReviewDeployment(ctx context.Context, req ReviewDeploymentReque
 	case err != nil:
 		return nil, err
 	}
-	out := Review{Plan: r.Plan, Modules: r.Modules, Bindings: r.Plan.Bindings, PublishedPorts: r.PublishedPorts, Placed: []PlacedCredential{}}
+	out := Review{Check: r.Check, Modules: r.Modules, Bindings: r.Check.Bindings, PublishedPorts: r.PublishedPorts, Placed: []PlacedCredential{}}
 	if out.PublishedPorts == nil {
 		out.PublishedPorts = []contract.PublishedPort{}
 	}
@@ -178,16 +178,16 @@ func (s *Server) ApplyDeployment(ctx context.Context, req ApplyDeploymentRequest
 	for _, p := range req.Body.Placed {
 		placed = append(placed, deploy.PlacedInput{Path: p.Path, Value: p.Value, Replace: p.Replace})
 	}
-	op, err := s.deploy.Apply(ctx, by, req.Name, req.Body.Graph, req.Body.PlanDigest, placed)
+	op, err := s.deploy.Apply(ctx, by, req.Name, req.Body.Graph, req.Body.Digest, placed)
 	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
 		return ApplyDeployment422JSONResponse{RefusedJSONResponse{Problems: refused.Problems}}, nil
 	}
 	switch {
 	case errors.Is(err, deploy.ErrBusy):
 		return ApplyDeployment409JSONResponse(problems("busy", "", "An operation of this deployment is still running.")), nil
-	case errors.Is(err, deploy.ErrPlanChanged):
-		return ApplyDeployment409JSONResponse(problems("plan_changed", "planDigest",
-			"The plan changed since you reviewed it, for example after a platform upgrade; review it again.")), nil
+	case errors.Is(err, deploy.ErrGraphChanged):
+		return ApplyDeployment409JSONResponse(problems("graph_changed", "digest",
+			"The graph changed since you reviewed it, for example after a platform upgrade; review it again.")), nil
 	case errors.Is(err, deploy.ErrRenderer):
 		return ApplyDeployment502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	case errors.Is(err, deploy.ErrTarget):

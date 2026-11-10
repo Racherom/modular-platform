@@ -23,17 +23,17 @@ var deployEnv = []byte("MP_UID=1000\nMP_GID=1000\n")
 func TestGuardAcceptsEveryRender(t *testing.T) {
 	t.Parallel()
 	for name, c := range map[string]struct {
-		plan    func(*testing.T) (contract.PlanResult, contract.Catalog, contract.Templates)
+		result  func(*testing.T) (contract.CheckResult, contract.Catalog, contract.Templates)
 		refused []string // the paths the guard still refuses
 	}{
-		"whoami-postgres": {noTemplates(samplePlan), nil},
-		"sdk-pair":        {noTemplates(pairPlan), nil},
-		"bindings":        {noTemplates(bindingsPlan), nil},
-		"templates":       {templatesPlan, nil},
+		"whoami-postgres": {noTemplates(sampleResult), nil},
+		"sdk-pair":        {noTemplates(pairResult), nil},
+		"bindings":        {noTemplates(bindingsResult), nil},
+		"templates":       {templatesResult, nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			p, catalog, tmpls := c.plan(t)
+			p, catalog, tmpls := c.result(t)
 			m, err := render.Managed(p, catalog, tmpls, testDeployment)
 			if err != nil {
 				t.Fatal(err)
@@ -81,11 +81,11 @@ func indent(s, prefix string) string {
 	return prefix + strings.ReplaceAll(s, "\n", "\n"+prefix)
 }
 
-// noTemplates turns a plan helper whose catalog has no templates into one that returns none.
-func noTemplates(plan func(*testing.T) (contract.PlanResult, contract.Catalog)) func(*testing.T) (contract.PlanResult, contract.Catalog, contract.Templates) {
-	return func(t *testing.T) (contract.PlanResult, contract.Catalog, contract.Templates) {
+// noTemplates turns a check result helper whose catalog has no templates into one that returns none.
+func noTemplates(result func(*testing.T) (contract.CheckResult, contract.Catalog)) func(*testing.T) (contract.CheckResult, contract.Catalog, contract.Templates) {
+	return func(t *testing.T) (contract.CheckResult, contract.Catalog, contract.Templates) {
 		t.Helper()
-		p, c := plan(t)
+		p, c := result(t)
 		return p, c, builtinTemplates(t)
 	}
 }

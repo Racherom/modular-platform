@@ -70,7 +70,7 @@ export default defineConfig({
   server: {
     fs: { allow: devFiles },
     // task dev: the ingress container reaches this server on the docker host and serves it on
-    // the online tool's own origin, so hot reload runs where production runs
+    // the online editor's own origin, so hot reload runs where production runs
     ...(behindProxy && {
       host: '0.0.0.0',
       allowedHosts: [process.env.PLATFORM_DOMAIN ?? 'platform.localhost'],

@@ -133,7 +133,7 @@ type RealmBinding struct {
 	Secure bool
 	// Strict is whether the realm refuses unknown members. Nil when the binding does not deliver it.
 	Strict *bool
-	// Tier is plan of the realm. Nil when the binding does not deliver it.
+	// Tier is pricing tier of the realm. Nil when the binding does not deliver it.
 	Tier *RealmTier
 }
 

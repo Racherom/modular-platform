@@ -92,7 +92,7 @@ func (s *Service) Review(ctx context.Context, name string, g contract.Graph) (Re
 	if err != nil {
 		return Review{}, err
 	}
-	r := Review{Plan: project.Plan, Modules: project.Images, PublishedPorts: project.PublishedPorts}
+	r := Review{Check: project.Check, Modules: project.Images, PublishedPorts: project.PublishedPorts}
 	for _, sec := range project.Secrets {
 		if sec.Kind == contract.Placed {
 			r.Placed = append(r.Placed, PlacedCredential{
@@ -104,22 +104,22 @@ func (s *Service) Review(ctx context.Context, name string, g contract.Graph) (Re
 	return r, nil
 }
 
-// Apply starts an apply of g after the review whose digest is planDigest (spec 0006, "Apply
+// Apply starts an apply of g after the review whose digest is digest (spec 0006, "Apply
 // dispatch order"). A refusal leaves no trace. When the deploy target does not answer, the
 // operation is recorded as failed with deployer_unavailable and returned without error.
-func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract.Graph, planDigest string, placed []PlacedInput) (Operation, error) {
+func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract.Graph, digest string, placed []PlacedInput) (Operation, error) {
 	if err := checkName(name, g); err != nil {
 		return Operation{}, err
 	}
-	plan, err := s.renderer.Plan(ctx, g)
+	result, err := s.renderer.Check(ctx, g)
 	if err != nil {
 		return Operation{}, err
 	}
-	if !plan.Ok {
-		return Operation{}, &RefusedError{Problems: plan.Problems}
+	if !result.Ok {
+		return Operation{}, &RefusedError{Problems: result.Problems}
 	}
-	if plan.Digest != planDigest {
-		return Operation{}, ErrPlanChanged
+	if result.Digest != digest {
+		return Operation{}, ErrGraphChanged
 	}
 	id, project, created, err := s.store.EnsureDeployment(ctx, name)
 	if err != nil {
@@ -149,7 +149,7 @@ func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract
 		supplied = append(supplied, p.Path)
 	}
 	op, err := s.store.StartOperation(ctx, Operation{
-		DeploymentID: id, Action: ActionApply, Graph: graph, PlanDigest: plan.Digest,
+		DeploymentID: id, Action: ActionApply, Graph: graph, Digest: result.Digest,
 		PlacedSupplied: supplied, StartedBy: by,
 	})
 	if err != nil {

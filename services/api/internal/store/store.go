@@ -364,7 +364,7 @@ func (s *Store) CountRollbacks(ctx context.Context, of uuid.UUID) (int, error) {
 
 func insertParams(op deploy.Operation) queries.InsertOperationParams {
 	return queries.InsertOperationParams{
-		DeploymentID: op.DeploymentID, Action: string(op.Action), Graph: op.Graph, PlanDigest: optional(op.PlanDigest),
+		DeploymentID: op.DeploymentID, Action: string(op.Action), Graph: op.Graph, PlanDigest: optional(op.Digest),
 		DeleteData: op.DeleteData, RollbackOf: op.RollbackOf, PlacedSupplied: nonNil(op.PlacedSupplied),
 		StartedByIss: op.StartedBy.Issuer, StartedBySub: op.StartedBy.Subject, StartedByEmail: op.StartedBy.Email,
 	}
@@ -373,7 +373,7 @@ func insertParams(op deploy.Operation) queries.InsertOperationParams {
 func operation(r queries.Operation) deploy.Operation {
 	return deploy.Operation{
 		ID: r.ID, DeploymentID: r.DeploymentID, Action: deploy.Action(r.Action), Status: deploy.Status(r.Status),
-		Step: deploy.Step(deref(r.Step)), Graph: r.Graph, PlanDigest: deref(r.PlanDigest), DeleteData: r.DeleteData,
+		Step: deploy.Step(deref(r.Step)), Graph: r.Graph, Digest: deref(r.PlanDigest), DeleteData: r.DeleteData,
 		RollbackOf: r.RollbackOf, PlacedSupplied: nonNil(r.PlacedSupplied),
 		StartedBy:           deploy.Starter{Issuer: r.StartedByIss, Subject: r.StartedBySub, Email: r.StartedByEmail},
 		DeployerOperationID: deref(r.DeployerOperationID), DeployerBootID: deref(r.DeployerBootID),

@@ -139,7 +139,7 @@ func TestSessions(t *testing.T) {
 
 func applyOp(id uuid.UUID) deploy.Operation {
 	return deploy.Operation{
-		DeploymentID: id, Action: deploy.ActionApply, Graph: json.RawMessage(`{"name":"sample"}`), PlanDigest: "sha256:x",
+		DeploymentID: id, Action: deploy.ActionApply, Graph: json.RawMessage(`{"name":"sample"}`), Digest: "sha256:x",
 		StartedBy: deploy.Starter{Issuer: "i", Subject: "s", Email: "a@b.c"},
 	}
 }

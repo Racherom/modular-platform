@@ -30,8 +30,8 @@ func TestSDKPairEndToEnd(t *testing.T) {
 			"--target", target, "-t", "modular-platform/"+target+":test", ".")
 	}
 
-	plan, catalog := pairPlan(t)
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	result, catalog := pairResult(t)
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}

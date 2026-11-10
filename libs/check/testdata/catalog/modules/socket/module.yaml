@@ -1,7 +1,7 @@
 apiVersion: modular-platform/v1
 kind: Module
 name: socket
-description: Mounts a host path, so planning it warns of host access.
+description: Mounts a host path, so checking it warns of host access.
 image: example.test/socket:1.0.0
 host_mounts:
   - host: /var/run/socket.sock

@@ -53,23 +53,23 @@ func (p *Renderer) Catalog(ctx context.Context) (contract.Catalog, error) {
 	return *resp.JSON200, nil
 }
 
-// Plan plans g.
-func (p *Renderer) Plan(ctx context.Context, g contract.Graph) (contract.PlanResult, error) {
-	resp, err := p.c.PlanWithResponse(ctx, g)
+// Check checks g.
+func (p *Renderer) Check(ctx context.Context, g contract.Graph) (contract.CheckResult, error) {
+	resp, err := p.c.CheckWithResponse(ctx, g)
 	if err != nil {
-		return contract.PlanResult{}, errors.Join(deploy.ErrRenderer, err)
+		return contract.CheckResult{}, errors.Join(deploy.ErrRenderer, err)
 	}
 	if resp.JSON400 != nil {
-		return contract.PlanResult{}, &deploy.RefusedError{Problems: resp.JSON400.Problems}
+		return contract.CheckResult{}, &deploy.RefusedError{Problems: resp.JSON400.Problems}
 	}
 	if resp.JSON200 == nil {
-		return contract.PlanResult{}, rendererError("plan", resp.StatusCode(), resp.Body)
+		return contract.CheckResult{}, rendererError("check", resp.StatusCode(), resp.Body)
 	}
 	return *resp.JSON200, nil
 }
 
-// Render answers the static zip of g as is, or the plan when it has errors.
-func (p *Renderer) Render(ctx context.Context, g contract.Graph) (zip []byte, disposition string, plan *contract.PlanResult, err error) {
+// Render answers the static zip of g as is, or the check result when it has errors.
+func (p *Renderer) Render(ctx context.Context, g contract.Graph) (zip []byte, disposition string, result *contract.CheckResult, err error) {
 	resp, err := p.c.RenderWithResponse(ctx, g)
 	if err != nil {
 		return nil, "", nil, errors.Join(deploy.ErrRenderer, err)
@@ -85,7 +85,7 @@ func (p *Renderer) Render(ctx context.Context, g contract.Graph) (zip []byte, di
 	return nil, "", nil, rendererError("render", resp.StatusCode(), resp.Body)
 }
 
-// RenderManaged renders g for the deployment; a plan with errors is a refusal.
+// RenderManaged renders g for the deployment; a check result with errors is a refusal.
 func (p *Renderer) RenderManaged(ctx context.Context, g contract.Graph, deployment uuid.UUID) (contract.RenderedProject, error) {
 	resp, err := p.c.RenderManagedWithResponse(ctx, contract.ManagedRenderRequest{Graph: g, Deployment: deployment})
 	if err != nil {

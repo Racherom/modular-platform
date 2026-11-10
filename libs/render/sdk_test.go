@@ -5,24 +5,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/racherom/modular-platform/libs/check"
 	"github.com/racherom/modular-platform/libs/contract"
-	"github.com/racherom/modular-platform/libs/planner"
 	"github.com/racherom/modular-platform/libs/render"
 )
 
 const pairDir = "testdata/sdk-pair"
 
-// pairPlan plans the graph of the two sdk test modules, a consumer bound to a provider.
-func pairPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
+// pairResult checks the graph of the two sdk test modules, a consumer bound to a provider.
+func pairResult(t *testing.T) (contract.CheckResult, contract.Catalog) {
 	t.Helper()
 	catalog := loadCatalog(t, filepath.Join(pairDir, "catalog"))
-	return planFile(t, filepath.Join(pairDir, "graph.yaml"), catalog), catalog
+	return checkFile(t, filepath.Join(pairDir, "graph.yaml"), catalog), catalog
 }
 
 func renderPair(t *testing.T) map[string]render.File {
 	t.Helper()
-	plan, catalog := pairPlan(t)
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	result, catalog := pairResult(t)
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,8 +36,8 @@ func renderPair(t *testing.T) map[string]render.File {
 // TestRenderSDKGolden pins every rendered file of the sdk pair (AC-12). Run with -update after an
 // intended change.
 func TestRenderSDKGolden(t *testing.T) {
-	plan, catalog := pairPlan(t)
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	result, catalog := pairResult(t)
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,11 +142,11 @@ func TestRenderExternal(t *testing.T) {
 			},
 		}}}},
 	}}
-	plan := planner.Plan(g, catalog)
-	if !plan.Ok {
-		t.Fatalf("plan: %+v", plan.Problems)
+	result := check.Graph(g, catalog)
+	if !result.Ok {
+		t.Fatalf("result: %+v", result.Problems)
 	}
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}

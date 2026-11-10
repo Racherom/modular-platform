@@ -1,7 +1,7 @@
 apiVersion: modular-platform/v1
 kind: Module
 name: edge
-description: Publishes a host port, so planning it warns of host access.
+description: Publishes a host port, so checking it warns of host access.
 image: example.test/edge:1.0.0
 config:
   http-port:

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Graph, PlanResult } from '../api/client'
+import type { CheckResult, Graph } from '../api/client'
 import { routeTree } from '../routeTree.gen'
 import { testCatalog, testModule } from './fixtures'
 import { fetchHandler } from './setup'
@@ -32,9 +32,9 @@ describe('sample route', () => {
       const url = new URL(req.url)
       calls.push(`${req.method} ${url.pathname}`)
       if (url.pathname === '/renderer/v1/catalog') return Response.json(catalog)
-      if (url.pathname === '/renderer/v1/plan') {
+      if (url.pathname === '/renderer/v1/check') {
         const graph = (await req.json()) as Graph
-        const plan: PlanResult = {
+        const check: CheckResult = {
           ok: true,
           graph,
           bindings: [
@@ -51,7 +51,7 @@ describe('sample route', () => {
           ],
           problems: [],
         }
-        return Response.json(plan)
+        return Response.json(check)
       }
       return new Response('not found', { status: 404 })
     }
@@ -74,7 +74,7 @@ describe('sample route', () => {
     expect(edge.getAttribute('data-id') ?? edge.getAttribute('data-testid')).toContain('whoami.postgresql')
     expect(edge.querySelector('path[marker-end]')).not.toBeNull()
 
-    expect(calls.sort()).toEqual(['GET /renderer/v1/catalog', 'POST /renderer/v1/plan'])
+    expect(calls.sort()).toEqual(['GET /renderer/v1/catalog', 'POST /renderer/v1/check'])
     expect(storage).not.toHaveBeenCalled()
   })
 

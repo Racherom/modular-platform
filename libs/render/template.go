@@ -95,7 +95,7 @@ func (r *renderer) templateData(i string, m contract.Module, bound map[string]co
 }
 
 // templateSlot is the template data of binding b on its consumer: the provider's address and the
-// plan known non secret fields it gives. An external provider's address is its host, port and
+// non secret fields known at check time that it gives. An external provider's address is its host, port and
 // url fields, when it gives them.
 func (r *renderer) templateSlot(b contract.Binding) contract.TemplateSlot {
 	values := map[string]string{}

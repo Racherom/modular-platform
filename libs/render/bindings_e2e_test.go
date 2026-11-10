@@ -14,8 +14,8 @@ import (
 
 	"sigs.k8s.io/yaml"
 
+	"github.com/racherom/modular-platform/libs/check"
 	"github.com/racherom/modular-platform/libs/contract"
-	"github.com/racherom/modular-platform/libs/planner"
 	"github.com/racherom/modular-platform/libs/render"
 )
 
@@ -42,15 +42,15 @@ func newStack(t *testing.T, catalog contract.Catalog) *stack {
 	return s
 }
 
-// render plans g, renders it over the files of the folder (keeping secrets/ and data/), and
+// render checks g, renders it over the files of the folder (keeping secrets/ and data/), and
 // returns the rendered Compose file.
 func (s *stack) render(g contract.Graph) string {
 	s.t.Helper()
-	plan := planner.Plan(g, s.catalog)
-	if !plan.Ok {
-		s.t.Fatalf("plan: %+v", plan.Problems)
+	result := check.Graph(g, s.catalog)
+	if !result.Ok {
+		s.t.Fatalf("result: %+v", result.Problems)
 	}
-	out, err := render.Render(plan, s.catalog, builtinTemplates(s.t))
+	out, err := render.Render(result, s.catalog, builtinTemplates(s.t))
 	if err != nil {
 		s.t.Fatal(err)
 	}

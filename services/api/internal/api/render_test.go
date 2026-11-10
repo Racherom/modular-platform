@@ -16,7 +16,7 @@ type zipRenderer struct {
 	zip []byte
 }
 
-func (p zipRenderer) Render(context.Context, contract.Graph) ([]byte, string, *contract.PlanResult, error) {
+func (p zipRenderer) Render(context.Context, contract.Graph) ([]byte, string, *contract.CheckResult, error) {
 	return p.zip, `attachment; filename="whoami-postgres.zip"`, nil, nil
 }
 

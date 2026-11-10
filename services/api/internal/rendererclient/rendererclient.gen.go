@@ -96,19 +96,19 @@ type ClientInterface interface {
 	// Corresponds with GET /v1/catalog (the `GetCatalog` operationId).
 	GetCatalog(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PlanWithBody Check a graph and fill in its automatic bindings
+	// CheckWithBody Check a graph and fill in its automatic bindings
 	//
 	// Takes any type of body and a specified content type.
 	//
-	// Corresponds with POST /v1/plan (the `Plan` operationId).
-	PlanWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /v1/check (the `Check` operationId).
+	CheckWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// Plan Check a graph and fill in its automatic bindings
+	// Check Check a graph and fill in its automatic bindings
 	//
 	// Takes a body of the `application/json` content type.
 	//
-	// Corresponds with POST /v1/plan (the `Plan` operationId).
-	Plan(ctx context.Context, body PlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /v1/check (the `Check` operationId).
+	Check(ctx context.Context, body CheckJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RenderWithBody Render a graph as a zip you run with Docker Compose
 	//
@@ -162,13 +162,13 @@ func (c *Client) GetCatalog(ctx context.Context, reqEditors ...RequestEditorFn) 
 	return c.Client.Do(req)
 }
 
-// PlanWithBody Check a graph and fill in its automatic bindings
+// CheckWithBody Check a graph and fill in its automatic bindings
 //
 // Takes any type of body and a specified content type.
 //
-// Corresponds with POST /v1/plan (the `Plan` operationId).
-func (c *Client) PlanWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPlanRequestWithBody(c.Server, contentType, body)
+// Corresponds with POST /v1/check (the `Check` operationId).
+func (c *Client) CheckWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCheckRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -179,13 +179,13 @@ func (c *Client) PlanWithBody(ctx context.Context, contentType string, body io.R
 	return c.Client.Do(req)
 }
 
-// Plan Check a graph and fill in its automatic bindings
+// Check Check a graph and fill in its automatic bindings
 //
 // Takes a body of the `application/json` content type.
 //
-// Corresponds with POST /v1/plan (the `Plan` operationId).
-func (c *Client) Plan(ctx context.Context, body PlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPlanRequest(c.Server, body)
+// Corresponds with POST /v1/check (the `Check` operationId).
+func (c *Client) Check(ctx context.Context, body CheckJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCheckRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -299,19 +299,19 @@ func NewGetCatalogRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewPlanRequest calls the generic Plan builder with application/json body
-func NewPlanRequest(server string, body PlanJSONRequestBody) (*http.Request, error) {
+// NewCheckRequest calls the generic Check builder with application/json body
+func NewCheckRequest(server string, body CheckJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewPlanRequestWithBody(server, "application/json", bodyReader)
+	return NewCheckRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewPlanRequestWithBody constructs an http.Request for the Plan method, with any body, and a specified content type
-func NewPlanRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+// NewCheckRequestWithBody constructs an http.Request for the Check method, with any body, and a specified content type
+func NewCheckRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -319,7 +319,7 @@ func NewPlanRequestWithBody(server string, contentType string, body io.Reader) (
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/v1/plan")
+	operationPath := fmt.Sprintf("/v1/check")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -470,19 +470,19 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /v1/catalog (the `GetCatalog` operationId).
 	GetCatalogWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCatalogResponse, error)
 
-	// PlanWithBodyWithResponse Check a graph and fill in its automatic bindings
+	// CheckWithBodyWithResponse Check a graph and fill in its automatic bindings
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /v1/plan (the `Plan` operationId).
-	PlanWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PlanResponse, error)
+	// Corresponds with POST /v1/check (the `Check` operationId).
+	CheckWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CheckResponse, error)
 
-	// PlanWithResponse Check a graph and fill in its automatic bindings
+	// CheckWithResponse Check a graph and fill in its automatic bindings
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /v1/plan (the `Plan` operationId).
-	PlanWithResponse(ctx context.Context, body PlanJSONRequestBody, reqEditors ...RequestEditorFn) (*PlanResponse, error)
+	// Corresponds with POST /v1/check (the `Check` operationId).
+	CheckWithResponse(ctx context.Context, body CheckJSONRequestBody, reqEditors ...RequestEditorFn) (*CheckResponse, error)
 
 	// RenderWithBodyWithResponse Render a graph as a zip you run with Docker Compose
 	//
@@ -590,16 +590,16 @@ func (r GetCatalogResponse) ContentType() string {
 	return ""
 }
 
-// PlanResponse429Headers the declared response headers of an HTTP 429 response for Plan
-type PlanResponse429Headers struct {
+// CheckResponse429Headers the declared response headers of an HTTP 429 response for Check
+type CheckResponse429Headers struct {
 	RetryAfter int
 }
 
-type PlanResponse struct {
+type CheckResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *PlanResult
+	JSON200 *CheckResult
 	// JSON400 the response for an HTTP 400 `application/json` response
 	JSON400 *BadGraph
 	// JSON401 the response for an HTTP 401 `application/json` response
@@ -611,46 +611,46 @@ type PlanResponse struct {
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *TimedOut
 	// Headers429 the parsed response headers for an HTTP 429 response
-	Headers429 *PlanResponse429Headers
+	Headers429 *CheckResponse429Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r PlanResponse) GetJSON200() *PlanResult {
+func (r CheckResponse) GetJSON200() *CheckResult {
 	return r.JSON200
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r PlanResponse) GetJSON400() *BadGraph {
+func (r CheckResponse) GetJSON400() *BadGraph {
 	return r.JSON400
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
-func (r PlanResponse) GetJSON401() *Unauthorized {
+func (r CheckResponse) GetJSON401() *Unauthorized {
 	return r.JSON401
 }
 
 // GetJSON413 returns the response for an HTTP 413 `application/json` response
-func (r PlanResponse) GetJSON413() *TooLarge {
+func (r CheckResponse) GetJSON413() *TooLarge {
 	return r.JSON413
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
-func (r PlanResponse) GetJSON429() *RateLimited {
+func (r CheckResponse) GetJSON429() *RateLimited {
 	return r.JSON429
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
-func (r PlanResponse) GetJSON503() *TimedOut {
+func (r CheckResponse) GetJSON503() *TimedOut {
 	return r.JSON503
 }
 
 // GetBody returns the raw response body bytes
-func (r PlanResponse) GetBody() []byte {
+func (r CheckResponse) GetBody() []byte {
 	return r.Body
 }
 
 // Status returns HTTPResponse.Status
-func (r PlanResponse) Status() string {
+func (r CheckResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -658,7 +658,7 @@ func (r PlanResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r PlanResponse) StatusCode() int {
+func (r CheckResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -666,7 +666,7 @@ func (r PlanResponse) StatusCode() int {
 }
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PlanResponse) ContentType() string {
+func (r CheckResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -693,7 +693,7 @@ type RenderResponse struct {
 	// JSON413 the response for an HTTP 413 `application/json` response
 	JSON413 *TooLarge
 	// JSON422 the response for an HTTP 422 `application/json` response
-	JSON422 *PlanResult
+	JSON422 *CheckResult
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *RateLimited
 	// JSON503 the response for an HTTP 503 `application/json` response
@@ -720,7 +720,7 @@ func (r RenderResponse) GetJSON413() *TooLarge {
 }
 
 // GetJSON422 returns the response for an HTTP 422 `application/json` response
-func (r RenderResponse) GetJSON422() *PlanResult {
+func (r RenderResponse) GetJSON422() *CheckResult {
 	return r.JSON422
 }
 
@@ -777,7 +777,7 @@ type RenderManagedResponse struct {
 	// JSON413 the response for an HTTP 413 `application/json` response
 	JSON413 *TooLarge
 	// JSON422 the response for an HTTP 422 `application/json` response
-	JSON422 *PlanResult
+	JSON422 *CheckResult
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *TimedOut
 }
@@ -808,7 +808,7 @@ func (r RenderManagedResponse) GetJSON413() *TooLarge {
 }
 
 // GetJSON422 returns the response for an HTTP 422 `application/json` response
-func (r RenderManagedResponse) GetJSON422() *PlanResult {
+func (r RenderManagedResponse) GetJSON422() *CheckResult {
 	return r.JSON422
 }
 
@@ -859,30 +859,30 @@ func (c *ClientWithResponses) GetCatalogWithResponse(ctx context.Context, reqEdi
 	return ParseGetCatalogResponse(rsp)
 }
 
-// PlanWithBodyWithResponse Check a graph and fill in its automatic bindings
+// CheckWithBodyWithResponse Check a graph and fill in its automatic bindings
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with POST /v1/plan (the `Plan` operationId).
-func (c *ClientWithResponses) PlanWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PlanResponse, error) {
-	rsp, err := c.PlanWithBody(ctx, contentType, body, reqEditors...)
+// Corresponds with POST /v1/check (the `Check` operationId).
+func (c *ClientWithResponses) CheckWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CheckResponse, error) {
+	rsp, err := c.CheckWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePlanResponse(rsp)
+	return ParseCheckResponse(rsp)
 }
 
-// PlanWithResponse Check a graph and fill in its automatic bindings
+// CheckWithResponse Check a graph and fill in its automatic bindings
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with POST /v1/plan (the `Plan` operationId).
-func (c *ClientWithResponses) PlanWithResponse(ctx context.Context, body PlanJSONRequestBody, reqEditors ...RequestEditorFn) (*PlanResponse, error) {
-	rsp, err := c.Plan(ctx, body, reqEditors...)
+// Corresponds with POST /v1/check (the `Check` operationId).
+func (c *ClientWithResponses) CheckWithResponse(ctx context.Context, body CheckJSONRequestBody, reqEditors ...RequestEditorFn) (*CheckResponse, error) {
+	rsp, err := c.Check(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParsePlanResponse(rsp)
+	return ParseCheckResponse(rsp)
 }
 
 // RenderWithBodyWithResponse Render a graph as a zip you run with Docker Compose
@@ -1005,22 +1005,22 @@ func ParseGetCatalogResponse(rsp *http.Response) (*GetCatalogResponse, error) {
 	return response, nil
 }
 
-// ParsePlanResponse parses an HTTP response from a PlanWithResponse call
-func ParsePlanResponse(rsp *http.Response) (*PlanResponse, error) {
+// ParseCheckResponse parses an HTTP response from a CheckWithResponse call
+func ParseCheckResponse(rsp *http.Response) (*CheckResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &PlanResponse{
+	response := &CheckResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PlanResult
+		var dest CheckResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1065,7 +1065,7 @@ func ParsePlanResponse(rsp *http.Response) (*PlanResponse, error) {
 
 	switch {
 	case rsp.StatusCode == 429:
-		var headers PlanResponse429Headers
+		var headers CheckResponse429Headers
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value int
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
@@ -1115,7 +1115,7 @@ func ParseRenderResponse(rsp *http.Response) (*RenderResponse, error) {
 		response.JSON413 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
-		var dest PlanResult
+		var dest CheckResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1213,7 +1213,7 @@ func ParseRenderManagedResponse(rsp *http.Response) (*RenderManagedResponse, err
 		response.JSON413 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
-		var dest PlanResult
+		var dest CheckResult
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

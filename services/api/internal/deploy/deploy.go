@@ -21,9 +21,9 @@ const ReservedName = "modular-platform"
 
 // Errors callers branch on.
 var (
-	ErrNotFound    = errors.New("deploy: no such deployment")
-	ErrBusy        = errors.New("deploy: an operation of this deployment is running")
-	ErrPlanChanged = errors.New("deploy: the plan changed since review")
+	ErrNotFound     = errors.New("deploy: no such deployment")
+	ErrBusy         = errors.New("deploy: an operation of this deployment is running")
+	ErrGraphChanged = errors.New("deploy: the check result changed since review")
 	// ErrAlreadyRemoved refuses a plain remove of a removed deployment.
 	ErrAlreadyRemoved = errors.New("deploy: the deployment is removed already")
 	// ErrRenderer reports a renderer that did not answer as its contract says.
@@ -90,7 +90,7 @@ type Operation struct {
 	Status              Status
 	Step                Step
 	Graph               json.RawMessage // apply only
-	PlanDigest          string
+	Digest              string
 	DeleteData          bool
 	RollbackOf          *uuid.UUID
 	PlacedSupplied      []string
@@ -183,7 +183,7 @@ type PlacedCredential struct {
 
 // Review is what an apply of a graph would run.
 type Review struct {
-	Plan           contract.PlanResult
+	Check          contract.CheckResult
 	Modules        []contract.ModuleImage
 	PublishedPorts []contract.PublishedPort
 	Placed         []PlacedCredential
@@ -239,10 +239,10 @@ type Store interface {
 	CountRollbacks(ctx context.Context, of uuid.UUID) (int, error)
 }
 
-// Renderer plans and renders graphs.
+// Renderer checks and renders graphs.
 type Renderer interface {
-	Plan(ctx context.Context, g contract.Graph) (contract.PlanResult, error)
-	// RenderManaged renders g for deployment; a plan with errors comes back as a *RefusedError.
+	Check(ctx context.Context, g contract.Graph) (contract.CheckResult, error)
+	// RenderManaged renders g for deployment; a check result with errors comes back as a *RefusedError.
 	RenderManaged(ctx context.Context, g contract.Graph, deployment uuid.UUID) (contract.RenderedProject, error)
 }
 

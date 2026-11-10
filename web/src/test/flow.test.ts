@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Graph, PlanResult, Problem } from '../api/client'
+import type { CheckResult, Graph, Problem } from '../api/client'
 import { downloadBlocked } from '../components/GraphScreen'
 import { emphasize, markOf, problemSlot, toFlow } from '../graph/flow'
 import { testCatalog, testModule } from './fixtures'
@@ -100,19 +100,19 @@ describe('emphasize (AC-8)', () => {
 })
 
 describe('downloadBlocked (AC-14)', () => {
-  const plan = (problems: Problem[]): PlanResult => ({
+  const check = (problems: Problem[]): CheckResult => ({
     ok: !problems.some((p) => p.severity === 'error'),
     graph,
     bindings: [],
     problems,
   })
   it.each([
-    ['current and ok', 'current', plan([]), null],
-    ['warnings never block', 'current', plan([problem('a', 'warning')]), null],
-    ['checking', 'checking', plan([]), 'Checking the graph'],
-    ['failed', 'failed', plan([]), 'Not checked, retry first'],
-    ['one error', 'current', plan([problem('a', 'error'), problem('b', 'warning')]), 'Fix 1 error to download'],
-    ['two errors', 'current', plan([problem('a', 'error'), problem('b', 'error')]), 'Fix 2 errors to download'],
+    ['current and ok', 'current', check([]), null],
+    ['warnings never block', 'current', check([problem('a', 'warning')]), null],
+    ['checking', 'checking', check([]), 'Checking the graph'],
+    ['failed', 'failed', check([]), 'Not checked, retry first'],
+    ['one error', 'current', check([problem('a', 'error'), problem('b', 'warning')]), 'Fix 1 error to download'],
+    ['two errors', 'current', check([problem('a', 'error'), problem('b', 'error')]), 'Fix 2 errors to download'],
   ] as const)('%s', (_, state, p, want) => {
     expect(downloadBlocked(state, p)).toBe(want)
   })

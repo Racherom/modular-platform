@@ -180,12 +180,12 @@ func (e OperationStep) Valid() bool {
 
 // ApplyRequest defines model for ApplyRequest.
 type ApplyRequest struct {
+	// Digest The `check.digest` of the review you confirmed.
+	Digest string `json:"digest"`
+
 	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
 	Graph  externalRef0.Graph `json:"graph"`
 	Placed []PlacedInput      `json:"placed,omitempty,omitzero"`
-
-	// PlanDigest The `plan.digest` of the review you confirmed.
-	PlanDigest string `json:"planDigest"`
 }
 
 // Deployment defines model for Deployment.
@@ -285,13 +285,13 @@ type ModuleStateState string
 type Operation struct {
 	Action     OperationAction `json:"action"`
 	DeleteData bool            `json:"deleteData"`
+	Digest     string          `json:"digest,omitempty,omitzero"`
 	Error      string          `json:"error,omitempty,omitzero"`
 	FinishedAt time.Time       `json:"finishedAt,omitempty,omitzero"`
 	Id         string          `json:"id"`
 
 	// PlacedSupplied Paths of the placed values this apply wrote; never the values.
 	PlacedSupplied []string  `json:"placedSupplied"`
-	PlanDigest     string    `json:"planDigest,omitempty,omitzero"`
 	RollbackOf     string    `json:"rollbackOf,omitempty,omitzero"`
 	StartedAt      time.Time `json:"startedAt"`
 
@@ -348,9 +348,9 @@ type RemoveRequest struct {
 // Review defines model for Review.
 type Review struct {
 	Bindings       []externalRef0.Binding       `json:"bindings"`
+	Check          externalRef0.CheckResult     `json:"check"`
 	Modules        []externalRef0.ModuleImage   `json:"modules"`
 	Placed         []PlacedCredential           `json:"placed"`
-	Plan           externalRef0.PlanResult      `json:"plan"`
 	PublishedPorts []externalRef0.PublishedPort `json:"publishedPorts"`
 }
 
@@ -410,6 +410,9 @@ type ListOperationsParams struct {
 	Cursor string `form:"cursor,omitempty" json:"cursor,omitempty,omitzero"`
 }
 
+// CheckJSONRequestBody defines body for Check for application/json ContentType.
+type CheckJSONRequestBody = externalRef0.Graph
+
 // ApplyDeploymentJSONRequestBody defines body for ApplyDeployment for application/json ContentType.
 type ApplyDeploymentJSONRequestBody = ApplyRequest
 
@@ -419,9 +422,6 @@ type RemoveDeploymentJSONRequestBody = RemoveRequest
 // ReviewDeploymentJSONRequestBody defines body for ReviewDeployment for application/json ContentType.
 type ReviewDeploymentJSONRequestBody = ReviewRequest
 
-// PlanJSONRequestBody defines body for Plan for application/json ContentType.
-type PlanJSONRequestBody = externalRef0.Graph
-
 // RenderJSONRequestBody defines body for Render for application/json ContentType.
 type RenderJSONRequestBody = externalRef0.Graph
 
@@ -430,6 +430,9 @@ type ServerInterface interface {
 	// GetCatalog List the catalog, as the renderer answers it
 	// (GET /api/v1/catalog)
 	GetCatalog(w http.ResponseWriter, r *http.Request)
+	// Check Check a graph and fill in its automatic bindings, as the renderer answers it
+	// (POST /api/v1/check)
+	Check(w http.ResponseWriter, r *http.Request)
 	// ListDeployments List the deployments, sorted by name
 	// (GET /api/v1/deployments)
 	ListDeployments(w http.ResponseWriter, r *http.Request, params ListDeploymentsParams)
@@ -448,9 +451,6 @@ type ServerInterface interface {
 	// ReviewDeployment Show exactly what an apply of this graph would run
 	// (POST /api/v1/deployments/{name}/review)
 	ReviewDeployment(w http.ResponseWriter, r *http.Request, name Name)
-	// Plan Check a graph and fill in its automatic bindings, as the renderer answers it
-	// (POST /api/v1/plan)
-	Plan(w http.ResponseWriter, r *http.Request)
 	// Render Render a graph as the static zip, as the renderer answers it
 	// (POST /api/v1/render)
 	Render(w http.ResponseWriter, r *http.Request)
@@ -473,6 +473,20 @@ func (siw *ServerInterfaceWrapper) GetCatalog(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetCatalog(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Check operation middleware
+func (siw *ServerInterfaceWrapper) Check(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Check(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -687,20 +701,6 @@ func (siw *ServerInterfaceWrapper) ReviewDeployment(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
-// Plan operation middleware
-func (siw *ServerInterfaceWrapper) Plan(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.Plan(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // Render operation middleware
 func (siw *ServerInterfaceWrapper) Render(w http.ResponseWriter, r *http.Request) {
 
@@ -851,7 +851,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/session", wrapper.GetSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/catalog", wrapper.GetCatalog)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/plan", wrapper.Plan)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/check", wrapper.Check)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/render", wrapper.Render)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/deployments", wrapper.ListDeployments)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/deployments/{name}", wrapper.GetDeployment)
@@ -917,6 +917,98 @@ func (response GetCatalog401JSONResponse) VisitGetCatalogResponse(w http.Respons
 type GetCatalog502JSONResponse struct{ RendererErrorJSONResponse }
 
 func (response GetCatalog502JSONResponse) VisitGetCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckRequestObject struct {
+	Body *CheckJSONRequestBody
+}
+
+type CheckResponseObject interface {
+	VisitCheckResponse(w http.ResponseWriter) error
+}
+
+type Check200JSONResponse externalRef0.CheckResult
+
+func (response Check200JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Check400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response Check400JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Check401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response Check401JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Check403JSONResponse struct{ BadOriginJSONResponse }
+
+func (response Check403JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Check413JSONResponse struct{ TooLargeJSONResponse }
+
+func (response Check413JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Check502JSONResponse struct{ RendererErrorJSONResponse }
+
+func (response Check502JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -1458,98 +1550,6 @@ func (response ReviewDeployment503JSONResponse) VisitReviewDeploymentResponse(w 
 	return err
 }
 
-type PlanRequestObject struct {
-	Body *PlanJSONRequestBody
-}
-
-type PlanResponseObject interface {
-	VisitPlanResponse(w http.ResponseWriter) error
-}
-
-type Plan200JSONResponse externalRef0.PlanResult
-
-func (response Plan200JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type Plan400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response Plan400JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type Plan401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response Plan401JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type Plan403JSONResponse struct{ BadOriginJSONResponse }
-
-func (response Plan403JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type Plan413JSONResponse struct{ TooLargeJSONResponse }
-
-func (response Plan413JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(413)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type Plan502JSONResponse struct{ RendererErrorJSONResponse }
-
-func (response Plan502JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(502)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
 type RenderRequestObject struct {
 	Body *RenderJSONRequestBody
 }
@@ -1640,7 +1640,7 @@ func (response Render413JSONResponse) VisitRenderResponse(w http.ResponseWriter)
 	return err
 }
 
-type Render422JSONResponse externalRef0.PlanResult
+type Render422JSONResponse externalRef0.CheckResult
 
 func (response Render422JSONResponse) VisitRenderResponse(w http.ResponseWriter) error {
 
@@ -1708,6 +1708,9 @@ type StrictServerInterface interface {
 	// GetCatalog List the catalog, as the renderer answers it
 	// (GET /api/v1/catalog)
 	GetCatalog(ctx context.Context, request GetCatalogRequestObject) (GetCatalogResponseObject, error)
+	// Check Check a graph and fill in its automatic bindings, as the renderer answers it
+	// (POST /api/v1/check)
+	Check(ctx context.Context, request CheckRequestObject) (CheckResponseObject, error)
 	// ListDeployments List the deployments, sorted by name
 	// (GET /api/v1/deployments)
 	ListDeployments(ctx context.Context, request ListDeploymentsRequestObject) (ListDeploymentsResponseObject, error)
@@ -1726,9 +1729,6 @@ type StrictServerInterface interface {
 	// ReviewDeployment Show exactly what an apply of this graph would run
 	// (POST /api/v1/deployments/{name}/review)
 	ReviewDeployment(ctx context.Context, request ReviewDeploymentRequestObject) (ReviewDeploymentResponseObject, error)
-	// Plan Check a graph and fill in its automatic bindings, as the renderer answers it
-	// (POST /api/v1/plan)
-	Plan(ctx context.Context, request PlanRequestObject) (PlanResponseObject, error)
 	// Render Render a graph as the static zip, as the renderer answers it
 	// (POST /api/v1/render)
 	Render(ctx context.Context, request RenderRequestObject) (RenderResponseObject, error)
@@ -1793,6 +1793,37 @@ func (sh *strictHandler) GetCatalog(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetCatalogResponseObject); ok {
 		if err := validResponse.VisitGetCatalogResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Check operation middleware
+func (sh *strictHandler) Check(w http.ResponseWriter, r *http.Request) {
+	var request CheckRequestObject
+
+	var body CheckJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Check(ctx, request.(CheckRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Check")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CheckResponseObject); ok {
+		if err := validResponse.VisitCheckResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1971,37 +2002,6 @@ func (sh *strictHandler) ReviewDeployment(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ReviewDeploymentResponseObject); ok {
 		if err := validResponse.VisitReviewDeploymentResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// Plan operation middleware
-func (sh *strictHandler) Plan(w http.ResponseWriter, r *http.Request) {
-	var request PlanRequestObject
-
-	var body PlanJSONRequestBody
-	if err := runtime.BindJSONBody(r, &body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.Plan(ctx, request.(PlanRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "Plan")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(PlanResponseObject); ok {
-		if err := validResponse.VisitPlanResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

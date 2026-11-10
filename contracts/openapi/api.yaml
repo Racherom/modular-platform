@@ -5,7 +5,7 @@ info:
   summary: The managed platform's control plane, called by the editor.
   description: |
     `api` keeps the record (sessions, deployments, an append only history), asks the renderer to
-    plan and render, and drives the deploy target (spec 0006). Paths sit under `<base>/api/v1`;
+    check and render, and drives the deploy target (spec 0006). Paths sit under `<base>/api/v1`;
     the base is empty in thread 1.
 
     Every route except the auth routes needs the admin's session cookie. Every mutating route
@@ -114,9 +114,9 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "502":
           $ref: "#/components/responses/RendererError"
-  /api/v1/plan:
+  /api/v1/check:
     post:
-      operationId: plan
+      operationId: check
       summary: Check a graph and fill in its automatic bindings, as the renderer answers it
       requestBody:
         required: true
@@ -126,11 +126,11 @@ paths:
               $ref: "./renderer.yaml#/components/schemas/Graph"
       responses:
         "200":
-          description: The plan.
+          description: The check result.
           content:
             application/json:
               schema:
-                $ref: "./renderer.yaml#/components/schemas/PlanResult"
+                $ref: "./renderer.yaml#/components/schemas/CheckResult"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -153,7 +153,7 @@ paths:
               $ref: "./renderer.yaml#/components/schemas/Graph"
       responses:
         "200":
-          description: The zip, byte for byte what the online tool gives for the same graph.
+          description: The zip, byte for byte what the online editor gives for the same graph.
           headers:
             Content-Disposition:
               schema:
@@ -172,11 +172,11 @@ paths:
         "413":
           $ref: "#/components/responses/TooLarge"
         "422":
-          description: The plan has an error, so nothing was rendered.
+          description: The graph has an error, so nothing was rendered.
           content:
             application/json:
               schema:
-                $ref: "./renderer.yaml#/components/schemas/PlanResult"
+                $ref: "./renderer.yaml#/components/schemas/CheckResult"
         "502":
           $ref: "#/components/responses/RendererError"
   /api/v1/deployments:
@@ -317,7 +317,7 @@ paths:
         "403":
           $ref: "#/components/responses/BadOrigin"
         "409":
-          description: An operation of this deployment runs (`busy`), or the plan differs from the reviewed one (`plan_changed`).
+          description: An operation of this deployment runs (`busy`), or the check result differs from the reviewed one (`graph_changed`).
           content:
             application/json:
               schema:
@@ -461,7 +461,7 @@ components:
             $ref: "./renderer.yaml#/components/schemas/ProblemList"
     Refused:
       description: |
-        Nothing happened: `name_mismatch`, `reserved_name`, the plan's own problems,
+        Nothing happened: `name_mismatch`, `reserved_name`, the check result's own problems,
         `host_access`, `invalid_project`, `placed_missing` or `placed_invalid`.
       content:
         application/json:
@@ -598,7 +598,7 @@ components:
           description: Paths of the placed values this apply wrote; never the values.
           items:
             type: string
-        planDigest:
+        digest:
           type: string
     OperationPage:
       type: object
@@ -654,10 +654,10 @@ components:
     Review:
       type: object
       additionalProperties: false
-      required: [plan, modules, bindings, publishedPorts, placed]
+      required: [check, modules, bindings, publishedPorts, placed]
       properties:
-        plan:
-          $ref: "./renderer.yaml#/components/schemas/PlanResult"
+        check:
+          $ref: "./renderer.yaml#/components/schemas/CheckResult"
         modules:
           type: array
           items:
@@ -693,13 +693,13 @@ components:
     ApplyRequest:
       type: object
       additionalProperties: false
-      required: [graph, planDigest]
+      required: [graph, digest]
       properties:
         graph:
           $ref: "./renderer.yaml#/components/schemas/Graph"
-        planDigest:
+        digest:
           type: string
-          description: The `plan.digest` of the review you confirmed.
+          description: The `check.digest` of the review you confirmed.
         placed:
           type: array
           items:

@@ -1,4 +1,4 @@
-package planner_test
+package check_test
 
 import (
 	"fmt"
@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/racherom/modular-platform/libs/check"
 	"github.com/racherom/modular-platform/libs/contract"
-	"github.com/racherom/modular-platform/libs/planner"
 )
 
-// TestPlanInstallTime covers the install time checks of spec 0013: setup_order for every kind
+// TestCheckInstallTime covers the install time checks of spec 0013: setup_order for every kind
 // of read a step cannot have when it runs, and env_name_collision (AC-10).
-func TestPlanInstallTime(t *testing.T) {
+func TestCheckInstallTime(t *testing.T) {
 	t.Parallel()
 	catalog := testCatalog(t)
 
@@ -29,7 +29,7 @@ func TestPlanInstallTime(t *testing.T) {
 			graph: `
   sealer: {module: sealer}
   late: {module: late-client}`,
-			problems: []problem{errorAt(planner.CodeSetupOrder, "modules.sealer")},
+			problems: []problem{errorAt(check.CodeSetupOrder, "modules.sealer")},
 			messages: []string{"Setup step mark of sealer reads field key of provide seal, which client late writes in a setup step that runs after this one."},
 		},
 		"later output, run time file, text field": {
@@ -37,9 +37,9 @@ func TestPlanInstallTime(t *testing.T) {
   sealer: {module: sealer}
   wrong: {module: wrong-steps}`,
 			problems: []problem{
-				errorAt(planner.CodeSetupOrder, "modules.wrong"),
-				errorAt(planner.CodeSetupOrder, "modules.wrong"),
-				errorAt(planner.CodeSetupOrder, "modules.wrong"),
+				errorAt(check.CodeSetupOrder, "modules.wrong"),
+				errorAt(check.CodeSetupOrder, "modules.wrong"),
+				errorAt(check.CodeSetupOrder, "modules.wrong"),
 			},
 			messages: []string{
 				"reads secret second-out, which no setup step before it writes.",
@@ -54,14 +54,14 @@ func TestPlanInstallTime(t *testing.T) {
       provides:
         seal: {capability: seal, version: "1.0", fields: {url: "https://seal.example.test"}}
   web: {module: sealed-client}`,
-			problems: []problem{errorAt(planner.CodeSetupOrder, "modules.web")},
+			problems: []problem{errorAt(check.CodeSetupOrder, "modules.web")},
 			messages: []string{"reads field root of slot seal, a file you place, which setup.sh checks only after the setup steps."},
 		},
 		"two values, one variable": {
 			graph: `
   x: {module: twin}
   x--a: {module: twin}`,
-			problems: []problem{errorAt(planner.CodeEnvNameCollision, "modules.x--a")},
+			problems: []problem{errorAt(check.CodeEnvNameCollision, "modules.x--a")},
 			messages: []string{"The config value a--b of x and the config value b of x--a both become the Compose variable MP_X__A__B"},
 		},
 	}
@@ -72,7 +72,7 @@ func TestPlanInstallTime(t *testing.T) {
 			if p != nil {
 				t.Fatal(p.Message)
 			}
-			got := planner.Plan(g, catalog)
+			got := check.Graph(g, catalog)
 			var gotProblems []problem
 			for _, pr := range got.Problems {
 				gotProblems = append(gotProblems, problem{pr.Severity, pr.Code, pr.Path, pr.Candidates})
@@ -107,10 +107,10 @@ func TestBindingOrder(t *testing.T) {
 	}
 }
 
-// TestPlanHostAccess warns, never refuses, at each instance whose module publishes a port,
+// TestCheckHostAccess warns, never refuses, at each instance whose module publishes a port,
 // mounts a host path or adds a Linux capability other than NET_BIND_SERVICE, one warning per
 // instance naming every reason (spec 0013, Host access; spec 0022; AC-11).
-func TestPlanHostAccess(t *testing.T) {
+func TestCheckHostAccess(t *testing.T) {
 	t.Parallel()
 	g, p := contract.DecodeGraph([]byte(`apiVersion: modular-platform/v1
 kind: Graph
@@ -126,9 +126,9 @@ modules:
 	if p != nil {
 		t.Fatal(p.Message)
 	}
-	got := planner.Plan(g, testCatalog(t))
+	got := check.Graph(g, testCatalog(t))
 	if !got.Ok {
-		t.Fatalf("plan not ok: %+v", got.Problems)
+		t.Fatalf("result not ok: %+v", got.Problems)
 	}
 	var gotProblems []string
 	for _, pr := range got.Problems {
@@ -145,6 +145,6 @@ modules:
 		t.Fatalf("problems =\n%s\nwant\n%s", strings.Join(gotProblems, "\n"), strings.Join(want, "\n"))
 	}
 	if got.Digest == "" {
-		t.Error("an ok plan with warnings has no digest")
+		t.Error("an ok check result with warnings has no digest")
 	}
 }

@@ -1,15 +1,15 @@
-// The working graph at <base>/ is the last opened file, kept in IndexedDB with its last plan so
-// a refresh loses nothing and needs no new plan call. It is saved only with a plan for exactly
+// The working graph at <base>/ is the last opened file, kept in IndexedDB with its last check so
+// a refresh loses nothing and needs no new check call. It is saved only with a check result for exactly
 // its graph (spec 0010, AC-12).
-import type { Graph, PlanResult } from '../api/client'
+import type { CheckResult, Graph } from '../api/client'
 import type { Positions } from '../graph/flow'
 import { layout } from '../graph/layout'
 
-/** The working copy: the graph, its plan, and what only this browser keeps about it. */
+/** The working copy: the graph, its check result, and what only this browser keeps about it. */
 export interface WorkingGraph {
   fileName: string
   graph: Graph
-  plan: PlanResult
+  check: CheckResult
   /** Where each instance sits on the canvas; never written into a graph file. */
   positions?: Positions
   /** Changed since it was opened or saved as a file; missing means false. */
@@ -53,12 +53,17 @@ function run<T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequ
   )
 }
 
-/** Reads the working copy, if this browser kept one. */
+/**
+ * Reads the working copy, if this browser kept one. A copy kept before its check result was
+ * named `check` (spec 0027) has none, so it counts as no copy at all.
+ */
 export function loadWorking(): Promise<WorkingGraph | undefined> {
-  return run<WorkingGraph | undefined>('readonly', (s) => s.get(KEY) as IDBRequest<WorkingGraph | undefined>)
+  return run<WorkingGraph | undefined>('readonly', (s) => s.get(KEY) as IDBRequest<WorkingGraph | undefined>).then((working) =>
+    working?.check ? working : undefined,
+  )
 }
 
-/** Keeps the working copy; callers pass only a graph together with its own plan. */
+/** Keeps the working copy; callers pass only a graph together with its own check. */
 export async function saveWorking(working: WorkingGraph): Promise<void> {
   await run('readwrite', (s) => s.put(working, KEY))
 }

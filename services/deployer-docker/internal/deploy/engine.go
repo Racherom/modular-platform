@@ -1,6 +1,6 @@
 // Package deploy applies rendered Compose projects to this host and reports their state (spec
 // 0006, child 0007). It keeps running operations in memory only: one per project at a time,
-// different projects in parallel. It never plans, never stores history and never decides a
+// different projects in parallel. It never checks, never stores history and never decides a
 // rollback; api does that. Docker sits behind the Compose and Docker interfaces.
 package deploy
 

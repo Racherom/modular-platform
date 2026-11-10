@@ -1,5 +1,5 @@
 #!/bin/sh
-# The smoke job (AC-3, AC-4, AC-7): start the online tool, download the sample zip through the
+# The smoke job (AC-3, AC-4, AC-7): start the online editor, download the sample zip through the
 # editor, run it with setup.sh and docker compose, then check the editor under a sub path.
 # Needs the web and renderer images tagged dev (task images) and Chromium for Playwright.
 set -eu
@@ -39,7 +39,7 @@ docker run --rm -v "$online/Caddyfile:/etc/caddy/Caddyfile:ro" \
 	-e PLATFORM_DOMAIN=example.com -e PLATFORM_TLS=acme -e PLATFORM_ACME_EMAIL= -e MP_BASE_PATH= \
 	"$(sed -n 's/^CADDY_IMAGE=//p' "$online/versions.env")" caddy validate --config /etc/caddy/Caddyfile >/dev/null
 
-echo "== online tool at the site root"
+echo "== online editor at the site root"
 online -f "$online/compose.yaml" up -d --wait --wait-timeout 120
 SMOKE_BASE='' SMOKE_ZIP="$work/sample.zip" pnpm --dir "$repo/web" run smoke:browser
 
@@ -78,7 +78,7 @@ docker compose ps
 docker compose down --volumes
 cd "$repo"
 
-echo "== online tool under /platform (AC-7)"
+echo "== online editor under /platform (AC-7)"
 online -f "$online/compose.yaml" -f "$online/compose.subpath.yaml" up -d --wait --wait-timeout 120
 SMOKE_BASE=/platform pnpm --dir "$repo/web" run smoke:browser
 

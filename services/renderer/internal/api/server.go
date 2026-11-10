@@ -12,8 +12,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/racherom/modular-platform/libs/check"
 	"github.com/racherom/modular-platform/libs/contract"
-	"github.com/racherom/modular-platform/libs/planner"
 	"github.com/racherom/modular-platform/libs/render"
 	"github.com/racherom/modular-platform/libs/target/zip"
 	"github.com/racherom/modular-platform/sdk"
@@ -44,22 +44,22 @@ func (s *Server) GetCatalog(context.Context, GetCatalogRequestObject) (GetCatalo
 	return GetCatalog200JSONResponse(s.catalog), nil
 }
 
-// Plan checks the graph and fills in its automatic bindings.
-func (s *Server) Plan(_ context.Context, req PlanRequestObject) (PlanResponseObject, error) {
-	return Plan200JSONResponse(planner.Plan(*req.Body, s.catalog)), nil
+// Check checks the graph and fills in its automatic bindings.
+func (s *Server) Check(_ context.Context, req CheckRequestObject) (CheckResponseObject, error) {
+	return Check200JSONResponse(check.Graph(*req.Body, s.catalog)), nil
 }
 
-// Render answers the zip of an ok plan, or the plan itself (422) when it has an error.
+// Render answers the zip of an ok check result, or the check result itself (422) when it has an error.
 func (s *Server) Render(ctx context.Context, req RenderRequestObject) (RenderResponseObject, error) {
-	plan := planner.Plan(*req.Body, s.catalog)
-	if !plan.Ok {
-		return Render422JSONResponse(plan), nil
+	result := check.Graph(*req.Body, s.catalog)
+	if !result.Ok {
+		return Render422JSONResponse(result), nil
 	}
 	// past the deadline the client already has its 503; stop between phases
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	out, err := render.Render(plan, s.catalog, s.templates)
+	out, err := render.Render(result, s.catalog, s.templates)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (s *Server) Render(ctx context.Context, req RenderRequestObject) (RenderRes
 	}, nil
 }
 
-// RenderManaged answers the project the managed deployer applies, or the plan itself (422) when
+// RenderManaged answers the project the managed deployer applies, or the check result itself (422) when
 // it has an error, the managed flavor refuses an instance (host_access or setup_required, spec
 // 0013), or the rendered project fails the guard (host_access, spec 0006 AC-8). Public mode has
 // no managed render: 404.
@@ -87,16 +87,16 @@ func (s *Server) RenderManaged(ctx context.Context, req RenderManagedRequestObje
 			Severity: contract.Error, Code: "not_found", Message: "The managed render exists in internal mode only.",
 		}}}, nil
 	}
-	plan := planner.Plan(req.Body.Graph, s.catalog)
-	if !plan.Ok {
-		return RenderManaged422JSONResponse(plan), nil
+	result := check.Graph(req.Body.Graph, s.catalog)
+	if !result.Ok {
+		return RenderManaged422JSONResponse(result), nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	m, err := render.Managed(plan, s.catalog, s.templates, req.Body.Deployment.String())
+	m, err := render.Managed(result, s.catalog, s.templates, req.Body.Deployment.String())
 	if refused, ok := errors.AsType[*render.RefusedError](err); ok {
-		return RenderManaged422JSONResponse(render.Refuse(plan, refused.Problems)), nil
+		return RenderManaged422JSONResponse(render.Refuse(result, refused.Problems)), nil
 	}
 	if err != nil {
 		return nil, err
@@ -106,9 +106,9 @@ func (s *Server) RenderManaged(ctx context.Context, req RenderManagedRequestObje
 		return nil, err
 	}
 	if problems := render.Guard(project, s.reserved); len(problems) > 0 {
-		return RenderManaged422JSONResponse(render.Refuse(plan, problems)), nil
+		return RenderManaged422JSONResponse(render.Refuse(result, problems)), nil
 	}
-	return RenderManaged200JSONResponse(renderedProject(plan, m)), nil
+	return RenderManaged200JSONResponse(renderedProject(result, m)), nil
 }
 
 // fileData is the content of the rendered file at path, nil when there is none.
@@ -122,10 +122,10 @@ func fileData(out render.Output, path string) []byte {
 }
 
 // renderedProject maps a managed render onto the contract.
-func renderedProject(plan contract.PlanResult, m render.ManagedProject) contract.RenderedProject {
+func renderedProject(result contract.CheckResult, m render.ManagedProject) contract.RenderedProject {
 	out := contract.RenderedProject{
 		Project:        m.Name,
-		Plan:           plan,
+		Check:          result,
 		Images:         make([]contract.ModuleImage, 0, len(m.Images)),
 		PublishedPorts: []contract.PublishedPort{},
 		Secrets:        make([]contract.RenderedSecret, 0, len(m.Secrets)),

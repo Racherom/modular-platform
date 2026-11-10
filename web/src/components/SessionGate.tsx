@@ -40,7 +40,7 @@ export function SignedOut() {
   return (
     <div className={`${m.screen} ${m.narrow}`}>
       <h1>Modular Platform</h1>
-      <p>Plan your stack and deploy it to this host. Sign in as the admin to continue.</p>
+      <p>Check your stack and deploy it to this host. Sign in as the admin to continue.</p>
       {reasons[reason] && (
         <p role="alert" className={m.banner} data-tone="danger">
           {reasons[reason]}

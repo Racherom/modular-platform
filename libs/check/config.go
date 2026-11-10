@@ -1,4 +1,4 @@
-package planner
+package check
 
 import (
 	"errors"
@@ -29,7 +29,7 @@ const (
 // config checks the config values the graph sets on each instance and reports the required
 // values nothing fills (spec 0025, AC-27). Each path gets one problem, the first that applies in
 // the order config_not_allowed, unknown_config, config_not_settable, invalid_config.
-func (p *planning) config(instances []string) {
+func (p *checking) config(instances []string) {
 	for _, i := range instances {
 		if !p.valid[i] {
 			continue
@@ -70,7 +70,7 @@ func (p *planning) config(instances []string) {
 }
 
 // configValue checks the text the graph sets as value v of instance i of module m.
-func (p *planning) configValue(i, v, text string, m contract.Module) {
+func (p *checking) configValue(i, v, text string, m contract.Module) {
 	path := configPath(i, v)
 	cv, declared := m.Config[v]
 	if !declared {

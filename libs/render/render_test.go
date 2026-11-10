@@ -16,8 +16,8 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/racherom/modular-platform/libs/check"
 	"github.com/racherom/modular-platform/libs/contract"
-	"github.com/racherom/modular-platform/libs/planner"
 	"github.com/racherom/modular-platform/libs/render"
 )
 
@@ -88,92 +88,92 @@ func loadCatalogTemplates(t *testing.T, dirs ...string) (contract.Catalog, contr
 	return c, tmpls
 }
 
-// planFile plans the graph file at path against catalog and fails the test unless it is ok.
-func planFile(t *testing.T, path string, catalog contract.Catalog) contract.PlanResult {
+// checkFile checks the graph file at path against catalog and fails the test unless it is ok.
+func checkFile(t *testing.T, path string, catalog contract.Catalog) contract.CheckResult {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return planText(t, string(data), catalog)
+	return resultText(t, string(data), catalog)
 }
 
-// planText plans the graph text and fails the test unless the plan is ok.
-func planText(t *testing.T, text string, catalog contract.Catalog) contract.PlanResult {
+// resultText checks the graph text and fails the test unless the check result is ok.
+func resultText(t *testing.T, text string, catalog contract.Catalog) contract.CheckResult {
 	t.Helper()
 	path := "graph"
 	g, p := contract.DecodeGraph([]byte(text))
 	if p != nil {
 		t.Fatal(p.Message)
 	}
-	plan := planner.Plan(g, catalog)
-	if !plan.Ok {
-		t.Fatalf("plan of %s: %+v", path, plan.Problems)
+	result := check.Graph(g, catalog)
+	if !result.Ok {
+		t.Fatalf("result of %s: %+v", path, result.Problems)
 	}
-	return plan
+	return result
 }
 
-func samplePlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
+func sampleResult(t *testing.T) (contract.CheckResult, contract.Catalog) {
 	t.Helper()
 	catalog := loadCatalog(t, "../../catalog")
-	return planFile(t, "../../samples/whoami-postgres/graph.yaml", catalog), catalog
+	return checkFile(t, "../../samples/whoami-postgres/graph.yaml", catalog), catalog
 }
 
 // TestRenderSampleGolden pins every rendered file of the sample (AC-10 for docker-compose.yml).
 // Run with -update after an intended change.
 func TestRenderSampleGolden(t *testing.T) {
-	plan, catalog := samplePlan(t)
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	result, catalog := sampleResult(t)
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	checkGolden(t, filepath.Join("testdata", "whoami-postgres"), out)
 }
 
-// bindingsPlan plans the bindings case: an external provide and an external provisioner, both
+// bindingsResult checks the bindings case: an external provide and an external provisioner, both
 // and to_provider files, fixed path mounts, an optional field left out, environment
 // placeholders, egress and aliases, and every hardening opt out (spec 0011 build tasks 11 to 13).
-func bindingsPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
+func bindingsResult(t *testing.T) (contract.CheckResult, contract.Catalog) {
 	t.Helper()
 	catalog := loadCatalog(t, "../../catalog", "testdata/bindings/catalog")
-	return planFile(t, "testdata/bindings/graph.yaml", catalog), catalog
+	return checkFile(t, "testdata/bindings/graph.yaml", catalog), catalog
 }
 
 // TestRenderBindingsGolden pins every rendered file of the bindings case (AC-8, AC-12, AC-15).
 func TestRenderBindingsGolden(t *testing.T) {
-	plan, catalog := bindingsPlan(t)
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	result, catalog := bindingsResult(t)
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	checkGolden(t, filepath.Join("testdata", "bindings", "golden"), out)
 }
 
-// installPlan plans the install time case: asked values of every type, an asked secret value,
+// installResult checks the install time case: asked values of every type, an asked secret value,
 // a from: ask secret, setup steps with asks, reads, writes and for_each over two clients, and
 // clients whose own step reads the provider's step output (spec 0011 build task 14).
-func installPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
+func installResult(t *testing.T) (contract.CheckResult, contract.Catalog) {
 	t.Helper()
 	catalog := loadCatalog(t, "testdata/install/catalog")
-	return planFile(t, "testdata/install/graph.yaml", catalog), catalog
+	return checkFile(t, "testdata/install/graph.yaml", catalog), catalog
 }
 
 // TestRenderInstallGolden pins every rendered file of the install case (AC-10).
 func TestRenderInstallGolden(t *testing.T) {
-	plan, catalog := installPlan(t)
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	result, catalog := installResult(t)
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	checkGolden(t, filepath.Join("testdata", "install", "golden"), out)
 }
 
-// templatesPlan plans the templates case with the templates of its catalog (spec 0011 build
+// templatesResult checks the templates case with the templates of its catalog (spec 0011 build
 // task 15).
-func templatesPlan(t *testing.T) (contract.PlanResult, contract.Catalog, contract.Templates) {
+func templatesResult(t *testing.T) (contract.CheckResult, contract.Catalog, contract.Templates) {
 	t.Helper()
 	catalog, tmpls := loadCatalogTemplates(t, "../../catalog", "testdata/bindings/catalog", "testdata/templates/catalog")
-	return planFile(t, "testdata/templates/graph.yaml", catalog), catalog, tmpls
+	return checkFile(t, "testdata/templates/graph.yaml", catalog), catalog, tmpls
 }
 
 // TestRenderTemplatesGolden pins every rendered file of the templates case (AC-9): a template
@@ -181,14 +181,14 @@ func templatesPlan(t *testing.T) (contract.PlanResult, contract.Catalog, contrac
 // a template with its own delims whose {{ }} text stays as written; each mounted read only
 // through a Compose config. Rendering twice gives the same bytes.
 func TestRenderTemplatesGolden(t *testing.T) {
-	plan, catalog, tmpls := templatesPlan(t)
-	out, err := render.Render(plan, catalog, tmpls)
+	result, catalog, tmpls := templatesResult(t)
+	out, err := render.Render(result, catalog, tmpls)
 	if err != nil {
 		t.Fatal(err)
 	}
 	checkGolden(t, filepath.Join("testdata", "templates", "golden"), out)
 
-	again, err := render.Render(plan, catalog, tmpls)
+	again, err := render.Render(result, catalog, tmpls)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,37 +203,37 @@ func TestRenderTemplatesGolden(t *testing.T) {
 		t.Error("two renders of one graph differ")
 	}
 
-	if _, err := render.Render(plan, catalog, builtinTemplates(t)); !errors.Is(err, contract.ErrNoTemplate) {
+	if _, err := render.Render(result, catalog, builtinTemplates(t)); !errors.Is(err, contract.ErrNoTemplate) {
 		t.Errorf("render without its templates: err = %v, want ErrNoTemplate", err)
 	}
 }
 
-// hostAccessPlan plans the host access case: published ports (a number and a config value),
+// hostAccessResult checks the host access case: published ports (a number and a config value),
 // host mounts (read only and read write, a plain and a config path), and an entry's own
 // entrypoint and command (spec 0011 build task 16).
-func hostAccessPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
+func hostAccessResult(t *testing.T) (contract.CheckResult, contract.Catalog) {
 	t.Helper()
 	catalog := loadCatalog(t, "testdata/host-access/catalog")
-	return planFile(t, "testdata/host-access/graph.yaml", catalog), catalog
+	return checkFile(t, "testdata/host-access/graph.yaml", catalog), catalog
 }
 
 // TestRenderHostAccessGolden pins the static render of host access (spec 0013, Host access;
 // AC-11, AC-12): ports, bind mounts and egress for the instance that publishes.
 func TestRenderHostAccessGolden(t *testing.T) {
-	plan, catalog := hostAccessPlan(t)
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	result, catalog := hostAccessResult(t)
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	checkGolden(t, filepath.Join("testdata", "host-access", "golden"), out)
 }
 
-// linuxCapPlan plans the module of the Linux capability case that adds SYS_ADMIN beside one
+// linuxCapResult checks the module of the Linux capability case that adds SYS_ADMIN beside one
 // that adds only NET_BIND_SERVICE (spec 0022).
-func linuxCapPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
+func linuxCapResult(t *testing.T) (contract.CheckResult, contract.Catalog) {
 	t.Helper()
 	catalog := loadCatalog(t, "testdata/linuxcap/catalog")
-	return planFile(t, "testdata/linuxcap/refused.yaml", catalog), catalog
+	return checkFile(t, "testdata/linuxcap/refused.yaml", catalog), catalog
 }
 
 // TestRenderManagedRefuses: a deployed graph gets no host access and has no setup.sh, so the
@@ -242,19 +242,19 @@ func linuxCapPlan(t *testing.T) (contract.PlanResult, contract.Catalog) {
 func TestRenderManagedRefuses(t *testing.T) {
 	t.Parallel()
 	for name, c := range map[string]struct {
-		plan func(*testing.T) (contract.PlanResult, contract.Catalog)
-		want []string // code and path of each refusal
+		result func(*testing.T) (contract.CheckResult, contract.Catalog)
+		want   []string // code and path of each refusal
 	}{
-		"host access": {hostAccessPlan, []string{"host_access modules.agent", "host_access modules.edge"}},
-		"linux caps":  {linuxCapPlan, []string{"host_access modules.admin"}},
-		"install time": {installPlan, []string{
+		"host access": {hostAccessResult, []string{"host_access modules.agent", "host_access modules.edge"}},
+		"linux caps":  {linuxCapResult, []string{"host_access modules.admin"}},
+		"install time": {installResult, []string{
 			"setup_required modules.alpha", "setup_required modules.beta", "setup_required modules.keeper",
 		}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			plan, catalog := c.plan(t)
-			_, err := render.Managed(plan, catalog, builtinTemplates(t), "d1")
+			result, catalog := c.result(t)
+			_, err := render.Managed(result, catalog, builtinTemplates(t), "d1")
 			var refused *render.RefusedError
 			if !errors.As(err, &refused) {
 				t.Fatalf("err = %v, want a *RefusedError", err)
@@ -277,8 +277,8 @@ func TestRenderManagedRefuses(t *testing.T) {
 // still copies each name for the zip you run yourself (spec 0022, AC-11).
 func TestRenderManagedRefusesLinuxCap(t *testing.T) {
 	t.Parallel()
-	plan, catalog := linuxCapPlan(t)
-	_, err := render.Managed(plan, catalog, builtinTemplates(t), "d1")
+	result, catalog := linuxCapResult(t)
+	_, err := render.Managed(result, catalog, builtinTemplates(t), "d1")
 	var refused *render.RefusedError
 	if !errors.As(err, &refused) || len(refused.Problems) != 1 {
 		t.Fatalf("err = %v, want one refusal", err)
@@ -287,7 +287,7 @@ func TestRenderManagedRefusesLinuxCap(t *testing.T) {
 	if got := refused.Problems[0].Message; got != want {
 		t.Errorf("message = %q, want %q", got, want)
 	}
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,15 +296,15 @@ func TestRenderManagedRefusesLinuxCap(t *testing.T) {
 	}
 }
 
-// TestRefuse: the refused plan is not ok, has no digest, and keeps one problem per code and path,
+// TestRefuse: the refused result is not ok, has no digest, and keeps one problem per code and path,
 // the error, sorted by path then code.
 func TestRefuse(t *testing.T) {
 	t.Parallel()
-	plan, _ := hostAccessPlan(t)
-	if !plan.Ok || plan.Digest == "" || len(plan.Problems) != 2 {
-		t.Fatalf("plan: ok %v, digest %q, problems %+v", plan.Ok, plan.Digest, plan.Problems)
+	result, _ := hostAccessResult(t)
+	if !result.Ok || result.Digest == "" || len(result.Problems) != 2 {
+		t.Fatalf("result: ok %v, digest %q, problems %+v", result.Ok, result.Digest, result.Problems)
 	}
-	refused := render.Refuse(plan, []contract.Problem{
+	refused := render.Refuse(result, []contract.Problem{
 		{Severity: contract.Error, Code: render.CodeSetupRequired, Path: "modules.edge", Message: "m"},
 		{Severity: contract.Error, Code: render.CodeHostAccess, Path: "modules.edge", Message: "m"},
 	})
@@ -319,8 +319,8 @@ func TestRefuse(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("problems = %v, want %v", got, want)
 	}
-	if len(plan.Problems) != 2 || plan.Problems[1].Severity != contract.Warning {
-		t.Error("Refuse changed the plan it was given")
+	if len(result.Problems) != 2 || result.Problems[1].Severity != contract.Warning {
+		t.Error("Refuse changed the check result it was given")
 	}
 }
 
@@ -350,8 +350,8 @@ func checkGolden(t *testing.T, dir string, out render.Output) {
 
 func TestRenderSampleRules(t *testing.T) {
 	t.Parallel()
-	plan, catalog := samplePlan(t)
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	result, catalog := sampleResult(t)
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +412,7 @@ func TestRenderSampleRules(t *testing.T) {
 			t.Errorf("setup.sh lacks %q", want)
 		}
 	}
-	want, _ := contract.MarshalGraph(plan.Graph)
+	want, _ := contract.MarshalGraph(result.Graph)
 	if !bytes.Equal(files["graph.yaml"].Data, want) || !strings.Contains(string(want), "database: whoami_postgresql") {
 		t.Errorf("graph.yaml in the zip is not the resolved canonical graph:\n%s", files["graph.yaml"].Data)
 	}
@@ -422,10 +422,10 @@ func TestRenderSampleRules(t *testing.T) {
 // exactly the AC-3 files, with modes.
 func TestZipDeterministic(t *testing.T) {
 	t.Parallel()
-	plan, catalog := samplePlan(t)
+	result, catalog := sampleResult(t)
 	var zips [2]bytes.Buffer
 	for i := range zips {
-		out, err := render.Render(plan, catalog, builtinTemplates(t))
+		out, err := render.Render(result, catalog, builtinTemplates(t))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -467,11 +467,11 @@ func TestSecretComposeNamesNeverCollide(t *testing.T) {
 		{Name: "one", Image: "example.test/one:1.0.0", Secrets: []contract.Secret{{Name: "c", Env: "C_FILE"}}},
 		{Name: "two", Image: "example.test/two:1.0.0", Secrets: []contract.Secret{{Name: "b-c", Env: "BC_FILE"}}},
 	}}
-	plan := contract.PlanResult{Ok: true, Graph: contract.Graph{
+	result := contract.CheckResult{Ok: true, Graph: contract.Graph{
 		Name:    "collide",
 		Modules: map[string]contract.GraphModule{"a-b": {Module: "one"}, "a": {Module: "two"}},
 	}}
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,9 +502,9 @@ func TestSecretComposeNamesNeverCollide(t *testing.T) {
 
 func TestRenderRefusesErrors(t *testing.T) {
 	t.Parallel()
-	_, err := render.Render(contract.PlanResult{Ok: false}, contract.Catalog{}, builtinTemplates(t))
-	if !errors.Is(err, render.ErrPlanHasErrors) {
-		t.Errorf("err = %v, want ErrPlanHasErrors", err)
+	_, err := render.Render(contract.CheckResult{Ok: false}, contract.Catalog{}, builtinTemplates(t))
+	if !errors.Is(err, render.ErrGraphHasErrors) {
+		t.Errorf("err = %v, want ErrGraphHasErrors", err)
 	}
 }
 

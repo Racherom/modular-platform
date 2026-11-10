@@ -21,7 +21,7 @@ import (
 func graphConfigOutput(t *testing.T) render.Output {
 	t.Helper()
 	catalog := loadCatalog(t, "testdata/graph-config/catalog")
-	out, err := render.Render(planFile(t, "testdata/graph-config/graph.yaml", catalog), catalog, builtinTemplates(t))
+	out, err := render.Render(checkFile(t, "testdata/graph-config/graph.yaml", catalog), catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestManagedGraphAnswersSetup(t *testing.T) {
 		"apiVersion: modular-platform/v1\nkind: Graph\nmodules:\n  simple:\n    config:\n      domain: \"example.org\"\n    module: simple\nname: managed\n": false,
 		"apiVersion: modular-platform/v1\nkind: Graph\nmodules:\n  simple:\n    module: simple\nname: managed\n":                                             true,
 	} {
-		_, err := render.Managed(planText(t, text, catalog), catalog, builtinTemplates(t), testDeployment)
+		_, err := render.Managed(resultText(t, text, catalog), catalog, builtinTemplates(t), testDeployment)
 		var r *render.RefusedError
 		if got := errors.As(err, &r); got != refused {
 			t.Errorf("graph\n%s refused = %v (%v), want %v", text, got, err, refused)

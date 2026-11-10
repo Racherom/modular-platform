@@ -9,7 +9,7 @@ func operation(op deploy.Operation) Operation {
 	out := Operation{
 		Id: op.ID.String(), Action: OperationAction(op.Action), Status: OperationStatus(op.Status),
 		Step: OperationStep(op.Step), StartedAt: op.StartedAt, StartedBy: op.StartedBy.Email,
-		Error: op.Error, DeleteData: op.DeleteData, PlacedSupplied: op.PlacedSupplied, PlanDigest: op.PlanDigest,
+		Error: op.Error, DeleteData: op.DeleteData, PlacedSupplied: op.PlacedSupplied, Digest: op.Digest,
 	}
 	if out.PlacedSupplied == nil {
 		out.PlacedSupplied = []string{}

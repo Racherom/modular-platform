@@ -3,8 +3,8 @@
 //
 //	render-platform -graph deploy/managed/graph.yaml -out build/managed
 //
-// It plans the graph as the renderer does and writes libs/render's platform flavor into -out,
-// replacing what was there, so nothing rendered is kept under version control to drift. A plan
+// It checks the graph as the renderer does and writes libs/render's platform flavor into -out,
+// replacing what was there, so nothing rendered is kept under version control to drift. A check result
 // with an error writes nothing and exits 1.
 //
 // -image-tag retags the platform's own images (those under ghcr.io/racherom/modular-platform/)
@@ -23,8 +23,8 @@ import (
 	"strings"
 
 	"github.com/racherom/modular-platform/catalog"
+	"github.com/racherom/modular-platform/libs/check"
 	"github.com/racherom/modular-platform/libs/contract"
-	"github.com/racherom/modular-platform/libs/planner"
 	"github.com/racherom/modular-platform/libs/render"
 )
 
@@ -67,14 +67,14 @@ func run(graphPath, out, tag string, log io.Writer) error {
 	if p != nil {
 		return fmt.Errorf("%s: %s", graphPath, p.Message)
 	}
-	plan := planner.Plan(g, entries)
-	for _, p := range plan.Problems {
+	result := check.Graph(g, entries)
+	for _, p := range result.Problems {
 		fmt.Fprintf(log, "%s %s at %s: %s\n", p.Severity, p.Code, p.Path, p.Message)
 	}
-	if !plan.Ok {
-		return errors.New("the platform graph does not plan")
+	if !result.Ok {
+		return errors.New("the platform graph does not pass its checks")
 	}
-	folder, err := render.Platform(plan, entries, templates)
+	folder, err := render.Platform(result, entries, templates)
 	if err != nil {
 		return err
 	}

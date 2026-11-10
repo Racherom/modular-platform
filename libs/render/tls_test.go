@@ -18,8 +18,8 @@ import (
 // the job, and the consumers of postgres verify its certificate against the internal root.
 func TestPostgresCertificateJob(t *testing.T) {
 	t.Parallel()
-	plan, catalog, templates := platformPlan(t)
-	out, err := render.Platform(plan, catalog, templates)
+	result, catalog, templates := platformResult(t)
+	out, err := render.Platform(result, catalog, templates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestPostgresCertificateJob(t *testing.T) {
 func TestManagedRefusesJobOutputs(t *testing.T) {
 	t.Parallel()
 	catalog := loadCatalog(t, "../../catalog")
-	plan := planText(t, `apiVersion: modular-platform/v1
+	result := resultText(t, `apiVersion: modular-platform/v1
 kind: Graph
 name: outputs
 modules:
@@ -147,11 +147,11 @@ modules:
     uses:
       tls: ca.certs
 `, catalog)
-	if _, err := render.Managed(plan, catalog, builtinTemplates(t), testDeployment); !errors.Is(err, render.ErrNotRendered) {
+	if _, err := render.Managed(result, catalog, builtinTemplates(t), testDeployment); !errors.Is(err, render.ErrNotRendered) {
 		t.Errorf("managed render: %v, want ErrNotRendered", err)
 	}
 	// the static flavor renders it: setup.sh makes the files and you place the CA's secrets
-	if _, err := render.Render(plan, catalog, builtinTemplates(t)); err != nil {
+	if _, err := render.Render(result, catalog, builtinTemplates(t)); err != nil {
 		t.Errorf("static render: %v", err)
 	}
 }
@@ -171,7 +171,7 @@ func TestPostgresWithoutCertificate(t *testing.T) {
 	if text == string(data) {
 		t.Fatal("deploy/managed/graph.yaml no longer binds postgres.tls to cert-issuer.certs")
 	}
-	out, err := render.Platform(planText(t, text, catalog), catalog, templates)
+	out, err := render.Platform(resultText(t, text, catalog), catalog, templates)
 	if err != nil {
 		t.Fatal(err)
 	}

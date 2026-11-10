@@ -132,7 +132,7 @@ func (g guard) wrap(next http.Handler, touch bool) http.Handler {
 
 // strictBodies decodes graph bodies with the strict decoder of spec 0002 before the generated
 // code sees them, as the renderer does: over 1 MB is 413; unknown keys, duplicate keys, another
-// apiVersion or kind are 400. The plan and render routes take a bare graph; review and apply
+// apiVersion or kind are 400. The check and render routes take a bare graph; review and apply
 // take an object with a graph key.
 func strictBodies(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -161,7 +161,7 @@ func strictBodies(next http.Handler) http.Handler {
 }
 
 func cleanBody(path string, data []byte) ([]byte, *contract.Problem) {
-	if strings.HasSuffix(path, "/plan") || strings.HasSuffix(path, "/render") {
+	if strings.HasSuffix(path, "/check") || strings.HasSuffix(path, "/render") {
 		g, problem := contract.DecodeGraph(data)
 		if problem != nil {
 			return nil, problem
@@ -179,7 +179,7 @@ func cleanBody(path string, data []byte) ([]byte, *contract.Problem) {
 	}
 	allowed := map[string]bool{"graph": true}
 	if strings.HasSuffix(path, "/apply") {
-		allowed["planDigest"], allowed["placed"] = true, true
+		allowed["digest"], allowed["placed"] = true, true
 	}
 	for k := range envelope {
 		if !allowed[k] {

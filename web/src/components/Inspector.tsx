@@ -1,6 +1,6 @@
 import { Search, Trash2, Unlink } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
-import type { Catalog, Graph, Module, PlanResult, Problem } from '../api/client'
+import type { Catalog, CheckResult, Graph, Module, Problem } from '../api/client'
 import { bind, candidates, clearConfig, letPlannerChoose, setConfig, unbind } from '../graph/edit'
 import { markOf, problemInstance } from '../graph/flow'
 import { bindingText, boundProvide, type ConfigField, isExternal, moduleOf, offersOf, settableConfig, slotsOf } from '../graph/model'
@@ -17,9 +17,9 @@ import { TextField } from './ui/TextField'
 interface Props {
   graph: Graph
   catalog: Catalog
-  plan: PlanResult
-  /** The plan belongs to exactly this graph (not checking, not failed). */
-  planCurrent: boolean
+  check: CheckResult
+  /** The check result belongs to exactly this graph (not checking, not failed). */
+  checkCurrent: boolean
   /** Applies an edit; without it the inspector only shows. */
   onEdit?: (edit: GraphEdit) => void
 }
@@ -31,9 +31,9 @@ const INVALID = 'invalid'
 const instanceOption = (name: string) => `bind:${name}`
 
 /** The selected module or binding, with every edit #5 offers from the keyboard (AC-8, AC-11). */
-export function Inspector({ graph, catalog, plan, planCurrent, onEdit }: Props) {
+export function Inspector({ graph, catalog, check, checkCurrent, onEdit }: Props) {
   const selection = useEditor((s) => s.selection)
-  const ctx = { graph, catalog, plan, planCurrent, onEdit }
+  const ctx = { graph, catalog, check, checkCurrent, onEdit }
   let body = <p className={styles.muted}>Select a module or a binding to see it here.</p>
   if (selection?.kind === 'module' && Object.hasOwn(graph.modules, selection.instance)) {
     body = <ModuleDetails instance={selection.instance} {...ctx} />
@@ -50,7 +50,7 @@ function ModuleDetails({ instance, ...ctx }: Ctx & { instance: string }) {
   const external = isExternal(ctx.graph, instance)
   const entry = moduleOf(ctx.graph, ctx.catalog, instance)
   const configPaths = external || !entry ? new Set<string>() : shownConfigPaths(ctx.graph, instance, entry)
-  const problems = ctx.plan.problems.filter((p) => problemInstance(p) === instance && !configPaths.has(p.path))
+  const problems = ctx.check.problems.filter((p) => problemInstance(p) === instance && !configPaths.has(p.path))
   const slots = Object.entries(external ? {} : slotsOf(entry)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
   const offers = offersOf(ctx.graph, ctx.catalog, instance)
   return (
@@ -122,7 +122,7 @@ function ModuleDetails({ instance, ...ctx }: Ctx & { instance: string }) {
 function BindingDetails({ consumer, slot, ...ctx }: Ctx & { consumer: string; slot: string }) {
   const text = bindingText(ctx.graph.modules[consumer]?.uses?.[slot])
   const spec = slotsOf(moduleOf(ctx.graph, ctx.catalog, consumer))[slot]
-  const problems = ctx.plan.problems.filter(
+  const problems = ctx.check.problems.filter(
     (p) => p.path === `modules.${consumer}.uses.${slot}` || p.path.startsWith(`modules.${consumer}.uses.${slot}.`),
   )
   return (
@@ -174,8 +174,9 @@ function SlotRow({
   options.push(...names.map((n) => ({ id: instanceOption(n), label: n })))
   options.push({ id: NOT_BOUND, label: 'Not bound' }, { id: RENDERER, label: 'Let the planner choose' })
 
-  const auto = ctx.planCurrent && text !== undefined && ctx.plan.bindings.some((b) => b.consumer === consumer && b.slot === slot && b.auto)
-  const mark = markOf(ctx.plan.problems.filter((p) => p.path === `modules.${consumer}.uses.${slot}`))
+  const auto =
+    ctx.checkCurrent && text !== undefined && ctx.check.bindings.some((b) => b.consumer === consumer && b.slot === slot && b.auto)
+  const mark = markOf(ctx.check.problems.filter((p) => p.path === `modules.${consumer}.uses.${slot}`))
 
   const choose = (id: string) => {
     const onEdit = ctx.onEdit
@@ -228,9 +229,9 @@ function shownConfigPaths(graph: Graph, instance: string, entry: Module): Set<st
 }
 
 /**
- * The config values of a module instance that the graph may set, each with its plan problems
+ * The config values of a module instance that the graph may set, each with its problems
  * under it, and the keys the graph holds that the entry does not offer, each with a remove
- * button (spec 0025, AC-29). Values are checked only by the plan.
+ * button (spec 0025, AC-29). Values are checked only by the checks.
  */
 function ConfigSection({ instance, entry, ...ctx }: Ctx & { instance: string; entry: Module }) {
   const set = ctx.graph.modules[instance]?.config ?? {}
@@ -239,7 +240,7 @@ function ConfigSection({ instance, entry, ...ctx }: Ctx & { instance: string; en
   const unknown = Object.keys(set)
     .filter((k) => !settable.has(k))
     .sort()
-  const problemsAt = (v: string) => ctx.plan.problems.filter((p) => p.path === configPath(instance, v))
+  const problemsAt = (v: string) => ctx.check.problems.filter((p) => p.path === configPath(instance, v))
   return (
     <section aria-labelledby={`config-${instance}`} className={styles.section}>
       <h4 id={`config-${instance}`} className={styles.heading}>

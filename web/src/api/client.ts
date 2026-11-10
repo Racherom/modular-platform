@@ -10,7 +10,7 @@ export type Module = components['schemas']['Module']
 export type Capability = components['schemas']['Capability']
 export type Slot = components['schemas']['Slot']
 export type ConfigValue = components['schemas']['ConfigValue']
-export type PlanResult = components['schemas']['PlanResult']
+export type CheckResult = components['schemas']['CheckResult']
 export type Problem = components['schemas']['Problem']
 
 // absolute on the page's own origin, so every call stays same origin under any base path
@@ -38,17 +38,17 @@ export async function fetchCatalog(): Promise<Catalog> {
   return data
 }
 
-/** Plans a graph; the signal aborts the call when a newer edit replaces it. */
-export async function planGraph(graph: Graph, signal?: AbortSignal): Promise<PlanResult> {
-  const { data, error, response } = await client.POST('/v1/plan', { body: graph, signal })
+/** Checks a graph; the signal aborts the call when a newer edit replaces it. */
+export async function checkGraph(graph: Graph, signal?: AbortSignal): Promise<CheckResult> {
+  const { data, error, response } = await client.POST('/v1/check', { body: graph, signal })
   if (!data) throw failure(response.status, error?.problems)
   return data
 }
 
-/** Renders the graph; a plan with an error comes back as the PlanResult instead of a zip. */
-export async function renderGraph(graph: Graph): Promise<{ zip: Blob } | { plan: PlanResult }> {
+/** Renders the graph; a check result with an error comes back as the CheckResult instead of a zip. */
+export async function renderGraph(graph: Graph): Promise<{ zip: Blob } | { check: CheckResult }> {
   const { data, error, response } = await client.POST('/v1/render', { body: graph, parseAs: 'blob' })
   if (data) return { zip: data }
-  if (response.status === 422) return { plan: error as PlanResult }
+  if (response.status === 422) return { check: error as CheckResult }
   throw failure(response.status, (error as { problems?: Problem[] } | undefined)?.problems)
 }

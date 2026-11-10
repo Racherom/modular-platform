@@ -27,19 +27,19 @@ async function editedWorkingGraph(page: Page) {
 }
 
 test('undo and redo with the buttons and the keyboard, one step per edit (AC-15, AC-17)', async ({ page }) => {
-  const { plans } = await mockRenderer(page)
+  const { checks } = await mockRenderer(page)
   await openGraph(page)
   await expect(button(page, 'Undo')).toBeDisabled()
   await expect(button(page, 'Redo')).toBeDisabled()
 
   await drag(page, handle(page, 'whoami', 'uses:postgresql'), handle(page, 'postgres', 'provides:postgresql'))
   await expect(page.locator(edges)).toHaveCount(1)
-  await expect.poll(() => plans.length).toBe(2)
+  await expect.poll(() => checks.length).toBe(2)
 
   await button(page, 'Undo').click()
   await expect(page.locator(edges)).toHaveCount(0)
-  await expect.poll(() => plans.length).toBe(3) // undo plans the restored graph
-  expect(plans[2]?.modules.whoami?.uses).toEqual({ postgresql: null })
+  await expect.poll(() => checks.length).toBe(3) // undo checks the restored graph
+  expect(checks[2]?.modules.whoami?.uses).toEqual({ postgresql: null })
   await expect(page.getByText('Edited')).toBeVisible() // undo is an edit too
 
   await page.locator('.react-flow__pane').click()
@@ -57,8 +57,8 @@ test('undo and redo with the buttons and the keyboard, one step per edit (AC-15,
   await expect(page.locator(edges)).toHaveCount(1)
 })
 
-test('Tidy layout moves nodes back without a plan call, and undo puts them back (AC-15, AC-16)', async ({ page }) => {
-  const { plans } = await mockRenderer(page)
+test('Tidy layout moves nodes back without a check call, and undo puts them back (AC-15, AC-16)', async ({ page }) => {
+  const { checks } = await mockRenderer(page)
   // a working copy whose positions are not the auto layout: open, then move a node in storage
   await openGraph(page)
   const tidyX = await x(page, 'postgres')
@@ -82,19 +82,19 @@ test('Tidy layout moves nodes back without a plan call, and undo puts them back 
   await expect(node(page, 'postgres')).toBeVisible()
   const movedX = await x(page, 'postgres')
   expect(movedX).not.toBe(tidyX)
-  const before = plans.length
+  const before = checks.length
 
   await button(page, 'Tidy layout').click()
   await expect.poll(() => x(page, 'postgres')).toBe(tidyX)
   await expect(page.getByText('Edited')).toBeVisible()
-  expect(plans).toHaveLength(before)
+  expect(checks).toHaveLength(before)
 
   await button(page, 'Undo').click()
   await expect.poll(() => x(page, 'postgres')).toBe(movedX)
 })
 
 test('the sample: hint, history disabled, first edit makes an edited copy and moves to the editor (AC-18)', async ({ page }) => {
-  const { plans } = await mockRenderer(page)
+  const { checks } = await mockRenderer(page)
   await page.goto(SAMPLE)
   await expect(page.getByText('This is a sample.')).toBeVisible()
   await expect(button(page, 'Undo')).toBeDisabled()
@@ -108,7 +108,7 @@ test('the sample: hint, history disabled, first edit makes an edited copy and mo
   await expect(page.getByText('Edited')).toBeVisible()
   await expect(page.locator(edges)).toHaveCount(0)
   await expect(node(page, 'whoami')).toBeFocused()
-  await expect.poll(() => plans.at(-1)?.modules.whoami?.uses).toEqual({ postgresql: null })
+  await expect.poll(() => checks.at(-1)?.modules.whoami?.uses).toEqual({ postgresql: null })
 
   // one undo returns to the unedited copy
   await button(page, 'Undo').click()
@@ -133,12 +133,12 @@ test('the sample: hint, history disabled, first edit makes an edited copy and mo
 })
 
 test('an edit on the sample asks first when the working graph is edited; Cancel keeps both (AC-18)', async ({ page }) => {
-  const { plans } = await mockRenderer(page)
+  const { checks } = await mockRenderer(page)
   await editedWorkingGraph(page)
   // a full load: the sample page reads the edited flag from IndexedDB at the first edit
   await page.goto(SAMPLE)
   await expect(page.locator(edges)).toHaveCount(1)
-  const calls = plans.length
+  const calls = checks.length
 
   await edge(page, 'whoami.postgresql').click()
   await page.keyboard.press('Delete')
@@ -151,7 +151,7 @@ test('an edit on the sample asks first when the working graph is edited; Cancel 
   await expect(dialog).toBeHidden()
   await expect(page).toHaveURL(/samples/)
   await expect(page.locator(edges)).toHaveCount(1)
-  expect(plans).toHaveLength(calls)
+  expect(checks).toHaveLength(calls)
 
   // the inspector select reverts after Cancel
   await node(page, 'whoami').click()

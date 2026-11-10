@@ -66,10 +66,10 @@ test('a config value set in the inspector reaches the downloaded zip (spec 0025,
   await page.getByTestId('node-renderer').click()
 
   const field = page.getByRole('region', { name: 'Config' }).getByRole('textbox', { name: 'proxy-hops' })
-  const plan = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/renderer/v1/plan')
+  const check = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/renderer/v1/check')
   await field.fill('2')
   await field.press('Enter')
-  expect((await plan).postDataJSON().modules.renderer.config).toEqual({ 'proxy-hops': '2' })
+  expect((await check).postDataJSON().modules.renderer.config).toEqual({ 'proxy-hops': '2' })
   await expect(page.getByText('Checking the graph…')).toHaveCount(0)
 
   const download = page.waitForEvent('download')
@@ -114,13 +114,13 @@ async function drag(page: Page, from: string, to: string) {
 
 test('unbind and bind again on a sample copy, each checked by the renderer (spec 0010, AC-9, AC-10, AC-12, AC-18)', async ({ page }) => {
   test.skip(base !== '', 'the edit pass runs once, at the site root')
-  const plans: number[] = []
+  const checks: number[] = []
   page.on('response', (r) => {
-    if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/renderer/v1/plan') plans.push(r.status())
+    if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/renderer/v1/check') checks.push(r.status())
   })
   await page.goto(sample)
   await expectSampleGraph(page)
-  const planned = plans.length // the sample's own plan
+  const checked = checks.length // the sample's own check
 
   // Delete on the selected binding makes the copy and unbinds; the editor moves to its root
   await page.locator('.react-flow__edge[data-id="whoami.postgresql"]').click()
@@ -138,7 +138,7 @@ test('unbind and bind again on a sample copy, each checked by the renderer (spec
   )
   await expect(page.locator('.react-flow__edge[data-id="whoami.postgresql"]')).toHaveCount(1)
   await expect(page.getByText('Checking the graph…')).toHaveCount(0)
-  expect(plans.slice(planned)).toEqual([200, 200])
+  expect(checks.slice(checked)).toEqual([200, 200])
 
   // the saved file is the sample as the checks resolved it, byte for byte: the default database
   // and login names written in (spec 0014, AC-7), as the render's golden graph.yaml pins them;

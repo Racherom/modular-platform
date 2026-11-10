@@ -1,7 +1,7 @@
 apiVersion: modular-platform/v1
 kind: Module
 name: gateway
-description: Publishes a host port and adds SYS_ADMIN, so planning it warns once, naming both.
+description: Publishes a host port and adds SYS_ADMIN, so checking it warns once, naming both.
 image: example.test/gateway:1.0.0
 publish:
   - port: 80
