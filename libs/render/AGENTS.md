@@ -10,6 +10,11 @@ Turns a plan into the files of a runnable Compose project: `docker-compose.yml`,
 |---|---|
 | `render.go` | `Render`, the Compose project built with compose-go types, the zip with fixed timestamps |
 | `sdk.go` | The additions for `runtime: sdk` modules: bootstrap env, network alias, `${MP_UID}:${MP_GID}` user, the module env file mount, generated secrets |
+| `bind.go` | Bindings, networks, jobs (provision, revoke) and the wait anchor labels (spec 0013, 0014) |
+| `install.go` | Install time: secrets, asked values, setup steps and the `setup.sh` assembly |
+| `template.go` | A module's `*.tmpl` files rendered into `config/<instance>/` after its bindings |
+| `platform.go` | `Platform`, the platform render flavor into the folder the managed zip ships (spec 0015); run by `catalog/cmd/render-platform` |
+| `testdata/<case>/golden/`, `testdata/platform/` | One golden folder per render case, and the rendered platform folder |
 | `templates/*.tmpl` | `setup.sh`, `.env` and `README.md`, embedded with `text/template` |
 | `testdata/whoami-postgres/`, `testdata/sdk-pair/golden/` | Golden files: every rendered file, byte for byte |
 | `internal/sdkpair/` | Two tiny sdk modules (provider and consumer) that only the e2e test runs |

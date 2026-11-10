@@ -22,7 +22,7 @@ The module SDK: a Go kit for building a module container (spec [0005](../docs/sp
 ## Conventions
 
 - `libs` depends on `sdk` (for the `manifest` rules), never the other way round. `manifest` imports only the standard library and `sigs.k8s.io/yaml`.
-- Only `sdk/` reads env vars or `*_FILE` paths. A module adds a value to the `config:` section of `catalog/<module>.yaml`, never parsing code of its own. Bootstrap names (`MP_INSTANCE`, `MP_ENV_FILE`, `MP_ACME_URL`, `MP_CA_FILE`, the caller key files) are read from the process env only and are never declared.
+- Only `sdk/` reads env vars or `*_FILE` paths. A module adds a value to the `config:` section of `catalog/modules/<module>/module.yaml`, never parsing code of its own. Bootstrap names (`MP_INSTANCE`, `MP_ENV_FILE`, `MP_ACME_URL`, `MP_CA_FILE`, the caller key files) are read from the process env only and are never declared.
 - A module wires the generator with `//go:generate go tool sdkgen -entry <path to its catalog entry> -package config -out config.gen.go` in `internal/config/generate.go`, and its module lists `tool github.com/racherom/modular-platform/sdk/cmd/sdkgen`. `task generate` runs it; never hand edit `config.gen.go`.
 - A new catalog field or rule lands in `manifest` and in the OpenAPI `CatalogEntry` schema together, with a case in [contracts/fixtures/catalog/sdk-fields.yaml](../contracts/fixtures/catalog/sdk-fields.yaml); `libs/contract`'s `TestSDKFieldFixtures` fails when the two disagree.
 - Secrets never show: `Secret` and `Values` hide themselves from `fmt` and `slog`, and problem lines and env file errors name the value, never its content.
