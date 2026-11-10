@@ -28,6 +28,7 @@ task fmt        # gofumpt, goimports and Biome, applying safe fixes
 task hooks      # install lefthook and the pre commit hook (once per clone)
 task skills     # restore the agent skills in skills-lock.json, workflow skills included (once per clone)
 task smoke      # sample zip end to end plus the editor under /platform (needs Chromium)
+task managed:render  # render deploy/managed/graph.yaml into build/managed, the folder the managed zip ships (dev:managed and smoke:managed run it)
 ```
 
 ## Specs
@@ -43,7 +44,7 @@ Stored in `docs/specs/`, one folder per spec: `docs/specs/NNNN-title/index.md`, 
 - **Contract first**: API changes start in `contracts/openapi/*.yaml`, then `task generate`. Never hand edit `*.gen.go`, `*.gen.ts` or `routeTree.gen.ts`. Wire errors use the contract's `Problem` and `ProblemList` schemas.
 - **Errors**: return errors, wrap with `fmt.Errorf("...: %w", err)`, use sentinel or typed errors where callers branch; no panics for expected failures.
 - **Config**: every `MP_*` setting is parsed and checked once at startup in `internal/config`; a bad value stops the service. Public origin from config only (principle 12).
-- **Module config (spec 0005)**: a module declares its values in the `config:` section of its catalog entry (`catalog/<module>.yaml`) and runs on `sdk.Run`; `sdkgen` writes `internal/config/config.gen.go`, and only `sdk/` reads env vars or `*_FILE` paths. See [sdk/AGENTS.md](sdk/AGENTS.md).
+- **Module config (spec 0005)**: a module declares its values in the `config:` section of its catalog entry (`catalog/modules/<module>/module.yaml`) and runs on `sdk.Run`; `sdkgen` writes `internal/config/config.gen.go`, and only `sdk/` reads env vars or `*_FILE` paths. See [sdk/AGENTS.md](sdk/AGENTS.md).
 - **Logs**: `log/slog` JSON only, never `fmt.Print` or `log.Printf` in services; never log request bodies or secret values.
 - **Naming and docs**: Go idioms (short receivers, MixedCaps, no stutter like `render.RenderZip`); every exported Go identifier has a doc comment.
 - **Tests**: unit plus integration. Go table tests beside the code, `httptest` for handlers, golden files in `testdata/` for render output, always `-race`. Editor rules in [web/AGENTS.md](web/AGENTS.md).

@@ -9,7 +9,7 @@ The graph editor: a React single page app built by Vite, served by a Caddy based
 - React 19, TypeScript 6 (strict, `noUncheckedIndexedAccess`), Vite 8, pnpm 12, Node 26
 - React Flow (`@xyflow/react` v12) for the canvas; TanStack Router (file based routes); TanStack Query for catalog, plan and render calls; Zustand for graph and editor state
 - `openapi-fetch` with types from `openapi-typescript`
-- Styling and components: decided in spec #5, not yet
+- Styling and components: CSS Modules over the tokens in `src/styles/tokens.css`, shared components in `src/components/ui/` (spec 0010, [design.md](design.md))
 
 ## Key files
 
@@ -38,7 +38,8 @@ pnpm --dir web smoke:browser  # Playwright, used by task smoke
 
 - Named exports only; a default export only where a tool requires one.
 - PascalCase component files and names, camelCase functions and modules.
-- Failures render through `src/components/Failure.tsx`.
+- Failures render through `src/components/ui/Failure.tsx`.
+- Design system: build all UI to `design.md` (art direction and the maximalist product bar); token values live in CSS.
 - Accessibility WCAG AA: keyboard reachable controls (canvas too), labels, enough contrast.
 - Tests: Vitest with Testing Library for logic and components (`src/test/`), Playwright for end to end smoke (`smoke/`).
 
