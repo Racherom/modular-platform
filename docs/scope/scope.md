@@ -14,6 +14,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 1 | Stack & architecture | Foundation | in-progress |
 | 2 | Coding standards & tooling | Foundation | done |
 | 5 | Design system & graph editor foundation | Foundation | in-progress |
+| 44 | Skills from a list, not from git | Foundation | in-progress |
 | 27 | Module SDK | Slice 1 | in-progress |
 | 16 | Managed mode control plane | Slice 1 | in-progress |
 | 3 | Capability and module contract | Slice 2 | in-progress |
@@ -91,6 +92,12 @@ spec [0010](../specs/0010-design-system-graph-editor/index.md) · code in `web/s
 - [ ] Test it: `/test design system & graph editor foundation`
 - [ ] Review it (fresh model): `/check review design system & graph editor foundation`
 - [x] Document it: `/document design system & graph editor foundation`
+
+### 44. Skills from a list, not from git · Alpha · in-progress
+Stop tracking the installed skill folders (`.agents/skills/`, `.claude/skills/`) in git and commit only `skills-lock.json`, the list of recommended skills with source and hash. A fresh clone installs the skills from that list.
+**Done when:** git tracks no file under `.agents/skills/` or `.claude/skills/` and ignores both; `skills-lock.json` lists every recommended skill; on a fresh clone one documented command restores them all, including the workflow skills; and `AGENTS.md` points to that command.
+code in `.gitignore`, `Taskfile.yml` (`skills`), `skills-lock.json`, `AGENTS.md` (`## Agent skills`), `README.md`
+- [x] Build it: `/develop skills from a list`
 
 ## Slice 1: Managed mode, the first thread
 
