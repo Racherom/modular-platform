@@ -1,8 +1,8 @@
 # Modular Platform
 
 Builds a microservice stack from exchangeable modules. Each module wraps an existing open source
-container image and declares the capabilities it provides and uses; the planner checks that every
-need has a provider and renders the stack as a zip you run with `docker compose`.
+container image and declares the capabilities it provides and uses; the checks make sure every
+need has a provider, and the renderer turns the stack into a zip you run with `docker compose`.
 
 This is an early scaffold: the formats are provisional (`modular-platform/v0alpha1`). The
 architecture lives in [docs/specs/0001-platform-stack-architecture](docs/specs/0001-platform-stack-architecture/index.md).
@@ -11,13 +11,13 @@ architecture lives in [docs/specs/0001-platform-stack-architecture](docs/specs/0
 
 | Path | What |
 |---|---|
-| `contracts/openapi/planner.yaml` | The planner API, the source of the Go and TypeScript types |
-| `libs/` | Go: `contract` (formats, catalog rules), `planner`, `render`, `target`, `platform` (service kit) |
-| `services/planner/` | The planner service, public or internal mode |
-| `catalog/` | The built in catalog, embedded into the planner |
+| `contracts/openapi/renderer.yaml` | The renderer API, the source of the Go and TypeScript types |
+| `libs/` | Go: `contract` (formats, catalog rules), `check`, `render`, `target`, `platform` (service kit) |
+| `services/renderer/` | The renderer service, public or internal mode |
+| `catalog/` | The built in catalog, embedded into the renderer |
 | `web/` | The editor (React, Vite), and its `web` image |
 | `samples/` | The sample graph used by the editor and the smoke job |
-| `deploy/online/` | The online tool: ingress, web and planner on one origin |
+| `deploy/online/` | The online editor: ingress, web and renderer on one origin |
 | `deploy/managed/` | The managed platform's own graph, which `task managed:render` renders into the release folder, and its dev overlays |
 
 ## Develop
@@ -27,10 +27,10 @@ the Compose plugin.
 
 ```sh
 task generate   # Go and TypeScript code from the contract (committed)
-task build      # Go, the editor, and the web and planner images
+task build      # Go, the editor, and the web and renderer images
 task test
 task lint
-task dev        # the online tool on https://platform.localhost, editor with hot reload
+task dev        # the online editor on https://platform.localhost, editor with hot reload
 task smoke      # the CI smoke job: sample zip end to end, and the editor under /platform
 task skills     # the agent skills from skills-lock.json, for AI coding agents (once per clone)
 ```
@@ -80,7 +80,7 @@ this checkout instead.
 task dev:managed
 ```
 
-This builds the `api`, `planner` and `deployer-docker` images from your checkout, starts the
+This builds the `api`, `renderer` and `deployer-docker` images from your checkout, starts the
 platform on `https://platform.localhost`, and serves the editor from the Vite dev server with hot
 reload. It binds ports 80 and 443. When the task ends, it stops the platform's containers again.
 

@@ -12,8 +12,8 @@ unless you ask otherwise.
 
 ## Scope
 
-In scope: the planner, web and other platform images, the rendered zips (`docker-compose.yml`,
-`setup.sh`), and the online tool's deployment files in `deploy/`.
+In scope: the renderer, web and other platform images, the rendered zips (`docker-compose.yml`,
+`setup.sh`), and the online editor's Compose files in `deploy/`.
 
 Third party images that catalog modules wrap (for example `postgres`) are out of scope; report
 those to their maintainers.

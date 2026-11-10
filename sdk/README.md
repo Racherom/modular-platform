@@ -8,7 +8,7 @@ A Go kit for building a module container. You describe your module once, in its 
 
 ## Build a module on the SDK
 
-The planner runs on the SDK; [catalog/planner.yaml](../catalog/planner.yaml) and [services/planner](../services/planner/) are a full example.
+The renderer runs on the SDK; [catalog/modules/renderer/module.yaml](../catalog/modules/renderer/module.yaml) and [services/renderer](../services/renderer/) are a full example.
 
 ### 1. Declare the module in its catalog entry
 
@@ -48,7 +48,7 @@ config:
     description: The most notes one page lists.
 ```
 
-The types are `string`, `int`, `bool`, `duration`, `url`, `enum` and `secret`; the rules per type are in [CONTRACT.md, section 1](CONTRACT.md#1-catalog-entry-fields). The planner's catalog check and `sdkgen` both refuse an entry that breaks one, with the same lines.
+The types are `string`, `int`, `bool`, `duration`, `url`, `enum` and `secret`; the rules per type are in [CONTRACT.md, section 1](CONTRACT.md#1-catalog-entry-fields). The catalog check and `sdkgen` both refuse an entry that breaks one, with the same lines.
 
 ### 2. Generate the getters
 
@@ -90,7 +90,7 @@ func setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 `sdk.Run` also handles the `healthcheck` subcommand, signals, the JSON logger and graceful shutdown. A few things you can do from `setup`:
 
 - read the calling module with `sdk.CallerModule(r.Context())` and the calling user with `sdk.CallerFrom(r.Context())` in your handler;
-- turn the binding token check off with `m.AllowAnonymous()` (the planner does in public mode), or add a rate limit with `m.WithRateLimit`;
+- turn the binding token check off with `m.AllowAnonymous()` (the renderer does in public mode), or add a rate limit with `m.WithRateLimit`;
 - give `Config` a `Validate(ctx) error` method for a check across values; its error refuses the start like any bad value;
 - log your own reasons and return an error that wraps `sdk.ErrStart`, so the SDK does not log the failure a second time.
 
