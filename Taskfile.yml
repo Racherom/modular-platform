@@ -88,9 +88,12 @@ tasks:
       - go test -race -tags e2e {{.GO_PACKAGES}}
 
   lint:
-    desc: Lint and check formatting of the Go code (golangci-lint) and the editor (Biome, tsc)
+    desc: Lint and check formatting of the Go code (golangci-lint) and the editor (Biome, tsc), and check for retired words
     deps: [web:install]
     cmds:
+      # report only while #41 renames the code (spec 0027); the last slice makes it fail the lint
+      - task: lint:vocabulary
+        vars: {report: "1"}
       - task: lint:go
       - pnpm --dir web run lint
       - pnpm --dir web run typecheck
@@ -99,6 +102,11 @@ tasks:
     desc: Run golangci-lint on the Go code, formatters included (.golangci.yml)
     cmds:
       - "{{.GOLANGCI_LINT}} run {{.GO_PACKAGES}}"
+
+  lint:vocabulary:
+    desc: Fail on a retired word (scripts/vocabulary.txt, spec 0027) in a tracked or staged file; report=1 only prints the hits and their count
+    cmds:
+      - sh scripts/vocabulary.sh{{if .report}} --report{{end}}
 
   fmt:
     desc: Format the Go code (gofumpt, goimports) and the editor (Biome), applying safe fixes

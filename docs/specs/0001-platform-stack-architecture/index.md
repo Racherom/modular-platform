@@ -44,6 +44,51 @@ These hold for every later spec. Detailed formats belong to the specs named in b
 11. **Client IP by proxy hop count.** A service that needs the client IP (rate limits, logs) never trusts the leftmost `X-Forwarded-For` entry (a client can forge it) or a specific ingress product's settings. The algorithm: join every `X-Forwarded-For` header line, split on commas, trim; the client IP is the entry `MP_PROXY_HOPS` places from the right (default 1, the ingress, so the last entry); if there are fewer entries than that, or the value does not parse as an IP, use the TCP peer address.
 12. **Origin from configuration only.** Services derive their public origin and scheme from configuration (`MP_PUBLIC_ORIGIN`), never from `Host`, `X-Forwarded-Host` or `X-Forwarded-Proto`, and always set `Secure` on cookies.
 
+## Glossary
+
+One name for each thing, the same in code, contracts, specs, editor text and the scope (spec [0027](../0027-one-vocabulary/index.md)). `task lint:vocabulary` fails on a retired name.
+
+| Word | What it names |
+|------|---------------|
+| module | a container image with its catalog entry: what it provides, what it uses, its config values |
+| capability | a named interface a module provides or uses, with a version |
+| provides / uses | what a module offers, and the slots it needs filled |
+| binding | one use of one module filled by one provide; always written in the graph |
+| recommendation | a provider the checks suggest for an unbound use; never in the graph until you accept it, then it is a binding |
+| catalog | the module and capability entries the renderer knows |
+| stack | the modules that run together, while you design them and while they run |
+| graph | the file that describes a stack: its modules, config values, capabilities and bindings; it may be incomplete |
+| resolved graph | a graph after the checks: defaults filled in (provisioner named values, grant sets), with its digest; what the renderer renders |
+| checks | the rules a graph must meet, in `libs/check`, run by the editors (through the renderer), the renderer and apply |
+| problem | one finding of the checks: a code, a path, a message, candidates |
+| renderer | the service (`services/renderer`, with `libs/render`) that checks a graph and turns it into a zip or into the files the deployer applies |
+| render | the step that turns a resolved graph into those files |
+| zip | the ready to deploy files of a stack, made by the renderer; it carries its graph |
+| online editor | the editor before anything runs: open a graph, a zip, a sample or a shared graph, edit it, download a graph or a zip |
+| stack editor | the same editor on a running stack in managed mode: health, the edit layer, apply |
+| apply | starting the renderer's files on a running stack, module by module |
+| deploy target, deployer | the contract that applies files to a host, and the service that implements it (`deployer-docker`) |
+| target, fragment, provisioner | unchanged from spec 0001 and 0014 |
+| network | only the Docker network that render makes for a binding |
+
+### Retired
+
+Each retired name and the word that replaces it. Older text (`rationale.md` files, `docs/reviews/`, the changelog) keeps the words of its time; this table maps them.
+
+| Retired | Use instead |
+|---------|-------------|
+| planner (the service, module, capability, slot) | renderer <!-- vocabulary: allow --> |
+| planner (the matching step, `libs/planner`) | checks, `libs/check` <!-- vocabulary: allow --> |
+| planner website, managed editor | stack editor <!-- vocabulary: allow --> |
+| online tool, public planner | online editor for the site, renderer in public mode for the service <!-- vocabulary: allow --> |
+| running graph, deployment (a running stack), project (in a contract) | stack <!-- vocabulary: allow --> |
+| plan (noun), `PlanResult` | resolved graph, `CheckResult` <!-- vocabulary: allow --> |
+| plan digest, `planDigest` | digest (of the resolved graph) <!-- vocabulary: allow --> |
+| to plan, `/v1/plan` | to check, `/v1/check` <!-- vocabulary: allow --> |
+| automatic binding, "Let the planner choose" | recommendation, "Accept" <!-- vocabulary: allow --> |
+
+The words deploy, deployer, deploy target, managed mode and static mode stay. Compose's "project" stays at the Compose edges only: `libs/render` (which builds compose-go types) and `services/deployer-docker`.
+
 ## Proposed stack
 
 ### Shared core and planner service (built by the scaffold)
