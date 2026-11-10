@@ -41,7 +41,7 @@ The job never deletes or deactivates an `Active` key. Only retire and revoke tur
 The label `runtime: sdk` sits beside `job` and `instance` in the same label set. The render adds it in the managed flavor to every module instance whose catalog entry has `runtime: sdk` (a golden test covers it).
 
 **Managed** (`api`, in the `holdings` step of 0020, after the list jobs, inside the apply's lock; nothing here fails the apply). It runs after `up` returned, so every login job of the apply has exited and its files are final.
-1. Candidates: each login holding of the deployment whose list row has `keys` above 1, and each of its uses. They are grouped by consumer and handled one consumer after another, with at most one restart per consumer for all its slots. The whole step has a budget of 5 minutes; the bindings still waiting when it runs out get the warning below.
+1. Candidates: each login holding of the stack whose list row has `keys` above 1, and each of its uses. They are grouped by consumer and handled one consumer after another, with at most one restart per consumer for all its slots. The whole step has a budget of 5 minutes; the bindings still waiting when it runs out get the warning below.
 2. For each consumer, `api` calls the deployer's retire endpoint per slot. The deployer works through the cases:
    - Confirmed: run the retire job.
    - Not confirmed, not on the SDK: restart the consumer (`docker compose restart <c>`, once per consumer), wait until it is healthy (its `start_period` plus 60 seconds, or 60 seconds after start when it has no healthcheck), then run the retire job.
@@ -59,7 +59,7 @@ The label `runtime: sdk` sits beside `job` and `instance` in the same label set.
 
 | Endpoint | Method | Key inputs | Key outputs | Auth | Key errors |
 |---|---|---|---|---|---|
-| deployer `/v1/projects/{project}/bindings/{consumer}/{slot}/retire` | POST | `restart: bool` (false when this consumer was already restarted in this step) | 200 `{retired: bool, restarted: bool, reason?: "not_confirmed"}` | binding token, caller `api` only | 404 `unknown_job` (no retire service for that binding), 409 `not_deployed`, 409 `busy` (a run of that service is in progress), 504 `retire_timeout` (the restart wait or the 120 second job run), 503 `docker_unavailable` |
+| deployer `/v1/stacks/{stack}/bindings/{consumer}/{slot}/retire` | POST | `restart: bool` (false when this consumer was already restarted in this step) | 200 `{retired: bool, restarted: bool, reason?: "not_confirmed"}` | binding token, caller `api` only | 404 `unknown_job` (no retire service for that binding), 409 `not_deployed`, 409 `busy` (a run of that service is in progress), 504 `retire_timeout` (the restart wait or the 120 second job run), 503 `docker_unavailable` |
 
 It runs the retire job like the run endpoint of 0020 (fixed container name, `--rm --no-deps`, stdout never returned, stderr's last 4 KB logged at warn on a non zero exit). The run endpoint of 0020 still refuses `job: retire`, so a retire runs only through this check.
 

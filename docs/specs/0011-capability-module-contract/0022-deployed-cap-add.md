@@ -6,7 +6,7 @@
 
 ## Summary
 
-A Linux capability is one slice of root's power, for example "may bind a port below 1024". Every rendered service drops all of them (`cap_drop: [ALL]`), and a module entry may add some back with `hardening.cap_add`. This spec decides that a module in a deployed graph may add back exactly one, `NET_BIND_SERVICE`. That is enough for Caddy and step-ca, whose binaries need it to start, and it cannot reach the host. Any other name still works in a zip you download and run yourself. A deployed graph that asks for one gets the `host_access` warning at plan time and is refused at managed render and in the guard. The guard also starts requiring `cap_drop: [ALL]` and `no-new-privileges` on every deployed service, so a Compose file that leaves them out can never bring back Docker's default Linux capabilities.
+A Linux capability is one slice of root's power, for example "may bind a port below 1024". Every rendered service drops all of them (`cap_drop: [ALL]`), and a module entry may add some back with `hardening.cap_add`. This spec decides that a module in a deployed graph may add back exactly one, `NET_BIND_SERVICE`. That is enough for Caddy and step-ca, whose binaries need it to start, and it cannot reach the host. Any other name still works in a zip you download and run yourself. A deployed graph that asks for one gets the `host_access` warning at check time and is refused at managed render and in the guard. The guard also starts requiring `cap_drop: [ALL]` and `no-new-privileges` on every deployed service, so a Compose file that leaves them out can never bring back Docker's default Linux capabilities.
 
 Throughout this spec, "Linux capability" means the kernel's privilege slice, and "capability" alone keeps its domain meaning (what a module provides or uses). Go names keep them apart too: `LinuxCap`, never `Cap` or `Capability`.
 
@@ -34,18 +34,18 @@ An empty list is fine (it adds nothing). The kernel names are the fixed list `CH
 - `DeployableLinuxCap(name string) bool`: the name is `NET_BIND_SERVICE`.
 - `(Module) UndeployableLinuxCaps() []string`: every `cap_add` item of the entry for which `DeployableLinuxCap` is false, in entry order, invalid names included (the catalog refuses those first in practice); nil when there are none.
 
-Contract first: the `Hardening.cap_add` description in `contracts/openapi/planner.yaml` says "Linux capability names, upper case without `CAP_` (spec 0022); a deployed graph may add only `NET_BIND_SERVICE`", then `task generate`. No schema shape changes.
+Contract first: the `Hardening.cap_add` description in `contracts/openapi/renderer.yaml` says "Linux capability names, upper case without `CAP_` (spec 0022); a deployed graph may add only `NET_BIND_SERVICE`", then `task generate`. No schema shape changes.
 
-## Plan warning and managed refusal (`libs/planner/install.go`, `libs/render/managed.go`)
+## Check warning and managed refusal (`libs/check/install.go`, `libs/render/managed.go`)
 
 Both keep code `host_access`, path `modules.<i>`, and one problem per instance. Each message names every reason the instance has, in this order: `publishes host ports`, `mounts host paths`, `adds the Linux capability A` (or `adds the Linux capabilities A and B`, or `A, B and C`, from `UndeployableLinuxCaps`). Two reasons are joined by ` and `, three by `, ` and then ` and `.
 
-- Planner warning: `Instance %s <reasons>, so it reaches the host it runs on; a deployed graph refuses this.`
+- Check warning: `Instance %s <reasons>, so it reaches the host it runs on; a deployed graph refuses this.`
 - Managed refusal (422): `Instance %s <reasons>, which a deployed graph never gets; download the zip to run it.`
 
 For example: `Instance edge publishes host ports and adds the Linux capability SYS_ADMIN, so it reaches the host it runs on; a deployed graph refuses this.` An instance that adds only `NET_BIND_SERVICE` gets no problem. External instances are skipped, as today.
 
-Tests that compare `host_access` message text move with the new wording: `libs/planner/platform_test.go` and the `host access` cases in `libs/render/render_test.go` (they compare code and path today; any message assertion changes with them).
+Tests that compare `host_access` message text move with the new wording: `libs/check/platform_test.go` and the `host access` cases in `libs/render/render_test.go` (they compare code and path today; any message assertion changes with them).
 
 ## Guard (`render.Guard`, 0007)
 
@@ -64,8 +64,8 @@ Why other bypasses stay closed (no change, recorded here): the deployer runs com
 |---|---|---|
 | Catalog check | the known Linux capability names | `libs/contract`'s fixed list of the 41 kernel names |
 | Catalog check | the suggested spelling | the known name that matches ignoring case or a `CAP_` prefix |
-| Plan warning, managed refusal | the names a deployed graph refuses | `Module.UndeployableLinuxCaps()` of the instance's entry |
-| Plan warning, managed refusal | the other reasons | the entry's `publish` and `host_mounts` (unchanged) |
+| Check warning, managed refusal | the names a deployed graph refuses | `Module.UndeployableLinuxCaps()` of the instance's entry |
+| Check warning, managed refusal | the other reasons | the entry's `publish` and `host_mounts` (unchanged) |
 | Guard | whether a `cap_add` item may pass | `contract.DeployableLinuxCap` (decided here: `NET_BIND_SERVICE`) |
 | Guard | whether a service is missing a required key | the service's keys in the loaded model |
 | e2e | the expected `CapEff` | `0000000000000400` (bit 10, `NET_BIND_SERVICE`) for the root fixture service adding it; `NoNewPrivs: 1` |
@@ -73,7 +73,7 @@ Why other bypasses stay closed (no change, recorded here): the deployer runs com
 ## Critical test scenarios
 
 - Catalog fixtures under `libs/contract/testdata/`, one each (AC-2): `cap_add: [net_bind_service]` (suggests `NET_BIND_SERVICE`), `[CAP_NET_BIND_SERVICE]`, `[ALL]`, `[NET_BIND_SERVICE, NET_BIND_SERVICE]`, `[NOT_A_CAP]`, all `invalid_hardening` at the item's path.
-- Plan: an instance adding `SYS_ADMIN` gets warning `host_access` with the message above; one adding only `NET_BIND_SERVICE` gets nothing; one with `publish` and `SYS_ADMIN` gets one problem naming both. The platform graph's warnings stay exactly `deployer-docker` and `ingress` (AC-11).
+- Check: an instance adding `SYS_ADMIN` gets warning `host_access` with the message above; one adding only `NET_BIND_SERVICE` gets nothing; one with `publish` and `SYS_ADMIN` gets one problem naming both. The platform graph's warnings stay exactly `deployer-docker` and `ingress` (AC-11).
 - Managed render: the `SYS_ADMIN` graph answers 422 `host_access` and renders nothing; the bindings graph (`notifier`: `NET_BIND_SERVICE`) renders (AC-11).
 - Guard, in `libs/render/guard_test.go` (AC-21):
   - `TestGuardAcceptsEveryRender` passes with no exception left (the `services.notifier.cap_add` entry goes away), which also shows every managed render emits both required keys.
@@ -86,14 +86,14 @@ Why other bypasses stay closed (no change, recorded here): the deployer runs com
 ## Rationale (short)
 
 - **Only `NET_BIND_SERVICE`**: every entry that adds anything needs exactly this one, because the Caddy and step-ca binaries carry it as a file capability and fail at exec without it (0006 rationale). It grants nothing beyond low ports inside the container's own network namespace, and publishing to the host stays limited by `ports` and the reserved ports. Runner up: a reviewed list with `CHOWN`, `SETUID`, `SETGID`, `DAC_OVERRIDE` and `FOWNER`, for images that start as root and step down. Rejected for now: no deployable entry needs them, and they make a root container much stronger. (Since milestone 4 the platform's own `deployer-docker` adds `CHOWN`, `DAC_OVERRIDE` and `FOWNER`, 0015; it is rendered by the platform flavor, never deployed, so this rule stands.) An operator setting was rejected because the platform's promise would then depend on each install's config.
-- **Same path as `publish`**: the editor and the deploy flow already handle `host_access`. A warning at plan time tells you before you deploy, and the zip keeps working for any name. Refusing at catalog load was rejected because it would block static zip users on their own host.
+- **Same path as `publish`**: the editor and the deploy flow already handle `host_access`. A warning at check time tells you before you deploy, and the zip keeps working for any name. Refusing at catalog load was rejected because it would block static zip users on their own host.
 - **One spelling**: the guard compares exact strings, so it never has to know how Docker normalizes names. Accepting every spelling was rejected because it is a second form to handle in three places.
 - **Required keys, not an override file**: an allow list for `cap_add` means nothing if a service can leave out `cap_drop` and get Docker's default set back. First you chose to keep the keys optional and have the deployer merge its own `deploy.compose.yml` that drops everything. The cross check showed that the guard already stops a caller who omits them, before anything runs, so the override only guarded against a future guard regression. It cost a new file, a snapshot change, a `Compose.Run` change, and trust in Compose's merge rules in the CLI the deployer image pins, which CI does not test. You then chose to require the keys. Runner up: that override file.
 
 ## Consequences
 
 - A deployed graph can now run Caddy, step-ca or any image whose binary carries `NET_BIND_SERVICE`. The `notifier` fixture deploys.
-- An image that needs any other Linux capability runs only from the zip. Its author learns that at plan time, not at deploy.
+- An image that needs any other Linux capability runs only from the zip. Its author learns that at check time, not at deploy.
 - The guard's allow list grows a "required" notion for the first time. A future render that drops one of the two keys must change this spec and the guard in the same change.
 - The `host_access` messages change wording for every case, so tests that compare message text move with them.
 - A root user (`user: "0:0"`) under `cap_drop: [ALL]` has no DAC override (it cannot bypass file permissions) and no other Linux capability beyond what `cap_add` admits, so root in a deployed container stays much weaker than root on the host. It still owns files as host uid 0 in its `data/` folders and gains more from a kernel bug.

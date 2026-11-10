@@ -31,7 +31,7 @@ The spec now says how `up` waits (0014, *Waiting*: the wait anchor `mp_jobs`). R
 - [ ] `go test -race -count=1 -tags e2e -run TestRevokeEndToEnd ./libs/render/` → passes, run five times in a row (`-count=5`) so a timing failure would show: after removing `a`, `a_db` cannot sign in while `a_db.notes` still holds 42; after binding `a` again with the same names it signs in and reads 42; after removing the last consumers the revoke job runs with `MP_KEEP: ""` and both logins lose sign in; the hand made role `handmade` keeps sign in throughout; every `up -d --wait` exits 0 → AC-6
 - [ ] The e2e case for a failing revoke job (only binding removed, wrong admin password file) → `up --wait` exits non zero naming `postgres_revoke_<provide>`, and a second `up` exits non zero again → AC-6
 - [ ] `go test -race -count=1 -run TestRevokeJob ./libs/render/` → `MP_KEEP` is the sorted logins of every binding to the provide, and the job waits for every provision job of that provide → AC-6
-- [ ] Review `libs/render/testdata/whoami-postgres/docker-compose.yml`: `mp_jobs` depends on the revoke job with `service_completed_successfully`, uses its image, has `network_mode: none` and no `networks`, `init: true`, the hardening defaults and no `restart`; in the managed golden it has `restart: unless-stopped` and only the `graph`, `deployment` and `job: wait` labels, and `managed.json` gains no image or secret for it; a golden with no revoke job has no `mp_jobs` → AC-6, AC-11, AC-12
+- [ ] Review `libs/render/testdata/whoami-postgres/docker-compose.yml`: `mp_jobs` depends on the revoke job with `service_completed_successfully`, uses its image, has `network_mode: none` and no `networks`, `init: true`, the hardening defaults and no `restart`; in the managed golden it has `restart: unless-stopped` and only the `graph`, `stack` and `job: wait` labels, and `managed.json` gains no image or secret for it; a golden with no revoke job has no `mp_jobs` → AC-6, AC-11, AC-12
 - [ ] `go test -race -count=1 -run TestGuardAcceptsEveryRender ./libs/render/` → the guard accepts the managed `mp_jobs`, and refuses `init: false`, `network_mode: host`, `network_mode: none` together with `networks`, and `restart: "no"` on it → AC-11
 - [ ] On a deployed stack with a revoke job, the deployer's live state shows no row for `mp_jobs` → AC-11
 - [ ] `go test -race -count=1 -run TestGuard$ ./libs/render/` → the cases `init on a module`, `no network on a module`, `an unknown job kind`, `a wait anchor on host`, `a wait anchor on a network`, `a wait anchor not restarted` and `init off` are refused; `the wait anchor` and `a revoke job restart no` are accepted (the refusals above run here, not in `TestGuardAcceptsEveryRender`) → AC-11
@@ -42,8 +42,8 @@ The spec now says how `up` waits (0014, *Waiting*: the wait anchor `mp_jobs`). R
 ### The client of a for_each step (task 9b)
 
 - [ ] `go test -race -count=1 -run TestModuleRules ./libs/contract/` → passes: `invalid_setup_step` for each refused case in 0013's *Critical test scenarios* (`{client}` with no `for_each` in env, command, entrypoint or writes; the four bad write forms; an undeclared folder; `asks` under `for_each`; the three bad `{provide}` reads; an `env` key `MP_INSTANCE`); a `for_each` step writing `client-digests/{client}` with `env: {CLIENT: "{client}"}` is accepted → AC-2
-- [ ] `go test -race -count=1 ./libs/contract/` → the paper platform still loads and plans: `authelia`'s `client-digest` step has `env: {CLIENT: "{client}"}`, writes `client-digests/{client}`, and no `MP_CLIENT` is left in `libs/contract/testdata/` → AC-16, AC-2
-- [ ] `task generate` leaves no diff after the `contracts/openapi/planner.yaml` description change → AC-2
+- [ ] `go test -race -count=1 ./libs/contract/` → the paper platform still loads and checks: `authelia`'s `client-digest` step has `env: {CLIENT: "{client}"}`, writes `client-digests/{client}`, and no `MP_CLIENT` is left in `libs/contract/testdata/` → AC-16, AC-2
+- [ ] `task generate` leaves no diff after the `contracts/openapi/renderer.yaml` description change → AC-2
 
 The `setup.sh` behavior (one run per client, skip per client, the empty folder, stale files kept) is checked with task 14 (0013, *Critical test scenarios*) → AC-10
 
@@ -57,7 +57,7 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 
 #### Commands
 
-- [ ] `go test -race -count=1 -run 'TestPlanInstallTime|TestBindingOrder' ./libs/planner/` → `setup_order` for a step reading a later step's output, a file the provider writes at run time (`{volume}`), a text field, a file you place for an external, and a client key a consumer's own step writes; none for steps in order; `env_name_collision` for `x` (`a--b`) and `x--a` (`b`), both `MP_X__A__B`; steps run providers first, ties by name → AC-10
+- [ ] `go test -race -count=1 -run 'TestCheckInstallTime|TestBindingOrder' ./libs/check/` → `setup_order` for a step reading a later step's output, a file the provider writes at run time (`{volume}`), a text field, a file you place for an external, and a client key a consumer's own step writes; none for steps in order; `env_name_collision` for `x` (`a--b`) and `x--a` (`b`), both `MP_X__A__B`; steps run providers first, ties by name → AC-10
 - [ ] `go test -race -count=1 -run 'TestEREPattern' ./libs/render/` → for every case `setup.sh`'s check (`printf` to an ERE, `LC_ALL=C grep -E`) accepts exactly the answers Go's `regexp` accepts, non ASCII answers included; word boundaries, a class of only some non ASCII characters, an empty match and a literal newline are refused with `ErrNotRendered` → AC-10
 - [ ] `go test -race -count=1 -run 'TestRenderInstallGolden|TestRenderManagedRefusesInstallTime' ./libs/render/` → the install golden matches; the managed flavor refuses a module that needs `setup.sh` (task 16 turns this into the 422 `setup_required`) → AC-10, AC-11
 - [ ] `go test -race -count=1 -tags e2e -run TestInstallSetup ./libs/render/` (needs Docker and `postgres:18.6`) → with answers piped in, the defaults fill (`origin` from the `domain` answer), `.env` holds each answer, secrets are written, steps run in the module's image with `{client}` replaced in env, command and file name while `${GREETING}` stays as written; a second run asks nothing and leaves every file's content, mode and mtime unchanged; a third client runs the `for_each` step once, for it only; an unbound client's file stays; with no client the folder exists, empty, and the step never runs; a wrong piped domain or an out of range port stops `setup.sh` naming the value; the project then starts with `up --wait` and `docker inspect` shows no secret value in any env → AC-10, AC-8
@@ -74,7 +74,7 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 
 ## Acceptance criteria coverage (milestone 3, task 14)
 
-- AC-10: planner order step, pattern step, golden review, e2e step and the manual terminal step · AC-8: e2e `docker inspect` step and the compose golden review · AC-11: the managed refusal for now (task 16 brings 422 `setup_required` and `host_access`)
+- AC-10: renderer order step, pattern step, golden review, e2e step and the manual terminal step · AC-8: e2e `docker inspect` step and the compose golden review · AC-11: the managed refusal for now (task 16 brings 422 `setup_required` and `host_access`)
 
 ### Templates (task 15)
 
@@ -82,7 +82,7 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 
 - [ ] `go test -race ./libs/contract/ -run 'TestTemplateRules|TestTemplatesAccepted|TestLoadTemplatesExecute'` → passes: a missing file, a parse error, a function that is not built in (`env`), `.Uses.nope`, `.Bogus`, `.Provides.api`, a secret field in `Values`, an unguarded optional slot, a consumer side field in `.Clients` and a broken key under own delims are each `invalid_template` at catalog load, and the entry is left out → AC-9, AC-2
 - [ ] `go test -race ./libs/render/ -run TestRenderTemplatesGolden` → the golden matches, a second render gives a byte identical zip, and a render without the templates fails with `ErrNoTemplate` → AC-9
-- [ ] `go test -race ./libs/planner/ -run TestPaperPlatform` and `go test -race ./catalog/` → the paper platform's templates and the built in catalog still load → AC-2, AC-16
+- [ ] `go test -race ./libs/check/ -run TestPaperPlatform` and `go test -race ./catalog/` → the paper platform's templates and the built in catalog still load → AC-2, AC-16
 - [ ] In `libs/render/testdata/templates/golden/`, `MP_UID=1000 MP_GID=1000 docker compose config -q` → exits 0 → AC-9
 
 #### Golden review (libs/render/testdata/templates/golden/)
@@ -106,9 +106,9 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 #### Commands
 
 - [ ] `go test -race ./libs/contract/ -run 'TestModuleRules|TestHostAccessEntry'` → passes: a publish port of 0, a host port of 70000, a `{config}` host port naming no int value, a relative or config naming no text value host path, `{install: ../etc}` and `{install: .}`, a `{config}` or relative container path, a container path mounted twice, and `create` on a plain host path are each refused; every form of `publish` and `host_mounts` together is accepted → AC-2
-- [ ] `go test -race ./libs/planner/ -run 'TestPlanHostAccess|TestPaperPlatform'` → passes: warning `host_access` at each instance that publishes or mounts, the plan stays ok with its digest; the paper platform warns at `deployer-docker` and `ingress` only → AC-11
+- [ ] `go test -race ./libs/check/ -run 'TestCheckHostAccess|TestPaperPlatform'` → passes: warning `host_access` at each instance that publishes or mounts, the resolved graph stays ok with its digest; the paper platform warns at `deployer-docker` and `ingress` only → AC-11
 - [ ] `go test -race ./libs/render/ -run 'TestRenderHostAccessGolden|TestRenderManagedRefuses|TestRefuse|TestGuard'` → passes: the managed flavor refuses `host_access` at `agent` and `edge` and `setup_required` at `alpha`, `beta` and `keeper`, rendering nothing; the guard accepts a template output and the templates render; for `cap_add` see the Linux capabilities steps below → AC-11, AC-12
-- [ ] `go test -race ./services/planner/internal/api/ -run TestRenderManagedRefuses` → `POST /v1/plan` answers 200 with warning `host_access`; `POST /v1/render/managed` answers 422, not ok, no digest, with error `setup_required` at `modules.ask` and error `host_access` at `modules.web`, the warning replaced → AC-11
+- [ ] `go test -race ./services/renderer/internal/api/ -run TestRenderManagedRefuses` → `POST /v1/check` answers 200 with warning `host_access`; `POST /v1/render/managed` answers 422, not ok, no digest, with error `setup_required` at `modules.ask` and error `host_access` at `modules.web`, the warning replaced → AC-11
 - [ ] `go test -race ./services/deployer-docker/internal/deploy/ -run 'TestApplySucceeds|TestApplyRefused'` → `config/app/routes.conf` is written 0644 in a 0755 folder; `config/a/b/c`, `config/a/..` and `config/A/x` are refused with `invalid_path` → AC-11
 - [ ] In `libs/render/testdata/host-access/golden/`, `MP_UID=1000 MP_GID=1000 docker compose config` → `edge` publishes 8080 and 9443 and joins `egress`; `agent` binds `/etc/hostname` read only and `/var/spool/agent` read write and joins `internal` only → AC-12
 
@@ -124,14 +124,14 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 
 ## Acceptance criteria coverage (milestone 3, task 16)
 
-- AC-11: the plan warning step, the managed refusal steps, the deployer path step and the host port and path value sourcing steps · AC-12: the render golden, the Compose config step and the managed user step · AC-2: the refused fixtures · `cap_add` on deployed graphs: decided by 0022, see tasks 16b and 16c below
+- AC-11: the check warning step, the managed refusal steps, the deployer path step and the host port and path value sourcing steps · AC-12: the render golden, the Compose config step and the managed user step · AC-2: the refused fixtures · `cap_add` on deployed graphs: decided by 0022, see tasks 16b and 16c below
 
 ### Linux capabilities on deployed graphs (tasks 16b and 16c, spec 0022)
 
 #### Commands
 
 - [ ] `go test -race ./libs/contract/ -run 'TestModuleRules|TestLinuxCapEntry|TestUndeployableLinuxCaps|TestModuleHostAccess'` → passes: `cap_add` of `net_bind_service` and `CAP_NET_BIND_SERVICE` are `invalid_hardening` at `hardening.cap_add.0` with `; write NET_BIND_SERVICE`, `ALL` says `ALL is not allowed here; name each Linux capability`, a second `NET_BIND_SERVICE` is refused at `.1` naming `.0`, `NOT_A_CAP` gets no suggestion; `SYS_ADMIN` and `CHECKPOINT_RESTORE` pass the catalog → AC-2
-- [ ] `go test -race ./libs/planner/ -run 'TestPlanHostAccess|TestPaperPlatform'` → passes: `admin` (`SYS_ADMIN`) warns `Instance admin adds the Linux capability SYS_ADMIN, so it reaches the host it runs on; a deployed graph refuses this.`; `gate` (publish plus `SYS_ADMIN`) gets one warning naming both; `low` (`NET_BIND_SERVICE` only) gets none; the paper platform still warns at `deployer-docker` and `ingress` only → AC-11
+- [ ] `go test -race ./libs/check/ -run 'TestCheckHostAccess|TestPaperPlatform'` → passes: `admin` (`SYS_ADMIN`) warns `Instance admin adds the Linux capability SYS_ADMIN, so it reaches the host it runs on; a deployed graph refuses this.`; `gate` (publish plus `SYS_ADMIN`) gets one warning naming both; `low` (`NET_BIND_SERVICE` only) gets none; the paper platform still warns at `deployer-docker` and `ingress` only → AC-11
 - [ ] `go test -race ./libs/render/ -run 'TestRenderManagedRefuses|TestRenderManagedRefusesLinuxCap'` → passes: the `linuxcap/refused.yaml` graph answers one `host_access` refusal at `modules.admin` and renders nothing in managed; the static render still writes `cap_add` with `SYS_ADMIN` → AC-11
 - [ ] `go test -race ./libs/render/ -run 'TestGuard$|TestLoadProjectRefusesBrokenFiles'` → passes: `cap_add: [NET_BIND_SERVICE]` and `[]` pass; `[SYS_ADMIN]`, `[net_bind_service]`, `[CAP_NET_BIND_SERVICE]` and `[ALL]` fail at `services.app.cap_add.0`, `[NET_BIND_SERVICE, SYS_ADMIN]` at `.1`; a string or null `cap_add` fails at load (the Compose schema stops it before the guard); a service, a provision job, a revoke job and `mp_jobs` without `cap_drop` or `security_opt` fail at that key; `cap_drop: [NET_RAW]`, `seccomp=unconfined` and `apparmor=unconfined` fail; `privileged` and `profiles` still fail → AC-21
 - [ ] `go test -race ./services/deployer-docker/internal/deploy/ -run TestApplyRefused` → passes: the deployer refuses a project adding `SYS_ADMIN` and one missing `cap_drop` with `host_access`, before it touches the folder or runs compose → AC-21
@@ -139,13 +139,13 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 
 #### Value sourcing
 
-- [ ] In `libs/render/testdata/linuxcap/catalog/modules/lowport/module.yaml` change `cap_add` to `[NET_BIND_SERVICE, CHOWN]` and run the planner test → `low` now warns `adds the Linux capability CHOWN`, so the refused names come from `UndeployableLinuxCaps` of the entry; revert → AC-11 (names a deployed graph refuses)
+- [ ] In `libs/render/testdata/linuxcap/catalog/modules/lowport/module.yaml` change `cap_add` to `[NET_BIND_SERVICE, CHOWN]` and run the check test → `low` now warns `adds the Linux capability CHOWN`, so the refused names come from `UndeployableLinuxCaps` of the entry; revert → AC-11 (names a deployed graph refuses)
 - [ ] Change `DeployableLinuxCap` in `libs/contract/linuxcap.go` to also admit `CHOWN` and run `TestGuard` → the `SYS_ADMIN` cases still fail, so the guard reads the same single source; revert → AC-21 (whether an item may pass)
 - [ ] Run the e2e with `cap_add: []` on `lowport` → `CapEff` is `0000000000000000`, so bit 10 comes from the admitted name alone; revert → AC-21 (the expected `CapEff`)
 
 ## Acceptance criteria coverage (milestone 3, tasks 16b and 16c)
 
-- AC-2: the `cap_add` catalog rule step · AC-11: the plan warning step, the managed refusal step and the first value sourcing step · AC-21: the guard step, the deployer step, the e2e step and the last two value sourcing steps
+- AC-2: the `cap_add` catalog rule step · AC-11: the check warning step, the managed refusal step and the first value sourcing step · AC-21: the guard step, the deployer step, the e2e step and the last two value sourcing steps
 
 ## Milestone 3b: slot fields (0025, task 16d)
 
@@ -156,23 +156,23 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 - [ ] Start a module on the sdk with a bound slot holding a required field unset, an `int` field `abc`, an enum miss, a missing secret file and a plain text certificate file → one line each, `config: uses.<slot>.<field> (<ENV>): <code>: <message>`, sorted, exit 1, no `config loaded` line (`TestFieldBindingProblems`) → AC-23
 - [ ] Start it with the slot bound → the `config loaded` line's `values` lists `uses.<slot>.<field>` as `binding` or `unset`, and no secret or PEM content shows in any log line → AC-23
 - [ ] A `BindingResolver` answer with a missing required field, a text `port`, a pattern miss, an enum miss, a non PEM certificate or an unmapped field → the getter returns an error that is not `ErrCallerSource` and no value; a resolver slower than 200 ms → `ErrCallerSource` (`TestFieldBindingResolver`) → AC-23
-- [ ] `go test -race -run TestStartRefused ./services/planner/internal/api/` → internal mode without `MP_PLATFORM_HTTP_PORT` logs exactly `config: uses.ingress (MP_PLATFORM_HTTP_PORT): missing: internal mode needs the ingress binding`; with only the HTTP port set, `uses.ingress.https_port` is `missing` → AC-24
-- [ ] Start `planner` in public mode with no `MP_PLATFORM_*` env (as `deploy/online/compose.yaml` does) → it starts → AC-24
+- [ ] `go test -race -run TestStartRefused ./services/renderer/internal/api/` → internal mode without `MP_PLATFORM_HTTP_PORT` logs exactly `config: uses.ingress (MP_PLATFORM_HTTP_PORT): missing: internal mode needs the ingress binding`; with only the HTTP port set, `uses.ingress.https_port` is `missing` → AC-24
+- [ ] Start `renderer` in public mode with no `MP_PLATFORM_*` env (as `deploy/online/compose.yaml` does) → it starts → AC-24
 - [ ] `go test -race -run 'TestReadSettings|TestNoOldClientID' ./services/api/internal/api/` → `MP_BASE_PATH` empty starts at the site root, `/platform` sets the base path and redirect URL, `MP_OIDC_ISSUER` unset is `config: uses.oidc.issuer (MP_OIDC_ISSUER): missing`, and `mp-api` appears only in `deploy/managed/` → AC-24
-- [ ] `grep -n "platform-http-port\|platform-https-port\|oidc-issuer\|oidc-client\|oidc-ca\|public-origin\|base-path\|admin-email" catalog/modules/{api,planner,deployer-docker}/module.yaml` → no match → AC-24
+- [ ] `grep -n "platform-http-port\|platform-https-port\|oidc-issuer\|oidc-client\|oidc-ca\|public-origin\|base-path\|admin-email" catalog/modules/{api,renderer,deployer-docker}/module.yaml` → no match → AC-24
 - [ ] `task smoke:managed` → `@deploy` passes (install, sign in through the `oidc` slot, deploy). The `@after-restart` remove step fails the same way on commit 2a9ee81, before this change → AC-24
 
 ### Value sourcing
 - [ ] SDK start, a slot field's value: set `TM_REALM_PORT=9443` in an env file listed in `MP_ENV_FILE` instead of the process env → `Realm().Port` is 9443; set it in both → the process env wins
 - [ ] SDK start, slot bound or not: set only `TM_REALM_HINT` → the start is refused with a `missing` line for each required realm field; set none, or every one to empty → unbound, no line
 - [ ] SDK call, a slot field for a caller: a resolver answer for `alice` → `alice` gets it, `bob` and a call with no caller get the start values, and a second call for `alice` does not ask the resolver again
-- [ ] `planner` start, platform ports: internal mode with `MP_PLATFORM_HTTP_PORT=8080` → `POST /v1/render/managed` of a graph that publishes host port 8080 is refused as reserved, and port 80 is no longer reserved
+- [ ] `renderer` start, platform ports: internal mode with `MP_PLATFORM_HTTP_PORT=8080` → `POST /v1/render/managed` of a graph that publishes host port 8080 is refused as reserved, and port 80 is no longer reserved
 - [ ] `deployer-docker` start: without `MP_PLATFORM_HTTP_PORT` → `config: uses.ingress.http_port (MP_PLATFORM_HTTP_PORT): missing`, exit 1
 - [ ] `api` start, origin, base path, issuer, client id, client secret, CA, admin email: change each env name in `deploy/managed/compose.yaml` one at a time → api reads the new value (the redirect URL follows `MP_PUBLIC_ORIGIN` and `MP_BASE_PATH`); `MP_OIDC_CA_FILE` naming a file with no certificate → `config: uses.oidc.ca (MP_OIDC_CA_FILE): invalid`
 
 ## Acceptance criteria coverage (milestone 3b, task 16d)
 
-- AC-22: the first three command steps · AC-23: the next three command steps and the first three value sourcing steps · AC-24: the planner, api, catalog and smoke steps and the last three value sourcing steps
+- AC-22: the first three command steps · AC-23: the next three command steps and the first three value sourcing steps · AC-24: the renderer, api, catalog and smoke steps and the last three value sourcing steps
 
 ## Milestone 3b, task 5 of 0025: non SDK values as `.env` variables, the `.env` check (updated 2026-11-06)
 
@@ -205,17 +205,17 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 
 - [ ] `go test -race -count=1 -run 'TestCanonicalRoundTrip|TestConfigText|TestDecodeGraphRejects' ./libs/contract/` → passes: `config-set`, `config-problems` and `config-quotes` round trip byte for byte; each config value is written double quoted, `config: {}` and `config: null` are left out, a long line is never wrapped; `port: 5432`, `on: yes`, a null value and a list are `invalid_graph`; a v0alpha1 graph with `config` is `invalid_graph` at `modules.a.config` → AC-27
 - [ ] `pnpm --dir web exec vitest run src/test/yaml.test.ts` → the editor's writer gives the same bytes for every fixture, the config ones included, and leaves an empty or null `config` out → AC-27
-- [ ] `go test -race -count=1 -run 'TestPlan$|TestGraphTextRule|TestConfigMessages|TestConfigInDigest' ./libs/planner/` → `config-problems` gives one problem per path in the AC-27 order (`unknown_config`, `invalid_config` for `{`, `12`, `medium` and an empty required value, `config_not_settable` for the secret set to `{`, the `{uid}` value and the `host_mounts` source, `config_not_allowed` on the external, `missing_config` as an error on a non SDK instance and a warning on the SDK one); `"q"`, `'q'`, `""`, `"é"` and a tab are `invalid_config` on both runtimes while ` "q"`, `"q`, `a"b`, `"q'`, `"`, `yes` and `0x1` plan ok; messages name the rule, never the text; a changed value changes the digest → AC-27
+- [ ] `go test -race -count=1 -run 'TestCheck$|TestGraphTextRule|TestConfigMessages|TestConfigInDigest' ./libs/check/` → `config-problems` gives one problem per path in the AC-27 order (`unknown_config`, `invalid_config` for `{`, `12`, `medium` and an empty required value, `config_not_settable` for the secret set to `{`, the `{uid}` value and the `host_mounts` source, `config_not_allowed` on the external, `missing_config` as an error on a non SDK instance and a warning on the SDK one); `"q"`, `'q'`, `""`, `"é"` and a tab are `invalid_config` on both runtimes while ` "q"`, `"q`, `a"b`, `"q'`, `"`, `yes` and `0x1` check ok; messages name the rule, never the text; a changed value changes the digest → AC-27
 - [ ] `go test -race -count=1 ./sdk/manifest/ ./libs/contract/` → the catalog case `enum value in matching quotes` is `invalid_rule` at `config.mode.values.1` in both checkers → AC-27
 - [ ] `go test -race -count=1 -run 'TestRenderGraphConfigGolden|TestGraphValuesReachTheService|TestSDKGraphValuesRoundTrip' ./libs/render/` → in `testdata/graph-config/golden/docker-compose.yml` each graph value is the variable's default (`$` as `$$`), `TELLER_MOTD` is `${MP_TELLER__MOTD:-}` (empty on purpose), the asked `mode` and `origin` the graph leaves out stay bare; compose-go reads `TELLER_NOTE` as `a'b`, `TELLER_MOTTO` as `$x`, `TELLER_TAGLINE` as `a #b`, and a `.env` line still wins; `config/tally.env` holds `TALLY_GREETING=a"b` and `TALLY_NOTE="q` uncommented and `sdk/envfile` reads them back unchanged → AC-25, AC-27
 - [ ] `go test -race -count=1 -run 'TestSetupGraphAnswers|TestManagedGraphAnswersSetup' ./libs/render/` → `setup.sh` asks only `mode` and `origin`, prints `set by the graph  MP_TELLER__NOTE=a'b` (and the same for `$x`, `a #b`, `example.org`), writes none of them into `.env`, defaults `origin` to `https://example.org`, and hands every text to the setup step as typed in `MP_ASK_<V>`; with `MP_TELLER__DOMAIN='other.org'` in `.env` it prints `.env overrides the graph  MP_TELLER__DOMAIN` and the origin default follows `other.org`; a managed render of `simple` with `domain` set is not refused, without it `setup_required` → AC-28, AC-11, AC-10
 - [ ] `pnpm --dir web exec vitest run src/test/inspector-config.test.tsx src/test/edit.test.ts` → the Config section lists `label`, `level`, `mode`, `verbose` (no secret, `{uid}` or host path value), typing writes on Enter only, clearing removes the key and then `config`, an `invalid_config` problem shows once, under its field, an unknown key shows in *Unknown values* with a working remove button, and an external instance has no Config section → AC-29
-- [ ] `task smoke` → `a config value set in the inspector reaches the downloaded zip` passes: the plan request holds `config: {proxy-hops: "2"}`, the zip's `config/planner.env` holds `MP_PROXY_HOPS=2` and its `graph.yaml` `proxy-hops: "2"` → AC-29
-- [ ] `go test -race -count=1 -run 'TestPaperPlatform|TestPaperCaddyfile' ./libs/planner/` → the platform graph (with `planner-mode: "internal"`) plans ok with only the two `host_access` warnings; the Caddyfile holds both snippets, `import tls-{$MP_TLS_MODE}` and one `reverse_proxy {$MP_WEB_UPSTREAM:http://web.modular-platform.internal:8080}`; the caddy entry declares no `web-upstream` → AC-30
+- [ ] `task smoke` → `a config value set in the inspector reaches the downloaded zip` passes: the check request holds `config: {proxy-hops: "2"}`, the zip's `config/renderer.env` holds `MP_PROXY_HOPS=2` and its `graph.yaml` `proxy-hops: "2"` → AC-29
+- [ ] `go test -race -count=1 -run 'TestPaperPlatform|TestPaperCaddyfile' ./libs/check/` → the platform graph (with `renderer-mode: "internal"`) checks ok with only the two `host_access` warnings; the Caddyfile holds both snippets, `import tls-{$MP_TLS_MODE}` and one `reverse_proxy {$MP_WEB_UPSTREAM:http://web.modular-platform.internal:8080}`; the caddy entry declares no `web-upstream` → AC-30
 
 ### UI / manual
 
-- [ ] `task dev`, open a graph file with a `planner` instance, select it → the inspector shows Config with `planner-mode` (a select: Not set, public, internal), `planner-rate` and `proxy-hops` (text, placeholder the default); set `proxy-hops` to `abc`, press Enter → after the plan, `Config value proxy-hops of instance planner: "abc" is not a whole number.` shows under the field and the field has a danger border; Undo restores the field → AC-29
+- [ ] `task dev`, open a graph file with a `renderer` instance, select it → the inspector shows Config with `renderer-mode` (a select: Not set, public, internal), `renderer-rate` and `proxy-hops` (text, placeholder the default); set `proxy-hops` to `abc`, press Enter → after the resolved graph, `Config value proxy-hops of instance renderer: "abc" is not a whole number.` shows under the field and the field has a danger border; Undo restores the field → AC-29
 - [ ] Same screen with the keyboard only: Tab reaches each field, Enter writes, the select opens with arrow keys; `/design` shows the TextField states in both themes → AC-29
 
 ### Value sourcing
@@ -223,47 +223,47 @@ The `setup.sh` behavior (one run per client, skip per client, the empty folder, 
 - [ ] Render, a non SDK value's default: set `level: "debug"` in the graph and no `.env` line → `TELLER_LEVEL` is `debug`; remove it from the graph → the catalog default `info`; an optional value with neither → empty → AC-25
 - [ ] Render, an SDK env file line: a graph value → `<ENV>=<text>`; none → the commented default → AC-27
 - [ ] `setup.sh`, a value set by the graph: the default baked into the Compose line and the `graph_set` line match the graph text byte for byte, `'` and `$` included → AC-28
-- [ ] Plan, the config problems: change the entry (drop a value the graph sets) → `unknown_config` at that path, and the inspector moves it to *Unknown values* → AC-27, AC-29
+- [ ] Check, the config problems: change the entry (drop a value the graph sets) → `unknown_config` at that path, and the inspector moves it to *Unknown values* → AC-27, AC-29
 - [ ] Editor, settable values and defaults: a catalog value with `default: "{uid}"` or named by `host_mounts` never shows a field → AC-29
 
 ### Acceptance-criteria coverage
 
-- AC-25: the graph-config golden and compose-go steps, first value sourcing step · AC-27: the contract, writer, planner, catalog and SDK env file steps · AC-28: the setup.sh and managed steps · AC-29: the inspector Vitest, smoke and manual steps · AC-30: the paper platform step · AC-10, AC-11: the setup.sh and managed steps
+- AC-25: the graph-config golden and compose-go steps, first value sourcing step · AC-27: the contract, writer, renderer, catalog and SDK env file steps · AC-28: the setup.sh and managed steps · AC-29: the inspector Vitest, smoke and manual steps · AC-30: the paper platform step · AC-10, AC-11: the setup.sh and managed steps
 
 ## Milestone 4: the platform is a graph, tasks 17 to 19 (updated 2026-11-06)
 
 ### Commands
 
 - [ ] `go test -race ./libs/render/ -run 'Platform'` → the platform golden in `libs/render/testdata/platform/` matches (Compose file, `setup.sh`, `.env.example`, README, `graph.yaml`, one golden per rendered template), two renders give byte identical zips, the static render refuses `{install}` with `ErrNotRendered`, and the managed render refuses `host_access` at `ingress` and `deployer-docker` and `setup_required` at `authelia` and `cert-issuer` → AC-16, AC-9, AC-11
-- [ ] `go test -race ./libs/planner/ -run TestPlatformGraph` → the eight platform modules are built in entries, `deploy/managed/graph.yaml` plans `ok` with warnings `host_access` at `ingress` and `deployer-docker` only, the 14 bindings sit where 0015 puts them, and the file is in canonical form → AC-16
+- [ ] `go test -race ./libs/check/ -run TestPlatformGraph` → the eight platform modules are built in entries, `deploy/managed/graph.yaml` checks `ok` with warnings `host_access` at `ingress` and `deployer-docker` only, the 14 bindings sit where 0015 puts them, and the file is in canonical form → AC-16
 - [ ] `task managed:render`, then `ls -a build/managed` → `docker-compose.yml`, `config/`, `setup.sh`, `.env.example`, `README.md`, `graph.yaml`, and no `.env`; running it twice and diffing the folders shows no change → AC-16
 - [ ] `ls -a deploy/managed` → only `graph.yaml`, `compose.dev.yaml`, `compose.ci.yaml` and `README.md`: `compose.yaml`, `setup.sh`, `db-init/`, `Caddyfile`, `authelia/`, `cert-issuer/` and `.env.example` are gone → AC-16
 - [ ] `task managed:zip VERSION=0.0.0`, then `unzip -l dist/modular-platform-0.0.0.zip` → every file under `modular-platform-0.0.0/` is one of `build/managed/` → AC-16
 - [ ] `task images IMAGE_TAG=ci && SMOKE_DOCKER_RESTART=1 task smoke:managed` → `smoke-managed passed`: install with the rendered `setup.sh` (domain, empty origin, admin email, user name, password), the eight services healthy and the two provision jobs and the revoke job exited 0, sign in through Authelia, deploy the sample, running again after the Docker restart, remove with *Delete data too*, no secret in any log → AC-16
 - [ ] `go test -race ./sdk/ -run TestCallerEndToEnd` → a token signed with a second key, one the provider holds for another consumer, sent with the caller's binding token, is 401 `invalid_token`; the caller's own token passes → AC-18
 - [ ] `go test -race ./sdk/caller/ -run 'TestLoadKeys|TestGenerateKeyPair'` → the caller keys directory follows the token clients directory's entry rules, a token is checked only against its own consumer's keys, and `api caller-key generate`'s pair verifies → AC-18
-- [ ] `grep -rn MP_CALLER_KEY_FILE --include='*.go' --include='*.md' sdk services libs` → no hit; `grep -n MP_CALLER_KEYS_DIR build/managed/docker-compose.yml` → set on `planner` and `deployer-docker`, each with `api`'s public key mounted at `/run/secrets/clients/<provide>/caller_key/api` → AC-18
+- [ ] `grep -rn MP_CALLER_KEY_FILE --include='*.go' --include='*.md' sdk services libs` → no hit; `grep -n MP_CALLER_KEYS_DIR build/managed/docker-compose.yml` → set on `renderer` and `deployer-docker`, each with `api`'s public key mounted at `/run/secrets/clients/<provide>/caller_key/api` → AC-18
 
 ### Value sourcing
 
 - [ ] `api`'s `MP_OIDC_ISSUER` in `build/managed/docker-compose.yml` is `${MP_INGRESS__ORIGIN}${MP_INGRESS__BASE_PATH:-}/auth` (`{uses: public, format}` through `authelia`); set `MP_INGRESS__BASE_PATH='/platform'` in `.env` and check sign in still lands on `<origin>/platform/auth`
 - [ ] `api`'s `MP_OIDC_CA_FILE` is `/run/volumes/oidc/ca/root.crt` with `./data/ingress/data/caddy/pki/authorities/local` mounted read only (a `{volume}` source passed through `{uses, field}`), and `setup.sh` creates that folder before `up`
-- [ ] `MP_PLANNER_URL` and `MP_DEPLOY_TARGET_URL` are `https://<instance>.modular-platform.internal:8443`, and `MP_*_CA_FILE` is `cert-issuer`'s `root-ca` (SDK TLS from the bound `acme` slot)
-- [ ] `MP_DEPLOYMENTS_DIR` and `deployer-docker`'s deployments mount are `${MP_DIR}/deployments` on both sides, and `setup.sh` writes `MP_DIR` as the folder it sits in; run `setup.sh` from a folder whose path holds `'` → it stops with a message
+- [ ] `MP_RENDERER_URL` and `MP_DEPLOY_TARGET_URL` are `https://<instance>.modular-platform.internal:8443`, and `MP_*_CA_FILE` is `cert-issuer`'s `root-ca` (SDK TLS from the bound `acme` slot)
+- [ ] `MP_DEPLOYMENTS_DIR` and `deployer-docker`'s stacks mount are `${MP_DIR}/stacks` on both sides, and `setup.sh` writes `MP_DIR` as the folder it sits in; run `setup.sh` from a folder whose path holds `'` → it stops with a message
 - [ ] the question order follows the binding order: answer the domain `example.test` and an empty origin → `.env` holds `MP_INGRESS__ORIGIN='https://example.test'`
 
 ### Build findings (0015, *Milestone 4 build findings*)
 
-- [ ] `go run ./catalog/cmd/render-platform -out build/managed -image-tag ci`, then `grep -n "image:" build/managed/docker-compose.yml` → `api`, `planner`, `deployer-docker` and `web` end in `:ci`; `caddy`, `authelia`, `step-ca` and `postgres` keep their catalog tags; without `-image-tag` the four take the catalog's release tag
-- [ ] Point `-graph` at a copy of the platform graph with one binding removed → it prints the plan problem, exits 1, and `build/managed` is unchanged
+- [ ] `go run ./catalog/cmd/render-platform -out build/managed -image-tag ci`, then `grep -n "image:" build/managed/docker-compose.yml` → `api`, `renderer`, `deployer-docker` and `web` end in `:ci`; `caddy`, `authelia`, `step-ca` and `postgres` keep their catalog tags; without `-image-tag` the four take the catalog's release tag
+- [ ] Point `-graph` at a copy of the platform graph with one binding removed → it prints the check problem, exits 1, and `build/managed` is unchanged
 - [ ] `grep -n -A3 "cap_add" build/managed/docker-compose.yml` → `deployer-docker` has `CHOWN`, `DAC_OVERRIDE`, `FOWNER` and `cap_drop: [ALL]`; `ingress`, `web` and `cert-issuer` have `NET_BIND_SERVICE` only; `go run ./catalog/cmd/render-platform -out build/managed 2>&1 | grep host_access` → the warning at `deployer-docker` names the three
 - [ ] Copy `build/managed` to a scratch folder and run `setup.sh` there; run `task managed:zip VERSION=0.0.0`, unzip it, and copy the contents of its `modular-platform-0.0.0/` folder over the scratch folder → `.env` is byte identical (the zip holds only `.env.example`) → AC-25's platform part, open since 0025 task 5
-- [ ] `task dev:managed`, stop it with Ctrl-C, run it again → the second run prints no password line, and `.env`, `secrets/`, `data/` and `deployments/` in `.dev/managed` are unchanged
+- [ ] `task dev:managed`, stop it with Ctrl-C, run it again → the second run prints no password line, and `.env`, `secrets/`, `data/` and `stacks/` in `.dev/managed` are unchanged
 - [ ] In a scratch copy of `build/managed`, `printf 'x.test\n\na@b.co\nAdmin!\nlongenough12\n' | sh setup.sh`, then the same with user `admin` and the password `short11char` → each time the `users` step stops with its message and writes no `secrets/authelia/users`
 
 ### Acceptance-criteria coverage
 
-- AC-16: the golden, planner, render, folder, zip and smoke steps, and the build findings steps · AC-18: the SDK caller steps and the `MP_CALLER_KEYS_DIR` check · AC-9, AC-11: the golden's refusal checks · AC-25: the platform `.env.example` step under build findings
+- AC-16: the golden, renderer, render, folder, zip and smoke steps, and the build findings steps · AC-18: the SDK caller steps and the `MP_CALLER_KEYS_DIR` check · AC-9, AC-11: the golden's refusal checks · AC-25: the platform `.env.example` step under build findings
 
 ## Milestone 5: TLS for unchanged providers, tasks 20 and 21 (updated 2026-11-06)
 
@@ -272,7 +272,7 @@ _AC-17 was not covered before this milestone. It changes two numbers in the mile
 ### Commands
 
 - [ ] `go test -race -count=1 ./libs/render/ -run 'TestPostgresCertificateJob|TestPostgresWithoutCertificate|TestManagedRefusesJobOutputs|TestRenderPlatformGolden'` → passes: the certificate job asks for `postgres.modular-platform.internal` and writes `/out/cert` and `/out/key` through bind mounts, `postgres` starts only after it, `api` connects with `verify-full` and the internal root, `setup.sh` makes the two files with `new_output`, `pg_hba.conf` has `hostssl` lines only; with `postgres.tls` unbound there is no job, `sslmode` is `disable` and `pg_hba.conf` has `host` lines; a deployed graph with a certificate output is `ErrNotRendered` → AC-17
-- [ ] `go test -race -count=1 ./libs/planner/ -run TestPlatformGraph` → passes with `postgres.tls cert-issuer.certs` among the 15 bindings → AC-17, AC-16
+- [ ] `go test -race -count=1 ./libs/check/ -run TestPlatformGraph` → passes with `postgres.tls cert-issuer.certs` among the 15 bindings → AC-17, AC-16
 - [ ] `task images IMAGE_TAG=ci && task smoke:managed` (run it in the background, with `</dev/null` and a timeout) → `smoke-managed passed`, which now includes its `tls_checks` step: a plain connection to `postgres` is refused, `api` and `authelia` show `ssl = t` in `pg_stat_ssl`, the server certificate has more than 60 days left, a certificate replaced by one with 10 days left is reissued by the next `up` with a new serial and `postgres` keeps its start time, and the log scan still finds no secret value (the `*_cert` file is skipped as public, `uses_tls_key` is checked) → AC-17, AC-16
 - [ ] `grep -n -B2 -A12 "new_output" libs/render/testdata/platform/setup.sh` → `new_output secrets/postgres/uses_tls_cert` and `..._key` are listed after the module secrets, the function makes an empty file with mode 0600 (`umask 077` at the top of the script) and keeps an existing one → AC-17
 - [ ] Unzip `build/managed` into a scratch folder, run `setup.sh`, `docker compose up -d --wait` twice → the second `up` prints `has more than 30 days left: kept` in `docker compose logs cert-issuer_provision_postgres_tls`, and `sha256sum secrets/postgres/uses_tls_cert` is the same before and after → AC-17
@@ -287,4 +287,4 @@ _AC-17 was not covered before this milestone. It changes two numbers in the mile
 
 ### Acceptance-criteria coverage
 
-- AC-17: the render tests, the planner test, `smoke-managed`'s `tls_checks` (plain refused, TLS on `api` and `authelia`, 90 day certificate, reissue and reload without a restart, second `up` keeps the file), and the value sourcing steps · AC-16: the planner test and the smoke job with the derived job count
+- AC-17: the render tests, the check test, `smoke-managed`'s `tls_checks` (plain refused, TLS on `api` and `authelia`, 90 day certificate, reissue and reload without a restart, second `up` keeps the file), and the value sourcing steps · AC-16: the check test and the smoke job with the derived job count

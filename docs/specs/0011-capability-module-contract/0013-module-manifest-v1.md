@@ -75,7 +75,7 @@ healthcheck:
 | | `client` | `http`, `postgresql`, `s3` or absent, sdk only (0005). Each kind needs its fields mapped: `http` url and, if the capability has `token`, token; `postgresql` url, database, user, password; `s3` url, bucket, access_key_id, secret_access_key |
 | | `env.<f>` | env name for a field; for a `secret` or `certificate` field the env gets the file path |
 | | `files.<f>` | absolute path to mount a `secret` or `certificate` field at, for images that read a fixed path; may be combined with `env` |
-| | `fields.<f>` | consumer side source for a `to_provider` field: `{secret: <name>}` (one of its own secrets, file fields), `{value: X}`, or `{platform: url \| host \| port, provide: <own provide>}` (text fields, plan time) |
+| | `fields.<f>` | consumer side source for a `to_provider` field: `{secret: <name>}` (one of its own secrets, file fields), `{value: X}`, or `{platform: url \| host \| port, provide: <own provide>}` (text fields, check time) |
 | `config.<v>` | 0005's fields | plus `setup: ask` (setup.sh asks it, see *Install time*). A `default` may be exactly `{uid}` or `{gid}` (the setup user, rendered as `${MP_UID}` or `${MP_GID}`) or start with `{install}/` (platform flavor, `${MP_DIR}/...`); such a value is rendered as an env value, not as an env file line |
 | `secrets[*]` | `name`, `description` | required; name unique with config value names. A `name` ending in `/` is a folder a setup step writes (needs `from: setup` and `mount`, no `env`) |
 | | `from` | `generate` (default, 32 random bytes hex), `ask` (asked without echo), `setup` (a setup step writes it) |
@@ -88,21 +88,21 @@ healthcheck:
 | `network` | `egress`, `aliases` | `egress: true` joins the egress network; `aliases` lists `{config: <value>}` names added on every network |
 | `hardening` | `user`, `writable_root`, `cap_add`, `tmpfs` | `user: root` or `user: image` (keep the image's user); `writable_root: true`; `cap_add` Linux capability names (upper case, no `CAP_`; a deployed graph may add only `NET_BIND_SERVICE`, 0022); `tmpfs` paths (not an opt out) |
 
-**Field sources** (on a provide; values a template may read are marked *plan*):
+**Field sources** (on a provide; values a template may read are marked *check*):
 
 | Source | Value | When |
 |---|---|---|
-| `{platform: host}` | the provider's host name `<i>.<graph>.internal` | *plan* |
-| `{platform: port}` | the provide's `port`; for sdk 8080 plain or 8443 when its `acme` slot is bound | *plan* |
-| `{platform: url}`, optional `path: /p` | `<scheme>://<host>:<port>` plus `path` when given; for sdk `http` or `https` by its TLS state | *plan*; needs the capability's `scheme` (sdk excepted) |
+| `{platform: host}` | the provider's host name `<i>.<graph>.internal` | *check* |
+| `{platform: port}` | the provide's `port`; for sdk 8080 plain or 8443 when its `acme` slot is bound | *check* |
+| `{platform: url}`, optional `path: /p` | `<scheme>://<host>:<port>` plus `path` when given; for sdk `http` or `https` by its TLS state | *check*; needs the capability's `scheme` (sdk excepted) |
 | `{platform: ca}` | the `ca` file of the provider's own bound `acme` or `tls-certificate` slot; absent when neither is bound (the field must be optional) | file |
-| `{platform: tls, on: X, off: Y}` | `X` when the provider serves TLS (as for `ca`), else `Y` | *plan* |
-| `{value: X}` | the literal (checked against the field's type and pattern) | *plan* |
+| `{platform: tls, on: X, off: Y}` | `X` when the provider serves TLS (as for `ca`), else `Y` | *check* |
+| `{value: X}` | the literal (checked against the field's type and pattern) | *check* |
 | `{config: v}` | the provider's config value `v`; for an asked value the Compose variable (0011 naming), so a template cannot read it | run time |
 | `{config: v, format: "https://{}"}` | the format with `{}` replaced by that value | run time |
 | `{secret: n}` | the provider's own secret file `secrets/<p>/<n>` | file |
 | `{generate: true}` | a per binding file, 32 random bytes hex, made by `setup.sh` (static, platform) or the deployer (managed) | file |
-| `{platform: consumer}` | the consumer's instance name, per binding (an OIDC client id) | *plan* |
+| `{platform: consumer}` | the consumer's instance name, per binding (an OIDC client id) | *check* |
 | `{uses: <slot>, field: <f>}` | that field of the provider's own binding on `<slot>`, text or file, passed through | as that field |
 | `{uses: <slot>, format: "{origin}{base_path}/auth"}` | the format with each `{field}` replaced by that field of the provider's own binding on `<slot>` (text fields only). A field that binding does not give is empty, with no error. When any field it names is a Compose variable, the result is one too, with the literal parts escaped | as the fields it names |
 | `{volume: <name>, path: <relative file>}` | a file the provider writes into its own data folder (Caddy's local root CA); the consumer gets the containing folder mounted read only at `/run/volumes/<s>/<f>/` and its env the file path in it, so the file may appear after start; the consumer depends on the provider being healthy | file |
@@ -117,9 +117,9 @@ For instance `i` (module entry `e`) in graph `g`, besides 0002's and 0005's rule
 
 **Hardening defaults**: `read_only: true`, `cap_drop: [ALL]`, `security_opt: [no-new-privileges:true]`, `user: "${MP_UID}:${MP_GID}"`, `restart: unless-stopped` (managed and platform; static as today). `hardening.user: root` writes `user: "0:0"`, `image` omits `user`; `writable_root` omits `read_only`; `cap_add` and `tmpfs` are copied. A read only root means an image that writes anywhere outside its volumes needs a `tmpfs` entry (most need `/tmp`; Postgres needs `/var/run/postgresql`) or `writable_root` (Authelia writes `/app/.healthcheck.env`). The managed flavor's `MP_UID` and `MP_GID` are the deployer's `platform-uid` and `platform-gid`, which it writes into the project's `.env` at apply (0007 already passes them).
 
-**Labels** (managed and platform flavors): every service gets 0006's `graph`, `instance`, `module` and `deployment` labels; a job service gets the `instance` and `module` of its provisioner instance plus `io.github.racherom.modular-platform.job` set to `provision` or `revoke`; the wait anchor `mp_jobs` (0014) gets only `graph`, `deployment` and `job: wait`. The deployer's guard allows that one key, with the values `provision`, `revoke` and `wait`.
+**Labels** (managed and platform flavors): every service gets 0006's `graph`, `instance`, `module` and `stack` labels; a job service gets the `instance` and `module` of its provisioner instance plus `io.github.racherom.modular-platform.job` set to `provision` or `revoke`; the wait anchor `mp_jobs` (0014) gets only `graph`, `stack` and `job: wait`. The deployer's guard allows that one key, with the values `provision`, `revoke` and `wait`.
 
-**Volumes**: `volumes.<n>` mounts the folder `./data/<i>/<n>` (created by `setup.sh` as you, mode 0700, or by the deployer in the deployment folder) at the path. No named Compose volumes, so a non root module owns its data and *Delete data too* (0006) removes the folder.
+**Volumes**: `volumes.<n>` mounts the folder `./data/<i>/<n>` (created by `setup.sh` as you, mode 0700, or by the deployer in the stack folder) at the path. No named Compose volumes, so a non root module owns its data and *Delete data too* (0006) removes the folder.
 
 **Binding delivery** (consumer `c`, slot `s`, provider `p`, provide `q`, capability `C`):
 - non file field with `env`: the env value.
@@ -128,7 +128,7 @@ For instance `i` (module entry `e`) in graph `g`, besides 0002's and 0005's rule
 - `to_provider` and `both` fields on the provider: mounted at `/run/secrets/clients/<q>/<f>/<c>`, and the provide's `env.<f>` gets `/run/secrets/clients/<q>/<f>`. The SDK's clients directory reader (0005) reads the `token` directory unchanged in behavior.
 - `depends_on`: 0002's rule toward `p`, or toward the provision job for a provisioned binding (0014).
 
-**Asked values**: a config value with `setup: ask` becomes the Compose variable `MP_<I>__<V>` (instance and value upper cased, `-` as `_`). The service env gets `<ENV>: ${MP_<I>__<V>}`; `publish`, `host_mounts` and `network.aliases` that name it use the same variable. Two values mapping to one variable name (possible with `--` in names) is a planner error `env_name_collision`. An asked `secret` value becomes `secrets/<i>/<v>` with `<ENV>_FILE`, like a generated one. A config value that is not asked but is named by `publish`, `host_mounts`, `network.aliases` or a `{config}` field source also becomes that variable, written `${MP_<I>__<V>:-<default>}`, so you can override it in `.env`.
+**Asked values**: a config value with `setup: ask` becomes the Compose variable `MP_<I>__<V>` (instance and value upper cased, `-` as `_`). The service env gets `<ENV>: ${MP_<I>__<V>}`; `publish`, `host_mounts` and `network.aliases` that name it use the same variable. Two values mapping to one variable name (possible with `--` in names) is a check error `env_name_collision`. An asked `secret` value becomes `secrets/<i>/<v>` with `<ENV>_FILE`, like a generated one. A config value that is not asked but is named by `publish`, `host_mounts`, `network.aliases` or a `{config}` field source also becomes that variable, written `${MP_<I>__<V>:-<default>}`, so you can override it in `.env`.
 
 **Templates**: rendered with Go `text/template`, `Option("missingkey=error")`, no functions beyond the built ins, written to `config/<i>/<file without .tmpl>` (mode 0644) and mounted read only through a top level Compose `configs` entry `<i>_<name>`. Template data:
 
@@ -137,13 +137,13 @@ For instance `i` (module entry `e`) in graph `g`, besides 0002's and 0005's rule
 .Instance     instance name
 .Host         <i>.<g>.internal
 .Provides.<p> {Port}
-.Uses.<s>     {Bound, Provider, Provide, Host, Port, URL, Values}   every declared slot is a key; Values holds the plan known non secret fields
+.Uses.<s>     {Bound, Provider, Provide, Host, Port, URL, Values}   every declared slot is a key; Values holds the resolved graph known non secret fields
 .Clients.<p>  [{Instance, Slot, Host, Values}]                     every declared provide is a key; one item per binding to it, sorted by consumer then slot; Values holds its to_provider text fields
 ```
 
 At catalog load each template is parsed and executed twice, once with every slot bound to placeholder values and once with every optional slot unbound; an error in either is `invalid_template`. That proves only that the keys exist, so every built in template also has a golden output in `libs/render/testdata/` from a real graph (the sample or the platform graph), reviewed like code.
 
-**Host access**: `publish` writes `ports: ["${VAR}:<port>"]` or `"<n>:<port>"`; `host_mounts` writes bind mounts. The planner adds warning `host_access` at `modules.<i>` for each such instance (public and internal mode alike). The managed flavor answers 422 with error `host_access` instead; the platform flavor renders them.
+**Host access**: `publish` writes `ports: ["${VAR}:<port>"]` or `"<n>:<port>"`; `host_mounts` writes bind mounts. The checks add warning `host_access` at `modules.<i>` for each such instance (public and internal mode alike). The managed flavor answers 422 with error `host_access` instead; the platform flavor renders them.
 
 ## Install time
 
@@ -189,7 +189,7 @@ The skip goes by existence only. If you delete a client's generated `client_secr
 
 The instance's own non secret asked values reach a step as env `MP_ASK_<V>`.
 
-It runs as `docker run --rm -i --network none --user "$(id -u):$(id -g)" -v secrets/<i>:/out` plus its reads, in the module's own image (0001 principle 9). It is skipped when every `writes` entry exists (for a `for_each` step, per client), and fails `setup.sh` (`set -e`) when it exits non zero or leaves a `writes` entry missing. A step may read only files that steps 2 to 4 make, its own secrets, or outputs of steps ordered before it; anything else is planner error `setup_order`. Each written file gets its `writes` mode; `secrets/<i>/` folders are 0700.
+It runs as `docker run --rm -i --network none --user "$(id -u):$(id -g)" -v secrets/<i>:/out` plus its reads, in the module's own image (0001 principle 9). It is skipped when every `writes` entry exists (for a `for_each` step, per client), and fails `setup.sh` (`set -e`) when it exits non zero or leaves a `writes` entry missing. A step may read only files that steps 2 to 4 make, its own secrets, or outputs of steps ordered before it; anything else is check error `setup_order`. Each written file gets its `writes` mode; `secrets/<i>/` folders are 0700.
 
 **Managed flavor**: a graph whose instances need anything from steps 2, 3, 5 or 7 is refused with error `setup_required` at `modules.<i>` (#9 lifts this); generated files and empty job outputs (step 4), `data/` folders, and `MP_UID` and `MP_GID` in the project's `.env` are made by the deployer at apply, as 0007 already does for secrets.
 
@@ -200,12 +200,12 @@ It runs as `docker run --rm -i --network none --user "$(id -u):$(id -g)" -v secr
 - `docker inspect` in the e2e test shows no secret value in any service env (**AC-8**).
 - A template naming `.Uses.nope` or `.Bogus`: `invalid_template` at load (**AC-9**).
 - `setup.sh` from a rendered zip run twice with answers on stdin: the second run asks nothing and leaves every file's content and mtime unchanged (**AC-10**).
-- A graph with `deployer-docker` (host mounts): plan warning `host_access`; managed render 422 `host_access`. A graph with `authelia` (setup steps): managed render 422 `setup_required` (**AC-11**).
+- A graph with `deployer-docker` (host mounts): check warning `host_access`; managed render 422 `host_access`. A graph with `authelia` (setup steps): managed render 422 `setup_required` (**AC-11**).
 - A step reading an output of a later step: `setup_order` (**AC-10**).
 - Catalog fixtures refused with `invalid_setup_step`, one each: `{client}` in the `env`, `command`, `entrypoint` or `writes` of a step with no `for_each`; a `for_each` step writing the bare folder `client-digests/`, `digest-{client}`, `client-digests/{client}.pem` or `a/b/{client}`; a `<folder>/{client}` write whose folder is not a `from: setup` entry in `secrets`; `asks` on a `for_each` step; a `{provide}` read in a step with no `for_each`, of another provide, or of a `to_consumer` field; an `env` key `MP_INSTANCE` (**AC-2**).
 - `setup.sh` with a `for_each` step over a provide with two clients: two runs, each with `{client}` replaced in its env, command and file name, while `${VAR}` in the command stays as written; bind a third client and run again: one run, for the new client only; with no binding: the folder exists, empty, and the step never runs; unbind a client: its file stays (**AC-10**).
-- `sdkgen` over the planner, api and deployer entries gives the same `config.gen.go` as before the move except for paths in the header (**AC-20**).
+- `sdkgen` over the renderer, api and deployer entries gives the same `config.gen.go` as before the move except for paths in the header (**AC-20**).
 
 ## Rationale (short)
 
-Field sources on the provider and delivery on the consumer split the two halves of a binding cleanly: the provider knows where a value comes from, the consumer knows what its image reads, and the capability file is the contract between them, so either side can be swapped (your choices: declared sources, env plus files). Templates (your choice) are limited to plan time facts so the planner, which never sees secrets or install answers, can render them deterministically; anything else stays an env reference the image fills itself. Secure hardening defaults with visible opt outs make every exception reviewable in the catalog, and the internal plus egress split keeps today's managed network shape for every stack (your choices). Host access as declared fields keeps "the platform is a graph" true while the deployed path refuses it (your choice). A `for_each` step gets its client only where the module places `{client}` (your choice, 2026-11-05), not under a fixed env name, so an image you do not own reads it under the name it already uses, and one token covers env, arguments and file names; per client files (`<folder>/{client}`) make the skip exact per client. Runners up for that: a fixed `MP_CLIENT` (what the paper Authelia entry used), or a `for_each: {provide, env}` object. Runners up overall: verbatim files filled by env (no template language, but Caddy routes per graph would need env tricks); one default network (simpler, every module reaches the internet); fragments as idempotent commands (less to declare, easier to get wrong).
+Field sources on the provider and delivery on the consumer split the two halves of a binding cleanly: the provider knows where a value comes from, the consumer knows what its image reads, and the capability file is the contract between them, so either side can be swapped (your choices: declared sources, env plus files). Templates (your choice) are limited to check time facts so the renderer, which never sees secrets or install answers, can render them deterministically; anything else stays an env reference the image fills itself. Secure hardening defaults with visible opt outs make every exception reviewable in the catalog, and the internal plus egress split keeps today's managed network shape for every stack (your choices). Host access as declared fields keeps "the platform is a graph" true while the deployed path refuses it (your choice). A `for_each` step gets its client only where the module places `{client}` (your choice, 2026-11-05), not under a fixed env name, so an image you do not own reads it under the name it already uses, and one token covers env, arguments and file names; per client files (`<folder>/{client}`) make the skip exact per client. Runners up for that: a fixed `MP_CLIENT` (what the paper Authelia entry used), or a `for_each: {provide, env}` object. Runners up overall: verbatim files filled by env (no template language, but Caddy routes per graph would need env tricks); one default network (simpler, every module reaches the internet); fragments as idempotent commands (less to declare, easier to get wrong).

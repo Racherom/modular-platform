@@ -5,7 +5,7 @@ _Steps derived from spec 0016 acceptance criteria and its Value sourcing table. 
 
 - [ ] On a host with no `/var/lib/modular-platform`, unzip the release and run `sh setup.sh` as your user → `run as root: sudo sh setup.sh`, exit 1, nothing created → AC-1
 - [ ] `sudo sh setup.sh`, answer domain `platform.localhost`, an empty origin, your email → only those three questions; `stat -c '%a %U' /var/lib/modular-platform` gives `700 root`; `.env` holds `MP_DIR`, `MP_UID=65532`, `MP_GID=65532` and the three answers → AC-1, Value sourcing "MP_UID"
-- [ ] Right after `docker run` returns: `docker ps -a --filter label=io.github.racherom.modular-platform.deployment=platform` lists only `modular-platform-seed`; `docker inspect` shows the socket and the state folder mounts and `RestartPolicy unless-stopped` → AC-1
+- [ ] Right after `docker run` returns: `docker ps -a --filter label=io.github.racherom.modular-platform.stack=platform` lists only `modular-platform-seed`; `docker inspect` shows the socket and the state folder mounts and `RestartPolicy unless-stopped` → AC-1
 - [ ] When `setup.sh` ends → it printed `Initial password of the admin user "admin": <value>` once and the origin; `docker compose --project-directory /var/lib/modular-platform ps` shows every platform service healthy; exactly one container with a `modular-platform-keeper-` project runs; `modular-platform-seed` no longer exists → AC-2, AC-3
 - [ ] `sudo ls -l /var/lib/modular-platform/secrets/*/` → every generated file 0600 owned by 65532, `cert-issuer`'s root certificate 0644, folders 0700 → AC-2
 - [ ] `docker logs` of the keeper and every platform service, and `docker inspect` env of every container, searched for the printed password → not found → AC-3
@@ -24,16 +24,16 @@ _Steps derived from spec 0016 acceptance criteria and its Value sourcing table. 
 ## Drift
 
 - [ ] `docker rm -f` the `authelia` container, restart the keeper → `authelia` is back, healthy → AC-5
-- [ ] Recreate `planner` by hand from an edited copy of `docker-compose.yml` (another env value), restart the keeper → `planner` recreated from the state folder's file → AC-5
+- [ ] Recreate `renderer` by hand from an edited copy of `docker-compose.yml` (another env value), restart the keeper → `renderer` recreated from the state folder's file → AC-5
 - [ ] `docker stop` the `web` container, restart the keeper → `web` running again → AC-5
-- [ ] `docker update --restart no` on `planner`, restart the keeper → `planner` not recreated (the documented gap) → AC-5
+- [ ] `docker update --restart no` on `renderer`, restart the keeper → `renderer` not recreated (the documented gap) → AC-5
 - [ ] `docker run -d --label com.docker.compose.project=modular-platform --label com.docker.compose.service=stray alpine sleep 1d`, restart the keeper → `stray` removed → AC-5
 
 ## Self handover
 
 - [ ] Retag the keeper image to get another image ID, set `MP_KEEPER_IMAGE` to it in the state `.env`, restart the keeper → logs `handover started` and `handover done`; a new `modular-platform-keeper-` project runs healthy; the old container is gone; deploy still works → AC-6, Value sourcing "definition hash"
 - [ ] Set `handover-timeout` to `1m` (below `wait-timeout` plus 5 minutes) → the keeper stops at start with a config error naming the value → Configuration required
-- [ ] Set `MP_KEEPER_IMAGE` to an image whose healthcheck always fails and `handover-timeout` to `10m`, restart the keeper → after about ten minutes `handover failed`, the successor project is gone, the old keeper still answers `GET /v1/projects/mp-whoami-postgres/state` → AC-6
+- [ ] Set `MP_KEEPER_IMAGE` to an image whose healthcheck always fails and `handover-timeout` to `10m`, restart the keeper → after about ten minutes `handover failed`, the successor project is gone, the old keeper still answers `GET /v1/stacks/mp-whoami-postgres/state` → AC-6
 
 ## Deployed stacks
 
@@ -42,7 +42,7 @@ _Steps derived from spec 0016 acceptance criteria and its Value sourcing table. 
 
 ## Failures and the lock
 
-- [ ] Edit `docker-compose.yml` in the state folder so `planner` names a tag that does not exist, restart the keeper → `pipeline failed` with `step: reconcile`; the keeper still serves the deploy target API; `retryIn` grows 1s, 2s, 4s…; fix the tag → the next retry logs `reconcile done` → AC-9
+- [ ] Edit `docker-compose.yml` in the state folder so `renderer` names a tag that does not exist, restart the keeper → `pipeline failed` with `step: reconcile`; the keeper still serves the deploy target API; `retryIn` grows 1s, 2s, 4s…; fix the tag → the next retry logs `reconcile done` → AC-9
 - [ ] Start two seeds at once (`docker run` twice with different names) on a running install → only one runs the pipeline at a time (the logs never overlap between `keeper start` and `reconcile done`), one keeper remains, no duplicate service container → AC-8
 
 ## Contract and render

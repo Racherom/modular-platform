@@ -5,22 +5,22 @@
 
 ## Summary
 
-The public planner remembers one small record (a "bucket", its token count) for every client address it has seen in the last 10 minutes, and today nothing limits how many it keeps. This spec caps that memory at 10,000 clients. When the cap is reached and a new client arrives, the planner forgets the client it saw longest ago and serves the newcomer normally, so nobody is ever turned away because memory is full. A forgotten client simply starts again with a fresh allowance, and the planner logs one warning per minute while this is happening.
+The public renderer remembers one small record (a "bucket", its token count) for every client address it has seen in the last 10 minutes, and today nothing limits how many it keeps. This spec caps that memory at 10,000 clients. When the cap is reached and a new client arrives, the renderer forgets the client it saw longest ago and serves the newcomer normally, so nobody is ever turned away because memory is full. A forgotten client simply starts again with a fresh allowance, and the renderer logs one warning per minute while this is happening.
 
 ## Context
 
-The public planner limits each client with a token bucket (spec 0001, "Planner modes" row): `MP_PLANNER_RATE` tokens per minute, burst 10, keyed by the full IPv4 address or the IPv6 /64 network, buckets dropped after 10 idle minutes by a sweeper that runs every minute. The map that holds the buckets (`libs/platform/ratelimit.go`) grows by one entry for every new key and has no upper bound. The review of the scaffold ([2026-10-30-main](../../reviews/2026-10-30-main.md), "Rate limiter memory is bounded only by time") flagged it as the one unbounded structure in a service that promises to be safe on the internet.
+The public renderer limits each client with a token bucket (spec 0001, "Renderer modes" row): `MP_RENDERER_RATE` tokens per minute, burst 10, keyed by the full IPv4 address or the IPv6 /64 network, buckets dropped after 10 idle minutes by a sweeper that runs every minute. The map that holds the buckets (`libs/platform/ratelimit.go`) grows by one entry for every new key and has no upper bound. The review of the scaffold ([2026-10-30-main](../../reviews/2026-10-30-main.md), "Rate limiter memory is bounded only by time") flagged it as the one unbounded structure in a service that promises to be safe on the internet.
 
-The forces: a sender with many IPv6 /64 networks (a single /48 holds 65,536 of them) can create keys as fast as it can send requests, so memory grows with the attacker's request rate, not with real use. That same sender already gets a fresh burst of 10 on every new address, so the per client limiter never stopped it, and no cap policy can change that. What a cap policy can change is whether that sender also gets a lever to lock real visitors out. Real use of the online tool is far below 10,000 distinct networks in 10 minutes (the editor sends one plan per file open and one render per download, spec 0002). One bucket costs about 250 bytes (the map entry, the key string, the `rate.Limiter`, the timestamp, the list link), so 10,000 buckets are about 2.5 MB. The planner container has no memory limit set in `deploy/online/compose.yaml`. The access log records no client address, and this must stay true.
+The forces: a sender with many IPv6 /64 networks (a single /48 holds 65,536 of them) can create keys as fast as it can send requests, so memory grows with the attacker's request rate, not with real use. That same sender already gets a fresh burst of 10 on every new address, so the per client limiter never stopped it, and no cap policy can change that. What a cap policy can change is whether that sender also gets a lever to lock real visitors out. Real use of the online editor is far below 10,000 distinct networks in 10 minutes (the editor sends one check per file open and one render per download, spec 0002). One bucket costs about 250 bytes (the map entry, the key string, the `rate.Limiter`, the timestamp, the list link), so 10,000 buckets are about 2.5 MB. The renderer container has no memory limit set in `deploy/online/compose.yaml`. The access log records no client address, and this must stay true.
 
-Left undecided, a flood of new addresses grows the planner's heap until the host runs out of memory, which takes down the online tool for everyone.
+Left undecided, a flood of new addresses grows the renderer's heap until the host runs out of memory, which takes down the online editor for everyone.
 
 ## Requirements
 
 **User stories**:
-- As the operator of the online tool, I want the planner's rate limit memory to stay bounded under any traffic, so that a flood of new addresses cannot exhaust the host's memory.
-- As a visitor of the online tool, I want to be served even while someone floods the planner from many addresses, so that the limit on memory never turns into a lockout for me.
-- As the operator, I want to see in the logs when the cap is being hit, so that I know the planner is under a flood.
+- As the operator of the online editor, I want the renderer's rate limit memory to stay bounded under any traffic, so that a flood of new addresses cannot exhaust the host's memory.
+- As a visitor of the online editor, I want to be served even while someone floods the renderer from many addresses, so that the limit on memory never turns into a lockout for me.
+- As the operator, I want to see in the logs when the cap is being hit, so that I know the renderer is under a flood.
 
 **Acceptance criteria**:
 - **AC-1**: The limiter never holds more than 10,000 buckets. After requests from more than 10,000 distinct keys, `Len()` is exactly 10,000.
@@ -28,8 +28,8 @@ Left undecided, a flood of new addresses grows the planner's heap until the host
 - **AC-3**: The bucket evicted to make room is the least recently seen one. With keys `k1` to `k10000` added in that order and `k1` then used again, adding `k10001` evicts `k2` and keeps `k1`.
 - **AC-4**: A client whose bucket was evicted is treated as new when it returns: it gets a fresh bucket with the full burst of 10.
 - **AC-5**: The sweep still drops every bucket idle longer than 10 minutes and keeps every bucket seen more recently. It walks from the least recently seen bucket and stops at the first one that is not idle.
-- **AC-6**: In each sweep interval (one minute) in which the cap forced at least one eviction, the planner logs exactly one `WARN` line with the message `rate limiter full` and the attributes `evicted` (evictions since the previous sweep), `buckets` (current count) and `max` (the cap). In an interval without evictions it logs nothing. No client address or key appears in any log line.
-- **AC-7**: Everything else in the limiter is unchanged: burst 10, refill of `MP_PLANNER_RATE` per minute, 429 with `Retry-After` when a bucket is empty, `/healthz` and `/readyz` exempt, internal mode untouched. The existing tests pass, and `go test -race` passes with concurrent `Allow` and `Sweep` calls.
+- **AC-6**: In each sweep interval (one minute) in which the cap forced at least one eviction, the renderer logs exactly one `WARN` line with the message `rate limiter full` and the attributes `evicted` (evictions since the previous sweep), `buckets` (current count) and `max` (the cap). In an interval without evictions it logs nothing. No client address or key appears in any log line.
+- **AC-7**: Everything else in the limiter is unchanged: burst 10, refill of `MP_RENDERER_RATE` per minute, 429 with `Retry-After` when a bucket is empty, `/healthz` and `/readyz` exempt, internal mode untouched. The existing tests pass, and `go test -race` passes with concurrent `Allow` and `Sweep` calls.
 
 ## Options considered
 
@@ -44,7 +44,7 @@ For finding the oldest bucket, a list from the Go standard library (`container/l
 
 **Chosen option**: Option 1: evict the least recently seen bucket, with a cap of 10,000 held in a `container/list` ordered by last seen.
 
-The public planner's rate limiter holds at most 10,000 buckets; a new client arriving at a full map takes the place of the bucket seen longest ago, and the sweeper logs one warning per minute while evictions happen. (basis: OWASP API4:2023, bound every structure an unauthenticated caller can grow; fail open on limiter state; the review finding on `libs/platform/ratelimit.go`)
+The public renderer's rate limiter holds at most 10,000 buckets; a new client arriving at a full map takes the place of the bucket seen longest ago, and the sweeper logs one warning per minute while evictions happen. (basis: OWASP API4:2023, bound every structure an unauthenticated caller can grow; fail open on limiter state; the review finding on `libs/platform/ratelimit.go`)
 
 **Implementation skills**: `golang-concurrency` · `golang-security` · `golang-observability` · `golang-testing` (all `samber/cc-skills-golang`, `.claude/skills/<name>/`)
 
@@ -80,7 +80,7 @@ The ordered list makes every step constant time: a request moves its bucket to t
 | `sweepTicks(ctx context.Context, ticks <-chan time.Time, log *slog.Logger)` (new, unexported) | On each tick: `Sweep`, and if `evicted > 0`, log one `WARN` `rate limiter full` with `evicted`, `buckets`, `max` (`maxKeys`). Returns when `ctx` ends, with no final flush: evictions after the last tick are not logged. An "interval" in AC-6 is one tick; ticks the runtime drops simply fold into the next one. This is the test seam: tests pass their own channel. |
 | `Len`, `RetryAfter`, `Middleware` | Unchanged. |
 
-**Wiring in `services/planner/internal/api/server.go`**: a new constant `maxClients = 10_000` beside `burst` and `idleBucket`; `NewRateLimiter(cfg.Rate, burst, idleBucket, maxClients)`; `go limiter.SweepEvery(ctx, time.Minute, log)`.
+**Wiring in `services/renderer/internal/api/server.go`**: a new constant `maxClients = 10_000` beside `burst` and `idleBucket`; `NewRateLimiter(cfg.Rate, burst, idleBucket, maxClients)`; `go limiter.SweepEvery(ctx, time.Minute, log)`.
 
 **Value sourcing**:
 
@@ -88,7 +88,7 @@ The ordered list makes every step constant time: a request moves its bucket to t
 |---|---|---|
 | `Allow`, new key | the cap | `maxClients` constant in `server.go`, passed to `NewRateLimiter` |
 | `Allow`, new key | which bucket to evict | `order.Back()` |
-| `Allow`, new key | the newcomer's allowance | `rate.NewLimiter(perMinute/60, burst)`: `MP_PLANNER_RATE` and the `burst` constant, as today |
+| `Allow`, new key | the newcomer's allowance | `rate.NewLimiter(perMinute/60, burst)`: `MP_RENDERER_RATE` and the `burst` constant, as today |
 | `Allow` | `now` for `seen` and `AllowN` | `l.now()`, read after taking `mu` |
 | `Sweep` | the idle cutoff | `l.now()` minus `idle` (the `idleBucket` constant, 10 minutes), as today |
 | warning log | `evicted` | first return value of `Sweep` |
@@ -122,43 +122,43 @@ The ordered list makes every step constant time: a request moves its bucket to t
 
 ## Build plan
 
-One small slice through the code that already runs (Tracer Bullet: this thickens the public planner strand).
+One small slice through the code that already runs (Tracer Bullet: this thickens the public renderer strand).
 
 1. Reshape `libs/platform/ratelimit.go`: `container/list` order, `maxKeys` with the panic guard, eviction in `Allow` with the clock read under the lock, `Sweep` from the back returning `(evicted, buckets)`. Update the `NewRateLimiter` call in `TestRateLimiterBurstAndSweep` to pass `maxKeys` 10. Satisfies **AC-1**, **AC-2**, **AC-3**, **AC-4**, **AC-5**.
 2. Add the `log` parameter to `SweepEvery`, the unexported `sweepTicks` seam, and the once per tick warning. Satisfies **AC-6**.
-3. Add `maxClients = 10_000` in `services/planner/internal/api/server.go` and pass it and `log` through. Satisfies **AC-1**, **AC-6**, **AC-7**.
-4. Extend `libs/platform/platform_test.go` and `services/planner/internal/api/server_test.go` with the scenarios above and run `task test` (with `-race`). Satisfies **AC-1** to **AC-7**.
+3. Add `maxClients = 10_000` in `services/renderer/internal/api/server.go` and pass it and `log` through. Satisfies **AC-1**, **AC-6**, **AC-7**.
+4. Extend `libs/platform/platform_test.go` and `services/renderer/internal/api/server_test.go` with the scenarios above and run `task test` (with `-race`). Satisfies **AC-1** to **AC-7**.
 
 ## Consequences
 
 **Positive**:
-- The planner's rate limit memory is bounded at about 2.5 MB whatever arrives.
+- The renderer's rate limit memory is bounded at about 2.5 MB whatever arrives.
 - A flood of new addresses can no longer lock real visitors out or take the host down through this map.
 - The sweep touches only idle buckets, so it holds the lock briefly even when the map is full.
 - You can see a flood in the logs without any address being recorded.
 
 **Negative / tradeoffs**:
 - During a flood, per client limits get looser: a real client forgotten by eviction gets a fresh burst of 10, and so does a single abusive client that happens to be evicted. CPU protection against an address rich sender still depends on protection in front of your network (spec 0001, Consequences).
-- `NewRateLimiter` and `SweepEvery` change signature; every caller changes with them (today `services/planner/internal/api/server.go` and `TestRateLimiterBurstAndSweep` in `libs/platform/platform_test.go`).
+- `NewRateLimiter` and `SweepEvery` change signature; every caller changes with them (today `services/renderer/internal/api/server.go` and `TestRateLimiterBurstAndSweep` in `libs/platform/platform_test.go`).
 - A wrong `MP_PROXY_HOPS` that makes every request look like a new address would keep the map full and evicting, which quietly turns the per client limit into almost nothing. The `rate limiter full` warning firing every minute under normal traffic is the sign to check that setting.
 - The cap is a constant, so changing it needs a new release.
 
 **Neutral**:
 - No migration: all state is in memory and a restart starts empty, as today. Reverting is one commit.
-- Spec 0001's "Planner modes" row now names the cap and points here.
+- Spec 0001's "Renderer modes" row now names the cap and points here.
 
 ## Follow-up
 
-- [ ] Protection against CPU exhaustion (a cap on requests in flight, or a global limit) was kept out of this decision. Revisit through `/architect` if the planner is seen saturating its CPU; it would need a 503 in `contracts/openapi/planner.yaml`.
+- [ ] Protection against CPU exhaustion (a cap on requests in flight, or a global limit) was kept out of this decision. Revisit through `/architect` if the renderer is seen saturating its CPU; it would need a 503 in `contracts/openapi/renderer.yaml`.
 - [ ] When the optional OpenTelemetry capability arrives (spec 0001, Observability row), export evictions as a counter metric beside the warning.
 
 ## References
 
 **Project sources**:
-- Spec [0001](index.md): the "Planner modes" row (token bucket, burst 10, keys, 10 minute idle), the standard library preference, and the Consequences line on flood protection in front of your network.
-- Spec [0002](0002-provisional-graph-format.md): one plan per open and per download, so real clients stay far below the limit.
+- Spec [0001](index.md): the "Renderer modes" row (token bucket, burst 10, keys, 10 minute idle), the standard library preference, and the Consequences line on flood protection in front of your network.
+- Spec [0002](0002-provisional-graph-format.md): one check per open and per download, so real clients stay far below the limit.
 - The scaffold review [2026-10-30-main](../../reviews/2026-10-30-main.md): "Rate limiter memory is bounded only by time".
-- `libs/platform/ratelimit.go`, `libs/platform/clientip.go`, `services/planner/internal/api/server.go`: the code this changes.
+- `libs/platform/ratelimit.go`, `libs/platform/clientip.go`, `services/renderer/internal/api/server.go`: the code this changes.
 - Installed skills `golang-concurrency`, `golang-security`, `golang-observability`, `golang-testing`.
 
 **Practices & standards**:

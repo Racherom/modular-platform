@@ -3,7 +3,7 @@
 **Date**: 2026-11-10
 **Parent**: [0001. Platform stack and architecture](index.md)
 **Amends**: principle 10 and the *Ingress* row and *Sign in* bullets of [0001](index.md); the `ingress` and `authelia` rows of [0015](../0011-capability-module-contract/0015-platform-graph-managed-zip.md); the `http-ingress` capability and graph bindings of [0012](../0011-capability-module-contract/0012-capabilities-versions-matching.md) and [0013](../0011-capability-module-contract/0013-module-manifest-v1.md).
-**Part of**: scope #24 (planner website standalone or in your site), which still needs its own spec for the rest of the placement work.
+**Part of**: scope #24 (renderer website standalone or in your site), which still needs its own spec for the rest of the placement work.
 
 ## Summary
 
@@ -36,7 +36,7 @@ Required placements (your answers): the platform at the root of its own host, an
 - **AC-7**: The rendered README says sign in needs HTTPS on port 443 for both host names, so an origin naming another port is not supported (as before this spec).
 - **AC-8**: `api` reaches the issuer from inside Docker through the ingress alias for the auth host, trusts it with the same CA file as today under `tls-mode: internal`, and turns ready.
 - **AC-9**: The rendered README says the auth host needs its own DNS name (public for `tls-mode: acme`), that Authelia's cookie covers that host and its subdomains, that Authelia refuses a public suffix host at start, and that changing the domain or origin needs `docker compose exec api /api admin reset` until identities survive a move (after #14).
-- **AC-10**: The planner accepts `host` on a platform graph binding to an `http-ingress` provider and refuses, each with a problem at `modules.<i>.uses.<s>.host`: a value that is not a DNS name once each `{field}` token is replaced by `x.example` (`invalid_named_value`); a token naming no text field the provider gives (`invalid_binding`); `host` together with a `route` (`invalid_binding`); `host`, `route` or any other field the capability does not mark `graph: true` (`invalid_binding`); and `host` in a static or deployed graph (`invalid_binding`, "an ingress host is for the platform graph only until the exposure spec").
+- **AC-10**: The renderer accepts `host` on a platform graph binding to an `http-ingress` provider and refuses, each with a problem at `modules.<i>.uses.<s>.host`: a value that is not a DNS name once each `{field}` token is replaced by `x.example` (`invalid_named_value`); a token naming no text field the provider gives (`invalid_binding`); `host` together with a `route` (`invalid_binding`); `host`, `route` or any other field the capability does not mark `graph: true` (`invalid_binding`); and `host` in a static or deployed graph (`invalid_binding`, "an ingress host is for the platform graph only until the exposure spec").
 
 ## Options considered
 
@@ -78,9 +78,9 @@ The auth URL is `https://<host>` with no port. Carrying the origin's port over w
 | Where | Change |
 |---|---|
 | `catalog/capabilities/http-ingress.yaml` | New field `host`: `{type: string, direction: to_provider, optional: true, graph: true, description: "Host name the consumer is served at, at its root, instead of under the base path."}` |
-| Capability format (0012) | A field may say `graph: true` (only with `direction: to_provider`): the graph may set it on a binding. Until now only a provisioner's `named` values were set in the graph. `contracts/openapi/planner.yaml` gains `graph` on the capability field schema, then `task generate`. |
-| Graph bindings (0012) | The object form `{provider: <p>, <field>: <value>}` also works for a direct binding and may set any `graph: true` field; any other key is `invalid_binding`. In `libs/contract` the binding's `Named` map becomes `Values` (named values and graph set fields alike), and `MarshalGraph` writes the object form whenever `Values` is not empty; the editor's writer matches (0025 AC-19), and `planner.yaml`'s binding schema names it. A graph value replaces the consumer entry's source for that field. |
-| Graph value tokens (0012) | A graph value may hold `{<field>}` tokens, each naming a text field the provider gives on that binding (here `{domain}`); any other token is `invalid_binding`. The planner checks a value's pattern with each token replaced by `x.example`. The render fills each token once per target: `${MP_INGRESS__DOMAIN}` in Compose (environment, aliases), `{$INGRESS_DOMAIN}` in the Caddyfile; a value with no token stays literal everywhere. Templates receive the filled string in `.Values`. |
+| Capability format (0012) | A field may say `graph: true` (only with `direction: to_provider`): the graph may set it on a binding. Until now only a provisioner's `named` values were set in the graph. `contracts/openapi/renderer.yaml` gains `graph` on the capability field schema, then `task generate`. |
+| Graph bindings (0012) | The object form `{provider: <p>, <field>: <value>}` also works for a direct binding and may set any `graph: true` field; any other key is `invalid_binding`. In `libs/contract` the binding's `Named` map becomes `Values` (named values and graph set fields alike), and `MarshalGraph` writes the object form whenever `Values` is not empty; the editor's writer matches (0025 AC-19), and `renderer.yaml`'s binding schema names it. A graph value replaces the consumer entry's source for that field. |
+| Graph value tokens (0012) | A graph value may hold `{<field>}` tokens, each naming a text field the provider gives on that binding (here `{domain}`); any other token is `invalid_binding`. The renderer checks a value's pattern with each token replaced by `x.example`. The render fills each token once per target: `${MP_INGRESS__DOMAIN}` in Compose (environment, aliases), `{$INGRESS_DOMAIN}` in the Caddyfile; a value with no token stays literal everywhere. Templates receive the filled string in `.Values`. |
 | Flavors (0013) | Platform flavor only: a static or deployed graph setting `host` is `invalid_binding` (AC-10) until the exposure spec. |
 | Consumer sources (0013) | `{uses: <slot>, format}` and the `{<slot>.<field>}` environment tokens may name the consumer's own `to_provider` fields of that binding (so `authelia` reads its `host`). Lookup: the fields the provider gives first, then the consumer's own `to_provider` fields; a capability declaring one name in both directions is a catalog error. |
 | Aliases (0013) | The render gives a provider instance, beside its entry's `network.aliases`, one alias per distinct filled `host` among its bindings, deduplicated, on each network it joins. |
@@ -107,7 +107,7 @@ Unaffected, stated so the build does not look: `deploy/online/` (hand written, n
 | `api` reaching the issuer inside Docker | network alias for the auth host | render, one alias per distinct filled `host` among `ingress`'s bindings |
 | TLS for the auth host | certificate | Caddy, by `tls-mode` (internal authority or ACME) per site |
 | `api` trusting that certificate | `MP_OIDC_CA_FILE` | `authelia`'s `oidc` field `ca` = `{uses: public, field: ca}` (unchanged; Caddy's local root signs both names) |
-| Plan time check of `host` | a DNS name | the value with each token replaced by `x.example`, against the pattern `[a-z0-9-]+(\.[a-z0-9-]+)+` |
+| Check time check of `host` | a DNS name | the value with each token replaced by `x.example`, against the pattern `[a-z0-9-]+(\.[a-z0-9-]+)+` |
 
 ### Key invariants
 
@@ -122,7 +122,7 @@ Unaffected, stated so the build does not look: `deploy/online/` (hand written, n
 - The auth host is a separate browser origin from the platform: a script flaw on the shared site cannot read Authelia's pages, which closes part of 0001's shared origin risk for sign in (the platform's own pages keep it, as 0001 states).
 - Sign in starts as a plain link to `api`'s login route, which redirects to the auth host; the web CSP's `form-action 'self'` does not apply to that navigation, so no CSP change. The OIDC state cookie is `SameSite=Lax` and the callback is a top level `GET`, so it is sent.
 - The admin pin (issuer plus `sub`) is unchanged.
-- Authelia refuses a public suffix cookie domain at start; the planner does not check the suffix list (the README says so).
+- Authelia refuses a public suffix cookie domain at start; the renderer does not check the suffix list (the README says so).
 
 ### Critical test scenarios
 
@@ -130,14 +130,14 @@ Unaffected, stated so the build does not look: `deploy/online/` (hand written, n
 - Smoke under `/platform` in CI: `scripts/smoke-managed.sh` writes `MP_INGRESS__BASE_PATH=/platform` before `up`, and the Playwright `baseURL` becomes `https://platform.localhost/platform/` from an env set by the script; the same flow, plus `/platform/auth/` matches `/platform/does-not-exist` and sets no cookie (**AC-2**, **AC-3**, **AC-4**).
 - Render golden for the platform graph: Caddy auth site, aliases, Authelia env and template, `api`'s issuer (**AC-5**); a second golden with the graph host `login.example.org` (**AC-6**).
 - README golden contains the port 443, DNS, cookie scope, public suffix and admin reset lines (**AC-7**, **AC-9**).
-- Planner and contract tests: `host` accepted on the platform graph; each refusal in AC-10; `MarshalGraph` round trips a binding with `host` byte for byte, and the editor's writer matches (**AC-10**).
+- Renderer and contract tests: `host` accepted on the platform graph; each refusal in AC-10; `MarshalGraph` round trips a binding with `host` byte for byte, and the editor's writer matches (**AC-10**).
 
 ## Build plan
 
 Tracer Bullet: the first task gets Authelia answering on its own host end to end in the smoke, then the contract work turns the hand written parts into the graph driven form, then the second placement and the docs.
 
 1. Spike, then thread: in a scratch copy of `build/managed`, hand edit Authelia to `tcp://:9091/` with cookie domain and `authelia_url` on `auth.platform.localhost`, a Caddy site for it and the alias; confirm the discovery issuer is exactly `https://auth.platform.localhost` (no trailing slash, no path, no port) both from the browser and from `api` through the alias, and the cookie attributes; then sign in once. Record the result as build findings in this spec. Satisfies **AC-1**, **AC-3**, **AC-8** (evidence).
-2. Contract: `graph: true` fields, `Named` to `Values` with the direct binding object form and `MarshalGraph`, `{field}` tokens and their plan time check, the flavor refusal, consumer sources reading own `to_provider` fields with the stated lookup order, the `host` or `route` rule and the AC-10 problems; `http-ingress` gains `host`; `planner.yaml` and `task generate`; the editor's graph writer. Satisfies **AC-10**.
+2. Contract: `graph: true` fields, `Named` to `Values` with the direct binding object form and `MarshalGraph`, `{field}` tokens and their check time check, the flavor refusal, consumer sources reading own `to_provider` fields with the stated lookup order, the `host` or `route` rule and the AC-10 problems; `http-ingress` gains `host`; `renderer.yaml` and `task generate`; the editor's graph writer. Satisfies **AC-10**.
 3. Render: token filling per target, aliases from binding hosts; then the `caddy` entry and `Caddyfile.tmpl` (snippet, host sites), the `authelia` entry and template, `deploy/managed/graph.yaml`; refresh the platform goldens and add the `login.example.org` golden. Satisfies **AC-5**, **AC-6**, **AC-8**.
 4. Smoke: `scripts/smoke-managed.sh` and `web/smoke/managed.spec.ts` check the auth host, the cookie domain from a fresh context, and that `<base>/auth` no longer reaches Authelia; a second CI job runs it with `MP_INGRESS__BASE_PATH=/platform`. Satisfies **AC-1**, **AC-2**, **AC-3**, **AC-4**.
 5. Docs: the rendered README lines; principle 10, the *Ingress* row and the *Sign in* bullets of 0001; the `ingress` and `authelia` rows of 0015 (pointing here); 0011 `verify.md`'s issuer item; a line in 0001's `## Structure` for this child. Satisfies **AC-7**, **AC-9**.
@@ -159,7 +159,7 @@ Tracer Bullet: the first task gets Authelia answering on its own host end to end
 
 **Negative / tradeoffs**:
 - Every install needs a second DNS name and, with ACME, a second public certificate; a host with a wildcard record has it for free, others must add it.
-- The contract grows by graph set fields with `{field}` tokens, a consumer side lookup in `format`, and aliases from bindings, each with its own tests; `Named` becomes `Values` across `libs/contract`, the planner and the editor.
+- The contract grows by graph set fields with `{field}` tokens, a consumer side lookup in `format`, and aliases from bindings, each with its own tests; `Named` becomes `Values` across `libs/contract`, the renderer and the editor.
 - Existing installs get a new issuer once and need `admin reset`.
 - A domain or origin change still locks the admin out until identities survive a move (after #14).
 - Sign in still needs HTTPS on 443; the auth host makes that a requirement on two names.

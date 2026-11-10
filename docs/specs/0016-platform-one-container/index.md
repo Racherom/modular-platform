@@ -70,7 +70,7 @@ The platform keeps no database for this feature; its state is this folder. The f
 | `.env` | `setup.sh`, once | 0600, root | `MP_DIR`, `MP_UID=65532`, `MP_GID=65532`, the asked answers `MP_<I>__<V>`, and when set at install, `COMPOSE_FILE` and `MP_KEEPER_IMAGE` |
 | `secrets/<i>/…` | keeper (prepare) | files 0600 (0644 where a step `writes` says so), owner `MP_UID:MP_GID`; folders 0700 | generated secrets, binding tokens, step outputs, files you place |
 | `data/<i>/<n>/`, `host_mounts` with `create: true` | keeper (prepare) | 0700, `MP_UID:MP_GID` | module data |
-| `deployments/` | keeper (0007, unchanged) | as 0007 | deployed stacks' folders |
+| `stacks/` | keeper (0007, unchanged) | as 0007 | deployed stacks' folders |
 | `.keeper.lock` | keeper | 0600, root | the start pipeline lock (`flock`) |
 | `.shown` | `setup.sh` | 0600, root | marker: the `show: once` secrets were printed |
 | `.prepare/` | keeper | 0700, root | scratch space for generated files and step outputs before they move into place; emptied at each prepare |
@@ -85,17 +85,17 @@ The platform keeps no database for this feature; its state is this folder. The f
 - **Platform flavor refusals** (render error `setup_required` at `modules.<i>`, naming the field): a secret with `from: ask`, a setup step with `asks`, a config value with `setup: ask` and type `secret`. Asked config values that are not secret stay; `setup.sh` asks them. (The coming web setup feature takes over the asking; see Follow-up.)
 - **Platform flavor keeper rule** (render error): no instance with a keeper module is `keeper_missing`, more than one is `keeper_duplicate`, at `modules`.
 - **`authelia` entry** (0015): new secret `admin-password` (`from: generate`, `format: password`, `show: once`, description `Initial password of the admin user "admin"`); the `users` step drops its `asks`, reads `{secret: admin-password}`, takes the user name from literal env `ADMIN_USER: admin` and the email from `MP_ASK_ADMIN_EMAIL` as before. The admin user name question goes away.
-- **`deployer-docker` entry** (0015): `keeper: {command: [seed]}`; its host mounts become the Docker socket and `{install: .}` at the same path with `read_only: false` (it writes secrets, step outputs and deployments), replacing the `{install: deployments}` mount; new config values below.
+- **`deployer-docker` entry** (0015): `keeper: {command: [seed]}`; its host mounts become the Docker socket and `{install: .}` at the same path with `read_only: false` (it writes secrets, step outputs and stacks), replacing the `{install: stacks}` mount; new config values below.
 
 ### Render changes (0015's platform flavor)
 
 - `docker-compose.yml`: every instance except the keeper. No service has `depends_on` on the keeper; its consumers (`api`) reach it once it serves, and their per call errors already cover a deployer that is not there yet.
-- `keeper.yml`: a Compose file with only the keeper service and no top level `name:`. Its network is `internal: {external: true, name: modular-platform_internal}` with the keeper's alias; image `${MP_KEEPER_IMAGE:-<catalog image>}`; `restart: unless-stopped`; 0015's labels (`deployment: platform`, `instance`, `module`) and healthcheck; everything else rendered as for any instance.
+- `keeper.yml`: a Compose file with only the keeper service and no top level `name:`. Its network is `internal: {external: true, name: modular-platform_internal}` with the keeper's alias; image `${MP_KEEPER_IMAGE:-<catalog image>}`; `restart: unless-stopped`; 0015's labels (`stack: platform`, `instance`, `module`) and healthcheck; everything else rendered as for any instance.
 - `setup.json`: the install actions the keeper applies, a Go type `render.Setup` in `libs/render`, written as canonical JSON. It covers every instance, the keeper included, so the keeper's own binding tokens, the CA from `cert-issuer`'s `ca` step and the caller public key exist before `keeper.yml` mounts them:
   - `formatVersion`: `1`. The keeper refuses another version and any unknown field (`state_invalid`).
   - `generate`: `[{path, format, show, readers}]` in 0013's step 4 order (module secrets, per binding files, empty job outputs). `readers` lists the `writes` of every step that reads the file.
   - `steps`: `[{instance, name, image, entrypoint, command, env, askEnv, reads, writes}]`, in 0013's step 5 order, a `for_each` step already expanded to one entry per client with `{client}` replaced. `askEnv` maps each `MP_ASK_<V>` to its `.env` variable `MP_<I>__<V>`. `reads` gives `{path, mount}` pairs; `writes` gives `{name, mode}`.
-  - `folders`: `[{path, mode}]` for `data/<i>/<n>`, `host_mounts` with `create: true` (the keeper's `deployments/` among them) and the `for_each` client folders.
+  - `folders`: `[{path, mode}]` for `data/<i>/<n>`, `host_mounts` with `create: true` (the keeper's `stacks/` among them) and the `for_each` client folders.
   - `show`: `[{path, description}]` for every `show: once` secret, in instance then name order.
   - `keeper`: `{instance, module, command}`.
 - `setup.sh`: the new shape below. The static flavor's `setup.sh` does not change.
@@ -108,7 +108,7 @@ It runs these steps in order, with `set -eu`:
 2. State folder: `$MP_STATE_DIR` or `/var/lib/modular-platform`; it must be absolute.
 3. Placed files: for each placed path (0013 step 7), look in the state folder when it holds a `docker-compose.yml`, else in the folder `setup.sh` lives in. Missing ones are listed with their description, then exit 1 (AC-11).
 4. Fresh install (no `docker-compose.yml` in the state folder): create the folder (0700, root), copy every file of the zip folder except `setup.sh` (placed secrets included), write `.env` with `MP_DIR`, `MP_UID`, `MP_GID`, plus `COMPOSE_FILE` and `MP_KEEPER_IMAGE` when `setup.sh` was started with them set, then ask the asked values in 0015's order without the admin user name and password (domain, origin, admin email) under 0013's answer rules. `setup.sh` writes every value unquoted, one `NAME=value` per line, with each `$` written as `$$` so Compose never expands it. An existing state folder: ask nothing, copy nothing, change no file, and ignore `COMPOSE_FILE` and `MP_KEEPER_IMAGE` in its own environment.
-5. Keeper: a keeper container is one with the labels `io.github.racherom.modular-platform.deployment=platform` and `io.github.racherom.modular-platform.instance=<keeper instance>` and a `com.docker.compose.project` starting with `modular-platform-keeper-`. When one is running, print `already running` and go on. Otherwise remove a leftover `modular-platform-seed` container and run `docker run -d --name modular-platform-seed --restart unless-stopped` with only the labels `deployment=platform` and `module=<keeper module>` (never `instance`, so a seed never counts as a keeper), `-v /var/run/docker.sock:/var/run/docker.sock`, `-v "$dir:$dir"`, the image read with `sed -n 's/^MP_KEEPER_IMAGE=//p' "$dir/.env"` or else the rendered default, and the keeper command plus `--state "$dir"`.
+5. Keeper: a keeper container is one with the labels `io.github.racherom.modular-platform.stack=platform` and `io.github.racherom.modular-platform.instance=<keeper instance>` and a `com.docker.compose.project` starting with `modular-platform-keeper-`. When one is running, print `already running` and go on. Otherwise remove a leftover `modular-platform-seed` container and run `docker run -d --name modular-platform-seed --restart unless-stopped` with only the labels `stack=platform` and `module=<keeper module>` (never `instance`, so a seed never counts as a keeper), `-v /var/run/docker.sock:/var/run/docker.sock`, `-v "$dir:$dir"`, the image read with `sed -n 's/^MP_KEEPER_IMAGE=//p' "$dir/.env"` or else the rendered default, and the keeper command plus `--state "$dir"`.
 6. When `<state>/.shown` is missing (a fresh install, or a run that stopped before printing): wait up to 15 minutes until a keeper container is healthy and `modular-platform-seed` is gone, then print every `show` file once as `<description>: <value>`, then the origin to open, then write `.shown`. Stop waiting early when the seed's `RestartCount` passes 3. On timeout or that early stop: `the platform did not finish its first start; see: docker logs modular-platform-seed`, exit 1; the next run prints them.
 
 ### Start pipeline (state transitions)
@@ -197,7 +197,7 @@ No new HTTP endpoint. The deployer's command line:
 
 - The state folder is root only (0700); secret files are 0600 for `MP_UID`, so a container sees only the files mounted into it.
 - The seed and the keeper hold the Docker socket and are root equivalent, as the deployer already is (0007). Only keeper containers mount the state folder, and only they write it.
-- The platform files are trusted input: the keeper runs whatever the state folder says without `render.Guard`, because writing that folder already needs root. `api` cannot reach them: nothing it calls writes there, and 0007's project rule (`^mp-`) keeps deployments apart.
+- The platform files are trusted input: the keeper runs whatever the state folder says without `render.Guard`, because writing that folder already needs root. `api` cannot reach them: nothing it calls writes there, and 0007's project rule (`^mp-`) keeps stacks apart.
 - The `show: once` password stays in `secrets/authelia/admin-password` for root only; the README says it is the initial password and how to read it again.
 
 ### Configuration required
@@ -208,11 +208,11 @@ The `deployer-docker` catalog entry's config values and settings after this spec
 |---|---|---|---|
 | `state-dir` | `MP_STATE_DIR` | `"{install}"` | new |
 | `handover-timeout` | `MP_HANDOVER_TIMEOUT` | `10m`; at least `wait-timeout` plus 5 minutes, else the keeper stops at start | new |
-| `deployments-dir` | `MP_DEPLOYMENTS_DIR` | `"{install}/deployments"` | unchanged; the folder comes from `setup.json` `folders` |
+| `stacks-dir` | `MP_DEPLOYMENTS_DIR` | `"{install}/stacks"` | unchanged; the folder comes from `setup.json` `folders` |
 | `platform-uid`, `platform-gid` | `MP_PLATFORM_UID`, `MP_PLATFORM_GID` | `"{uid}"`, `"{gid}"` | unchanged; they now resolve to `65532` from `.env` |
 | `wait-timeout`, `pull-timeout` | as 0007 | 300 s, 10 minutes | unchanged; also used by reconcile |
 | `platform-http-port`, `platform-https-port` | as 0015 | from the `ingress` binding | unchanged |
-| `host_mounts` | none | Docker socket; `{install: .}` at the same path, `read_only: false` | replaces `{install: deployments}` |
+| `host_mounts` | none | Docker socket; `{install: .}` at the same path, `read_only: false` | replaces `{install: stacks}` |
 | `hardening` | none | `user: root`, root filesystem read only, `tmpfs: [/tmp]` | unchanged |
 | image | none | `docker:<version>-cli` based, as 0007 (it carries the Compose plugin; not distroless) | unchanged |
 
@@ -239,11 +239,11 @@ Compose variables in the state `.env` (not module config):
 - Reboot during a handover: stop Docker while both the seed and the successor run, start it again → both restart, the lock orders them, one keeper and no seed remain, verifies **AC-4**, **AC-6**, **AC-8**
 - Partial writes: kill the keeper while a step runs (fault injection in the unit test, and an e2e `docker kill` during `cert-issuer`'s `ca` step) → after the next start each written file is whole and the CA files belong together, verifies **AC-2**
 - Rerun before the print: interrupt `setup.sh` during its wait, run it again → it asks nothing and prints the password once; a third run prints nothing, verifies **AC-3**
-- Drift: delete `authelia`'s container, recreate `planner` by hand from an edited copy of the file, stop `web`, start a container labeled with the platform project and an unknown service, restart the keeper → `authelia` back, `planner` recreated, `web` running, the unknown one gone, verifies **AC-5**
+- Drift: delete `authelia`'s container, recreate `renderer` by hand from an edited copy of the file, stop `web`, start a container labeled with the platform project and an unknown service, restart the keeper → `authelia` back, `renderer` recreated, `web` running, the unknown one gone, verifies **AC-5**
 - Self: set `MP_KEEPER_IMAGE` to a retagged keeper image (another image ID), restart the keeper → a new keeper project, healthy, the old container gone; with a successor image whose healthcheck fails and `handover-timeout` 1m → successor removed, old keeper still serving, verifies **AC-6**
 - Stacks: deploy the sample, record its container IDs, start times and restart counts, run every start above → unchanged, verifies **AC-7**
 - Lock: unit test with two pipelines on one state folder (fake Docker) → the second waits; e2e: two seeds started at once → one keeper, no duplicate service container, verifies **AC-8**
-- Failure: point an instance's image at a tag that does not exist → `pipeline failed` with `step: reconcile`, the keeper serves `GET /v1/projects/mp-whoami-postgres/state`, retries spaced 1, 2, 4 seconds (fake clock in the unit test), fixing the tag heals at the next retry, verifies **AC-9**
+- Failure: point an instance's image at a tag that does not exist → `pipeline failed` with `step: reconcile`, the keeper serves `GET /v1/stacks/mp-whoami-postgres/state`, retries spaced 1, 2, 4 seconds (fake clock in the unit test), fixing the tag heals at the next retry, verifies **AC-9**
 - Contract: catalog fixtures refused, one each (`show: once` on `from: setup`, an unknown `format`); render errors for no keeper, two keepers, a `from: ask` secret, a step with `asks`, an asked secret config value, verifies **AC-10**
 - Placed: a graph with an external secret field and no file → `setup.sh` lists it, exits 1, no state folder and no container exist, verifies **AC-11**
 
@@ -252,7 +252,7 @@ Compose variables in the state `.env` (not module config):
 Tracer Bullet, starting after #3's milestone 4 (the platform is a graph, 0015). Task 4 closes the thin thread from render to a running platform; the later tasks thicken it.
 
 1. Spike, recorded in [rationale.md](rationale.md): inside the `docker:<version>-cli` image the deployer uses, check that `docker compose --project-directory <dir> up` with no `-f` takes `COMPOSE_FILE` from `<dir>/.env`; that a second project from `keeper.yml` with an external network and the same alias starts beside a running keeper; that removing its own container with `force` from inside ends the process cleanly; and whether the pinned Compose recreates a service when only a `configs` file's content changes (record the answer in the README's drift note), satisfies **AC-12**, **AC-6**, **AC-5**
-2. Contract: `keeper`, `format` and `show` in `contracts/openapi/planner.yaml`, `task generate`; `libs/contract` loads and checks them (`invalid_secret`); the `deployer-docker` and `authelia` entries change as above, satisfies **AC-10**, **AC-3**
+2. Contract: `keeper`, `format` and `show` in `contracts/openapi/renderer.yaml`, `task generate`; `libs/contract` loads and checks them (`invalid_secret`); the `deployer-docker` and `authelia` entries change as above, satisfies **AC-10**, **AC-3**
 3. Render: the platform flavor's split into `docker-compose.yml` and `keeper.yml`, `render.Setup` and `setup.json`, the refusals and keeper rule, the new `setup.sh`; goldens for each file, satisfies **AC-1**, **AC-10**, **AC-11**
 4. Keeper happy path in `services/deployer-docker/internal/keeper` (the pipeline, behind the `docker` adapter): the `seed` command, lock, check, prepare (atomic generate, steps through moby with the scratch folder, folders), reconcile, definition hash and self check, handover, cleanup, the server and event stream started after the first pipeline outcome, the healthcheck gated on TLS; then `task dev:managed` and `scripts/smoke-managed.sh` switched to `setup.sh` plus the seed (run as root through a `docker run --rm` of the `docker:<version>-cli` image with the socket and both folders mounted, so no `sudo` prompt blocks a background run), the overlays dropping `build:` and the `deployer-docker` service, satisfies **AC-1**, **AC-2**, **AC-3**, **AC-12**
 5. Smoke and e2e assertions for starting again, drift, untouched stacks and a rerun of `setup.sh` before the print, satisfies **AC-3**, **AC-4**, **AC-5**, **AC-7**
@@ -296,5 +296,5 @@ Tracer Bullet, starting after #3's milestone 4 (the platform is a graph, 0015). 
 - [ ] Scope #32's done line says "a container changed by hand"; with Compose's rule this means "recreated from another definition", not `docker update`. Adjust the wording when the scope is next reconciled.
 - [ ] #33 maps the keeper and its handover onto the cluster (likely an operator with a rolling update of itself).
 - [ ] Spec 0015's platform `setup.sh` and the deployer as a Compose service are replaced by this spec once task 4 lands (see *What this replaces*); 0015 carries a pointer.
-- [ ] 0007 says only deployed containers carry the `deployment` label, but 0015 gives platform containers `deployment: platform`, so the event stream also records platform exits. Harmless (the map is capped), but 0007's sentence is wrong; correct it when 0007 is next touched.
+- [ ] 0007 says only deployed containers carry the `stack` label, but 0015 gives platform containers `stack: platform`, so the event stream also records platform exits. Harmless (the map is capped), but 0007's sentence is wrong; correct it when 0007 is next touched.
 - [ ] Private registries for step and keeper images need credentials in the keeper; not covered here.
