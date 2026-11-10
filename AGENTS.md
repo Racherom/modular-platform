@@ -86,6 +86,9 @@ Git tracks only `skills-lock.json` (each skill's source and hash), not the skill
 - [github-actions-templates](.agents/skills/github-actions-templates/): `wshobson/agents`, workflow files
 - [multi-stage-dockerfile](.agents/skills/multi-stage-dockerfile/): `github/awesome-copilot`, image builds
 - [supabase-postgres-best-practices](.agents/skills/supabase-postgres-best-practices/): `supabase/agent-skills`, Postgres schema and SQL (managed mode)
+- [seaweedfs](.agents/skills/seaweedfs/): `itechmeat/llm-code`, the SeaweedFS S3 module (#10)
+- [aws-iam](.agents/skills/aws-iam/): `aws/agent-toolkit-for-aws`, IAM policies and STS for the AWS S3 external (#10)
+- [securing-s3-buckets](.agents/skills/securing-s3-buckets/): `aws/agent-toolkit-for-aws`, S3 bucket access and encryption (#10)
 - [lefthook](.agents/skills/lefthook/): `fandhe-ai/agent-reference-skills`, `lefthook.yml` hooks (the skill text is in Japanese)
 - [docs](.agents/skills/docs/): `minio/skills`, plain language rules (ISO 24495-1) for READMEs, guides and doc comments
 
