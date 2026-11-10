@@ -155,7 +155,7 @@ func TestChallengeRouting(t *testing.T) {
 		for name, hello := range map[string]tls.ClientHelloInfo{
 			"acme-tls/1 and h2": {ServerName: host, SupportedProtos: []string{acme.ALPNProto, "h2"}},
 			"no server name":    {SupportedProtos: []string{"h2"}},
-			"another name":      {ServerName: "planner", SupportedProtos: []string{"http/1.1"}},
+			"another name":      {ServerName: "renderer", SupportedProtos: []string{"http/1.1"}},
 		} {
 			if c, err := m.GetCertificate(&hello); err != nil || c != cert {
 				t.Errorf("%s: got %v, %v; want the held certificate", name, c, err)
@@ -278,9 +278,9 @@ func TestIssuedCheck(t *testing.T) {
 	}{
 		"another name": {
 			bad: func(t *testing.T, ca *testpki.CA) *tls.Certificate {
-				return ca.Leaf(t, 24*time.Hour, "planner.sdk-test.internal")
+				return ca.Leaf(t, 24*time.Hour, "renderer.sdk-test.internal")
 			},
-			want: "certificate is valid for planner.sdk-test.internal",
+			want: "certificate is valid for renderer.sdk-test.internal",
 		},
 		"a foreign CA": {
 			bad:  func(t *testing.T, _ *testpki.CA) *tls.Certificate { return testpki.New(t).Leaf(t, 24*time.Hour, host) },

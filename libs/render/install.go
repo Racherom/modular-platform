@@ -404,7 +404,7 @@ func (r *renderer) stepRun(i string, m contract.Module, s contract.SetupStep, cl
 // readFile resolves one read of a setup step to the project relative file it mounts and where:
 // its own secret at /in/<name>, a field of its binding on a slot at /in/<slot>/<field>, and in a
 // for_each run the client's file of a field of its provide at /in/<provide>/<field>. The
-// planner's setup_order check has made sure the file exists when the step runs.
+// the setup_order check has made sure the file exists when the step runs.
 func (r *renderer) readFile(i string, m contract.Module, rd contract.SetupRead, client *contract.Binding) (file, target string, err error) {
 	switch {
 	case rd.Secret != "":

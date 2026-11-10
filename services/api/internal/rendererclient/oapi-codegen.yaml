@@ -1,5 +1,5 @@
 # The client only; models live in libs/contract, dot imported so the generated code finds them.
-package: plannerclient
+package: rendererclient
 generate:
   client: true
 output-options:
@@ -7,4 +7,4 @@ output-options:
 additional-imports:
   - package: github.com/racherom/modular-platform/libs/contract
     alias: .
-output: plannerclient.gen.go
+output: rendererclient.gen.go

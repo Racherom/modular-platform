@@ -7,12 +7,12 @@ configs:
     file: ./config/deployer-docker.env
   ingress_Caddyfile:
     file: ./config/ingress/Caddyfile
-  planner_env:
-    file: ./config/planner.env
   postgres_pg_hba.conf:
     file: ./config/postgres/pg_hba.conf
   postgres_postgresql.conf:
     file: ./config/postgres/postgresql.conf
+  renderer_env:
+    file: ./config/renderer.env
 name: modular-platform
 networks:
   egress: {}
@@ -37,12 +37,12 @@ secrets:
     file: ./secrets/api/uses_main-db_password
   api_uses_oidc_client_secret:
     file: ./secrets/api/uses_oidc_client_secret
-  api_uses_planner_ca:
+  api_uses_renderer_ca:
     file: ./secrets/cert-issuer/root-ca
-  api_uses_planner_caller_key:
+  api_uses_renderer_caller_key:
     file: ./secrets/api/caller-public-key
-  api_uses_planner_token:
-    file: ./secrets/api/uses_planner_token
+  api_uses_renderer_token:
+    file: ./secrets/api/uses_renderer_token
   authelia_jwt-secret:
     file: ./secrets/authelia/jwt-secret
   authelia_oidc-hmac:
@@ -81,8 +81,6 @@ secrets:
     file: ./secrets/cert-issuer/root-ca
   ingress_uses_trust_ca:
     file: ./secrets/cert-issuer/root-ca
-  planner_uses_acme_ca:
-    file: ./secrets/cert-issuer/root-ca
   postgres_admin_server_admin_password:
     file: ./secrets/postgres/password
   postgres_admin_server_ca:
@@ -93,6 +91,8 @@ secrets:
     file: ./secrets/postgres/uses_tls_cert
   postgres_uses_tls_key:
     file: ./secrets/postgres/uses_tls_key
+  renderer_uses_acme_ca:
+    file: ./secrets/cert-issuer/root-ca
 services:
   api:
     cap_drop:
@@ -113,14 +113,14 @@ services:
       ingress:
         condition: service_healthy
         required: true
-      planner:
-        condition: service_healthy
-        required: true
       postgres:
         condition: service_healthy
         required: true
       postgres_provision_api_main-db:
         condition: service_completed_successfully
+        required: true
+      renderer:
+        condition: service_healthy
         required: true
     environment:
       MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
@@ -144,10 +144,10 @@ services:
       MP_OIDC_CLIENT_ID: api
       MP_OIDC_CLIENT_SECRET_FILE: /run/secrets/uses/oidc/client_secret
       MP_OIDC_ISSUER: ${MP_INGRESS__ORIGIN}${MP_INGRESS__BASE_PATH:-}/auth
-      MP_PLANNER_CA_FILE: /run/secrets/uses/planner/ca
-      MP_PLANNER_TOKEN_FILE: /run/secrets/uses/planner/token
-      MP_PLANNER_URL: https://planner.modular-platform.internal:8443
       MP_PUBLIC_ORIGIN: ${MP_INGRESS__ORIGIN}
+      MP_RENDERER_CA_FILE: /run/secrets/uses/renderer/ca
+      MP_RENDERER_TOKEN_FILE: /run/secrets/uses/renderer/token
+      MP_RENDERER_URL: https://renderer.modular-platform.internal:8443
     healthcheck:
       interval: 5s
       retries: 10
@@ -186,10 +186,10 @@ services:
       target: /run/secrets/uses/main-db/password
     - source: api_uses_oidc_client_secret
       target: /run/secrets/uses/oidc/client_secret
-    - source: api_uses_planner_ca
-      target: /run/secrets/uses/planner/ca
-    - source: api_uses_planner_token
-      target: /run/secrets/uses/planner/token
+    - source: api_uses_renderer_ca
+      target: /run/secrets/uses/renderer/ca
+    - source: api_uses_renderer_token
+      target: /run/secrets/uses/renderer/token
     security_opt:
     - no-new-privileges:true
     user: ${MP_UID}:${MP_GID}
@@ -562,60 +562,6 @@ services:
     security_opt:
     - no-new-privileges:true
     user: ${MP_UID}:${MP_GID}
-  planner:
-    cap_drop:
-    - ALL
-    configs:
-    - source: planner_env
-      target: /etc/modular-platform/module.env
-    depends_on:
-      cert-issuer:
-        condition: service_healthy
-        required: true
-      ingress:
-        condition: service_healthy
-        required: true
-    environment:
-      MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
-      MP_CA_FILE: /run/secrets/uses/acme/ca
-      MP_CALLER_KEYS_DIR: /run/secrets/clients/planner/caller_key
-      MP_DOMAIN: modular-platform.internal
-      MP_ENV_FILE: /etc/modular-platform/module.env
-      MP_INSTANCE: planner
-      MP_PLANNER_CLIENTS_DIR: /run/secrets/clients/planner/token
-      MP_PLATFORM_HTTP_PORT: ${MP_INGRESS__HTTP_PORT:-80}
-      MP_PLATFORM_HTTPS_PORT: ${MP_INGRESS__HTTPS_PORT:-443}
-    healthcheck:
-      interval: 5s
-      retries: 10
-      start_period: 30s
-      test:
-      - CMD
-      - /planner
-      - healthcheck
-      timeout: 3s
-    image: ghcr.io/racherom/modular-platform/planner:0.0.0-test
-    labels:
-      io.github.racherom.modular-platform.deployment: platform
-      io.github.racherom.modular-platform.graph: modular-platform
-      io.github.racherom.modular-platform.instance: planner
-      io.github.racherom.modular-platform.module: planner
-    networks:
-      internal:
-        aliases:
-        - planner.modular-platform.internal
-    read_only: true
-    restart: unless-stopped
-    secrets:
-    - source: planner_uses_acme_ca
-      target: /run/secrets/uses/acme/ca
-    - source: api_uses_planner_caller_key
-      target: /run/secrets/clients/planner/caller_key/api
-    - source: api_uses_planner_token
-      target: /run/secrets/clients/planner/token/api
-    security_opt:
-    - no-new-privileges:true
-    user: ${MP_UID}:${MP_GID}
   postgres:
     cap_drop:
     - ALL
@@ -921,6 +867,60 @@ services:
       target: /run/secrets/admin/admin_password
     - source: postgres_admin_server_ca
       target: /run/secrets/admin/ca
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  renderer:
+    cap_drop:
+    - ALL
+    configs:
+    - source: renderer_env
+      target: /etc/modular-platform/module.env
+    depends_on:
+      cert-issuer:
+        condition: service_healthy
+        required: true
+      ingress:
+        condition: service_healthy
+        required: true
+    environment:
+      MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
+      MP_CA_FILE: /run/secrets/uses/acme/ca
+      MP_CALLER_KEYS_DIR: /run/secrets/clients/renderer/caller_key
+      MP_DOMAIN: modular-platform.internal
+      MP_ENV_FILE: /etc/modular-platform/module.env
+      MP_INSTANCE: renderer
+      MP_PLATFORM_HTTP_PORT: ${MP_INGRESS__HTTP_PORT:-80}
+      MP_PLATFORM_HTTPS_PORT: ${MP_INGRESS__HTTPS_PORT:-443}
+      MP_RENDERER_CLIENTS_DIR: /run/secrets/clients/renderer/token
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 30s
+      test:
+      - CMD
+      - /renderer
+      - healthcheck
+      timeout: 3s
+    image: ghcr.io/racherom/modular-platform/renderer:0.0.0-test
+    labels:
+      io.github.racherom.modular-platform.deployment: platform
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: renderer
+      io.github.racherom.modular-platform.module: renderer
+    networks:
+      internal:
+        aliases:
+        - renderer.modular-platform.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: renderer_uses_acme_ca
+      target: /run/secrets/uses/acme/ca
+    - source: api_uses_renderer_caller_key
+      target: /run/secrets/clients/renderer/caller_key/api
+    - source: api_uses_renderer_token
+      target: /run/secrets/clients/renderer/token/api
     security_opt:
     - no-new-privileges:true
     user: ${MP_UID}:${MP_GID}

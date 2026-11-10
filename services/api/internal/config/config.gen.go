@@ -73,11 +73,6 @@ func (u Uses) Oidc(ctx context.Context) (OidcBinding, error) {
 	}, nil
 }
 
-// Planner is the client of the planner binding.
-func (u Uses) Planner(ctx context.Context) (*httpclient.Client, error) {
-	return sdk.Client[*httpclient.Client](ctx, u.b, "planner")
-}
-
 // PublicBinding holds the fields of the public binding (capability http-ingress).
 type PublicBinding struct {
 	// BasePath is path the platform is served under; unset at the site root. Nil when the binding does not deliver it.
@@ -98,6 +93,11 @@ func (u Uses) Public(ctx context.Context) (PublicBinding, error) {
 	}, nil
 }
 
+// Renderer is the client of the renderer binding.
+func (u Uses) Renderer(ctx context.Context) (*httpclient.Client, error) {
+	return sdk.Client[*httpclient.Client](ctx, u.b, "renderer")
+}
+
 // Module is the declaration sdk.Run loads.
 var Module = sdk.Declaration[Config, Uses]{
 	Name: "api",
@@ -110,8 +110,8 @@ var Module = sdk.Declaration[Config, Uses]{
 		{Capability: "deploy-target", Client: "http", Env: map[string]string{"ca_file": "MP_DEPLOY_TARGET_CA_FILE", "token_file": "MP_DEPLOY_TARGET_TOKEN_FILE", "url": "MP_DEPLOY_TARGET_URL"}, Open: httpclient.Open},
 		{Capability: "main-db", Client: "postgresql", Env: map[string]string{"ca_file": "MP_DATABASE_CA_FILE", "database": "MP_DATABASE_NAME", "password_file": "MP_DATABASE_PASSWORD_FILE", "sslmode": "MP_DATABASE_SSLMODE", "url": "MP_DATABASE_URL", "user": "MP_DATABASE_USER"}, Open: pg.Open},
 		{Capability: "oidc", Env: map[string]string{"admin_email": "MP_ADMIN_EMAIL", "ca_file": "MP_OIDC_CA_FILE", "client_id": "MP_OIDC_CLIENT_ID", "client_secret_file": "MP_OIDC_CLIENT_SECRET_FILE", "issuer": "MP_OIDC_ISSUER"}, Fields: []sdk.FieldSpec{{Name: "admin_email", Env: "MP_ADMIN_EMAIL", Type: "string", Optional: true}, {Name: "ca", Env: "MP_OIDC_CA_FILE", Type: "certificate", Optional: true}, {Name: "client_id", Env: "MP_OIDC_CLIENT_ID", Type: "string"}, {Name: "client_secret", Env: "MP_OIDC_CLIENT_SECRET_FILE", Type: "secret"}, {Name: "issuer", Env: "MP_OIDC_ISSUER", Type: "url"}}},
-		{Capability: "planner", Client: "http", Env: map[string]string{"ca_file": "MP_PLANNER_CA_FILE", "token_file": "MP_PLANNER_TOKEN_FILE", "url": "MP_PLANNER_URL"}, Open: httpclient.Open},
 		{Capability: "public", Env: map[string]string{"base_path": "MP_BASE_PATH", "origin": "MP_PUBLIC_ORIGIN"}, Fields: []sdk.FieldSpec{{Name: "base_path", Env: "MP_BASE_PATH", Type: "string", Optional: true}, {Name: "origin", Env: "MP_PUBLIC_ORIGIN", Type: "url"}}},
+		{Capability: "renderer", Client: "http", Env: map[string]string{"ca_file": "MP_RENDERER_CA_FILE", "token_file": "MP_RENDERER_TOKEN_FILE", "url": "MP_RENDERER_URL"}, Open: httpclient.Open},
 	},
 	Provides: &sdk.ProvideSpec{Capability: "api"},
 	New:      func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },

@@ -29,8 +29,8 @@ describe('open file', () => {
   beforeEach(() => {
     fetchHandler.current = async (req) => {
       const url = new URL(req.url)
-      if (url.pathname === '/planner/v1/catalog') return Response.json(catalog)
-      if (url.pathname === '/planner/v1/plan') {
+      if (url.pathname === '/renderer/v1/catalog') return Response.json(catalog)
+      if (url.pathname === '/renderer/v1/plan') {
         const graph = (await req.json()) as Graph
         const known = graph.modules.web?.module === 'whoami'
         const plan: PlanResult = {

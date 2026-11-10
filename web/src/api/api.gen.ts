@@ -79,7 +79,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the catalog, as the planner answers it */
+        /** List the catalog, as the renderer answers it */
         get: operations["getCatalog"];
         put?: never;
         post?: never;
@@ -98,7 +98,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Check a graph and fill in its automatic bindings, as the planner answers it */
+        /** Check a graph and fill in its automatic bindings, as the renderer answers it */
         post: operations["plan"];
         delete?: never;
         options?: never;
@@ -115,7 +115,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Render a graph as the static zip, as the planner answers it */
+        /** Render a graph as the static zip, as the renderer answers it */
         post: operations["render"];
         delete?: never;
         options?: never;
@@ -770,7 +770,7 @@ export interface components {
         }) | null;
         /**
          * @description Slot name to its binding. `null` leaves an optional slot unbound on purpose. A missing key
-         *     means not decided: the planner may bind a required slot or warn about an optional one.
+         *     means not decided: the renderer may bind a required slot or warn about an optional one.
          */
         Uses: {
             [key: string]: components["schemas"]["UseBinding"];
@@ -796,13 +796,13 @@ export interface components {
         /** @description A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value. */
         Graph: {
             /**
-             * @description `modular-platform/v1`. A `modular-platform/v0alpha1` graph is still read: the planner
+             * @description `modular-platform/v1`. A `modular-platform/v0alpha1` graph is still read: the renderer
              *     converts it to v1 and answers with warning `converted_from_v0alpha1`.
              */
             apiVersion: string;
             /** @description Exactly `Graph`. */
             kind: string;
-            /** @description `1.<minor>`, default `1.0`; a writer leaves it out at `1.0`. A minor above what the planner reads is `format_too_new`. */
+            /** @description `1.<minor>`, default `1.0`; a writer leaves it out at `1.0`. A minor above what the renderer reads is `format_too_new`. */
             formatVersion?: string;
             /** @description The stack's name and the Compose project name. A DNS label, not a reserved word. */
             name: string;
@@ -819,9 +819,9 @@ export interface components {
             provider: string;
             /** @description The provide of the provider the slot is bound to. */
             provide: string;
-            /** @description True when the planner made this binding, not the graph. */
+            /** @description True when the checks made this binding, not the graph. */
             auto: boolean;
-            /** @description True when the planner wrote default named values into the graph. */
+            /** @description True when the checks wrote default named values into the graph. */
             named: boolean;
             /** @description True when the provide's capability yields the slot's capability, so a provision job makes it. */
             provisioned: boolean;
@@ -908,8 +908,8 @@ export interface components {
                 "application/json": components["schemas"]["ProblemList"];
             };
         };
-        /** @description The planner did not answer as its contract says (`planner_error`). */
-        PlannerError: {
+        /** @description The renderer did not answer as its contract says (`renderer_error`). */
+        RendererError: {
             headers: {
                 [name: string]: unknown;
             };
@@ -1057,7 +1057,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthenticated"];
-            502: components["responses"]["PlannerError"];
+            502: components["responses"]["RendererError"];
         };
     };
     plan: {
@@ -1086,7 +1086,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["BadOrigin"];
             413: components["responses"]["TooLarge"];
-            502: components["responses"]["PlannerError"];
+            502: components["responses"]["RendererError"];
         };
     };
     render: {
@@ -1125,7 +1125,7 @@ export interface operations {
                     "application/json": components["schemas"]["PlanResult"];
                 };
             };
-            502: components["responses"]["PlannerError"];
+            502: components["responses"]["RendererError"];
         };
     };
     listDeployments: {
@@ -1239,7 +1239,7 @@ export interface operations {
             403: components["responses"]["BadOrigin"];
             413: components["responses"]["TooLarge"];
             422: components["responses"]["Refused"];
-            502: components["responses"]["PlannerError"];
+            502: components["responses"]["RendererError"];
             503: components["responses"]["DeployerUnavailable"];
         };
     };
@@ -1285,7 +1285,7 @@ export interface operations {
             };
             413: components["responses"]["TooLarge"];
             422: components["responses"]["Refused"];
-            502: components["responses"]["PlannerError"];
+            502: components["responses"]["RendererError"];
         };
     };
     removeDeployment: {

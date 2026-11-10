@@ -70,7 +70,7 @@ type CatalogProblem struct {
 	Message string
 }
 
-// String formats the problem as the planner logs it:
+// String formats the problem as the renderer logs it:
 // catalog/<file>: <dotted.path>: <code>: <message>.
 func (p CatalogProblem) String() string {
 	return fmt.Sprintf("catalog/%s: %s: %s: %s", p.File, p.Path, p.Code, p.Message)
@@ -206,7 +206,7 @@ func (c *checker) decode(data []byte, v any, kind string, apiVersion, gotKind fu
 		s, _ := h.FormatVersion.(string)
 		switch ok, tooNew := checkFormat(s); {
 		case tooNew:
-			c.add("formatVersion", CodeFormatTooNew, "needs a planner that reads format %s; this one reads 1.%d", s, FormatMinor)
+			c.add("formatVersion", CodeFormatTooNew, "needs a renderer that reads format %s; this one reads 1.%d", s, FormatMinor)
 			return false
 		case !ok || s == "":
 			c.add("formatVersion", CodeInvalidEntry, "formatVersion %v is not a version like 1.0", h.FormatVersion)

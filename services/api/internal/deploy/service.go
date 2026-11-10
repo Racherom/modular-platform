@@ -28,11 +28,11 @@ const (
 
 // Service orchestrates deployments.
 type Service struct {
-	store   Store
-	planner Planner
-	target  Target
-	hub     *Hub
-	log     *slog.Logger
+	store    Store
+	renderer Renderer
+	target   Target
+	hub      *Hub
+	log      *slog.Logger
 	//nolint:containedctx // the service's lifetime: pollers outlive the request that started them and end with it
 	ctx        context.Context
 	now        func() time.Time
@@ -48,9 +48,9 @@ type Service struct {
 }
 
 // NewService returns the service; its pollers run until ctx ends.
-func NewService(ctx context.Context, store Store, planner Planner, target Target, hub *Hub, log *slog.Logger) *Service {
+func NewService(ctx context.Context, store Store, renderer Renderer, target Target, hub *Hub, log *slog.Logger) *Service {
 	return &Service{
-		store: store, planner: planner, target: target, hub: hub, log: log, ctx: ctx,
+		store: store, renderer: renderer, target: target, hub: hub, log: log, ctx: ctx,
 		now: time.Now, every: pollEvery, watchEvery: watchEvery, retryAfter: retryAfter,
 		polling: map[uuid.UUID]bool{}, watches: map[string]*watch{},
 	}
@@ -82,7 +82,7 @@ func (s *Service) Review(ctx context.Context, name string, g contract.Graph) (Re
 	} else if ok {
 		id = d.ID
 	}
-	project, err := s.planner.RenderManaged(ctx, g, id)
+	project, err := s.renderer.RenderManaged(ctx, g, id)
 	if err != nil {
 		return Review{}, err
 	}
@@ -111,7 +111,7 @@ func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract
 	if err := checkName(name, g); err != nil {
 		return Operation{}, err
 	}
-	plan, err := s.planner.Plan(ctx, g)
+	plan, err := s.renderer.Plan(ctx, g)
 	if err != nil {
 		return Operation{}, err
 	}
@@ -132,7 +132,7 @@ func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract
 			}
 		}
 	}
-	rendered, err := s.planner.RenderManaged(ctx, g, id)
+	rendered, err := s.renderer.RenderManaged(ctx, g, id)
 	if err != nil {
 		dropNew()
 		return Operation{}, err

@@ -18,7 +18,7 @@ const multibyte = "[\xc2-\xf4][\x80-\xbf]{1,3}"
 
 // erePattern turns a config value's RE2 pattern into a printf format whose output is a POSIX
 // extended regular expression that `LC_ALL=C grep -E` matches against a whole answer exactly
-// when the planner's regexp matches it (spec 0013, Install time, step 2). The pattern is read in
+// when the checks' regexp matches it (spec 0013, Install time, step 2). The pattern is read in
 // the C locale byte by byte, so a class or dot that reaches past ASCII matches any UTF-8
 // character as its two to four bytes. A pattern using what ERE cannot say (word boundaries, a
 // class of only some non ASCII characters, a literal newline) is refused, so setup.sh never

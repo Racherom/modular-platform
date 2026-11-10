@@ -265,9 +265,9 @@ func TestGenerateRefuses(t *testing.T) {
 func TestSourceName(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]string{
-		"../../../../catalog/planner.yaml": "catalog/planner.yaml",
-		"testmodule.yaml":                  "testmodule.yaml",
-		"./a/../catalog/x.yaml":            "catalog/x.yaml",
+		"../../../../catalog/renderer.yaml": "catalog/renderer.yaml",
+		"testmodule.yaml":                   "testmodule.yaml",
+		"./a/../catalog/x.yaml":             "catalog/x.yaml",
 	} {
 		if got := SourceName(in); got != want {
 			t.Errorf("SourceName(%q) = %q, want %q", in, got, want)

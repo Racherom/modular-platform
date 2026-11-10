@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, type Locator, type Page } from '@playwright/test'
-import { graphFile } from './mock-planner'
+import { graphFile } from './mock-renderer'
 
 /** The WCAG tags AC-3 names; axe core 4.14 accepts wcag22aa. */
 export const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']

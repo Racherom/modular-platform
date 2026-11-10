@@ -22,7 +22,7 @@ Every file here is rendered from `graph.yaml`, the platform's own graph: each pl
 
 The platform makes its own certificate authority for HTTPS (`MP_INGRESS__TLS_MODE=internal`), so your browser warns about the certificate the first time. For a public certificate, set `MP_INGRESS__TLS_MODE=acme` in `.env` (the domain must be public), run `sh setup.sh` again, which checks every value, then `docker compose up -d`.
 
-The settings of the ingress, the editor and the identity provider are in `.env`; [`.env.example`](.env.example) lists each one with its default and what it does. The settings of `api`, `planner` and `deployer-docker` are in `config/<instance>.env`. Never put a secret in either: secrets live in `secrets/`.
+The settings of the ingress, the editor and the identity provider are in `.env`; [`.env.example`](.env.example) lists each one with its default and what it does. The settings of `api`, `renderer` and `deployer-docker` are in `config/<instance>.env`. Never put a secret in either: secrets live in `secrets/`.
 
 ## Sign in
 

@@ -10,15 +10,15 @@ export const catalog: Catalog = JSON.parse(readFileSync(new URL('./fixtures/cata
 export type PlanReply = { status: number } | { delayMs: number } | 'echo'
 
 /**
- * A planner stand in. GET /v1/catalog answers the fixture. POST /v1/plan echoes the posted
+ * A renderer stand in. GET /v1/catalog answers the fixture. POST /v1/plan echoes the posted
  * graph, builds bindings from its uses (auto false), and reports unbound_required for each
  * required slot set to null, so ok follows. `next` decides how each call is answered, in order;
  * `entries` replaces the catalog, as the scale check does.
  */
-export async function mockPlanner(page: Page, next: () => PlanReply = () => 'echo', entries: Catalog = catalog) {
+export async function mockRenderer(page: Page, next: () => PlanReply = () => 'echo', entries: Catalog = catalog) {
   const plans: Graph[] = []
-  await page.route('**/planner/v1/catalog', (route) => route.fulfill({ json: entries }))
-  await page.route('**/planner/v1/plan', async (route: Route) => {
+  await page.route('**/renderer/v1/catalog', (route) => route.fulfill({ json: entries }))
+  await page.route('**/renderer/v1/plan', async (route: Route) => {
     const graph = route.request().postDataJSON() as Graph
     plans.push(graph)
     const reply = next()

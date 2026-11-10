@@ -6,4 +6,4 @@ services:
   web:
     environment:
       MP_BASE_PATH: /platform
-      MP_API_ROOT: /platform/planner
+      MP_API_ROOT: /platform/renderer

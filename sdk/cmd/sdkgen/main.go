@@ -1,7 +1,7 @@
 // Command sdkgen writes a module's typed config getters and its sdk.Declaration from its catalog
 // entry (spec 0005). Run it with go generate:
 //
-//	//go:generate go tool sdkgen -entry ../../../../catalog/modules/planner/module.yaml -package config -out config.gen.go
+//	//go:generate go tool sdkgen -entry ../../../../catalog/modules/renderer/module.yaml -package config -out config.gen.go
 //
 // It reads the capability files from -capabilities, by default the catalog's capabilities folder
 // beside modules/<name>/module.yaml. It refuses an entry that breaks a catalog rule, with the
@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	entry := flag.String("entry", "", "path of the module entry, like ../../catalog/modules/planner/module.yaml")
+	entry := flag.String("entry", "", "path of the module entry, like ../../catalog/modules/renderer/module.yaml")
 	capsDir := flag.String("capabilities", "", "folder of the capability files; default ../../capabilities from the entry")
 	pkg := flag.String("package", "config", "Go package name of the generated file")
 	out := flag.String("out", "config.gen.go", "file to write")
@@ -83,7 +83,7 @@ func run(entry, capsDir, pkg, out string) int {
 
 // SourceName is the entry path as the generated header names it: slash separated, without the
 // leading ../ that go generate's working directory adds, so it reads
-// catalog/modules/planner/module.yaml.
+// catalog/modules/renderer/module.yaml.
 func SourceName(entry string) string {
 	name := path.Clean(filepath.ToSlash(entry))
 	for strings.HasPrefix(name, "../") {

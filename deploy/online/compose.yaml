@@ -1,4 +1,4 @@
-# The online tool graph: ingress, web and planner on one origin. Run it through the Taskfile
+# The online editor graph: ingress, web and renderer on one origin. Run it through the Taskfile
 # (task online:up), which passes versions.env and .env:
 #   docker compose --env-file versions.env --env-file .env up -d
 name: modular-platform-online
@@ -29,7 +29,7 @@ services:
     depends_on:
       web:
         condition: service_healthy
-      planner:
+      renderer:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
@@ -50,7 +50,7 @@ services:
     security_opt: [no-new-privileges:true]
     environment:
       MP_BASE_PATH: ${MP_BASE_PATH:-}
-      MP_API_ROOT: ${MP_BASE_PATH:-}/planner
+      MP_API_ROOT: ${MP_BASE_PATH:-}/renderer
     networks: [edge]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
@@ -60,21 +60,21 @@ services:
       start_period: 30s
       start_interval: 1s
 
-  planner:
-    image: ghcr.io/racherom/modular-platform/planner:${MP_VERSION:?set in versions.env}
+  renderer:
+    image: ghcr.io/racherom/modular-platform/renderer:${MP_VERSION:?set in versions.env}
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     environment:
-      MP_INSTANCE: planner
-      MP_PLANNER_MODE: public
-      MP_PLANNER_RATE: ${MP_PLANNER_RATE:-60}
+      MP_INSTANCE: renderer
+      MP_RENDERER_MODE: public
+      MP_RENDERER_RATE: ${MP_RENDERER_RATE:-60}
       # the ingress is the one proxy hop; set 2 when you add flood protection in front of it
       MP_PROXY_HOPS: "1"
     networks: [edge]
     healthcheck:
-      test: ["CMD", "/planner", "healthcheck"]
+      test: ["CMD", "/renderer", "healthcheck"]
       interval: 10s
       timeout: 3s
       retries: 5

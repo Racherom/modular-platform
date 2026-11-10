@@ -28,7 +28,7 @@ type Options struct {
 	Signin       *signin.Service
 	Deploy       *deploy.Service
 	Hub          *deploy.Hub
-	Planner      Planner
+	Renderer     Renderer
 	PublicOrigin string
 	BasePath     string
 	Idle         time.Duration
@@ -39,7 +39,7 @@ type Options struct {
 // plain handlers, everything else through the strict server. Every route but login and
 // callback needs a session; every mutating route needs the public origin.
 func NewHandler(o Options) http.Handler {
-	s := &Server{signin: o.Signin, deploy: o.Deploy, planner: o.Planner, log: o.Log}
+	s := &Server{signin: o.Signin, deploy: o.Deploy, renderer: o.Renderer, log: o.Log}
 	strict := NewStrictHandlerWithOptions(s, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, _ error) {
 			httpkit.WriteProblem(w, http.StatusBadRequest, "invalid_request", "The request could not be read.")
@@ -131,7 +131,7 @@ func (g guard) wrap(next http.Handler, touch bool) http.Handler {
 }
 
 // strictBodies decodes graph bodies with the strict decoder of spec 0002 before the generated
-// code sees them, as the planner does: over 1 MB is 413; unknown keys, duplicate keys, another
+// code sees them, as the renderer does: over 1 MB is 413; unknown keys, duplicate keys, another
 // apiVersion or kind are 400. The plan and render routes take a bare graph; review and apply
 // take an object with a graph key.
 func strictBodies(next http.Handler) http.Handler {

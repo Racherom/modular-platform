@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { drag, handle, UNBOUND } from '../helpers'
-import { graphFile, mockPlanner } from '../mock-planner'
+import { graphFile, mockRenderer } from '../mock-renderer'
 
 // The preview server sends web/Caddyfile's content policy (style-src 'self', script-src 'self').
 // Nothing the editor does may need an inline style or script: React Aria's pressable <style>
@@ -14,7 +14,7 @@ test('the editor runs under the content policy, with no blocked style or script 
       w.reportViolation(`${e.violatedDirective} ${e.blockedURI} ${e.sample}`)
     })
   })
-  await mockPlanner(page)
+  await mockRenderer(page)
 
   const reply = await page.goto('/samples/whoami-postgres')
   expect(reply?.headers()['content-security-policy']).toContain("style-src 'self'")

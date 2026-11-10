@@ -12,7 +12,7 @@ import (
 
 // TestCanonicalRoundTrip writes every shared fixture with the Go writer and compares it to the
 // fixture text, which is canonical; the editor's test compares its writer to the same files
-// (AC-19). A v0alpha1 fixture keeps its apiVersion until the planner converts it.
+// (AC-19). A v0alpha1 fixture keeps its apiVersion until the checks convert it.
 func TestCanonicalRoundTrip(t *testing.T) {
 	t.Parallel()
 	files, err := filepath.Glob("../../contracts/fixtures/graphs/*.yaml")

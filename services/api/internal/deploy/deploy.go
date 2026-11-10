@@ -1,7 +1,7 @@
 // Package deploy is api's deployment record and orchestration (spec 0006): it reviews a graph,
 // starts an apply through the deploy target, polls it to its end and keeps the history. A
 // deployment's state is derived from its latest operation, never stored. Persistence, the
-// planner and the deploy target sit behind the interfaces this package defines.
+// renderer and the deploy target sit behind the interfaces this package defines.
 package deploy
 
 import (
@@ -26,8 +26,8 @@ var (
 	ErrPlanChanged = errors.New("deploy: the plan changed since review")
 	// ErrAlreadyRemoved refuses a plain remove of a removed deployment.
 	ErrAlreadyRemoved = errors.New("deploy: the deployment is removed already")
-	// ErrPlanner reports a planner that did not answer as its contract says.
-	ErrPlanner = errors.New("deploy: the planner failed")
+	// ErrRenderer reports a renderer that did not answer as its contract says.
+	ErrRenderer = errors.New("deploy: the renderer failed")
 	// ErrTargetUnavailable reports a deploy target that did not answer.
 	ErrTargetUnavailable = errors.New("deploy: the deploy target did not answer")
 	// ErrTarget reports a deploy target that answered outside its contract: a wiring fault.
@@ -239,8 +239,8 @@ type Store interface {
 	CountRollbacks(ctx context.Context, of uuid.UUID) (int, error)
 }
 
-// Planner plans and renders graphs.
-type Planner interface {
+// Renderer plans and renders graphs.
+type Renderer interface {
 	Plan(ctx context.Context, g contract.Graph) (contract.PlanResult, error)
 	// RenderManaged renders g for deployment; a plan with errors comes back as a *RefusedError.
 	RenderManaged(ctx context.Context, g contract.Graph, deployment uuid.UUID) (contract.RenderedProject, error)

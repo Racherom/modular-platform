@@ -17,7 +17,7 @@ const graph: Graph = {
 const planFor = (g: Graph): PlanResult => ({ ok: true, graph: g, bindings: [], problems: [] })
 
 /** Replies to plan calls by hand, in any order. */
-function heldPlanner() {
+function heldRenderer() {
   const pending: { graph: Graph; reply: (r: Response) => void }[] = []
   fetchHandler.current = async (req) => {
     const g = (await req.json()) as Graph
@@ -27,7 +27,7 @@ function heldPlanner() {
 }
 
 /** Answers every plan call at once with the posted graph. */
-function echoPlanner() {
+function echoRenderer() {
   const calls: Graph[] = []
   fetchHandler.current = async (req) => {
     const g = (await req.json()) as Graph
@@ -50,7 +50,7 @@ describe('undo and redo (AC-15)', () => {
   })
 
   it('steps back and forth through edits, one step each, planning after each', async () => {
-    const calls = echoPlanner()
+    const calls = echoRenderer()
     s().edit((g) => bind(g, 'web', 'postgresql', 'db'))
     await vi.waitFor(() => expect(s().planState).toBe('current'))
     s().edit((g) => bind(g, 'web', 'postgresql', 'db2'))
@@ -83,7 +83,7 @@ describe('undo and redo (AC-15)', () => {
   })
 
   it('a plan reply never adds a step; the edited flag stays set after undo (AC-17)', async () => {
-    echoPlanner()
+    echoRenderer()
     s().edit((g) => bind(g, 'web', 'postgresql', 'db'))
     await vi.waitFor(() => expect(s().planState).toBe('current'))
     expect(s().history.past).toHaveLength(1)
@@ -94,7 +94,7 @@ describe('undo and redo (AC-15)', () => {
   })
 
   it('a new edit clears the redo steps', async () => {
-    echoPlanner()
+    echoRenderer()
     s().edit((g) => bind(g, 'web', 'postgresql', 'db'))
     s().undo()
     expect(s().history.future).toHaveLength(1)
@@ -105,7 +105,7 @@ describe('undo and redo (AC-15)', () => {
   })
 
   it('undo while a plan is checking drops the late reply (AC-12)', async () => {
-    const pending = heldPlanner()
+    const pending = heldRenderer()
     s().edit((g) => bind(g, 'web', 'postgresql', 'db'))
     await vi.waitFor(() => expect(pending).toHaveLength(1))
     s().undo()
@@ -121,7 +121,7 @@ describe('undo and redo (AC-15)', () => {
   })
 
   it('opening a graph clears the history', () => {
-    echoPlanner()
+    echoRenderer()
     s().edit((g) => bind(g, 'web', 'postgresql', 'db'))
     s().undo()
     s().open({ fileName: 'g.yaml', graph, plan: planFor(graph) })
@@ -130,7 +130,7 @@ describe('undo and redo (AC-15)', () => {
   })
 
   it('undo restores the positions stored with the step', async () => {
-    echoPlanner()
+    echoRenderer()
     const before = s().working?.positions
     s().tidy() // already tidy: nothing happens
     expect(s().history.past).toHaveLength(0)
@@ -153,7 +153,7 @@ describe('Tidy layout (AC-16)', () => {
   })
 
   it('lays out again, adds one step, sets the edited flag, plans nothing and saves', async () => {
-    const calls = echoPlanner()
+    const calls = echoRenderer()
     const seq = s().planSeq
     s().tidy()
     expect(s().working?.positions).toEqual(layout(graph))
@@ -167,7 +167,7 @@ describe('Tidy layout (AC-16)', () => {
   })
 
   it('saves nothing while a plan is failed', async () => {
-    const pending = heldPlanner()
+    const pending = heldRenderer()
     s().edit((g) => bind(g, 'web', 'postgresql', 'db'))
     await vi.waitFor(() => expect(pending).toHaveLength(1))
     pending[0]!.reply(new Response(null, { status: 503 }))
@@ -187,7 +187,7 @@ describe('sample copy (AC-18)', () => {
   })
 
   it('copies with the edit applied, history holding the unedited copy, and plans it', async () => {
-    const calls = echoPlanner()
+    const calls = echoRenderer()
     useEditor.setState({ selection: { kind: 'binding', consumer: 'web', slot: 'postgresql' } })
     const made = s().copySample({ fileName: 'sample.yaml', graph: sample, plan: planFor(sample), positions }, (g) =>
       unbind(g, 'web', 'postgresql'),

@@ -8,7 +8,7 @@ output-options:
   prefer-skip-optional-pointer: true
   prefer-skip-optional-pointer-with-omitzero: true
 import-mapping:
-  ./planner.yaml: github.com/racherom/modular-platform/libs/contract
+  ./renderer.yaml: github.com/racherom/modular-platform/libs/contract
 additional-imports:
   - package: github.com/racherom/modular-platform/libs/target/deploytarget
     alias: .

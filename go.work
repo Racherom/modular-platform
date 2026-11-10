@@ -8,5 +8,5 @@ use (
 	./sdk
 	./services/api
 	./services/deployer-docker
-	./services/planner
+	./services/renderer
 )

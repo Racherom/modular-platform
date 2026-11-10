@@ -19,11 +19,11 @@ services:
       context: ../..
       dockerfile: services/api/Dockerfile
 
-  planner:
-    image: ghcr.io/racherom/modular-platform/planner:dev
+  renderer:
+    image: ghcr.io/racherom/modular-platform/renderer:dev
     build:
       context: ../..
-      dockerfile: services/planner/Dockerfile
+      dockerfile: services/renderer/Dockerfile
 
   deployer-docker:
     image: ghcr.io/racherom/modular-platform/deployer-docker:dev

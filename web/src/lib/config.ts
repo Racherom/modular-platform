@@ -11,8 +11,8 @@ function meta(name: string, fallback: string): string {
 /** Empty for the site root, else like `/platform`. */
 export const basePath = meta('mp-base-path', '')
 
-/** Where the planning API lives, like `/planner` or `/platform/planner`. */
-export const apiRoot = meta('mp-api-root', '/planner')
+/** Where the planning API lives, like `/renderer` or `/platform/renderer`. */
+export const apiRoot = meta('mp-api-root', '/renderer')
 
 /** `online` for the online tool, `managed` inside the managed platform, with sign in and deploy. */
 export const mode: 'online' | 'managed' = meta('mp-mode', 'online') === 'managed' ? 'managed' : 'online'

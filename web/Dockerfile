@@ -16,7 +16,7 @@ RUN pnpm run build
 # are filled into index.html at serve time.
 FROM caddy:2.11.7-alpine
 ENV MP_BASE_PATH="" \
-    MP_API_ROOT="/planner" \
+    MP_API_ROOT="/renderer" \
     MP_MODE="online" \
     MP_SIGNED_OUT="index" \
     XDG_DATA_HOME=/tmp/caddy/data \

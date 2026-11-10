@@ -31,8 +31,8 @@ describe('sample route', () => {
     fetchHandler.current = async (req) => {
       const url = new URL(req.url)
       calls.push(`${req.method} ${url.pathname}`)
-      if (url.pathname === '/planner/v1/catalog') return Response.json(catalog)
-      if (url.pathname === '/planner/v1/plan') {
+      if (url.pathname === '/renderer/v1/catalog') return Response.json(catalog)
+      if (url.pathname === '/renderer/v1/plan') {
         const graph = (await req.json()) as Graph
         const plan: PlanResult = {
           ok: true,
@@ -74,7 +74,7 @@ describe('sample route', () => {
     expect(edge.getAttribute('data-id') ?? edge.getAttribute('data-testid')).toContain('whoami.postgresql')
     expect(edge.querySelector('path[marker-end]')).not.toBeNull()
 
-    expect(calls.sort()).toEqual(['GET /planner/v1/catalog', 'POST /planner/v1/plan'])
+    expect(calls.sort()).toEqual(['GET /renderer/v1/catalog', 'POST /renderer/v1/plan'])
     expect(storage).not.toHaveBeenCalled()
   })
 

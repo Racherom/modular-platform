@@ -1,6 +1,6 @@
 // Package manifest reads the module entry fields the sdk uses (spec 0005 and spec 0013: runtime,
 // config, the slots and their env delivery, the provides with auth and their clients env) plus
-// the fields of the capabilities they name, and checks their rules. The planner's catalog check
+// the fields of the capabilities they name, and checks their rules. The catalog check
 // (libs/contract) and sdkgen both call it, so a module and the catalog never disagree about an
 // entry. It imports only the standard library and sigs.k8s.io/yaml.
 package manifest
@@ -285,7 +285,7 @@ func IsBootstrap(s string) bool {
 	return slices.Contains(BootstrapNames, s)
 }
 
-// GoName turns a name like planner-rate into PlannerRate: every run of letters and digits starts
+// GoName turns a name like renderer-rate into RendererRate: every run of letters and digits starts
 // upper case.
 func GoName(s string) string {
 	var b strings.Builder

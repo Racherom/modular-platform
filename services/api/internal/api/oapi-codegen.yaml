@@ -1,4 +1,4 @@
-# Models and the strict server on net/http, in one package: only api uses them. The planner's
+# Models and the strict server on net/http, in one package: only api uses them. The
 # shared kernel types (Graph, PlanResult, ProblemList) come from libs/contract.
 package: api
 generate:
@@ -13,5 +13,5 @@ output-options:
   # plain handlers beside the strict server: the event stream never ends, the auth routes set cookies
   exclude-operation-ids: [events, login, callback, logout]
 import-mapping:
-  ./planner.yaml: github.com/racherom/modular-platform/libs/contract
+  ./renderer.yaml: github.com/racherom/modular-platform/libs/contract
 output: api.gen.go

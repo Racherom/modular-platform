@@ -149,7 +149,7 @@ func fullMatch(pattern string) *regexp.Regexp {
 }
 
 // CheckValue checks text as a value of v by the rules the SDK loads it with (spec 0025), so a
-// value the planner accepts from a graph is one the module accepts at start. A failure is a
+// value the checks accept from a graph is one the module accepts at start. A failure is a
 // *RuleError.
 func CheckValue(v Value, text string) error {
 	_, err := RulesOf(v).Parse(text)

@@ -89,7 +89,7 @@ func (b *GraphBinding) UnmarshalJSON(data []byte) error {
 }
 
 // InstanceConfig is the config values a graph sets on a module instance (spec 0025): value name
-// to its text. The text is never expanded; the planner checks it against the value's rules.
+// to its text. The text is never expanded; the checks test it against the value's rules.
 type InstanceConfig map[string]string
 
 // UnmarshalJSON reads an object of strings. It refuses any other value, so a YAML number or

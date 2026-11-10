@@ -1,5 +1,5 @@
-# The online tool's ingress: one origin. <base>/planner/* goes to the planner with that prefix
-# stripped (the planner builds no URLs); everything else under <base>/ goes to the web module
+# The online tool's ingress: one origin. <base>/renderer/* goes to the renderer with that prefix
+# stripped (the renderer builds no URLs); everything else under <base>/ goes to the web module
 # with the path unchanged.
 {
 	email "{$PLATFORM_ACME_EMAIL}"
@@ -21,17 +21,17 @@
 {$PLATFORM_DOMAIN} {
 	import tls-{$PLATFORM_TLS}
 
-	# for every answer, the planner's too; the web module adds its own content policy
+	# for every answer, the renderer's too; the web module adds its own content policy
 	header {
 		X-Content-Type-Options nosniff
 		Referrer-Policy no-referrer
 		-Server
 	}
 
-	@planner path {$MP_BASE_PATH}/planner/*
-	handle @planner {
-		uri strip_prefix {$MP_BASE_PATH}/planner
-		reverse_proxy planner:8080
+	@renderer path {$MP_BASE_PATH}/renderer/*
+	handle @renderer {
+		uri strip_prefix {$MP_BASE_PATH}/renderer
+		reverse_proxy renderer:8080
 	}
 
 	@app path {$MP_BASE_PATH} {$MP_BASE_PATH}/*

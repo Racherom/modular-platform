@@ -1,7 +1,7 @@
 // The editor store (spec 0010). The graph in here is the only source of truth: the canvas is
-// derived from it, every edit is a pure function on it, and the planner checks each edit.
+// derived from it, every edit is a pure function on it, and the renderer checks each edit.
 import { create } from 'zustand'
-import { type Graph, PlannerError, planGraph } from '../api/client'
+import { type Graph, planGraph, RendererError } from '../api/client'
 import type { Positions } from '../graph/flow'
 import { layout } from '../graph/layout'
 import { saveWorking, type WorkingGraph, withPositions } from './storage'
@@ -59,7 +59,7 @@ export interface EditorState {
   planState: PlanState
   /** Counts plan calls; only the reply to the latest one is used. */
   planSeq: number
-  planError: PlannerError | null
+  planError: RendererError | null
   dragFrom: DragFrom | null
   selection: Selection
   /** A node that should take keyboard focus once drawn; the canvas clears it after moving focus. */
@@ -147,14 +147,14 @@ export const useEditor = create<EditorState>()((set, get) => {
       (result) => {
         const now = get().working
         if (get().planSeq !== seq || !now) return
-        // the planner's graph carries the automatic bindings; adopting it adds no history step
+        // the renderer's graph carries the automatic bindings; adopting it adds no history step
         const next = withPositions({ ...now, graph: result.graph, plan: result })
         setWorking(next, { planState: 'current' })
         persist(next)
       },
       (error: unknown) => {
         if (get().planSeq !== seq || controller.signal.aborted) return
-        set({ planState: 'failed', planError: toPlannerError(error) })
+        set({ planState: 'failed', planError: toRendererError(error) })
       },
     )
   }
@@ -279,7 +279,7 @@ function samePositions(a: Positions, b: Positions | undefined): boolean {
   return names.length === Object.keys(b).length && names.every((n) => b[n]?.x === a[n]?.x && b[n]?.y === a[n]?.y)
 }
 
-function toPlannerError(error: unknown): PlannerError {
-  if (error instanceof PlannerError) return error
-  return new PlannerError('The planner could not be reached. Check your connection and retry.', 0)
+function toRendererError(error: unknown): RendererError {
+  if (error instanceof RendererError) return error
+  return new RendererError('The renderer could not be reached. Check your connection and retry.', 0)
 }

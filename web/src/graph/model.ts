@@ -1,5 +1,5 @@
 // The v1 graph as the editor reads it (spec 0012): slots, provides and binding text. Pure, no
-// React. The planner is the one judge of a graph; these helpers only find what to draw.
+// React. The checks are the one judge of a graph; these helpers only find what to draw.
 import type { Catalog, ConfigValue, Graph, GraphBinding, Module, Slot } from '../api/client'
 
 /** One provide an instance offers: a module's provide or an external's. */
@@ -62,7 +62,7 @@ export function splitText(text: string): { instance: string; provide: string } {
 /**
  * The provide a slot's binding reaches: the named one, or the one provide of the instance that
  * serves the slot's capability. Undefined when the binding is null, broken or ambiguous; the
- * planner lists the problem then.
+ * renderer lists the problem then.
  */
 export function boundProvide(
   graph: Graph,
@@ -95,7 +95,7 @@ export interface ConfigField {
 /**
  * The config values of an entry that a graph may set (spec 0025, AC-27), sorted by name: not a
  * secret, no default the render fills at install time ({uid}, {gid}, {install}/...), and not a
- * host path a host_mounts source names. Whether a text is valid is the planner's to say.
+ * host path a host_mounts source names. Whether a text is valid is the renderer's to say.
  */
 export function settableConfig(entry: Module | undefined): ConfigField[] {
   if (!entry?.config) return []

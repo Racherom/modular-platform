@@ -1,6 +1,6 @@
 // Graph edits (spec 0010, on the v1 graph of spec 0012): pure functions, no React and no I/O.
 // Each returns a new Graph and leaves the one it was given untouched. Only the capability match
-// (or a provisioner that yields it) lives here; the planner judges everything else (versions,
+// (or a provisioner that yields it) lives here; the checks judge everything else (versions,
 // required slots, cycles, automatic binding, named values).
 import type { Catalog, Graph, GraphBinding } from '../api/client'
 import { parseHandle } from './flow'
@@ -17,7 +17,7 @@ export interface Drop {
 /**
  * Binds a slot to provider text (`instance` or `instance.provide`), for connect and rebind.
  * Binding the same text again changes nothing, so named values stay; another provider writes the
- * string form and the planner fills new names (editing names is #6).
+ * string form and the renderer fills new names (editing names is #6).
  */
 export function bind(graph: Graph, consumer: string, slot: string, provider: string): Graph {
   const m = instanceOf(graph, consumer)
@@ -34,7 +34,7 @@ export function unbind(graph: Graph, consumer: string, slot: string): Graph {
   return setSlot(graph, consumer, slot, null)
 }
 
-/** Removes a slot's key, so the planner binds it automatically when it finds one candidate. */
+/** Removes a slot's key, so the renderer binds it automatically when it finds one candidate. */
 export function letPlannerChoose(graph: Graph, consumer: string, slot: string): Graph {
   const m = instanceOf(graph, consumer)
   if (!m?.uses || !Object.hasOwn(m.uses, slot)) return graph
@@ -46,7 +46,7 @@ export function letPlannerChoose(graph: Graph, consumer: string, slot: string): 
 /**
  * The provider text a slot can bind to: per other instance, every provide whose capability is
  * the slot's or yields it, written as the instance alone when it has one such provide, sorted.
- * Versions are the planner's to judge.
+ * Versions are the renderer's to judge.
  */
 export function candidates(graph: Graph, catalog: Catalog, consumer: string, slot: string): string[] {
   const capability = slotsOf(moduleOf(graph, catalog, consumer))[slot]?.capability
@@ -62,7 +62,7 @@ export function candidates(graph: Graph, catalog: Catalog, consumer: string, slo
 }
 
 /**
- * Sets config value `value` of an instance to `text` (spec 0025, AC-29). The text is the planner's
+ * Sets config value `value` of an instance to `text` (spec 0025, AC-29). The text is the renderer's
  * to check; setting the same text again changes nothing. An empty text is kept: on an optional
  * value it means empty on purpose.
  */

@@ -56,7 +56,7 @@ function contentPolicy(): string {
 function fillTemplate(html: string): string {
   const env: Record<string, string> = {
     MP_BASE_PATH: process.env.MP_BASE_PATH ?? '',
-    MP_API_ROOT: process.env.MP_API_ROOT ?? '/planner',
+    MP_API_ROOT: process.env.MP_API_ROOT ?? '/renderer',
     MP_MODE: process.env.MP_MODE ?? 'online',
     MP_SIGNED_OUT: process.env.MP_SIGNED_OUT ?? 'index',
   }

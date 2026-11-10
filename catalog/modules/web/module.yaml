@@ -28,7 +28,7 @@ uses:
 environment:
   MP_MODE: managed
   MP_BASE_PATH: "{public.base_path}"
-  # the planner contract's paths (/v1/catalog, ...) sit under api at <base>/api/v1/...
+  # the renderer contract's paths (/v1/catalog, ...) sit under api at <base>/api/v1/...
   MP_API_ROOT: "{public.base_path}/api"
 config:
   signed-out:

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, type Page, test } from '@playwright/test'
 import { drag, handle, openGraph, UNBOUND } from './helpers'
-import { graphFile, mockPlanner } from './mock-planner'
+import { graphFile, mockRenderer } from './mock-renderer'
 
 // The session strand of spec 0010: undo and redo, Tidy layout, the edited flag, the sample
 // copy and its replace prompt, the catalog filter, and unknown modules (AC-15 to AC-20).
@@ -27,7 +27,7 @@ async function editedWorkingGraph(page: Page) {
 }
 
 test('undo and redo with the buttons and the keyboard, one step per edit (AC-15, AC-17)', async ({ page }) => {
-  const { plans } = await mockPlanner(page)
+  const { plans } = await mockRenderer(page)
   await openGraph(page)
   await expect(button(page, 'Undo')).toBeDisabled()
   await expect(button(page, 'Redo')).toBeDisabled()
@@ -58,7 +58,7 @@ test('undo and redo with the buttons and the keyboard, one step per edit (AC-15,
 })
 
 test('Tidy layout moves nodes back without a plan call, and undo puts them back (AC-15, AC-16)', async ({ page }) => {
-  const { plans } = await mockPlanner(page)
+  const { plans } = await mockRenderer(page)
   // a working copy whose positions are not the auto layout: open, then move a node in storage
   await openGraph(page)
   const tidyX = await x(page, 'postgres')
@@ -94,7 +94,7 @@ test('Tidy layout moves nodes back without a plan call, and undo puts them back 
 })
 
 test('the sample: hint, history disabled, first edit makes an edited copy and moves to the editor (AC-18)', async ({ page }) => {
-  const { plans } = await mockPlanner(page)
+  const { plans } = await mockRenderer(page)
   await page.goto(SAMPLE)
   await expect(page.getByText('This is a sample.')).toBeVisible()
   await expect(button(page, 'Undo')).toBeDisabled()
@@ -133,7 +133,7 @@ test('the sample: hint, history disabled, first edit makes an edited copy and mo
 })
 
 test('an edit on the sample asks first when the working graph is edited; Cancel keeps both (AC-18)', async ({ page }) => {
-  const { plans } = await mockPlanner(page)
+  const { plans } = await mockRenderer(page)
   await editedWorkingGraph(page)
   // a full load: the sample page reads the edited flag from IndexedDB at the first edit
   await page.goto(SAMPLE)
@@ -172,7 +172,7 @@ test('an edit on the sample asks first when the working graph is edited; Cancel 
 })
 
 test('Open file asks first when the working graph is edited, before any file is read (AC-18)', async ({ page }) => {
-  await mockPlanner(page)
+  await mockRenderer(page)
   await editedWorkingGraph(page)
   let choosers = 0
   page.on('filechooser', () => {
@@ -198,7 +198,7 @@ test('Open file asks first when the working graph is edited, before any file is 
 })
 
 test('Find providers filters the catalog and moves focus to the filter; no match shows an empty state (AC-19)', async ({ page }) => {
-  await mockPlanner(page)
+  await mockRenderer(page)
   await openGraph(page)
   await node(page, 'whoami').click()
   await page.getByRole('region', { name: 'Inspector' }).getByRole('button', { name: 'Find providers of postgresql' }).click()
@@ -222,7 +222,7 @@ test('Find providers filters the catalog and moves focus to the filter; no match
 })
 
 test('an instance whose module is not in the catalog has a badge and no ports; text stays text (AC-20)', async ({ page }) => {
-  await mockPlanner(page)
+  await mockRenderer(page)
   let alerted = false
   page.on('dialog', (d) => {
     alerted = true
@@ -256,7 +256,7 @@ test('a quiet note says changes are not kept when browser storage fails (AC-17)'
       throw new Error('storage blocked')
     }
   })
-  await mockPlanner(page)
+  await mockRenderer(page)
   await openGraph(page)
   await expect(page.getByRole('status').filter({ hasText: 'Changes are not kept after reload in this browser.' })).toBeVisible()
 })

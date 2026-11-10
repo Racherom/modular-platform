@@ -1,12 +1,12 @@
 apiVersion: modular-platform/v1
 kind: Module
-name: planner
+name: renderer
 description: Checks a graph and renders it to a Compose project.
 # release-please bumps the version on this line
-image: ghcr.io/racherom/modular-platform/planner:0.0.0 # x-release-please-version
+image: ghcr.io/racherom/modular-platform/renderer:0.0.0 # x-release-please-version
 runtime: sdk
 healthcheck:
-  test: ["CMD", "/planner", "healthcheck"]
+  test: ["CMD", "/renderer", "healthcheck"]
   interval: 5s
   timeout: 3s
   retries: 10
@@ -19,8 +19,8 @@ uses:
       http_port: MP_PLATFORM_HTTP_PORT
       https_port: MP_PLATFORM_HTTPS_PORT
 provides:
-  planner:
-    capability: planner
+  renderer:
+    capability: renderer
     version: "1.0"
     auth: binding-token
     fields:
@@ -28,16 +28,16 @@ provides:
       token: {generate: true}
       ca: {platform: ca}
     env:
-      token: MP_PLANNER_CLIENTS_DIR
+      token: MP_RENDERER_CLIENTS_DIR
       caller_key: MP_CALLER_KEYS_DIR
 config:
-  planner-mode:
-    env: MP_PLANNER_MODE
+  renderer-mode:
+    env: MP_RENDERER_MODE
     type: enum
     values: [public, internal]
-    description: Where the planner runs, public behind the online tool or internal inside the platform.
-  planner-rate:
-    env: MP_PLANNER_RATE
+    description: Where the renderer runs, public behind the online tool or internal inside the platform.
+  renderer-rate:
+    env: MP_RENDERER_RATE
     type: int
     default: "60"
     min: 1
@@ -47,4 +47,4 @@ config:
     type: int
     default: "1"
     min: 0
-    description: Proxies in front of the planner that append X-Forwarded-For.
+    description: Proxies in front of the renderer that append X-Forwarded-For.

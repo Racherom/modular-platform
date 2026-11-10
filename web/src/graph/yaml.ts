@@ -2,12 +2,12 @@ import { Document, isMap, isScalar, parse } from 'yaml'
 import type { Graph } from '../api/client'
 
 export const API_VERSION = 'modular-platform/v1'
-/** The provisional format of spec 0002; the planner converts such a graph to v1. */
+/** The provisional format of spec 0002; the renderer converts such a graph to v1. */
 export const API_VERSION_V0ALPHA1 = 'modular-platform/v0alpha1'
 export const MAX_FILE_BYTES = 1 << 20
 
 /**
- * Reads a graph file. Only apiVersion and kind are checked here; the planner is the one
+ * Reads a graph file. Only apiVersion and kind are checked here; the renderer is the one
  * validator, so the graph goes to POST /v1/plan right after (and a v0alpha1 graph comes back
  * converted to v1).
  */

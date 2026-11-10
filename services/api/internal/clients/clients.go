@@ -1,4 +1,4 @@
-// Package clients adapts api's two providers, the planner and the deploy target, to the
+// Package clients adapts api's two providers, the renderer and the deploy target, to the
 // interfaces of package deploy: generated contract clients over the sdk's binding clients, with
 // each answer mapped onto deploy's errors.
 package clients
@@ -15,64 +15,64 @@ import (
 	"github.com/racherom/modular-platform/libs/target/deploytarget"
 	"github.com/racherom/modular-platform/sdk/httpclient"
 	"github.com/racherom/modular-platform/services/api/internal/deploy"
-	"github.com/racherom/modular-platform/services/api/internal/plannerclient"
+	"github.com/racherom/modular-platform/services/api/internal/rendererclient"
 )
 
 // bootHeader carries the deploy target's boot id on every answer.
 const bootHeader = "MP-Boot-Id"
 
-// Planner calls the planner through api's planner binding.
-type Planner struct {
-	c *plannerclient.ClientWithResponses
+// Renderer calls the renderer through api's renderer binding.
+type Renderer struct {
+	c *rendererclient.ClientWithResponses
 }
 
-var _ deploy.Planner = (*Planner)(nil)
+var _ deploy.Renderer = (*Renderer)(nil)
 
-// NewPlanner returns the planner client over the binding's client.
-func NewPlanner(b *httpclient.Client) (*Planner, error) {
-	c, err := plannerclient.NewClientWithResponses(b.URL().String(), plannerclient.WithHTTPClient(b))
+// NewRenderer returns the renderer client over the binding's client.
+func NewRenderer(b *httpclient.Client) (*Renderer, error) {
+	c, err := rendererclient.NewClientWithResponses(b.URL().String(), rendererclient.WithHTTPClient(b))
 	if err != nil {
-		return nil, fmt.Errorf("planner client: %w", err)
+		return nil, fmt.Errorf("renderer client: %w", err)
 	}
-	return &Planner{c: c}, nil
+	return &Renderer{c: c}, nil
 }
 
-func plannerError(op string, status int, body []byte) error {
-	return fmt.Errorf("%w: %s answered %d: %.200s", deploy.ErrPlanner, op, status, body)
+func rendererError(op string, status int, body []byte) error {
+	return fmt.Errorf("%w: %s answered %d: %.200s", deploy.ErrRenderer, op, status, body)
 }
 
 // Catalog lists the catalog.
-func (p *Planner) Catalog(ctx context.Context) (contract.Catalog, error) {
+func (p *Renderer) Catalog(ctx context.Context) (contract.Catalog, error) {
 	resp, err := p.c.GetCatalogWithResponse(ctx)
 	if err != nil {
-		return contract.Catalog{}, errors.Join(deploy.ErrPlanner, err)
+		return contract.Catalog{}, errors.Join(deploy.ErrRenderer, err)
 	}
 	if resp.JSON200 == nil {
-		return contract.Catalog{}, plannerError("catalog", resp.StatusCode(), resp.Body)
+		return contract.Catalog{}, rendererError("catalog", resp.StatusCode(), resp.Body)
 	}
 	return *resp.JSON200, nil
 }
 
 // Plan plans g.
-func (p *Planner) Plan(ctx context.Context, g contract.Graph) (contract.PlanResult, error) {
+func (p *Renderer) Plan(ctx context.Context, g contract.Graph) (contract.PlanResult, error) {
 	resp, err := p.c.PlanWithResponse(ctx, g)
 	if err != nil {
-		return contract.PlanResult{}, errors.Join(deploy.ErrPlanner, err)
+		return contract.PlanResult{}, errors.Join(deploy.ErrRenderer, err)
 	}
 	if resp.JSON400 != nil {
 		return contract.PlanResult{}, &deploy.RefusedError{Problems: resp.JSON400.Problems}
 	}
 	if resp.JSON200 == nil {
-		return contract.PlanResult{}, plannerError("plan", resp.StatusCode(), resp.Body)
+		return contract.PlanResult{}, rendererError("plan", resp.StatusCode(), resp.Body)
 	}
 	return *resp.JSON200, nil
 }
 
 // Render answers the static zip of g as is, or the plan when it has errors.
-func (p *Planner) Render(ctx context.Context, g contract.Graph) (zip []byte, disposition string, plan *contract.PlanResult, err error) {
+func (p *Renderer) Render(ctx context.Context, g contract.Graph) (zip []byte, disposition string, plan *contract.PlanResult, err error) {
 	resp, err := p.c.RenderWithResponse(ctx, g)
 	if err != nil {
-		return nil, "", nil, errors.Join(deploy.ErrPlanner, err)
+		return nil, "", nil, errors.Join(deploy.ErrRenderer, err)
 	}
 	switch {
 	case resp.StatusCode() == http.StatusOK:
@@ -82,14 +82,14 @@ func (p *Planner) Render(ctx context.Context, g contract.Graph) (zip []byte, dis
 	case resp.JSON400 != nil:
 		return nil, "", nil, &deploy.RefusedError{Problems: resp.JSON400.Problems}
 	}
-	return nil, "", nil, plannerError("render", resp.StatusCode(), resp.Body)
+	return nil, "", nil, rendererError("render", resp.StatusCode(), resp.Body)
 }
 
 // RenderManaged renders g for the deployment; a plan with errors is a refusal.
-func (p *Planner) RenderManaged(ctx context.Context, g contract.Graph, deployment uuid.UUID) (contract.RenderedProject, error) {
+func (p *Renderer) RenderManaged(ctx context.Context, g contract.Graph, deployment uuid.UUID) (contract.RenderedProject, error) {
 	resp, err := p.c.RenderManagedWithResponse(ctx, contract.ManagedRenderRequest{Graph: g, Deployment: deployment})
 	if err != nil {
-		return contract.RenderedProject{}, errors.Join(deploy.ErrPlanner, err)
+		return contract.RenderedProject{}, errors.Join(deploy.ErrRenderer, err)
 	}
 	switch {
 	case resp.JSON200 != nil:
@@ -99,7 +99,7 @@ func (p *Planner) RenderManaged(ctx context.Context, g contract.Graph, deploymen
 	case resp.JSON400 != nil:
 		return contract.RenderedProject{}, &deploy.RefusedError{Problems: resp.JSON400.Problems}
 	}
-	return contract.RenderedProject{}, plannerError("managed render", resp.StatusCode(), resp.Body)
+	return contract.RenderedProject{}, rendererError("managed render", resp.StatusCode(), resp.Body)
 }
 
 // Target calls the deploy target through api's deploy-target binding.

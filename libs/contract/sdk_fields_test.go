@@ -23,10 +23,10 @@ func TestSDKFieldFixtures(t *testing.T) {
 		Capabilities []string `json:"capabilities"`
 		Header       string   `json:"header"`
 		Cases        []struct {
-			Name        string   `json:"name"`
-			Want        []string `json:"want"`
-			PlannerOnly bool     `json:"planner_only"`
-			Body        string   `json:"body"`
+			Name      string   `json:"name"`
+			Want      []string `json:"want"`
+			CheckOnly bool     `json:"check_only"`
+			Body      string   `json:"body"`
 		} `json:"cases"`
 	}
 	if err := yaml.UnmarshalStrict(data, &f); err != nil {

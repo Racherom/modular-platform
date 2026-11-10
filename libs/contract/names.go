@@ -1,5 +1,5 @@
 // Package contract holds the modular-platform/v1 formats (spec 0011): the types generated from
-// contracts/openapi/planner.yaml, the hand written union types behind them, strict decoding with
+// contracts/openapi/renderer.yaml, the hand written union types behind them, strict decoding with
 // the v0alpha1 graph converter, the canonical writer, versions and ranges, and the catalog loader
 // with its rules.
 package contract

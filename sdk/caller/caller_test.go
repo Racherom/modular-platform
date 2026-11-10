@@ -31,7 +31,7 @@ import (
 	"github.com/racherom/modular-platform/sdk/caller"
 )
 
-const self = "planner.stack.internal"
+const self = "renderer.stack.internal"
 
 var now = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 
@@ -216,7 +216,7 @@ func TestVerifyRefusals(t *testing.T) {
 	}{
 		"a good token":                {token: edsa(good()), at: now, ok: true},
 		"another aud":                 {token: edsa(with(good(), "aud", "api.stack.internal")), at: now},
-		"the bare instance as aud":    {token: edsa(with(good(), "aud", "planner")), at: now},
+		"the bare instance as aud":    {token: edsa(with(good(), "aud", "renderer")), at: now},
 		"two auds":                    {token: edsa(with(good(), "aud", []string{self, "api.stack.internal"})), at: now},
 		"expired within leeway":       {token: edsa(good()), at: now.Add(5*time.Minute + 29*time.Second), ok: true},
 		"expired":                     {token: edsa(good()), at: now.Add(5*time.Minute + 31*time.Second)},

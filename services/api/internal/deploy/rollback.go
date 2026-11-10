@@ -53,7 +53,7 @@ func (s *Service) rollback(at RunningOperation, failed Operation, latest uuid.UU
 		s.log.ErrorContext(ctx, "a stored graph does not decode", slog.String("operation", good.ID.String()), slog.Any("error", err))
 		return
 	}
-	plan, planErr := s.planner.Plan(ctx, g)
+	plan, planErr := s.renderer.Plan(ctx, g)
 	op, started, err := s.store.StartOperationIfLatest(ctx, Operation{
 		DeploymentID: failed.DeploymentID, Action: ActionApply, Graph: good.Graph, PlanDigest: plan.Digest,
 		RollbackOf: &failed.ID, StartedBy: failed.StartedBy,
@@ -83,7 +83,7 @@ func (s *Service) sendRollback(ctx context.Context, run RunningOperation, g cont
 	case !plan.Ok:
 		return problemsText(plan.Problems)
 	}
-	rendered, err := s.planner.RenderManaged(ctx, g, run.DeploymentID)
+	rendered, err := s.renderer.RenderManaged(ctx, g, run.DeploymentID)
 	if err != nil {
 		return failureText(err)
 	}
@@ -132,7 +132,7 @@ func (s *Service) retryLater(failedRollback RunningOperation) {
 }
 
 // failureText is the error a rollback that could not start records: a problem code first, as
-// the deploy target's errors start with one. It never carries a planner or target body.
+// the deploy target's errors start with one. It never carries a renderer or target body.
 func failureText(err error) string {
 	if r, ok := errors.AsType[*RefusedError](err); ok {
 		return problemsText(r.Problems)
@@ -142,8 +142,8 @@ func failureText(err error) string {
 		return "deployer_unavailable"
 	case errors.Is(err, ErrBusy):
 		return "busy: the deploy target still runs an operation of this deployment"
-	case errors.Is(err, ErrPlanner):
-		return "planner_error"
+	case errors.Is(err, ErrRenderer):
+		return "renderer_error"
 	case errors.Is(err, ErrTarget):
 		return "deployer_error"
 	}

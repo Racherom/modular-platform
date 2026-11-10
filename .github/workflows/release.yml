@@ -37,8 +37,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - service: planner
-            dockerfile: services/planner/Dockerfile
+          - service: renderer
+            dockerfile: services/renderer/Dockerfile
           - service: web
             dockerfile: web/Dockerfile
           - service: api

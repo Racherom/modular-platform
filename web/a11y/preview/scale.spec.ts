@@ -2,7 +2,7 @@ import { expect, type Page, test } from '@playwright/test'
 import { stringify } from 'yaml'
 import type { Catalog, Graph } from '../../src/api/client'
 import { drag, handle } from '../helpers'
-import { graphFile, mockPlanner } from '../mock-planner'
+import { graphFile, mockRenderer } from '../mock-renderer'
 
 // AC-7: on the production build, with a 50 module, 100 binding graph, a selection and a connect
 // each update the screen within 100 ms (median of 5 runs). The plan call is not counted: its
@@ -94,7 +94,7 @@ function median(values: number[]): number {
 
 test('a selection and a connect each update a 50 module graph within 100 ms (AC-7)', async ({ page }) => {
   test.slow()
-  await mockPlanner(page, () => ({ delayMs: 3000 }), entries)
+  await mockRenderer(page, () => ({ delayMs: 3000 }), entries)
   await page.goto('/')
   await page.getByRole('button', { name: 'Open file' }).waitFor()
   await page.locator('input[type=file]').setInputFiles(graphFile('scale.yaml', stringify(scaleGraph())))

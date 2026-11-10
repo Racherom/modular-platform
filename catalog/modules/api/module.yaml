@@ -50,13 +50,13 @@ uses:
       password: MP_DATABASE_PASSWORD_FILE
       sslmode: MP_DATABASE_SSLMODE
       ca: MP_DATABASE_CA_FILE
-  planner:
-    capability: planner
+  renderer:
+    capability: renderer
     client: http
     env:
-      url: MP_PLANNER_URL
-      token: MP_PLANNER_TOKEN_FILE
-      ca: MP_PLANNER_CA_FILE
+      url: MP_RENDERER_URL
+      token: MP_RENDERER_TOKEN_FILE
+      ca: MP_RENDERER_CA_FILE
     fields:
       caller_key: {secret: caller-public-key}
   deploy-target:
@@ -76,7 +76,7 @@ secrets:
   - name: caller-public-key
     from: setup
     mount: /run/secrets/caller-public-key
-    description: Public key of the caller signing key, sent to planner and deployer-docker.
+    description: Public key of the caller signing key, sent to renderer and deployer-docker.
 setup:
   # the image has no shell, so the api binary writes the pair itself
   - name: caller-key

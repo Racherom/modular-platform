@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { drag, handle, openGraph } from './helpers'
-import { mockPlanner, type PlanReply } from './mock-planner'
+import { mockRenderer, type PlanReply } from './mock-renderer'
 
 const edges = '.react-flow__edge'
 
 test('dragging a need to an offer binds it through one plan call, and it survives a reload (AC-9, AC-12, AC-16)', async ({ page }) => {
-  const { plans } = await mockPlanner(page)
+  const { plans } = await mockRenderer(page)
   await openGraph(page)
   await expect(page.locator(edges)).toHaveCount(0)
   expect(plans).toHaveLength(1) // the open
@@ -33,7 +33,7 @@ test('dragging a need to an offer binds it through one plan call, and it survive
 })
 
 test('a drop anywhere else changes nothing (AC-9)', async ({ page }) => {
-  const { plans } = await mockPlanner(page)
+  const { plans } = await mockRenderer(page)
   await openGraph(page)
   // onto whoami's own offer: not a valid target
   await drag(page, handle(page, 'whoami', 'uses:postgresql'), handle(page, 'whoami', 'provides:http'))
@@ -52,7 +52,7 @@ test('a drop anywhere else changes nothing (AC-9)', async ({ page }) => {
 })
 
 test('a drag cannot start at a provides port (AC-9)', async ({ page }) => {
-  const { plans } = await mockPlanner(page)
+  const { plans } = await mockRenderer(page)
   await openGraph(page)
   await drag(page, handle(page, 'postgres', 'provides:postgresql'), handle(page, 'whoami', 'uses:postgresql'))
   await expect(page.locator(edges)).toHaveCount(0)
@@ -62,7 +62,7 @@ test('a drag cannot start at a provides port (AC-9)', async ({ page }) => {
 test('only the reply for the latest edit is used (AC-12)', async ({ page }) => {
   let call = 0
   // the open answers at once, the first edit's reply is held back past the second one's
-  const { plans } = await mockPlanner(page, () => (++call === 2 ? { delayMs: 1500 } : 'echo'))
+  const { plans } = await mockRenderer(page, () => (++call === 2 ? { delayMs: 1500 } : 'echo'))
   const two = `apiVersion: modular-platform/v1
 kind: Graph
 name: two
@@ -90,7 +90,7 @@ modules:
 test('a failed plan keeps the edit and offers Retry: 503, then 429, then it recovers (AC-12, AC-14)', async ({ page }) => {
   let call = 0
   const replies: PlanReply[] = ['echo', { status: 503 }, { status: 429 }, 'echo']
-  const { plans } = await mockPlanner(page, () => replies[call++] ?? 'echo')
+  const { plans } = await mockRenderer(page, () => replies[call++] ?? 'echo')
   await openGraph(page)
   await drag(page, handle(page, 'whoami', 'uses:postgresql'), handle(page, 'postgres', 'provides:postgresql'))
   await expect(page.getByRole('alert')).toBeVisible()
@@ -99,7 +99,7 @@ test('a failed plan keeps the edit and offers Retry: 503, then 429, then it reco
   await expect(page.getByRole('button', { name: 'Download zip' })).toBeDisabled()
   await expect(page.getByText('Not checked, retry first')).toBeVisible()
 
-  // the retry meets a busy planner: still not checked, the busy message, Retry offered again
+  // the retry meets a busy renderer: still not checked, the busy message, Retry offered again
   await page.getByRole('button', { name: 'Retry' }).click()
   await expect(page.getByRole('alert')).toContainText(/busy/i)
   await expect(page.getByText('Not checked', { exact: true })).toBeVisible()

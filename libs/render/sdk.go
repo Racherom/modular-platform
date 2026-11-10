@@ -45,7 +45,7 @@ func (r *renderer) sdkInstance(svc *types.ServiceConfig, i string, m contract.Mo
 func envFilePath(i string) string { return "config/" + i + ".env" }
 
 // envFile writes config/<i>.env: one block per value in name order, secrets never. A value the
-// graph sets is written uncommented as <ENV>=<text> (spec 0025, AC-27); the planner has refused
+// graph sets is written uncommented as <ENV>=<text> (spec 0025, AC-27); the checks have refused
 // the texts sdk/envfile would change. Bindings deliver every value they carry, so the file holds
 // no binding lines.
 func envFile(i string, m contract.Module, set *contract.InstanceConfig) []byte {

@@ -170,8 +170,8 @@ func TestBadRequests(t *testing.T) {
 	}
 }
 
-// TestApplyRefusesACraftedProject sends the deployer a project no render emits, as a bypassed
-// planner would: the guard refuses it with 422 host_access naming the instance and key
+// TestApplyRefusesACraftedProject sends the deployer a project no render emits, as a caller that
+// bypassed the checks would: the guard refuses it with 422 host_access naming the instance and key
 // (spec 0006, AC-8).
 func TestApplyRefusesACraftedProject(t *testing.T) {
 	t.Parallel()

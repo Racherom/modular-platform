@@ -3,7 +3,7 @@
 version: "3"
 
 vars:
-  GO_PACKAGES: ./catalog/... ./libs/... ./sdk/... ./services/planner/... ./services/api/... ./services/deployer-docker/...
+  GO_PACKAGES: ./catalog/... ./libs/... ./sdk/... ./services/renderer/... ./services/api/... ./services/deployer-docker/...
   IMAGE_PREFIX: ghcr.io/racherom/modular-platform
   IMAGE_TAG: dev
   GOLANGCI_LINT_VERSION: v2.15.0
@@ -38,7 +38,7 @@ tasks:
     desc: Generate Go and TypeScript code from contracts/openapi and the sdk getters from catalog entries (the output is committed)
     deps: [web:install]
     cmds:
-      - go generate ./libs/contract ./libs/render/... ./libs/target/... ./sdk/... ./services/planner/... ./services/api/... ./services/deployer-docker/...
+      - go generate ./libs/contract ./libs/render/... ./libs/target/... ./sdk/... ./services/renderer/... ./services/api/... ./services/deployer-docker/...
       - pnpm --dir web run generate
 
   build:
@@ -58,9 +58,9 @@ tasks:
       - pnpm --dir web run build
 
   images:
-    desc: Build the web, planner, api and deployer-docker images, tagged {{.IMAGE_TAG}}
+    desc: Build the web, renderer, api and deployer-docker images, tagged {{.IMAGE_TAG}}
     cmds:
-      - docker build -f services/planner/Dockerfile -t {{.IMAGE_PREFIX}}/planner:{{.IMAGE_TAG}} .
+      - docker build -f services/renderer/Dockerfile -t {{.IMAGE_PREFIX}}/renderer:{{.IMAGE_TAG}} .
       - docker build -f services/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:{{.IMAGE_TAG}} .
       - docker build -f services/deployer-docker/Dockerfile -t {{.IMAGE_PREFIX}}/deployer-docker:{{.IMAGE_TAG}} .
       - docker build -f web/Dockerfile -t {{.IMAGE_PREFIX}}/web:{{.IMAGE_TAG}} .
@@ -73,7 +73,7 @@ tasks:
       - pnpm --dir web test
 
   test:browser:
-    desc: Run the editor's browser check (Playwright and axe against the dev server, planner mocked; needs Chromium)
+    desc: Run the editor's browser check (Playwright and axe against the dev server, renderer mocked; needs Chromium)
     deps: [web:install]
     cmds:
       - pnpm --dir web a11y
