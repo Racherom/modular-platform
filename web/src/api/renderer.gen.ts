@@ -84,13 +84,13 @@ export interface components {
         /** @description A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value. */
         Graph: {
             /**
-             * @description `modular-platform/v1`. A `modular-platform/v0alpha1` graph is still read: the planner
+             * @description `modular-platform/v1`. A `modular-platform/v0alpha1` graph is still read: the renderer
              *     converts it to v1 and answers with warning `converted_from_v0alpha1`.
              */
             apiVersion: string;
             /** @description Exactly `Graph`. */
             kind: string;
-            /** @description `1.<minor>`, default `1.0`; a writer leaves it out at `1.0`. A minor above what the planner reads is `format_too_new`. */
+            /** @description `1.<minor>`, default `1.0`; a writer leaves it out at `1.0`. A minor above what the renderer reads is `format_too_new`. */
             formatVersion?: string;
             /** @description The stack's name and the Compose project name. A DNS label, not a reserved word. */
             name: string;
@@ -119,7 +119,7 @@ export interface components {
         };
         /**
          * @description Slot name to its binding. `null` leaves an optional slot unbound on purpose. A missing key
-         *     means not decided: the planner may bind a required slot or warn about an optional one.
+         *     means not decided: the renderer may bind a required slot or warn about an optional one.
          */
         Uses: {
             [key: string]: components["schemas"]["UseBinding"];
@@ -489,9 +489,9 @@ export interface components {
             provider: string;
             /** @description The provide of the provider the slot is bound to. */
             provide: string;
-            /** @description True when the planner made this binding, not the graph. */
+            /** @description True when the checks made this binding, not the graph. */
             auto: boolean;
-            /** @description True when the planner wrote default named values into the graph. */
+            /** @description True when the checks wrote default named values into the graph. */
             named: boolean;
             /** @description True when the provide's capability yields the slot's capability, so a provision job makes it. */
             provisioned: boolean;
@@ -582,7 +582,7 @@ export interface components {
         /**
          * @description The body does not decode strictly (`invalid_graph`), names another `apiVersion`
          *     (`unsupported_version`) or `kind` (`wrong_kind`), or a `formatVersion` newer than this
-         *     planner reads (`format_too_new`). Exactly one problem.
+         *     renderer reads (`format_too_new`). Exactly one problem.
          */
         BadGraph: {
             headers: {

@@ -17,7 +17,7 @@ func TestWatchSharesOnePollerAndPublishesChanges(t *testing.T) {
 	target := &fakeTarget{boot: "boot-1", polls: []deploytarget.OperationStatus{deploytarget.OperationStatusSucceeded}}
 	hub := deploy.NewHub()
 	ctx, cancel := context.WithCancel(t.Context())
-	s := deploy.NewService(ctx, st, fakePlanner{digest: "sha256:abc"}, target, hub, slog.New(slog.DiscardHandler))
+	s := deploy.NewService(ctx, st, fakeRenderer{digest: "sha256:abc"}, target, hub, slog.New(slog.DiscardHandler))
 	t.Cleanup(func() { cancel(); s.Wait() })
 	deploy.SetPollEvery(s, 5*time.Millisecond)
 	deploy.SetWatchEvery(s, 20*time.Millisecond)

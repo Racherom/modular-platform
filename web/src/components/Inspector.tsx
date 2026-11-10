@@ -26,7 +26,7 @@ interface Props {
 
 // option ids carry a prefix, so an instance named like a special choice cannot collide with it
 const NOT_BOUND = 'none'
-const PLANNER = 'planner'
+const RENDERER = 'renderer'
 const INVALID = 'invalid'
 const instanceOption = (name: string) => `bind:${name}`
 
@@ -170,9 +170,9 @@ function SlotRow({
       value = INVALID
       options.push({ id: INVALID, label: `${text} (invalid)`, isDisabled: true })
     }
-  } else value = current === null ? NOT_BOUND : PLANNER
+  } else value = current === null ? NOT_BOUND : RENDERER
   options.push(...names.map((n) => ({ id: instanceOption(n), label: n })))
-  options.push({ id: NOT_BOUND, label: 'Not bound' }, { id: PLANNER, label: 'Let the planner choose' })
+  options.push({ id: NOT_BOUND, label: 'Not bound' }, { id: RENDERER, label: 'Let the planner choose' })
 
   const auto = ctx.planCurrent && text !== undefined && ctx.plan.bindings.some((b) => b.consumer === consumer && b.slot === slot && b.auto)
   const mark = markOf(ctx.plan.problems.filter((p) => p.path === `modules.${consumer}.uses.${slot}`))
@@ -181,7 +181,7 @@ function SlotRow({
     const onEdit = ctx.onEdit
     if (!onEdit || id === value) return
     if (id === NOT_BOUND) onEdit((g) => unbind(g, consumer, slot))
-    else if (id === PLANNER) onEdit((g) => letPlannerChoose(g, consumer, slot))
+    else if (id === RENDERER) onEdit((g) => letPlannerChoose(g, consumer, slot))
     else if (id.startsWith('bind:')) {
       const provider = id.slice('bind:'.length)
       onEdit((g) => bind(g, consumer, slot, provider))
@@ -207,7 +207,7 @@ function SlotRow({
         value={value}
         onChange={choose}
         isDisabled={!ctx.onEdit}
-        description={auto ? 'Bound by the planner' : undefined}
+        description={auto ? 'Bound by the checks' : undefined}
       />
       <div>
         <Button variant="ghost" size="sm" onPress={() => useEditor.getState().findProviders(capability)}>

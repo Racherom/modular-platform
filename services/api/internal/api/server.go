@@ -20,8 +20,8 @@ const (
 	maxPage     = 200
 )
 
-// Planner is the part of the planner the editor reaches through api.
-type Planner interface {
+// Renderer is the part of the renderer the editor reaches through api.
+type Renderer interface {
 	Catalog(ctx context.Context) (contract.Catalog, error)
 	Plan(ctx context.Context, g contract.Graph) (contract.PlanResult, error)
 	Render(ctx context.Context, g contract.Graph) (zip []byte, disposition string, plan *contract.PlanResult, err error)
@@ -29,10 +29,10 @@ type Planner interface {
 
 // Server implements the strict part of api's contract.
 type Server struct {
-	signin  *signin.Service
-	deploy  *deploy.Service
-	planner Planner
-	log     *slog.Logger
+	signin   *signin.Service
+	deploy   *deploy.Service
+	renderer Renderer
+	log      *slog.Logger
 }
 
 var _ StrictServerInterface = (*Server)(nil)
@@ -43,35 +43,35 @@ func (s *Server) GetSession(ctx context.Context, _ GetSessionRequestObject) (Get
 	return GetSession200JSONResponse{Email: sess.Email, ExpiresAt: sess.ExpiresAt, IdleExpiresAt: sess.IdleExpiresAt}, nil
 }
 
-// GetCatalog lists the planner's catalog.
+// GetCatalog lists the renderer's catalog.
 func (s *Server) GetCatalog(ctx context.Context, _ GetCatalogRequestObject) (GetCatalogResponseObject, error) {
-	cat, err := s.planner.Catalog(ctx)
+	cat, err := s.renderer.Catalog(ctx)
 	if err != nil {
-		return GetCatalog502JSONResponse{PlannerErrorJSONResponse(s.plannerProblem(ctx, err))}, nil
+		return GetCatalog502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	}
 	return GetCatalog200JSONResponse(cat), nil
 }
 
-// Plan plans a graph through the planner.
+// Plan plans a graph through the renderer.
 func (s *Server) Plan(ctx context.Context, req PlanRequestObject) (PlanResponseObject, error) {
-	plan, err := s.planner.Plan(ctx, *req.Body)
+	plan, err := s.renderer.Plan(ctx, *req.Body)
 	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
 		return Plan400JSONResponse{BadRequestJSONResponse{Problems: refused.Problems}}, nil
 	}
 	if err != nil {
-		return Plan502JSONResponse{PlannerErrorJSONResponse(s.plannerProblem(ctx, err))}, nil
+		return Plan502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	}
 	return Plan200JSONResponse(plan), nil
 }
 
-// Render answers the static zip, byte for byte what the planner gives.
+// Render answers the static zip, byte for byte what the renderer gives.
 func (s *Server) Render(ctx context.Context, req RenderRequestObject) (RenderResponseObject, error) {
-	zip, disposition, plan, err := s.planner.Render(ctx, *req.Body)
+	zip, disposition, plan, err := s.renderer.Render(ctx, *req.Body)
 	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
 		return Render400JSONResponse{BadRequestJSONResponse{Problems: refused.Problems}}, nil
 	}
 	if err != nil {
-		return Render502JSONResponse{PlannerErrorJSONResponse(s.plannerProblem(ctx, err))}, nil
+		return Render502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	}
 	if plan != nil {
 		return Render422JSONResponse(*plan), nil
@@ -150,8 +150,8 @@ func (s *Server) ReviewDeployment(ctx context.Context, req ReviewDeploymentReque
 		return ReviewDeployment422JSONResponse{RefusedJSONResponse{Problems: refused.Problems}}, nil
 	}
 	switch {
-	case errors.Is(err, deploy.ErrPlanner):
-		return ReviewDeployment502JSONResponse{PlannerErrorJSONResponse(s.plannerProblem(ctx, err))}, nil
+	case errors.Is(err, deploy.ErrRenderer):
+		return ReviewDeployment502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	case errors.Is(err, deploy.ErrTargetUnavailable), errors.Is(err, deploy.ErrTarget):
 		s.log.WarnContext(ctx, "deploy target failed at review", slog.Any("error", err))
 		return ReviewDeployment503JSONResponse{DeployerUnavailableJSONResponse(problems("deployer_unavailable", "", "The deployer did not answer; try again."))}, nil
@@ -188,10 +188,10 @@ func (s *Server) ApplyDeployment(ctx context.Context, req ApplyDeploymentRequest
 	case errors.Is(err, deploy.ErrPlanChanged):
 		return ApplyDeployment409JSONResponse(problems("plan_changed", "planDigest",
 			"The plan changed since you reviewed it, for example after a platform upgrade; review it again.")), nil
-	case errors.Is(err, deploy.ErrPlanner):
-		return ApplyDeployment502JSONResponse{PlannerErrorJSONResponse(s.plannerProblem(ctx, err))}, nil
+	case errors.Is(err, deploy.ErrRenderer):
+		return ApplyDeployment502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	case errors.Is(err, deploy.ErrTarget):
-		return ApplyDeployment502JSONResponse{PlannerErrorJSONResponse(problems("deployer_error", "", "The deployer refused api's call; see api's log."))}, nil
+		return ApplyDeployment502JSONResponse{RendererErrorJSONResponse(problems("deployer_error", "", "The deployer refused api's call; see api's log."))}, nil
 	case err != nil:
 		return nil, err
 	}
@@ -221,9 +221,9 @@ func (s *Server) RemoveDeployment(ctx context.Context, req RemoveDeploymentReque
 	return RemoveDeployment202JSONResponse(operation(op)), nil
 }
 
-func (s *Server) plannerProblem(ctx context.Context, err error) contract.ProblemList {
-	s.log.WarnContext(ctx, "planner failed", slog.Any("error", err))
-	return problems("planner_error", "", "The planner did not answer as expected; try again.")
+func (s *Server) rendererProblem(ctx context.Context, err error) contract.ProblemList {
+	s.log.WarnContext(ctx, "renderer failed", slog.Any("error", err))
+	return problems("renderer_error", "", "The renderer did not answer as expected; try again.")
 }
 
 // cursorID reads an operations cursor: none, or an operation id.

@@ -108,17 +108,17 @@ check_env() {
 		MP_INGRESS__HTTPS_PORT) check_value MP_INGRESS__HTTPS_PORT 'int' '1' '65535' '' false ;;
 		MP_INGRESS__ORIGIN) check_value MP_INGRESS__ORIGIN 'string' '' '' '^(http(s)?://(([]\001-\011\013-,.-\\_-\177^-]|[\302-\364][\200-\277]{1,3}))+)$' false ;;
 		MP_INGRESS__TLS_MODE) check_value MP_INGRESS__TLS_MODE 'enum' '' '' '' false 'internal' 'acme' ;;
-		MP_PLANNER__PLANNER_MODE) ;;
-		MP_PLANNER__PLANNER_RATE) ;;
-		MP_PLANNER__PROXY_HOPS) ;;
+		MP_RENDERER__PROXY_HOPS) ;;
+		MP_RENDERER__RENDERER_MODE) ;;
+		MP_RENDERER__RENDERER_RATE) ;;
 		MP_WEB__SIGNED_OUT) check_value MP_WEB__SIGNED_OUT 'enum' '' '' '' false 'index' 'sign-in' ;;
 		MP_API__*) echo "setup.sh: warning: $var in .env names no value of api" >&2 ;;
 		MP_AUTHELIA__*) echo "setup.sh: warning: $var in .env names no value of authelia" >&2 ;;
 		MP_CERT_ISSUER__*) echo "setup.sh: warning: $var in .env names no value of cert-issuer" >&2 ;;
 		MP_DEPLOYER_DOCKER__*) echo "setup.sh: warning: $var in .env names no value of deployer-docker" >&2 ;;
 		MP_INGRESS__*) echo "setup.sh: warning: $var in .env names no value of ingress" >&2 ;;
-		MP_PLANNER__*) echo "setup.sh: warning: $var in .env names no value of planner" >&2 ;;
 		MP_POSTGRES__*) echo "setup.sh: warning: $var in .env names no value of postgres" >&2 ;;
+		MP_RENDERER__*) echo "setup.sh: warning: $var in .env names no value of renderer" >&2 ;;
 		MP_WEB__*) echo "setup.sh: warning: $var in .env names no value of web" >&2 ;;
 		esac
 	done
@@ -263,7 +263,7 @@ new_secret secrets/postgres/password
 new_secret secrets/api/uses_deploy-target_token
 new_secret secrets/api/uses_main-db_password
 new_secret secrets/api/uses_oidc_client_secret
-new_secret secrets/api/uses_planner_token
+new_secret secrets/api/uses_renderer_token
 new_secret secrets/authelia/uses_db_password
 new_output secrets/postgres/uses_tls_cert
 new_output secrets/postgres/uses_tls_key

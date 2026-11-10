@@ -382,11 +382,11 @@ type DeployerUnavailable = externalRef0.ProblemList
 // NotFound defines model for NotFound.
 type NotFound = externalRef0.ProblemList
 
-// PlannerError defines model for PlannerError.
-type PlannerError = externalRef0.ProblemList
-
 // Refused defines model for Refused.
 type Refused = externalRef0.ProblemList
+
+// RendererError defines model for RendererError.
+type RendererError = externalRef0.ProblemList
 
 // TooLarge defines model for TooLarge.
 type TooLarge = externalRef0.ProblemList
@@ -427,7 +427,7 @@ type RenderJSONRequestBody = externalRef0.Graph
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// GetCatalog List the catalog, as the planner answers it
+	// GetCatalog List the catalog, as the renderer answers it
 	// (GET /api/v1/catalog)
 	GetCatalog(w http.ResponseWriter, r *http.Request)
 	// ListDeployments List the deployments, sorted by name
@@ -448,10 +448,10 @@ type ServerInterface interface {
 	// ReviewDeployment Show exactly what an apply of this graph would run
 	// (POST /api/v1/deployments/{name}/review)
 	ReviewDeployment(w http.ResponseWriter, r *http.Request, name Name)
-	// Plan Check a graph and fill in its automatic bindings, as the planner answers it
+	// Plan Check a graph and fill in its automatic bindings, as the renderer answers it
 	// (POST /api/v1/plan)
 	Plan(w http.ResponseWriter, r *http.Request)
-	// Render Render a graph as the static zip, as the planner answers it
+	// Render Render a graph as the static zip, as the renderer answers it
 	// (POST /api/v1/render)
 	Render(w http.ResponseWriter, r *http.Request)
 	// GetSession Who is signed in, and until when
@@ -871,9 +871,9 @@ type DeployerUnavailableJSONResponse externalRef0.ProblemList
 
 type NotFoundJSONResponse externalRef0.ProblemList
 
-type PlannerErrorJSONResponse externalRef0.ProblemList
-
 type RefusedJSONResponse externalRef0.ProblemList
+
+type RendererErrorJSONResponse externalRef0.ProblemList
 
 type TooLargeJSONResponse externalRef0.ProblemList
 
@@ -914,7 +914,7 @@ func (response GetCatalog401JSONResponse) VisitGetCatalogResponse(w http.Respons
 	return err
 }
 
-type GetCatalog502JSONResponse struct{ PlannerErrorJSONResponse }
+type GetCatalog502JSONResponse struct{ RendererErrorJSONResponse }
 
 func (response GetCatalog502JSONResponse) VisitGetCatalogResponse(w http.ResponseWriter) error {
 
@@ -1135,7 +1135,7 @@ func (response ApplyDeployment422JSONResponse) VisitApplyDeploymentResponse(w ht
 	return err
 }
 
-type ApplyDeployment502JSONResponse struct{ PlannerErrorJSONResponse }
+type ApplyDeployment502JSONResponse struct{ RendererErrorJSONResponse }
 
 func (response ApplyDeployment502JSONResponse) VisitApplyDeploymentResponse(w http.ResponseWriter) error {
 
@@ -1428,7 +1428,7 @@ func (response ReviewDeployment422JSONResponse) VisitReviewDeploymentResponse(w 
 	return err
 }
 
-type ReviewDeployment502JSONResponse struct{ PlannerErrorJSONResponse }
+type ReviewDeployment502JSONResponse struct{ RendererErrorJSONResponse }
 
 func (response ReviewDeployment502JSONResponse) VisitReviewDeploymentResponse(w http.ResponseWriter) error {
 
@@ -1536,7 +1536,7 @@ func (response Plan413JSONResponse) VisitPlanResponse(w http.ResponseWriter) err
 	return err
 }
 
-type Plan502JSONResponse struct{ PlannerErrorJSONResponse }
+type Plan502JSONResponse struct{ RendererErrorJSONResponse }
 
 func (response Plan502JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
 
@@ -1654,7 +1654,7 @@ func (response Render422JSONResponse) VisitRenderResponse(w http.ResponseWriter)
 	return err
 }
 
-type Render502JSONResponse struct{ PlannerErrorJSONResponse }
+type Render502JSONResponse struct{ RendererErrorJSONResponse }
 
 func (response Render502JSONResponse) VisitRenderResponse(w http.ResponseWriter) error {
 
@@ -1705,7 +1705,7 @@ func (response GetSession401JSONResponse) VisitGetSessionResponse(w http.Respons
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
-	// GetCatalog List the catalog, as the planner answers it
+	// GetCatalog List the catalog, as the renderer answers it
 	// (GET /api/v1/catalog)
 	GetCatalog(ctx context.Context, request GetCatalogRequestObject) (GetCatalogResponseObject, error)
 	// ListDeployments List the deployments, sorted by name
@@ -1726,10 +1726,10 @@ type StrictServerInterface interface {
 	// ReviewDeployment Show exactly what an apply of this graph would run
 	// (POST /api/v1/deployments/{name}/review)
 	ReviewDeployment(ctx context.Context, request ReviewDeploymentRequestObject) (ReviewDeploymentResponseObject, error)
-	// Plan Check a graph and fill in its automatic bindings, as the planner answers it
+	// Plan Check a graph and fill in its automatic bindings, as the renderer answers it
 	// (POST /api/v1/plan)
 	Plan(ctx context.Context, request PlanRequestObject) (PlanResponseObject, error)
-	// Render Render a graph as the static zip, as the planner answers it
+	// Render Render a graph as the static zip, as the renderer answers it
 	// (POST /api/v1/render)
 	Render(ctx context.Context, request RenderRequestObject) (RenderResponseObject, error)
 	// GetSession Who is signed in, and until when

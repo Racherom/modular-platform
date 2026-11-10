@@ -16,7 +16,7 @@ const graph: Graph = {
 const planFor = (g: Graph): PlanResult => ({ ok: true, graph: g, bindings: [], problems: [] })
 
 /** Replies to plan calls by hand, in any order. */
-function heldPlanner() {
+function heldRenderer() {
   const pending: { graph: Graph; reply: (r: Response) => void }[] = []
   fetchHandler.current = async (req) => {
     const g = (await req.json()) as Graph
@@ -42,7 +42,7 @@ describe('editor store', () => {
   })
 
   it('shows an edit at once, plans it, then adopts the reply and saves (AC-12)', async () => {
-    const pending = heldPlanner()
+    const pending = heldRenderer()
     const before = useEditor.getState().working?.positions
     useEditor.getState().edit((g) => bind(g, 'web', 'postgresql', 'db'))
 
@@ -53,12 +53,12 @@ describe('editor store', () => {
     expect(saveWorking).not.toHaveBeenCalled()
 
     await vi.waitFor(() => expect(pending).toHaveLength(1))
-    const planned: Graph = { ...pending[0]!.graph, name: 'from-planner' }
+    const planned: Graph = { ...pending[0]!.graph, name: 'from-renderer' }
     pending[0]!.reply(Response.json(planFor(planned)))
     await vi.waitFor(() => expect(useEditor.getState().planState).toBe('current'))
 
     s = useEditor.getState()
-    expect(s.working?.graph.name).toBe('from-planner')
+    expect(s.working?.graph.name).toBe('from-renderer')
     expect(s.working?.plan.graph).toBe(s.working?.graph)
     expect(s.working?.positions).toEqual(before)
     expect(saveWorking).toHaveBeenCalledTimes(1)
@@ -66,7 +66,7 @@ describe('editor store', () => {
   })
 
   it('uses only the reply for the latest edit (AC-12)', async () => {
-    const pending = heldPlanner()
+    const pending = heldRenderer()
     useEditor.getState().edit((g) => bind(g, 'web', 'postgresql', 'db'))
     await vi.waitFor(() => expect(pending).toHaveLength(1))
     useEditor.getState().edit((g) => bind(g, 'web', 'postgresql', 'db2'))
@@ -83,7 +83,7 @@ describe('editor store', () => {
   })
 
   it('keeps the edit and saves nothing when the plan call fails', async () => {
-    const pending = heldPlanner()
+    const pending = heldRenderer()
     useEditor.getState().edit((g) => bind(g, 'web', 'postgresql', 'db'))
     await vi.waitFor(() => expect(pending).toHaveLength(1))
     pending[0]!.reply(new Response(null, { status: 503 }))
@@ -101,13 +101,13 @@ describe('editor store', () => {
     expect(saveWorking).toHaveBeenCalledTimes(1)
   })
 
-  it('says 429 means the planner is busy', async () => {
-    const pending = heldPlanner()
+  it('says 429 means the renderer is busy', async () => {
+    const pending = heldRenderer()
     useEditor.getState().edit((g) => bind(g, 'web', 'postgresql', 'db'))
     await vi.waitFor(() => expect(pending).toHaveLength(1))
     pending[0]!.reply(new Response(null, { status: 429 }))
     await vi.waitFor(() => expect(useEditor.getState().planState).toBe('failed'))
-    expect(useEditor.getState().planError?.message).toBe('The planner is busy, try again in a minute.')
+    expect(useEditor.getState().planError?.message).toBe('The renderer is busy, try again in a minute.')
   })
 
   it('notes when the working copy cannot be kept', async () => {
@@ -117,7 +117,7 @@ describe('editor store', () => {
   })
 
   it('an edit that changes nothing plans nothing', () => {
-    const pending = heldPlanner()
+    const pending = heldRenderer()
     useEditor.getState().edit((g) => g)
     expect(useEditor.getState().planState).toBe('current')
     expect(pending).toHaveLength(0)

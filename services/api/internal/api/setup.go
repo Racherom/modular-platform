@@ -94,11 +94,11 @@ func Setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 		return nil, err
 	}
 	st := store.New(pool)
-	plannerBinding, err := m.Uses.Planner(ctx)
+	rendererBinding, err := m.Uses.Renderer(ctx)
 	if err != nil {
 		return nil, err
 	}
-	planner, err := clients.NewPlanner(plannerBinding)
+	renderer, err := clients.NewRenderer(rendererBinding)
 	if err != nil {
 		return nil, err
 	}
@@ -119,13 +119,13 @@ func Setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 	sessions := signin.New(s.Config, st, idp, m.Log)
 	go sessions.Sweep(ctx)
 	hub := deploy.NewHub()
-	deployments := deploy.NewService(ctx, st, planner, target, hub, m.Log)
+	deployments := deploy.NewService(ctx, st, renderer, target, hub, m.Log)
 	if err := deployments.Resume(ctx); err != nil {
 		return nil, errors.Join(errors.New("resuming running operations"), err)
 	}
 	m.Log.InfoContext(ctx, "api starting", slog.String("public_origin", s.PublicOrigin), slog.String("base_path", s.BasePath))
 	return NewHandler(Options{
-		Signin: sessions, Deploy: deployments, Hub: hub, Planner: planner,
+		Signin: sessions, Deploy: deployments, Hub: hub, Renderer: renderer,
 		PublicOrigin: s.PublicOrigin, BasePath: s.BasePath, Idle: s.Idle, Log: m.Log,
 	}), nil
 }

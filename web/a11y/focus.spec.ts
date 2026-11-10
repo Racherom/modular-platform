@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from '@playwright/test'
 import { openGraph, useTheme } from './helpers'
-import { mockPlanner } from './mock-planner'
+import { mockRenderer } from './mock-renderer'
 
 // AC-3: a canvas node shows the focus ring and a canvas edge a thicker stroke in the focus
 // color when it has keyboard focus. React Flow's own stylesheet removes the outline from
@@ -57,7 +57,7 @@ async function tabTo(page: Page, target: Locator) {
 for (const theme of ['light', 'dark'] as const) {
   test(`a focused node and edge show the focus color in ${theme} (AC-3)`, async ({ page }) => {
     await useTheme(page, theme)
-    await mockPlanner(page)
+    await mockRenderer(page)
     await openGraph(page, BOUND)
     const ring = await focusColor(page)
 
@@ -76,7 +76,7 @@ for (const theme of ['light', 'dark'] as const) {
 
   test(`a focused edge dimmed by the selection still shows the focus stroke in ${theme} (AC-3)`, async ({ page }) => {
     await useTheme(page, theme)
-    await mockPlanner(page)
+    await mockRenderer(page)
     await openGraph(page, TWO)
     const ring = await focusColor(page)
 

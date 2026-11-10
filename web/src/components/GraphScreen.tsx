@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { ReactFlowProvider } from '@xyflow/react'
 import { Download, Info, LayoutGrid, Redo2, Rocket, Save, Undo2 } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
-import { fetchCatalog, type Graph, type PlannerError, type PlanResult, renderGraph } from '../api/client'
+import { fetchCatalog, type Graph, type PlanResult, type RendererError, renderGraph } from '../api/client'
 import type { Positions } from '../graph/flow'
 import { mode } from '../lib/config'
 import { download, saveGraphFile } from '../lib/download'
@@ -40,7 +40,7 @@ export interface Editing {
   positions: Positions
   edited: boolean
   planState: PlanState
-  planError: PlannerError | null
+  planError: RendererError | null
   onRetry: () => void
   /** Applies a user edit to the working graph. */
   onEdit: (edit: GraphEdit) => void
@@ -183,7 +183,7 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing, notice }:
           }
           problems={
             planState === 'failed' && editing?.planError ? (
-              // a 400 means the planner refused this graph: retrying cannot help, undo is the way back
+              // a 400 means the renderer refused this graph: retrying cannot help, undo is the way back
               <Failure error={editing.planError} onRetry={editing.planError.status === 400 ? undefined : editing.onRetry} />
             ) : (
               <ProblemsPanel problems={shownPlan.problems} graph={graph} />

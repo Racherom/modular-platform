@@ -5,7 +5,7 @@
 // Options plug in a start source, a push source, a caller source and a binding resolver without
 // changing module code.
 //
-//	//go:generate go tool sdkgen -entry ../../../../catalog/planner.yaml -package config -out config.gen.go
+//	//go:generate go tool sdkgen -entry ../../../../catalog/modules/renderer/module.yaml -package config -out config.gen.go
 //	func main() { sdk.Run(config.Module, setup) }
 package sdk
 

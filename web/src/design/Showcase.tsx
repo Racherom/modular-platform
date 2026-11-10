@@ -358,7 +358,7 @@ export function Showcase() {
 
       <Section title="Failure">
         <div className={styles.stack}>
-          <Failure error={new Error('The planner is busy. Try again in a minute.')} onRetry={() => undefined} />
+          <Failure error={new Error('The renderer is busy. Try again in a minute.')} onRetry={() => undefined} />
           <Failure error={new Error('The graph has a module without a name.')} />
         </div>
       </Section>
@@ -432,7 +432,7 @@ function SelectDemo() {
         options={options}
         value="postgres"
         onChange={() => undefined}
-        description="bound by the planner"
+        description="bound by the checks"
       />
       <Select label="Bound to, small" size="sm" options={options} value="none" onChange={() => undefined} />
       <Select label="Bound to, disabled" options={options} value="auto" onChange={() => undefined} isDisabled />

@@ -1,6 +1,6 @@
 import createClient from 'openapi-fetch'
 import { apiRoot } from '../lib/config'
-import type { components, paths } from './planner.gen'
+import type { components, paths } from './renderer.gen'
 
 export type Graph = components['schemas']['Graph']
 export type GraphModule = components['schemas']['GraphModule']
@@ -16,8 +16,8 @@ export type Problem = components['schemas']['Problem']
 // absolute on the page's own origin, so every call stays same origin under any base path
 const client = createClient<paths>({ baseUrl: new URL(apiRoot, window.location.origin).href })
 
-/** A failed planner call, with the message the editor shows as is. */
-export class PlannerError extends Error {
+/** A failed renderer call, with the message the editor shows as is. */
+export class RendererError extends Error {
   constructor(
     message: string,
     readonly status: number,
@@ -26,10 +26,10 @@ export class PlannerError extends Error {
   }
 }
 
-function failure(status: number, problems?: Problem[]): PlannerError {
-  if (status === 429) return new PlannerError('The planner is busy, try again in a minute.', status)
-  const message = problems?.[0]?.message ?? `The planner answered ${status}.`
-  return new PlannerError(message, status)
+function failure(status: number, problems?: Problem[]): RendererError {
+  if (status === 429) return new RendererError('The renderer is busy, try again in a minute.', status)
+  const message = problems?.[0]?.message ?? `The renderer answered ${status}.`
+  return new RendererError(message, status)
 }
 
 export async function fetchCatalog(): Promise<Catalog> {

@@ -8,7 +8,7 @@
       "package-name": "modular-platform",
       "extra-files": [
         "deploy/online/versions.env",
-        "catalog/modules/planner/module.yaml",
+        "catalog/modules/renderer/module.yaml",
         "catalog/modules/deployer-docker/module.yaml",
         "catalog/modules/api/module.yaml",
         "catalog/modules/web/module.yaml",

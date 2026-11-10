@@ -7,7 +7,7 @@ import (
 	"github.com/racherom/modular-platform/libs/contract"
 )
 
-// TestBuiltInCatalog runs the same checks the planner runs at start (AC-2).
+// TestBuiltInCatalog runs the same checks the renderer runs at start (AC-2).
 func TestBuiltInCatalog(t *testing.T) {
 	t.Parallel()
 	c, problems := contract.LoadCatalog(catalog.FS)

@@ -14,7 +14,7 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
-    "generate": "openapi-typescript ../contracts/openapi/planner.yaml -o src/api/planner.gen.ts && openapi-typescript ../contracts/openapi/api.yaml -o src/api/api.gen.ts",
+    "generate": "openapi-typescript ../contracts/openapi/renderer.yaml -o src/api/renderer.gen.ts && openapi-typescript ../contracts/openapi/api.yaml -o src/api/api.gen.ts",
     "a11y": "playwright test --config a11y/playwright.config.ts",
     "smoke:browser": "playwright test --config smoke/playwright.config.ts editor.spec.ts",
     "smoke:managed": "playwright test --config smoke/playwright.config.ts managed.spec.ts"

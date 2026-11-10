@@ -22,20 +22,20 @@ import (
 	"github.com/racherom/modular-platform/catalog"
 	"github.com/racherom/modular-platform/libs/contract"
 	"github.com/racherom/modular-platform/sdk"
-	"github.com/racherom/modular-platform/services/planner/internal/api"
-	"github.com/racherom/modular-platform/services/planner/internal/config"
+	"github.com/racherom/modular-platform/services/renderer/internal/api"
+	"github.com/racherom/modular-platform/services/renderer/internal/config"
 )
 
 const sampleJSON = `{"apiVersion":"modular-platform/v1","kind":"Graph","name":"whoami-postgres",
 "modules":{"postgres":{"module":"postgres"},"whoami":{"module":"whoami","uses":{"postgresql":"postgres"}}}}`
 
-type planner struct {
+type renderer struct {
 	srv *httptest.Server
 	log *bytes.Buffer
 }
 
-// start builds the planner the way sdk.Run does, with env as its whole process env.
-func start(t *testing.T, env map[string]string) planner {
+// start builds the renderer the way sdk.Run does, with env as its whole process env.
+func start(t *testing.T, env map[string]string) renderer {
 	t.Helper()
 	h, logs, err := build(t, env, catalog.FS)
 	if err != nil {
@@ -43,7 +43,7 @@ func start(t *testing.T, env map[string]string) planner {
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return planner{srv: srv, log: logs}
+	return renderer{srv: srv, log: logs}
 }
 
 func build(t *testing.T, env map[string]string, catalogFS fs.FS) (http.Handler, *bytes.Buffer, error) {
@@ -56,9 +56,9 @@ func build(t *testing.T, env map[string]string, catalogFS fs.FS) (http.Handler, 
 	return h, &logs, err
 }
 
-// publicEnv runs the planner in public mode with rate requests per minute.
+// publicEnv runs the renderer in public mode with rate requests per minute.
 func publicEnv(rate string) map[string]string {
-	return map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "public", "MP_PLANNER_RATE": rate}
+	return map[string]string{"MP_INSTANCE": "renderer", "MP_RENDERER_MODE": "public", "MP_RENDERER_RATE": rate}
 }
 
 // clientsDir writes one token file per consumer and returns the directory.
@@ -89,7 +89,7 @@ func errorLines(t *testing.T, logs *bytes.Buffer) []string {
 	return lines
 }
 
-func (p planner) do(t *testing.T, method, path, body string, header http.Header) (*http.Response, []byte) {
+func (p renderer) do(t *testing.T, method, path, body string, header http.Header) (*http.Response, []byte) {
 	t.Helper()
 	req, err := http.NewRequest(method, p.srv.URL+path, strings.NewReader(body))
 	if err != nil {
@@ -132,7 +132,7 @@ func TestCatalogSorted(t *testing.T) {
 	for _, c := range cat.Capabilities {
 		capabilities = append(capabilities, c.Name)
 	}
-	if !slices.Equal(modules, []string{"api", "authelia", "caddy", "cert-issuer", "deployer-docker", "planner", "postgres", "web", "whoami"}) {
+	if !slices.Equal(modules, []string{"api", "authelia", "caddy", "cert-issuer", "deployer-docker", "postgres", "renderer", "web", "whoami"}) {
 		t.Errorf("modules = %q", modules)
 	}
 	if !slices.IsSorted(capabilities) || !slices.Contains(capabilities, "postgresql-provisioner") {
@@ -317,11 +317,11 @@ func TestInternalAuth(t *testing.T) {
 	t.Parallel()
 	token := strings.Repeat("a1", 16)
 	p := start(t, map[string]string{
-		"MP_INSTANCE":            "planner",
-		"MP_PLANNER_MODE":        "internal",
-		"MP_PLATFORM_HTTP_PORT":  "80",
-		"MP_PLATFORM_HTTPS_PORT": "443",
-		"MP_PLANNER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
+		"MP_INSTANCE":             "renderer",
+		"MP_RENDERER_MODE":        "internal",
+		"MP_PLATFORM_HTTP_PORT":   "80",
+		"MP_PLATFORM_HTTPS_PORT":  "443",
+		"MP_RENDERER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
 	})
 	if resp, _ := p.do(t, http.MethodGet, "/v1/catalog", "", nil); resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("no token: status %d, want 401", resp.StatusCode)
@@ -343,7 +343,7 @@ func TestInternalAuth(t *testing.T) {
 }
 
 // TestStartRefused covers spec 0005 AC-13: internal mode refuses to start without a consumer
-// token in MP_PLANNER_CLIENTS_DIR, and no mode is no start; and spec 0025 AC-24: internal mode
+// token in MP_RENDERER_CLIENTS_DIR, and no mode is no start; and spec 0025 AC-24: internal mode
 // refuses to start without the ingress binding, in one line.
 func TestStartRefused(t *testing.T) {
 	t.Parallel()
@@ -352,28 +352,28 @@ func TestStartRefused(t *testing.T) {
 		want string
 	}{
 		"internal without clients dir": {
-			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal", "MP_PLATFORM_HTTP_PORT": "80", "MP_PLATFORM_HTTPS_PORT": "443"},
-			want: "config: provides.planner.clients_dir (MP_PLANNER_CLIENTS_DIR): missing: ",
+			env:  map[string]string{"MP_INSTANCE": "renderer", "MP_RENDERER_MODE": "internal", "MP_PLATFORM_HTTP_PORT": "80", "MP_PLATFORM_HTTPS_PORT": "443"},
+			want: "config: provides.renderer.clients_dir (MP_RENDERER_CLIENTS_DIR): missing: ",
 		},
 		"internal with an empty clients dir": {
-			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal", "MP_PLATFORM_HTTP_PORT": "80", "MP_PLATFORM_HTTPS_PORT": "443", "MP_PLANNER_CLIENTS_DIR": clientsDir(t, nil)},
-			want: "config: provides.planner.clients_dir (MP_PLANNER_CLIENTS_DIR): missing: ",
+			env:  map[string]string{"MP_INSTANCE": "renderer", "MP_RENDERER_MODE": "internal", "MP_PLATFORM_HTTP_PORT": "80", "MP_PLATFORM_HTTPS_PORT": "443", "MP_RENDERER_CLIENTS_DIR": clientsDir(t, nil)},
+			want: "config: provides.renderer.clients_dir (MP_RENDERER_CLIENTS_DIR): missing: ",
 		},
 		"internal without the ingress binding": {
-			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal", "MP_PLANNER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": strings.Repeat("t", 32)})},
+			env:  map[string]string{"MP_INSTANCE": "renderer", "MP_RENDERER_MODE": "internal", "MP_RENDERER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": strings.Repeat("t", 32)})},
 			want: "config: uses.ingress (MP_PLATFORM_HTTP_PORT): missing: internal mode needs the ingress binding",
 		},
 		"internal with half the ingress binding": {
-			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "internal", "MP_PLATFORM_HTTP_PORT": "80"},
+			env:  map[string]string{"MP_INSTANCE": "renderer", "MP_RENDERER_MODE": "internal", "MP_PLATFORM_HTTP_PORT": "80"},
 			want: "config: uses.ingress.https_port (MP_PLATFORM_HTTPS_PORT): missing: ",
 		},
 		"no mode": {
-			env:  map[string]string{"MP_INSTANCE": "planner"},
-			want: "config: planner-mode (MP_PLANNER_MODE): missing: ",
+			env:  map[string]string{"MP_INSTANCE": "renderer"},
+			want: "config: renderer-mode (MP_RENDERER_MODE): missing: ",
 		},
 		"a mode not in values": {
-			env:  map[string]string{"MP_INSTANCE": "planner", "MP_PLANNER_MODE": "open"},
-			want: "config: planner-mode (MP_PLANNER_MODE): not_allowed: ",
+			env:  map[string]string{"MP_INSTANCE": "renderer", "MP_RENDERER_MODE": "open"},
+			want: "config: renderer-mode (MP_RENDERER_MODE): not_allowed: ",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -440,11 +440,11 @@ func TestRenderManaged(t *testing.T) {
 	body := `{"graph":` + sampleJSON + `,"deployment":"` + deployment + `"}`
 	token := strings.Repeat("a1", 16)
 	internal := start(t, map[string]string{
-		"MP_INSTANCE":            "planner",
-		"MP_PLANNER_MODE":        "internal",
-		"MP_PLATFORM_HTTP_PORT":  "80",
-		"MP_PLATFORM_HTTPS_PORT": "443",
-		"MP_PLANNER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
+		"MP_INSTANCE":             "renderer",
+		"MP_RENDERER_MODE":        "internal",
+		"MP_PLATFORM_HTTP_PORT":   "80",
+		"MP_PLATFORM_HTTPS_PORT":  "443",
+		"MP_RENDERER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
 	})
 	auth := http.Header{"Authorization": {"Bearer " + token}}
 
@@ -529,18 +529,18 @@ config:
 	}
 	token := strings.Repeat("a1", 16)
 	h, logs, err := build(t, map[string]string{
-		"MP_INSTANCE":            "planner",
-		"MP_PLANNER_MODE":        "internal",
-		"MP_PLATFORM_HTTP_PORT":  "80",
-		"MP_PLATFORM_HTTPS_PORT": "443",
-		"MP_PLANNER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
+		"MP_INSTANCE":             "renderer",
+		"MP_RENDERER_MODE":        "internal",
+		"MP_PLATFORM_HTTP_PORT":   "80",
+		"MP_PLATFORM_HTTPS_PORT":  "443",
+		"MP_RENDERER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
 	}, fsys)
 	if err != nil {
 		t.Fatalf("start refused: %v\n%s", err, logs)
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	p := planner{srv: srv, log: logs}
+	p := renderer{srv: srv, log: logs}
 	auth := http.Header{"Authorization": {"Bearer " + token}}
 	graph := `{"apiVersion":"modular-platform/v1","kind":"Graph","name":"reach","modules":{"web":{"module":"edge"},"ask":{"module":"asker"}}}`
 

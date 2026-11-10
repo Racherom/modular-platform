@@ -5,7 +5,7 @@ services:
     image: ghcr.io/racherom/modular-platform/web:ci
   api:
     image: ghcr.io/racherom/modular-platform/api:ci
-  planner:
-    image: ghcr.io/racherom/modular-platform/planner:ci
+  renderer:
+    image: ghcr.io/racherom/modular-platform/renderer:ci
   deployer-docker:
     image: ghcr.io/racherom/modular-platform/deployer-docker:ci

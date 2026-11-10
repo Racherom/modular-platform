@@ -1,4 +1,4 @@
-module github.com/racherom/modular-platform/services/planner
+module github.com/racherom/modular-platform/services/renderer
 
 go 1.26.8
 

@@ -325,7 +325,7 @@ func TestClientRefusals(t *testing.T) {
 		set  func(s *stub)
 		want string // empty: Issue succeeds
 	}{
-		"another identifier":    {func(s *stub) { s.identifier = "planner.sdk-test.internal" }, "the order names"},
+		"another identifier":    {func(s *stub) { s.identifier = "renderer.sdk-test.internal" }, "the order names"},
 		"invalid authorization": {func(s *stub) { s.authzStatus = acme.StatusInvalid }, "is invalid"},
 		"expired authorization": {func(s *stub) { s.authzStatus = "expired" }, "is expired"},
 		"no tls-alpn-01":        {func(s *stub) { s.challengeType = []string{"http-01", "dns-01"} }, "no tls-alpn-01 challenge"},

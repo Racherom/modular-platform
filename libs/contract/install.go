@@ -31,7 +31,7 @@ func (b ConfigBound) Text() string {
 }
 
 // Check checks text as a value of v with the parser the SDK loads it with (spec 0025), so a
-// value the planner accepts is one the module accepts. A failure is a *manifest.RuleError.
+// value the checks accept is one the module accepts. A failure is a *manifest.RuleError.
 func (v ConfigValue) Check(text string) error {
 	mv := manifest.Value{Type: string(v.Type), Values: v.Values}
 	if v.Min != nil {
@@ -119,7 +119,7 @@ func (m Module) SecretEntry(n string) (Secret, bool) {
 const ClientToken = clientToken
 
 // BindingOrder lists instances so that every provider comes before its consumers, ties by name
-// (spec 0013, the order setup.sh runs setup steps in). The planner refuses a binding cycle; the
+// (spec 0013, the order setup.sh runs setup steps in). The checks refuse a binding cycle; the
 // instances of one are listed last, in name order.
 func BindingOrder(instances []string, bindings []Binding) []string {
 	waits := map[string]map[string]bool{} // consumer to the providers it waits for

@@ -1,7 +1,7 @@
 # Module entry fixtures for the sdk fields of spec 0005, in the v1 shape of spec 0013. sdk/manifest
 # and libs/contract both run every case against the capabilities below and must report exactly
 # `want` (dotted path, then code); an empty list means the entry is accepted. A case marked
-# planner_only is a rule of the catalog check alone. Each entry is `header` followed by the case's
+# check_only is a rule of the catalog check alone. Each entry is `header` followed by the case's
 # `body`.
 capabilities:
   - |
@@ -603,7 +603,7 @@ cases:
             token: {generate: true}
   - name: plain provide without port
     want: [provides.http.port invalid_port]
-    planner_only: true
+    check_only: true
     body: |
       provides:
         http:

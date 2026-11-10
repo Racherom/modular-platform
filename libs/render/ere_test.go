@@ -60,7 +60,7 @@ func TestEREPatternMatchesRE2(t *testing.T) {
 		re := regexp.MustCompile(`^(?:` + pattern + `)$`)
 		for _, a := range answers {
 			if got, want := shellMatch(t, format, a), re.MatchString(a); got != want {
-				t.Errorf("pattern %s, answer %q: setup.sh accepts it %v, the planner %v (format %s)", pattern, a, got, want, format)
+				t.Errorf("pattern %s, answer %q: setup.sh accepts it %v, the checks %v (format %s)", pattern, a, got, want, format)
 			}
 		}
 	}

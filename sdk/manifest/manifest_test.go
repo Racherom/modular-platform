@@ -18,10 +18,10 @@ type fixtures struct {
 	Capabilities []string `json:"capabilities"`
 	Header       string   `json:"header"`
 	Cases        []struct {
-		Name        string   `json:"name"`
-		Want        []string `json:"want"`
-		PlannerOnly bool     `json:"planner_only"`
-		Body        string   `json:"body"`
+		Name      string   `json:"name"`
+		Want      []string `json:"want"`
+		CheckOnly bool     `json:"check_only"`
+		Body      string   `json:"body"`
 	} `json:"cases"`
 }
 
@@ -47,7 +47,7 @@ func TestCheckFixtures(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			t.Parallel()
 			want := tc.Want
-			if tc.PlannerOnly {
+			if tc.CheckOnly {
 				want = nil // a rule of the catalog check alone
 			}
 			var got []string
@@ -149,12 +149,12 @@ func TestIsBootstrap(t *testing.T) {
 func TestGoName(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]string{
-		"planner-rate": "PlannerRate",
-		"object-store": "ObjectStore",
-		"s3":           "S3",
-		"a1-b":         "A1B",
-		"read only":    "ReadOnly",
-		"public":       "Public",
+		"renderer-rate": "RendererRate",
+		"object-store":  "ObjectStore",
+		"s3":            "S3",
+		"a1-b":          "A1B",
+		"read only":     "ReadOnly",
+		"public":        "Public",
 	} {
 		if got := manifest.GoName(in); got != want {
 			t.Errorf("GoName(%q) = %q, want %q", in, got, want)

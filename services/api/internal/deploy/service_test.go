@@ -257,13 +257,13 @@ func (m *memStore) CountRollbacks(_ context.Context, of uuid.UUID) (int, error) 
 	return n, nil
 }
 
-type fakePlanner struct{ digest string }
+type fakeRenderer struct{ digest string }
 
-func (p fakePlanner) Plan(_ context.Context, g contract.Graph) (contract.PlanResult, error) {
+func (p fakeRenderer) Plan(_ context.Context, g contract.Graph) (contract.PlanResult, error) {
 	return contract.PlanResult{Ok: true, Graph: g, Digest: p.digest}, nil
 }
 
-func (p fakePlanner) RenderManaged(_ context.Context, g contract.Graph, _ uuid.UUID) (contract.RenderedProject, error) {
+func (p fakeRenderer) RenderManaged(_ context.Context, g contract.Graph, _ uuid.UUID) (contract.RenderedProject, error) {
 	return contract.RenderedProject{
 		Project: "mp-" + g.Name, Plan: contract.PlanResult{Ok: true, Graph: g, Digest: p.digest},
 		Images:  []contract.ModuleImage{{Instance: "web", Module: "whoami", Image: "traefik/whoami:v1.12.0"}},
@@ -364,7 +364,7 @@ var admin = deploy.Starter{Issuer: "https://idp", Subject: "user-1", Email: "adm
 func newService(t *testing.T, st *memStore, target *fakeTarget) *deploy.Service {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
-	s := deploy.NewService(ctx, st, fakePlanner{digest: "sha256:abc"}, target, deploy.NewHub(), slog.New(slog.DiscardHandler))
+	s := deploy.NewService(ctx, st, fakeRenderer{digest: "sha256:abc"}, target, deploy.NewHub(), slog.New(slog.DiscardHandler))
 	t.Cleanup(func() { cancel(); s.Wait() })
 	deploy.SetPollEvery(s, 5*time.Millisecond)
 	return s
@@ -564,7 +564,7 @@ func TestPlacedValuesNeverLeak(t *testing.T) {
 			st := newMem()
 			var logs bytes.Buffer
 			ctx, cancel := context.WithCancel(t.Context())
-			s := deploy.NewService(ctx, st, fakePlanner{digest: "sha256:abc"}, target, deploy.NewHub(),
+			s := deploy.NewService(ctx, st, fakeRenderer{digest: "sha256:abc"}, target, deploy.NewHub(),
 				slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 			t.Cleanup(func() { cancel(); s.Wait() })
 			deploy.SetPollEvery(s, 5*time.Millisecond)

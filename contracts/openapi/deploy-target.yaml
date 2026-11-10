@@ -60,7 +60,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
         "413":
           description: The body is over 8 MB (`request_too_large`).
           headers:
@@ -69,7 +69,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
         "422":
           description: |
             The project is refused: `invalid_project`, `host_access`, `invalid_path`,
@@ -80,7 +80,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
   /v1/projects/{project}/remove:
     post:
       operationId: removeProject
@@ -118,7 +118,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
         "409":
           description: An operation of this project is still running (`busy`).
           headers:
@@ -127,7 +127,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
         "503":
           description: The container engine did not answer (`docker_unavailable`).
           headers:
@@ -136,7 +136,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
   /v1/operations/{id}:
     get:
       operationId: getOperation
@@ -189,7 +189,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
   /v1/projects/{project}/secrets:
     get:
       operationId: getProjectSecrets
@@ -240,7 +240,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: "./planner.yaml#/components/schemas/ProblemList"
+            $ref: "./renderer.yaml#/components/schemas/ProblemList"
     Unauthorized:
       description: The binding token is missing or wrong (`unauthorized`), or apply or remove came without an `MP-Caller` token (`invalid_token`).
       headers:
@@ -249,7 +249,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: "./planner.yaml#/components/schemas/ProblemList"
+            $ref: "./renderer.yaml#/components/schemas/ProblemList"
     NotFound:
       description: Unknown under this boot id (`not_found`).
       headers:
@@ -258,7 +258,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: "./planner.yaml#/components/schemas/ProblemList"
+            $ref: "./renderer.yaml#/components/schemas/ProblemList"
   schemas:
     ApplyRequest:
       type: object

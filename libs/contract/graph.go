@@ -41,7 +41,7 @@ func DecodeGraph(data []byte) (Graph, *Problem) {
 	}
 	if g.ApiVersion != APIVersion && g.ApiVersion != APIVersionV0alpha1 {
 		return Graph{}, requestProblem(CodeUnsupportedVersion, "apiVersion",
-			fmt.Sprintf("The apiVersion %q is not supported; this planner reads %s and %s.", g.ApiVersion, APIVersion, APIVersionV0alpha1))
+			fmt.Sprintf("The apiVersion %q is not supported; this renderer reads %s and %s.", g.ApiVersion, APIVersion, APIVersionV0alpha1))
 	}
 	if g.Kind != KindGraph {
 		return Graph{}, requestProblem(CodeWrongKind, "kind", fmt.Sprintf("The kind %q is not %s.", g.Kind, KindGraph))
@@ -75,7 +75,7 @@ func formatProblem(data []byte) *Problem {
 	switch {
 	case tooNew:
 		return requestProblem(CodeFormatTooNew, "formatVersion",
-			fmt.Sprintf("The graph needs a planner that reads format %s; this one reads 1.%d.", s, FormatMinor))
+			fmt.Sprintf("The graph needs a renderer that reads format %s; this one reads 1.%d.", s, FormatMinor))
 	case !ok || s == "":
 		return requestProblem(CodeInvalidGraph, "formatVersion",
 			fmt.Sprintf("The formatVersion %v is not a version like 1.0.", h.FormatVersion))
@@ -144,7 +144,7 @@ func MarshalGraph(g Graph) ([]byte, error) {
 }
 
 // quoteConfig writes text again with every config value double quoted, escaping only " and \
-// (the planner refuses control characters in them). The YAML text yaml.Marshal picks for every
+// (the checks refuse control characters in them). The YAML text yaml.Marshal picks for every
 // other scalar is kept as is; only its line wrapping goes, which the editor's writer never does.
 func quoteConfig(text []byte) ([]byte, error) {
 	var doc yaml3.Node
@@ -185,7 +185,7 @@ func mapValue(n *yaml3.Node, key string) *yaml3.Node {
 	return nil
 }
 
-// CloneGraph returns a deep copy, so a planner result never shares maps with its input.
+// CloneGraph returns a deep copy, so a check result never shares maps with its input.
 func CloneGraph(g Graph) Graph {
 	out := g
 	out.Modules = make(map[string]GraphModule, len(g.Modules))

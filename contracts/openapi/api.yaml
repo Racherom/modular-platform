@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   summary: The managed platform's control plane, called by the editor.
   description: |
-    `api` keeps the record (sessions, deployments, an append only history), asks the planner to
+    `api` keeps the record (sessions, deployments, an append only history), asks the renderer to
     plan and render, and drives the deploy target (spec 0006). Paths sit under `<base>/api/v1`;
     the base is empty in thread 1.
 
@@ -42,7 +42,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
   /api/v1/auth/callback:
     get:
       operationId: callback
@@ -102,35 +102,35 @@ paths:
   /api/v1/catalog:
     get:
       operationId: getCatalog
-      summary: List the catalog, as the planner answers it
+      summary: List the catalog, as the renderer answers it
       responses:
         "200":
           description: Every catalog entry, sorted by name.
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/Catalog"
+                $ref: "./renderer.yaml#/components/schemas/Catalog"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "502":
-          $ref: "#/components/responses/PlannerError"
+          $ref: "#/components/responses/RendererError"
   /api/v1/plan:
     post:
       operationId: plan
-      summary: Check a graph and fill in its automatic bindings, as the planner answers it
+      summary: Check a graph and fill in its automatic bindings, as the renderer answers it
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "./planner.yaml#/components/schemas/Graph"
+              $ref: "./renderer.yaml#/components/schemas/Graph"
       responses:
         "200":
           description: The plan.
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/PlanResult"
+                $ref: "./renderer.yaml#/components/schemas/PlanResult"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -140,17 +140,17 @@ paths:
         "413":
           $ref: "#/components/responses/TooLarge"
         "502":
-          $ref: "#/components/responses/PlannerError"
+          $ref: "#/components/responses/RendererError"
   /api/v1/render:
     post:
       operationId: render
-      summary: Render a graph as the static zip, as the planner answers it
+      summary: Render a graph as the static zip, as the renderer answers it
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "./planner.yaml#/components/schemas/Graph"
+              $ref: "./renderer.yaml#/components/schemas/Graph"
       responses:
         "200":
           description: The zip, byte for byte what the online tool gives for the same graph.
@@ -176,9 +176,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/PlanResult"
+                $ref: "./renderer.yaml#/components/schemas/PlanResult"
         "502":
-          $ref: "#/components/responses/PlannerError"
+          $ref: "#/components/responses/RendererError"
   /api/v1/deployments:
     get:
       operationId: listDeployments
@@ -286,7 +286,7 @@ paths:
         "422":
           $ref: "#/components/responses/Refused"
         "502":
-          $ref: "#/components/responses/PlannerError"
+          $ref: "#/components/responses/RendererError"
         "503":
           $ref: "#/components/responses/DeployerUnavailable"
   /api/v1/deployments/{name}/apply:
@@ -321,13 +321,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
         "413":
           $ref: "#/components/responses/TooLarge"
         "422":
           $ref: "#/components/responses/Refused"
         "502":
-          $ref: "#/components/responses/PlannerError"
+          $ref: "#/components/responses/RendererError"
   /api/v1/deployments/{name}/remove:
     post:
       operationId: removeDeployment
@@ -366,19 +366,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
         "422":
           description: "`confirmName` is not the deployment's name (`confirm_mismatch`)."
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
         "502":
           description: The deploy target refused api's call, a wiring fault (`deployer_error`).
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
   /api/v1/events:
     get:
       operationId: events
@@ -412,7 +412,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "./planner.yaml#/components/schemas/ProblemList"
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
 components:
   securitySchemes:
     sessionCookie:
@@ -434,31 +434,31 @@ components:
       content:
         application/json:
           schema:
-            $ref: "./planner.yaml#/components/schemas/ProblemList"
+            $ref: "./renderer.yaml#/components/schemas/ProblemList"
     Unauthenticated:
       description: No valid session (`unauthenticated`).
       content:
         application/json:
           schema:
-            $ref: "./planner.yaml#/components/schemas/ProblemList"
+            $ref: "./renderer.yaml#/components/schemas/ProblemList"
     BadOrigin:
       description: The `Origin` header is missing or not the public origin (`bad_origin`).
       content:
         application/json:
           schema:
-            $ref: "./planner.yaml#/components/schemas/ProblemList"
+            $ref: "./renderer.yaml#/components/schemas/ProblemList"
     NotFound:
       description: No such deployment (`not_found`).
       content:
         application/json:
           schema:
-            $ref: "./planner.yaml#/components/schemas/ProblemList"
+            $ref: "./renderer.yaml#/components/schemas/ProblemList"
     TooLarge:
       description: The body is over 1 MB (`request_too_large`).
       content:
         application/json:
           schema:
-            $ref: "./planner.yaml#/components/schemas/ProblemList"
+            $ref: "./renderer.yaml#/components/schemas/ProblemList"
     Refused:
       description: |
         Nothing happened: `name_mismatch`, `reserved_name`, the plan's own problems,
@@ -466,19 +466,19 @@ components:
       content:
         application/json:
           schema:
-            $ref: "./planner.yaml#/components/schemas/ProblemList"
-    PlannerError:
-      description: The planner did not answer as its contract says (`planner_error`).
+            $ref: "./renderer.yaml#/components/schemas/ProblemList"
+    RendererError:
+      description: The renderer did not answer as its contract says (`renderer_error`).
       content:
         application/json:
           schema:
-            $ref: "./planner.yaml#/components/schemas/ProblemList"
+            $ref: "./renderer.yaml#/components/schemas/ProblemList"
     DeployerUnavailable:
       description: The deploy target did not answer (`deployer_unavailable`).
       content:
         application/json:
           schema:
-            $ref: "./planner.yaml#/components/schemas/ProblemList"
+            $ref: "./renderer.yaml#/components/schemas/ProblemList"
   schemas:
     Logout:
       type: object
@@ -544,10 +544,10 @@ components:
           type: string
           format: date-time
         graph:
-          $ref: "./planner.yaml#/components/schemas/Graph"
+          $ref: "./renderer.yaml#/components/schemas/Graph"
           description: The graph of the latest succeeded apply.
         latestApplyGraph:
-          $ref: "./planner.yaml#/components/schemas/Graph"
+          $ref: "./renderer.yaml#/components/schemas/Graph"
           description: |
             The graph of the newest apply, whatever its status; *Apply again* reviews it. A
             rollback counts, so after a failed rollback it is the last good graph.
@@ -650,26 +650,26 @@ components:
       required: [graph]
       properties:
         graph:
-          $ref: "./planner.yaml#/components/schemas/Graph"
+          $ref: "./renderer.yaml#/components/schemas/Graph"
     Review:
       type: object
       additionalProperties: false
       required: [plan, modules, bindings, publishedPorts, placed]
       properties:
         plan:
-          $ref: "./planner.yaml#/components/schemas/PlanResult"
+          $ref: "./renderer.yaml#/components/schemas/PlanResult"
         modules:
           type: array
           items:
-            $ref: "./planner.yaml#/components/schemas/ModuleImage"
+            $ref: "./renderer.yaml#/components/schemas/ModuleImage"
         bindings:
           type: array
           items:
-            $ref: "./planner.yaml#/components/schemas/Binding"
+            $ref: "./renderer.yaml#/components/schemas/Binding"
         publishedPorts:
           type: array
           items:
-            $ref: "./planner.yaml#/components/schemas/PublishedPort"
+            $ref: "./renderer.yaml#/components/schemas/PublishedPort"
         placed:
           type: array
           items:
@@ -696,7 +696,7 @@ components:
       required: [graph, planDigest]
       properties:
         graph:
-          $ref: "./planner.yaml#/components/schemas/Graph"
+          $ref: "./renderer.yaml#/components/schemas/Graph"
         planDigest:
           type: string
           description: The `plan.digest` of the review you confirmed.

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { drag, expectNoAxeViolations, handle, openGraph, UNBOUND, useTheme } from './helpers'
-import { mockPlanner } from './mock-planner'
+import { mockRenderer } from './mock-renderer'
 
 const BOUND = UNBOUND.replace('postgresql: null', 'postgresql: postgres')
 const PROBLEMS = `${UNBOUND}  app:
@@ -14,7 +14,7 @@ for (const theme of ['light', 'dark'] as const) {
   test.describe(`${theme} theme`, () => {
     test.beforeEach(async ({ page }) => {
       await useTheme(page, theme)
-      await mockPlanner(page)
+      await mockRenderer(page)
     })
 
     test('the sample graph', async ({ page }) => {

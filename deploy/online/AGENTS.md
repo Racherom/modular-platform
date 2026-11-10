@@ -2,16 +2,16 @@
 
 ## Overview
 
-The online tool (static mode) as a Compose stack on your own host: `ingress` (Caddy) routes `<base>/planner/*` to `planner` and everything else under `<base>/` to `web`, all on one origin, so there is no CORS. It is the same shape as the managed platform (spec 0001, "Online tool").
+The online tool (static mode) as a Compose stack on your own host: `ingress` (Caddy) routes `<base>/renderer/*` to `renderer` and everything else under `<base>/` to `web`, all on one origin, so there is no CORS. It is the same shape as the managed platform (spec 0001, "Online tool").
 
 ## Key files
 
 | File | Owns |
 |---|---|
 | `compose.yaml` | The three services, hardened (read only root, `cap_drop: [ALL]`, `no-new-privileges`); only the ingress publishes 80 and 443 |
-| `compose.dev.yaml` | Overlay for `task dev`: the ingress points at the Vite dev server on the host, the planner builds from this checkout, the web image is not started |
+| `compose.dev.yaml` | Overlay for `task dev`: the ingress points at the Vite dev server on the host, the renderer builds from this checkout, the web image is not started |
 | `compose.subpath.yaml` | Overlay that serves the same images under `/platform` (the sub path smoke test) |
-| `Caddyfile` | Routing, the planner prefix strip, shared security headers, `tls-acme` or `tls-internal` by `PLATFORM_TLS` |
+| `Caddyfile` | Routing, the renderer prefix strip, shared security headers, `tls-acme` or `tls-internal` by `PLATFORM_TLS` |
 | `versions.env` | Exact image tags for Caddy and the platform's own images |
 | `.env.example` | Host settings, copied to `.env` by `task online:env` (no secrets) |
 
@@ -26,7 +26,7 @@ task online:down   # stop it
 
 - Run it through the Taskfile, not plain `docker compose`: the tasks pass both `--env-file versions.env` and `--env-file .env`.
 - Image tags are exact, never `latest`. `MP_VERSION` carries the `# x-release-please-version` marker; release-please bumps that line, so keep the marker on it.
-- The planner builds no URLs: the ingress strips `/planner`, and the web module reads its base path and API root from env at serve time.
+- The renderer builds no URLs: the ingress strips `/renderer`, and the web module reads its base path and API root from env at serve time.
 - Keep the hardening on every service you add here. Caddy keeps `NET_BIND_SERVICE`, because its binary holds that capability as a file capability.
 
 ## Gotchas

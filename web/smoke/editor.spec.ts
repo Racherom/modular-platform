@@ -35,7 +35,7 @@ async function expectSampleGraph(page: Page) {
 }
 
 test('the editor shows the built in catalog (AC-2)', async ({ page }) => {
-  const catalog = page.waitForResponse((r) => new URL(r.url()).pathname === `${base}/planner/v1/catalog`)
+  const catalog = page.waitForResponse((r) => new URL(r.url()).pathname === `${base}/renderer/v1/catalog`)
   const shell = await page.goto(`${base}/samples/whoami-postgres`)
   expect(shell?.headers()['content-security-policy']).toContain("default-src 'self'")
   expect(shell?.headers()['x-content-type-options']).toBe('nosniff')
@@ -47,7 +47,7 @@ test('downloading the sample saves its zip (AC-3)', async ({ page }) => {
   test.skip(base !== '', 'the zip is checked once, at the site root')
   await page.goto(sample)
   await expectSampleGraph(page)
-  const render = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/planner/v1/render')
+  const render = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/renderer/v1/render')
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download zip' }).click()
   await render
@@ -59,23 +59,23 @@ test('downloading the sample saves its zip (AC-3)', async ({ page }) => {
 test('a config value set in the inspector reaches the downloaded zip (spec 0025, AC-29)', async ({ page }) => {
   test.skip(base !== '', 'the zip is checked once, at the site root')
   await page.goto(`${base}/`)
-  const graph = 'apiVersion: modular-platform/v1\nkind: Graph\nmodules:\n  planner:\n    module: planner\nname: config-smoke\n'
+  const graph = 'apiVersion: modular-platform/v1\nkind: Graph\nmodules:\n  renderer:\n    module: renderer\nname: config-smoke\n'
   await page
     .locator('input[type="file"]')
     .setInputFiles({ name: 'config-smoke.yaml', mimeType: 'application/yaml', buffer: Buffer.from(graph) })
-  await page.getByTestId('node-planner').click()
+  await page.getByTestId('node-renderer').click()
 
   const field = page.getByRole('region', { name: 'Config' }).getByRole('textbox', { name: 'proxy-hops' })
-  const plan = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/planner/v1/plan')
+  const plan = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/renderer/v1/plan')
   await field.fill('2')
   await field.press('Enter')
-  expect((await plan).postDataJSON().modules.planner.config).toEqual({ 'proxy-hops': '2' })
+  expect((await plan).postDataJSON().modules.renderer.config).toEqual({ 'proxy-hops': '2' })
   await expect(page.getByText('Checking the graph…')).toHaveCount(0)
 
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download zip' }).click()
   const zip = await (await download).path()
-  const env = execFileSync('unzip', ['-p', zip, 'config/planner.env'], { encoding: 'utf8' })
+  const env = execFileSync('unzip', ['-p', zip, 'config/renderer.env'], { encoding: 'utf8' })
   expect(env).toContain('\nMP_PROXY_HOPS=2\n')
   expect(execFileSync('unzip', ['-p', zip, 'graph.yaml'], { encoding: 'utf8' })).toContain('    config:\n      proxy-hops: "2"\n')
 })
@@ -92,7 +92,7 @@ test('everything stays under the base path (AC-7, AC-12)', async ({ page }) => {
   await page.reload()
   await expectSampleGraph(page)
 
-  expect(paths).toContain(`${base}/planner/v1/catalog`)
+  expect(paths).toContain(`${base}/renderer/v1/catalog`)
   const outside = paths.filter((p) => !p.startsWith(`${base}/`))
   expect(outside, 'requests outside the base path').toEqual([])
 
@@ -112,11 +112,11 @@ async function drag(page: Page, from: string, to: string) {
   await page.mouse.up()
 }
 
-test('unbind and bind again on a sample copy, each checked by the planner (spec 0010, AC-9, AC-10, AC-12, AC-18)', async ({ page }) => {
+test('unbind and bind again on a sample copy, each checked by the renderer (spec 0010, AC-9, AC-10, AC-12, AC-18)', async ({ page }) => {
   test.skip(base !== '', 'the edit pass runs once, at the site root')
   const plans: number[] = []
   page.on('response', (r) => {
-    if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/planner/v1/plan') plans.push(r.status())
+    if (r.request().method() === 'POST' && new URL(r.url()).pathname === '/renderer/v1/plan') plans.push(r.status())
   })
   await page.goto(sample)
   await expectSampleGraph(page)
@@ -140,7 +140,7 @@ test('unbind and bind again on a sample copy, each checked by the planner (spec 
   await expect(page.getByText('Checking the graph…')).toHaveCount(0)
   expect(plans.slice(planned)).toEqual([200, 200])
 
-  // the saved file is the sample as the planner resolved it, byte for byte: the default database
+  // the saved file is the sample as the checks resolved it, byte for byte: the default database
   // and login names written in (spec 0014, AC-7), as the render's golden graph.yaml pins them;
   // positions never reach the file
   const download = page.waitForEvent('download')

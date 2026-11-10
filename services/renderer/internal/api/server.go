@@ -18,7 +18,7 @@ import (
 	"github.com/racherom/modular-platform/libs/target/zip"
 	"github.com/racherom/modular-platform/sdk"
 	"github.com/racherom/modular-platform/sdk/httpkit"
-	"github.com/racherom/modular-platform/services/planner/internal/config"
+	"github.com/racherom/modular-platform/services/renderer/internal/config"
 )
 
 const (
@@ -31,7 +31,7 @@ const (
 
 var _ StrictServerInterface = (*Server)(nil)
 
-// Server implements the planner contract over the built in catalog.
+// Server implements the renderer contract over the built in catalog.
 type Server struct {
 	catalog   contract.Catalog
 	templates contract.Templates
@@ -146,11 +146,11 @@ func renderedProject(plan contract.PlanResult, m render.ManagedProject) contract
 	return out
 }
 
-// Setup checks the built in catalog and wires the planner for its mode; sdk.Run serves the
+// Setup checks the built in catalog and wires the renderer for its mode; sdk.Run serves the
 // handler it returns behind health, the access log and the binding token check. A catalog entry
 // that breaks a rule stops the start with one log line per problem (spec 0002, AC-11). Public mode
 // turns the token check off and limits each client; its sweeper stops with ctx. Internal mode
-// keeps the check, so it refuses to start without a consumer token in MP_PLANNER_CLIENTS_DIR.
+// keeps the check, so it refuses to start without a consumer token in MP_RENDERER_CLIENTS_DIR.
 func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
 	return func(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http.Handler, error) {
 		entries, problems := contract.LoadCatalog(catalogFS)
@@ -164,12 +164,12 @@ func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
 		if err != nil {
 			return nil, fmt.Errorf("load the built in templates: %w", err)
 		}
-		mode, err := m.Config.PlannerMode(ctx)
+		mode, err := m.Config.RendererMode(ctx)
 		if err != nil {
 			return nil, err
 		}
 		var reserved []int
-		if mode == config.PlannerModeInternal {
+		if mode == config.RendererModeInternal {
 			ingress, bound, err := m.Uses.Ingress(ctx)
 			if err != nil {
 				return nil, err
@@ -181,8 +181,8 @@ func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
 			}
 			reserved = []int{ingress.HttpPort, ingress.HttpsPort}
 		}
-		if mode == config.PlannerModePublic {
-			rate, err := m.Config.PlannerRate(ctx)
+		if mode == config.RendererModePublic {
+			rate, err := m.Config.RendererRate(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -195,12 +195,12 @@ func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
 			go limiter.SweepEvery(ctx, time.Minute, m.Log)
 			m.WithRateLimit(limiter, hops)
 		}
-		m.Log.InfoContext(ctx, "planner starting", slog.String("mode", string(mode)), slog.Int("catalog_modules", len(entries.Modules)), slog.Int("catalog_capabilities", len(entries.Capabilities)))
-		return newHandler(&Server{catalog: entries, templates: templates, managed: mode == config.PlannerModeInternal, reserved: reserved}, m.Log), nil
+		m.Log.InfoContext(ctx, "renderer starting", slog.String("mode", string(mode)), slog.Int("catalog_modules", len(entries.Modules)), slog.Int("catalog_capabilities", len(entries.Capabilities)))
+		return newHandler(&Server{catalog: entries, templates: templates, managed: mode == config.RendererModeInternal, reserved: reserved}, m.Log), nil
 	}
 }
 
-// newHandler serves the planner contract with a strict graph body and a request timeout.
+// newHandler serves the renderer contract with a strict graph body and a request timeout.
 func newHandler(s *Server, log *slog.Logger) http.Handler {
 	strict := NewStrictHandlerWithOptions(s, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, _ error) {
@@ -208,7 +208,7 @@ func newHandler(s *Server, log *slog.Logger) http.Handler {
 		},
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.ErrorContext(r.Context(), "request failed", slog.String("path", r.URL.Path), slog.Any("error", err))
-			httpkit.WriteProblem(w, http.StatusInternalServerError, "internal", "The planner failed; try again.")
+			httpkit.WriteProblem(w, http.StatusInternalServerError, "internal", "The renderer failed; try again.")
 		},
 	})
 	mux := http.NewServeMux()
@@ -216,7 +216,7 @@ func newHandler(s *Server, log *slog.Logger) http.Handler {
 		BaseRouter:  mux,
 		Middlewares: []MiddlewareFunc{strictGraphBody},
 	})
-	return jsonTimeout(http.TimeoutHandler(mux, requestTimeout, `{"problems":[{"severity":"error","code":"timeout","path":"","message":"The planner took too long; try again."}]}`))
+	return jsonTimeout(http.TimeoutHandler(mux, requestTimeout, `{"problems":[{"severity":"error","code":"timeout","path":"","message":"The renderer took too long; try again."}]}`))
 }
 
 // strictGraphBody decodes a graph body with the strict decoder (spec 0002) before the generated
@@ -261,7 +261,7 @@ func strictGraphBody(next http.Handler) http.Handler {
 		}
 		clean, err := json.Marshal(body)
 		if err != nil {
-			httpkit.WriteProblem(w, http.StatusInternalServerError, "internal", "The planner failed; try again.")
+			httpkit.WriteProblem(w, http.StatusInternalServerError, "internal", "The renderer failed; try again.")
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewReader(clean))

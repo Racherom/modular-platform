@@ -1,15 +1,15 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
 
-// The browser check (spec 0010): Playwright with the planner mocked in each test
-// (mock-planner.ts), so it needs no Docker. Two servers, at a 1280×800 viewport:
+// The browser check (spec 0010): Playwright with the renderer mocked in each test
+// (mock-renderer.ts), so it needs no Docker. Two servers, at a 1280×800 viewport:
 // - dev (vite): axe in both themes on the editor states and /design, and the canvas flows
 // - preview (vite build, then vite preview): the 50 module scale check and the search of dist/
 //   for the showcase, since both are about the production build
 const devPort = Number(process.env.A11Y_PORT ?? 5199)
 const previewPort = Number(process.env.A11Y_PREVIEW_PORT ?? 5198)
 const web = fileURLToPath(new URL('..', import.meta.url))
-const env = { MP_BASE_PATH: '', MP_API_ROOT: '/planner', MP_MODE: 'online' }
+const env = { MP_BASE_PATH: '', MP_API_ROOT: '/renderer', MP_MODE: 'online' }
 const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } }
 
 export default defineConfig({

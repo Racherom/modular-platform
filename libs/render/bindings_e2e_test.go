@@ -258,7 +258,7 @@ func TestRevokeEndToEnd(t *testing.T) {
 // -tags e2e.
 func TestWaitAnchorImages(t *testing.T) {
 	images := map[string]bool{}
-	// the built in catalog with the paper platform over it, as the planner's platform test loads it
+	// the built in catalog with the paper platform over it, as the platform test of the checks loads it
 	for _, k := range loadCatalog(t, "../../catalog").Capabilities {
 		if k.Yields != nil && k.Yields.Job.Image != "" {
 			images[k.Yields.Job.Image] = true

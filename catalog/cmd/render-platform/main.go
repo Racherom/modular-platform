@@ -3,7 +3,7 @@
 //
 //	render-platform -graph deploy/managed/graph.yaml -out build/managed
 //
-// It plans the graph as the planner does and writes libs/render's platform flavor into -out,
+// It plans the graph as the renderer does and writes libs/render's platform flavor into -out,
 // replacing what was there, so nothing rendered is kept under version control to drift. A plan
 // with an error writes nothing and exits 1.
 //

@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test'
 import { drag, handle, openGraph } from './helpers'
-import { mockPlanner } from './mock-planner'
+import { mockRenderer } from './mock-renderer'
 
 const edges = '.react-flow__edge'
 
@@ -41,7 +41,7 @@ const node = (page: Page, id: string) => page.locator(`.react-flow__node[data-id
 const inspector = (page: Page) => page.getByRole('region', { name: 'Inspector' })
 
 test('dragging the provider end of an edge rebinds it; dropping elsewhere keeps it (AC-9)', async ({ page }) => {
-  const { plans } = await mockPlanner(page)
+  const { plans } = await mockRenderer(page)
   await openGraph(page, TWO)
   await expect(edge(page, 'whoami.postgresql')).toHaveAttribute('aria-label', 'whoami uses postgresql from a')
 
@@ -68,7 +68,7 @@ test('dragging the provider end of an edge rebinds it; dropping elsewhere keeps 
 })
 
 test('Delete unbinds the selected binding, then the consumer is selected and focused (AC-8, AC-10)', async ({ page }) => {
-  const { plans } = await mockPlanner(page)
+  const { plans } = await mockRenderer(page)
   await openGraph(page, TWO)
   await edge(page, 'whoami.postgresql').click()
   await expect(inspector(page).getByRole('heading', { name: 'Binding' })).toBeVisible()
@@ -91,7 +91,7 @@ test('Delete unbinds the selected binding, then the consumer is selected and foc
 })
 
 test('the Remove binding button unbinds and selects the consumer (AC-10)', async ({ page }) => {
-  await mockPlanner(page)
+  await mockRenderer(page)
   await openGraph(page, TWO)
   await edge(page, 'whoami.postgresql').focus()
   await page.keyboard.press('Enter')
@@ -101,7 +101,7 @@ test('the Remove binding button unbinds and selects the consumer (AC-10)', async
 })
 
 test('keyboard only: select a module, bind and unbind from the inspector (AC-8, AC-11)', async ({ page }) => {
-  const { plans } = await mockPlanner(page)
+  const { plans } = await mockRenderer(page)
   await openGraph(page, TWO)
 
   // nodes and edges are reached with Tab
@@ -137,10 +137,10 @@ test('keyboard only: select a module, bind and unbind from the inspector (AC-8, 
   await expect(inspector(page).getByText('Used by whoami')).toBeVisible()
 })
 
-test('Let the planner choose removes the key; the planner fills it and the note shows (AC-11)', async ({ page }) => {
-  await mockPlanner(page)
-  // the mock echoes the graph, so fake the automatic binding the planner would write back
-  await page.route('**/planner/v1/plan', async (route) => {
+test('Let the planner choose removes the key; the renderer fills it and the note shows (AC-11)', async ({ page }) => {
+  await mockRenderer(page)
+  // the mock echoes the graph, so fake the automatic binding the renderer would write back
+  await page.route('**/renderer/v1/plan', async (route) => {
     const graph = route.request().postDataJSON()
     const uses = graph.modules.whoami.uses ?? {}
     const auto = !Object.hasOwn(uses, 'postgresql')
@@ -170,19 +170,19 @@ test('Let the planner choose removes the key; the planner fills it and the note 
   const select = inspector(page).getByRole('button', { name: /postgresql Bound to/ })
   await select.click()
   await page.getByRole('option', { name: 'Let the planner choose' }).click()
-  await expect(inspector(page).getByText('Bound by the planner')).toBeVisible()
+  await expect(inspector(page).getByText('Bound by the renderer')).toBeVisible()
   await expect(select).toContainText('a')
 })
 
 test('a binding to an instance that is not a candidate shows as invalid (AC-11)', async ({ page }) => {
-  await mockPlanner(page)
+  await mockRenderer(page)
   await openGraph(page, TWO.replace('postgresql: a', 'postgresql: whoami'))
   await node(page, 'whoami').click()
   await expect(inspector(page).getByRole('button', { name: /postgresql Bound to/ })).toContainText('whoami (invalid)')
 })
 
 test('Escape and a click on empty canvas clear the selection (AC-8)', async ({ page }) => {
-  await mockPlanner(page)
+  await mockRenderer(page)
   await openGraph(page, TWO)
   await node(page, 'whoami').click()
   await expect(page.getByTestId('node-b')).toHaveAttribute('data-dimmed', 'true')
@@ -201,7 +201,7 @@ test('Escape and a click on empty canvas clear the selection (AC-8)', async ({ p
 })
 
 test('a required need set to null shows unbound_required on its port and blocks download (AC-10, AC-13, AC-14)', async ({ page }) => {
-  await mockPlanner(page)
+  await mockRenderer(page)
   await openGraph(page, REQUIRED)
   const mark = page.getByTestId('node-app').getByRole('img', { name: /app needs postgresql/ })
   await expect(mark).toBeVisible()
@@ -235,9 +235,9 @@ test('a required need set to null shows unbound_required on its port and blocks 
   await expect(page.getByRole('button', { name: 'Download zip' })).toBeEnabled()
 })
 
-test('a 400 shows the planner message without Retry; a 429 says the planner is busy (AC-14)', async ({ page }) => {
+test('a 400 shows the renderer message without Retry; a 429 says the renderer is busy (AC-14)', async ({ page }) => {
   let call = 0
-  await mockPlanner(page, () => {
+  await mockRenderer(page, () => {
     call++
     if (call === 2) return { status: 400 }
     if (call === 3) return { status: 429 }
@@ -252,7 +252,7 @@ test('a 400 shows the planner message without Retry; a 429 says the planner is b
   await expect(page.locator(edges)).toHaveCount(0) // the edit stays
 
   await drag(page, handle(page, 'whoami', 'uses:postgresql'), handle(page, 'b', 'provides:postgresql'))
-  await expect(alert).toContainText('The planner is busy, try again in a minute.')
+  await expect(alert).toContainText('The renderer is busy, try again in a minute.')
   await expect(alert.getByRole('button', { name: 'Retry' })).toBeVisible()
   await alert.getByRole('button', { name: 'Retry' }).click()
   await expect(alert).toHaveCount(0)

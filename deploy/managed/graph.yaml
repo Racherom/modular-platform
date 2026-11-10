@@ -11,7 +11,7 @@ modules:
         provider: postgres
         user: api
       oidc: authelia.oidc
-      planner: planner
+      renderer: renderer
       public: ingress
   authelia:
     module: authelia
@@ -32,10 +32,10 @@ modules:
     module: caddy
     uses:
       trust: cert-issuer.acme
-  planner:
+  renderer:
     config:
-      planner-mode: "internal"
-    module: planner
+      renderer-mode: "internal"
+    module: renderer
     uses:
       acme: cert-issuer.acme
       ingress: ingress

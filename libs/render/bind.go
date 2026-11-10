@@ -442,7 +442,7 @@ func (r *renderer) composeVar(i, v string, cv contract.ConfigValue) string {
 }
 
 // graphValue is the text the graph sets as config value v of instance i, if it sets one (spec
-// 0025). The planner has checked it, so it holds no control character, { or }.
+// 0025). The checks have passed it, so it holds no control character, { or }.
 func (r *renderer) graphValue(i, v string) (string, bool) {
 	c := r.g.Modules[i].Config
 	if c == nil {

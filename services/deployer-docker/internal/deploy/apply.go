@@ -159,7 +159,7 @@ func (e *Engine) check(req ApplyRequest) []Problem {
 
 // guard loads docker-compose.yml with .env and deploy.env as docker compose will, then runs
 // render.Guard and render.CheckProject on it: this service cannot trust its caller, so a
-// bypassed planner must not reach the host (spec 0006, AC-8).
+// graph that bypassed the checks must not reach the host (spec 0006, AC-8).
 func (e *Engine) guard(req ApplyRequest) []Problem {
 	var compose, env []byte
 	for _, f := range req.Files {

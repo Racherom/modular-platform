@@ -1,7 +1,7 @@
 #!/bin/sh
 # The smoke job (AC-3, AC-4, AC-7): start the online tool, download the sample zip through the
 # editor, run it with setup.sh and docker compose, then check the editor under a sub path.
-# Needs the web and planner images tagged dev (task images) and Chromium for Playwright.
+# Needs the web and renderer images tagged dev (task images) and Chromium for Playwright.
 set -eu
 # Nothing in this job may wait for an answer: a question on the terminal (like Compose asking to
 # recreate a volume) would hang the run forever.
@@ -14,8 +14,8 @@ export MP_VERSION=dev
 # the smoke stack uses Caddy's internal certificate authority; Playwright skips certificate checks only then
 export SMOKE_TLS=internal
 # every editor flow runs from one address, which the production rate (60 a minute, a burst of 10)
-# would throttle partway through; the planner's own tests cover the limiter
-export MP_PLANNER_RATE=600
+# would throttle partway through; the renderer's own tests cover the limiter
+export MP_RENDERER_RATE=600
 
 online() {
 	docker compose --project-directory "$online" --env-file "$online/versions.env" --env-file "$online/.env" "$@"

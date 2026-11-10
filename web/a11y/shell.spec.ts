@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { openGraph } from './helpers'
-import { mockPlanner } from './mock-planner'
+import { mockRenderer } from './mock-renderer'
 
 test.beforeEach(async ({ page }) => {
-  await mockPlanner(page)
+  await mockRenderer(page)
 })
 
 test.describe('theme (AC-2)', () => {

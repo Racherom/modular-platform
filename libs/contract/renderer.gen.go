@@ -288,14 +288,14 @@ func (e SlotClient) Valid() bool {
 
 // Binding defines model for Binding.
 type Binding struct {
-	// Auto True when the planner made this binding, not the graph.
+	// Auto True when the checks made this binding, not the graph.
 	Auto bool `json:"auto"`
 
 	// Capability The slot's capability.
 	Capability string `json:"capability"`
 	Consumer   string `json:"consumer"`
 
-	// Named True when the planner wrote default named values into the graph.
+	// Named True when the checks wrote default named values into the graph.
 	Named bool `json:"named"`
 
 	// Provide The provide of the provider the slot is bound to.
@@ -468,11 +468,11 @@ type FieldSourcePlatform string
 
 // Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
 type Graph struct {
-	// ApiVersion `modular-platform/v1`. A `modular-platform/v0alpha1` graph is still read: the planner
+	// ApiVersion `modular-platform/v1`. A `modular-platform/v0alpha1` graph is still read: the renderer
 	// converts it to v1 and answers with warning `converted_from_v0alpha1`.
 	ApiVersion string `json:"apiVersion"`
 
-	// FormatVersion `1.<minor>`, default `1.0`; a writer leaves it out at `1.0`. A minor above what the planner reads is `format_too_new`.
+	// FormatVersion `1.<minor>`, default `1.0`; a writer leaves it out at `1.0`. A minor above what the renderer reads is `format_too_new`.
 	FormatVersion string `json:"formatVersion,omitempty"`
 
 	// Kind Exactly `Graph`.
@@ -499,7 +499,7 @@ type GraphModule struct {
 	Module string `json:"module,omitempty"`
 
 	// Uses Slot name to its binding. `null` leaves an optional slot unbound on purpose. A missing key
-	// means not decided: the planner may bind a required slot or warn about an optional one.
+	// means not decided: the renderer may bind a required slot or warn about an optional one.
 	Uses *Uses `json:"uses,omitempty"`
 }
 
@@ -863,7 +863,7 @@ type Template struct {
 type UseBinding = GraphBinding
 
 // Uses Slot name to its binding. `null` leaves an optional slot unbound on purpose. A missing key
-// means not decided: the planner may bind a required slot or warn about an optional one.
+// means not decided: the renderer may bind a required slot or warn about an optional one.
 type Uses map[string]*UseBinding
 
 // YieldSource `named`, `generate`, `output`, or `{admin: <field of the provisioner>}`.
