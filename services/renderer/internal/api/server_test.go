@@ -573,3 +573,31 @@ config:
 		t.Errorf("managed render = %v, want %v", got, want)
 	}
 }
+
+// TestRenderRefusesARecommendation covers spec 0027 AC-8: a graph with an open
+// binding_recommended renders neither as a zip nor for the managed deployer; both answer 422
+// with the check result, as for any other error.
+func TestRenderRefusesARecommendation(t *testing.T) {
+	t.Parallel()
+	// caddy needs trust, which only cert-issuer provides: a recommendation, not a binding
+	graph := `{"apiVersion":"modular-platform/v1","kind":"Graph","name":"gap","modules":{"cert-issuer":{"module":"cert-issuer"},"ingress":{"module":"caddy"}}}`
+	pub := start(t, public)
+	resp, body := pub.do(t, http.MethodPost, "/v1/render", graph, nil)
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(body), `"code":"binding_recommended"`) {
+		t.Errorf("render: status %d body %s", resp.StatusCode, body)
+	}
+
+	token := strings.Repeat("b2", 16)
+	internal := start(t, map[string]string{
+		"MP_INSTANCE":             "renderer",
+		"MP_RENDERER_MODE":        "internal",
+		"MP_PLATFORM_HTTP_PORT":   "80",
+		"MP_PLATFORM_HTTPS_PORT":  "443",
+		"MP_RENDERER_CLIENTS_DIR": clientsDir(t, map[string]string{"api": token}),
+	})
+	managed := `{"graph":` + graph + `,"stack":"01960000-0000-7000-8000-000000000001"}`
+	resp, body = internal.do(t, http.MethodPost, "/v1/render/managed", managed, http.Header{"Authorization": {"Bearer " + token}})
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(body), `"code":"binding_recommended"`) {
+		t.Errorf("managed render: status %d body %s", resp.StatusCode, body)
+	}
+}

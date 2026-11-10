@@ -30,7 +30,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Check a graph and fill in its automatic bindings */
+        /** Check a graph and resolve its defaults */
         post: operations["check"];
         delete?: never;
         options?: never;
@@ -489,8 +489,6 @@ export interface components {
             provider: string;
             /** @description The provide of the provider the slot is bound to. */
             provide: string;
-            /** @description True when the checks made this binding, not the graph. */
-            auto: boolean;
             /** @description True when the checks wrote default named values into the graph. */
             named: boolean;
             /** @description True when the provide's capability yields the slot's capability, so a provision job makes it. */
@@ -512,7 +510,7 @@ export interface components {
         CheckResult: {
             ok: boolean;
             graph: components["schemas"]["Graph"];
-            /** @description Explicit and automatic bindings, sorted by consumer then slot. */
+            /** @description The bindings the graph names, sorted by consumer then slot. */
             bindings: components["schemas"]["Binding"][];
             /** @description Sorted by path, then code. */
             problems: components["schemas"]["Problem"][];

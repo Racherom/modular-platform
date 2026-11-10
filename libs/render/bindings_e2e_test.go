@@ -147,7 +147,7 @@ func graphOf(name string, modules map[string]contract.GraphModule) contract.Grap
 func TestRevokeEndToEnd(t *testing.T) {
 	s := newStack(t, loadCatalog(t, "../../catalog", "testdata/provision/catalog"))
 	pg := contract.GraphModule{Module: "postgres"}
-	client := contract.GraphModule{Module: "pg-client"}
+	client := bound("pg-client", map[string]string{"db": "postgres"})
 	both := map[string]contract.GraphModule{"postgres": pg, "a": client, "b": client}
 	onlyB := map[string]contract.GraphModule{"postgres": pg, "b": client}
 	none := map[string]contract.GraphModule{"postgres": pg}
@@ -297,17 +297,16 @@ func TestWaitAnchorImages(t *testing.T) {
 // with go test -tags e2e.
 func TestExternalEndToEnd(t *testing.T) {
 	catalog := loadCatalog(t, "../../catalog", "testdata/provision/catalog")
-	consumer := contract.GraphModule{Module: "pg-roaming"}
 	const alias = "ext-db.example.test"
 
 	internal := newStack(t, catalog)
 	internalEnv := envOf(t, internal.render(graphOf("external-e2e", map[string]contract.GraphModule{
-		"app": consumer, "postgres": {Module: "postgres"},
+		"app": bound("pg-roaming", map[string]string{"db": "postgres"}), "postgres": {Module: "postgres"},
 	})), "app")
 
 	s := newStack(t, catalog)
 	externalEnv := envOf(t, s.render(graphOf("external-e2e", map[string]contract.GraphModule{
-		"app": consumer,
+		"app": bound("pg-roaming", map[string]string{"db": "ext"}),
 		"ext": {External: &contract.ExternalInstance{Provides: map[string]contract.ExternalProvide{"db": {
 			Capability: "postgresql", Version: "18.6",
 			Fields: map[string]string{

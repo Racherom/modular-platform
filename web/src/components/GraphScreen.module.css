@@ -66,3 +66,8 @@
   flex: none;
   color: var(--color-accent);
 }
+
+/* wraps the File toolbar only to find its first control after Accept all; adds no box */
+.toolbarGroup {
+  display: contents;
+}

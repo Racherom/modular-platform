@@ -15,4 +15,6 @@ modules:
           version: "16.4"
   modern:
     module: modern
+    uses:
+      db: billing-db
 name: external-missing

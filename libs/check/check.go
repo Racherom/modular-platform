@@ -1,8 +1,9 @@
 // Package check holds the rules a graph must meet (spec 0027 glossary). It binds each module's
-// slots (uses) to another instance's provides by the v1 matching rules of spec 0012: the capability, or a provisioner that yields it, and a version
-// inside the slot's range. It fills automatic bindings and the default named values of bindings
-// to a provisioner into the graph. It is pure: no I/O, and the same input always gives the same
-// result.
+// slots (uses) to another instance's provides by the v1 matching rules of spec 0012: the
+// capability, or a provisioner that yields it, and a version inside the slot's range. For a use
+// the graph leaves out it recommends a provider and never binds it on its own (spec 0028); it
+// fills the default named values of bindings to a provisioner into the graph. It is pure: no I/O,
+// and the same input always gives the same result.
 package check
 
 import (
@@ -35,6 +36,7 @@ const (
 	CodeUnboundRequired       = "unbound_required"
 	CodeUnmetNeed             = "unmet_need"
 	CodeAmbiguousProvider     = "ambiguous_provider"
+	CodeBindingRecommended    = "binding_recommended"
 	CodeOptionalUnbound       = "optional_unbound"
 	CodeBindingCycle          = "binding_cycle"
 	CodeMissingTokenMapping   = "missing_token_mapping"
@@ -47,9 +49,9 @@ const (
 // maxName is the longest named value a default may be, PostgreSQL's identifier limit.
 const maxName = 63
 
-// Graph checks g against the catalog and fills in the automatic bindings and default named
-// values. A v0alpha1 graph is converted to v1 first and warned about. The returned graph is a
-// copy of g with those changes and nothing else. An ok check result carries its Digest.
+// Graph checks g against the catalog and fills in the default named values. A v0alpha1 graph
+// is converted to v1 first and warned about. The returned graph is a copy of g with those changes
+// and nothing else; a use the graph leaves out stays out. An ok check result carries its Digest.
 func Graph(g contract.Graph, catalog contract.Catalog) contract.CheckResult {
 	graph, converted := contract.ConvertGraph(g)
 	if graph.FormatVersion == "1.0" {
@@ -219,10 +221,7 @@ func (p *checking) instance(i string) {
 		r, _ := contract.ParseRange(slot.Versions) // the catalog check refused a bad range
 		path := usePath(i, s)
 		b, present := uses[s]
-		var (
-			o    *offer
-			auto bool
-		)
+		var o *offer
 		switch {
 		case present && b != nil:
 			o = p.explicit(i, s, slot, r, b)
@@ -231,7 +230,7 @@ func (p *checking) instance(i string) {
 		case present:
 			// an optional slot left unbound on purpose
 		default:
-			o, auto = p.undecided(i, s, slot, r), true
+			p.undecided(i, s, slot, r)
 		}
 		if o == nil {
 			continue
@@ -247,7 +246,7 @@ func (p *checking) instance(i string) {
 		bound[key] = s
 		p.bindings = append(p.bindings, contract.Binding{
 			Consumer: i, Slot: s, Capability: slot.Capability, Provider: o.instance, Provide: o.provide,
-			Auto: auto, Provisioned: provisioned,
+			Provisioned: provisioned,
 		})
 	}
 }
@@ -362,8 +361,9 @@ func (p *checking) versionMismatch(path, i string, slot contract.Slot, offers []
 	})
 }
 
-// undecided handles a slot the graph leaves out: auto bind the one match, or report.
-func (p *checking) undecided(i, s string, slot contract.Slot, r contract.Range) *offer {
+// undecided reports a slot the graph leaves out: a recommendation for the one match, or a
+// problem. It never binds the slot (spec 0028).
+func (p *checking) undecided(i, s string, slot contract.Slot, r contract.Range) {
 	path := usePath(i, s)
 	c := slot.Capability
 	var matches, outside []offer
@@ -407,14 +407,12 @@ func (p *checking) undecided(i, s string, slot contract.Slot, r contract.Range) 
 	case len(matches) == 0:
 		p.fail(CodeUnmetNeed, path, "Instance %s needs %s for %s, and no instance in the graph provides it.", i, c, s)
 	case len(matches) == 1:
-		o := matches[0]
-		m := p.graph.Modules[i]
-		if m.Uses == nil {
-			m.Uses = &contract.Uses{}
-		}
-		(*m.Uses)[s] = &contract.GraphBinding{Provider: o.text(short[o.instance])}
-		p.graph.Modules[i] = m
-		return &o
+		// a recommendation, never a binding: the admin accepts it in the editor (spec 0028)
+		candidate := matches[0].text(short[matches[0].instance])
+		p.add(contract.Problem{
+			Severity: contract.Error, Code: CodeBindingRecommended, Path: path, Candidates: []string{candidate},
+			Message: fmt.Sprintf("Instance %s needs %s for %s; %s provides it. Accept the recommendation or pick another provider.", i, c, s, candidate),
+		})
 	default:
 		candidates := texts(matches)
 		p.add(contract.Problem{
@@ -422,7 +420,6 @@ func (p *checking) undecided(i, s string, slot contract.Slot, r contract.Range) 
 			Message: fmt.Sprintf("Instance %s needs %s for %s, and several instances provide it: %s; bind one.", i, c, s, strings.Join(candidates, ", ")),
 		})
 	}
-	return nil
 }
 
 // namedValues fills the default named values of every binding to a provisioner into the graph

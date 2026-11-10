@@ -1,7 +1,7 @@
 import { Search, Trash2, Unlink } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { Catalog, CheckResult, Graph, Module, Problem } from '../api/client'
-import { bind, candidates, clearConfig, letPlannerChoose, setConfig, unbind } from '../graph/edit'
+import { acceptRecommendation, bind, candidates, clearConfig, RECOMMENDED, setConfig, unbind } from '../graph/edit'
 import { markOf, problemInstance } from '../graph/flow'
 import { bindingText, boundProvide, type ConfigField, isExternal, moduleOf, offersOf, settableConfig, slotsOf } from '../graph/model'
 import { useEditor } from '../lib/store'
@@ -26,7 +26,7 @@ interface Props {
 
 // option ids carry a prefix, so an instance named like a special choice cannot collide with it
 const NOT_BOUND = 'none'
-const RENDERER = 'renderer'
+const LEFT_OUT = 'left-out'
 const INVALID = 'invalid'
 const instanceOption = (name: string) => `bind:${name}`
 
@@ -170,19 +170,36 @@ function SlotRow({
       value = INVALID
       options.push({ id: INVALID, label: `${text} (invalid)`, isDisabled: true })
     }
-  } else value = current === null ? NOT_BOUND : RENDERER
+  } else if (current === null) value = NOT_BOUND
+  else {
+    // the graph leaves the use out: nothing is bound until you pick or accept a provider
+    value = LEFT_OUT
+    options.push({ id: LEFT_OUT, label: 'Choose a provider', isDisabled: true })
+  }
   options.push(...names.map((n) => ({ id: instanceOption(n), label: n })))
-  options.push({ id: NOT_BOUND, label: 'Not bound' }, { id: RENDERER, label: 'Let the planner choose' })
+  options.push({ id: NOT_BOUND, label: 'Not bound' })
 
-  const auto =
-    ctx.checkCurrent && text !== undefined && ctx.check.bindings.some((b) => b.consumer === consumer && b.slot === slot && b.auto)
-  const mark = markOf(ctx.check.problems.filter((p) => p.path === `modules.${consumer}.uses.${slot}`))
+  const atUse = ctx.check.problems.filter((p) => p.path === `modules.${consumer}.uses.${slot}`)
+  const mark = markOf(atUse)
+  const recommended = ctx.checkCurrent && !has ? recommendationOf(atUse) : undefined
+
+  // after Accept the button goes away, so focus moves to the binding field, which now shows the provider
+  const field = useRef<HTMLDivElement>(null)
+  const focusField = useRef(false)
+  useEffect(() => {
+    if (!focusField.current || text === undefined) return
+    focusField.current = false
+    field.current?.querySelector<HTMLElement>('button')?.focus()
+  }, [text])
+  const accept = (candidate: string) => {
+    focusField.current = true
+    ctx.onEdit?.((g) => acceptRecommendation(g, consumer, slot, candidate))
+  }
 
   const choose = (id: string) => {
     const onEdit = ctx.onEdit
     if (!onEdit || id === value) return
     if (id === NOT_BOUND) onEdit((g) => unbind(g, consumer, slot))
-    else if (id === RENDERER) onEdit((g) => letPlannerChoose(g, consumer, slot))
     else if (id.startsWith('bind:')) {
       const provider = id.slice('bind:'.length)
       onEdit((g) => bind(g, consumer, slot, provider))
@@ -197,19 +214,28 @@ function SlotRow({
         {slot !== capability && <span className={styles.muted}>{capability}</span>}
         <Badge>{optional ? 'optional' : 'required'}</Badge>
       </div>
-      <Select
-        label={
-          <>
-            <span className="visually-hidden">{slot} </span>Bound to
-          </>
-        }
-        size="sm"
-        options={options}
-        value={value}
-        onChange={choose}
-        isDisabled={!ctx.onEdit}
-        description={auto ? 'Bound by the checks' : undefined}
-      />
+      <div ref={field}>
+        <Select
+          label={
+            <>
+              <span className="visually-hidden">{slot} </span>Bound to
+            </>
+          }
+          size="sm"
+          options={options}
+          value={value}
+          onChange={choose}
+          isDisabled={!ctx.onEdit}
+          description={recommended ? `Recommended: ${recommended}` : undefined}
+        />
+      </div>
+      {recommended && ctx.onEdit && (
+        <div>
+          <Button size="sm" onPress={() => accept(recommended)} aria-label={`Accept ${recommended} for ${slot}`}>
+            Accept
+          </Button>
+        </div>
+      )}
       <div>
         <Button variant="ghost" size="sm" onPress={() => useEditor.getState().findProviders(capability)}>
           <Search aria-hidden="true" />
@@ -218,6 +244,15 @@ function SlotRow({
       </div>
     </div>
   )
+}
+
+/**
+ * The provider the checks recommend at one use (spec 0028): the candidate of `binding_recommended`,
+ * or of `optional_unbound` when it has exactly one.
+ */
+function recommendationOf(problems: readonly Problem[]): string | undefined {
+  const p = problems.find((p) => (p.code === RECOMMENDED || p.code === 'optional_unbound') && p.candidates?.length === 1)
+  return p?.candidates?.[0]
 }
 
 const configPath = (instance: string, value: string) => `modules.${instance}.config.${value}`

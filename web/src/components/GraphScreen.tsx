@@ -1,8 +1,9 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ReactFlowProvider } from '@xyflow/react'
-import { Download, Info, LayoutGrid, Redo2, Rocket, Save, Undo2 } from 'lucide-react'
+import { Check, Download, Info, LayoutGrid, Redo2, Rocket, Save, Undo2 } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { type CheckResult, fetchCatalog, type Graph, type RendererError, renderGraph } from '../api/client'
+import { acceptAllRecommendations, RECOMMENDED } from '../graph/edit'
 import type { Positions } from '../graph/flow'
 import { mode } from '../lib/config'
 import { download, saveGraphFile } from '../lib/download'
@@ -65,14 +66,19 @@ interface Props {
 
 /**
  * Why Download zip (and Deploy) is disabled, or null when it is allowed (AC-14): only a current
- * check without errors allows it; warnings never block.
+ * check without errors allows it; warnings never block. An open recommendation is an error too,
+ * with its own reason (spec 0028).
  */
 export function downloadBlocked(checkState: CheckState, check: CheckResult): string | null {
   if (checkState === 'checking') return 'Checking the graph'
   if (checkState === 'failed') return 'Not checked, retry first'
   if (check.ok) return null
-  const errors = check.problems.filter((p) => p.severity === 'error').length
-  return errors > 0 ? `Fix ${errors} ${errors === 1 ? 'error' : 'errors'} to download` : 'Fix the errors to download'
+  const recommended = check.problems.filter((p) => p.code === RECOMMENDED).length
+  const errors = check.problems.filter((p) => p.severity === 'error').length - recommended
+  const accept = recommended > 0 ? `Accept or change ${recommended} recommended ${recommended === 1 ? 'binding' : 'bindings'} first` : null
+  const fix = errors > 0 ? `Fix ${errors} ${errors === 1 ? 'error' : 'errors'} to download` : null
+  if (fix && accept) return `${fix}. ${accept}`
+  return fix ?? accept ?? 'Fix the errors to download'
 }
 
 /** A checked graph in the editor: header toolbar, catalog, canvas, inspector and problems. */
@@ -82,6 +88,8 @@ export function GraphScreen({ graph, check, fileName, toolbar, editing, notice }
   const [rendered, setRendered] = useState<{ from: CheckResult; check: CheckResult }>()
   const shownResult = rendered?.from === check ? rendered.check : check
   const [reviewing, setReviewing] = useState(false)
+  const [skipped, setSkipped] = useState(0)
+  const fileToolbar = useRef<HTMLDivElement>(null)
   const reasonId = useId()
   const zip = useMutation({
     mutationFn: () => renderGraph(graph),
@@ -96,6 +104,20 @@ export function GraphScreen({ graph, check, fileName, toolbar, editing, notice }
 
   const checkState = editing?.checkState ?? 'current'
   const blocked = downloadBlocked(checkState, shownResult)
+  // a stale check shows no Accept, so you never accept against an old graph (spec 0028)
+  const recommendations = checkState === 'current' ? shownResult.problems.filter((p) => p.code === RECOMMENDED) : []
+  const acceptAll = () => {
+    if (!editing) return
+    let skipped = 0
+    editing.onEdit((g) => {
+      const accepted = acceptAllRecommendations(g, recommendations)
+      skipped = accepted.skipped
+      return accepted.graph
+    })
+    setSkipped(skipped)
+    // the button goes away, so focus moves to the toolbar's first control
+    requestAnimationFrame(() => fileToolbar.current?.querySelector<HTMLElement>('button:not([disabled])')?.focus())
+  }
   const save = () => {
     saveGraphFile(graph, fileName)
     editing?.onSaved()
@@ -111,39 +133,52 @@ export function GraphScreen({ graph, check, fileName, toolbar, editing, notice }
           </span>
         </div>
         {editing && <HistoryButtons history={editing.history} />}
-        <Toolbar label="File">
-          {toolbar}
-          <Button size="sm" onPress={save}>
-            <Save aria-hidden="true" />
-            Save as file
-          </Button>
-          <Button
-            size="sm"
-            onPress={() => zip.mutate()}
-            isDisabled={zip.isPending || blocked !== null}
-            aria-describedby={blocked ? reasonId : undefined}
-          >
-            <Download aria-hidden="true" />
-            {zip.isPending ? 'Rendering…' : 'Download zip'}
-          </Button>
-          {mode === 'managed' && (
+        <div ref={fileToolbar} className={styles.toolbarGroup}>
+          <Toolbar label="File">
+            {toolbar}
+            {editing && recommendations.length > 0 && (
+              <Button size="sm" onPress={acceptAll}>
+                <Check aria-hidden="true" />
+                Accept all recommendations ({recommendations.length})
+              </Button>
+            )}
+            <Button size="sm" onPress={save}>
+              <Save aria-hidden="true" />
+              Save as file
+            </Button>
             <Button
               size="sm"
-              variant="primary"
-              onPress={() => setReviewing(true)}
-              isDisabled={blocked !== null}
+              onPress={() => zip.mutate()}
+              isDisabled={zip.isPending || blocked !== null}
               aria-describedby={blocked ? reasonId : undefined}
             >
-              <Rocket aria-hidden="true" />
-              Deploy
+              <Download aria-hidden="true" />
+              {zip.isPending ? 'Rendering…' : 'Download zip'}
             </Button>
-          )}
-          {blocked && (
-            <span id={reasonId} className={styles.reason}>
-              {blocked}
-            </span>
-          )}
-        </Toolbar>
+            {mode === 'managed' && (
+              <Button
+                size="sm"
+                variant="primary"
+                onPress={() => setReviewing(true)}
+                isDisabled={blocked !== null}
+                aria-describedby={blocked ? reasonId : undefined}
+              >
+                <Rocket aria-hidden="true" />
+                Deploy
+              </Button>
+            )}
+            {blocked && (
+              <span id={reasonId} className={styles.reason}>
+                {blocked}
+              </span>
+            )}
+          </Toolbar>
+        </div>
+        <span role="status" className={styles.note}>
+          {skipped > 0
+            ? `${skipped} ${skipped === 1 ? 'recommendation was' : 'recommendations were'} skipped: the instance or its provider is gone.`
+            : ''}
+        </span>
       </HeaderContent>
       {reviewing && <ReviewDialog graph={graph} onClose={() => setReviewing(false)} />}
       <ReactFlowProvider>

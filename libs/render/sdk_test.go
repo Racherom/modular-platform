@@ -134,7 +134,7 @@ func TestRenderExternal(t *testing.T) {
 		}}},
 	})
 	g := contract.Graph{ApiVersion: contract.APIVersion, Kind: contract.KindGraph, Name: "ext", Modules: map[string]contract.GraphModule{
-		"app": {Module: "app"},
+		"app": bound("app", map[string]string{"db": "billing-db"}),
 		"billing-db": {External: &contract.ExternalInstance{Provides: map[string]contract.ExternalProvide{"db": {
 			Capability: "postgresql", Version: "16.4", Fields: map[string]string{
 				"host": "db.example.com", "port": "5432", "url": "postgres://db.example.com:5432",

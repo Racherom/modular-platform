@@ -1,8 +1,8 @@
 // Graph edits (spec 0010, on the v1 graph of spec 0012): pure functions, no React and no I/O.
 // Each returns a new Graph and leaves the one it was given untouched. Only the capability match
 // (or a provisioner that yields it) lives here; the checks judge everything else (versions,
-// required slots, cycles, automatic binding, named values).
-import type { Catalog, Graph, GraphBinding } from '../api/client'
+// required slots, cycles, recommendations, named values).
+import type { Catalog, Graph, GraphBinding, Problem } from '../api/client'
 import { parseHandle } from './flow'
 import { bindingText, moduleOf, offersOf, serves, slotsOf, textFor } from './model'
 
@@ -34,13 +34,45 @@ export function unbind(graph: Graph, consumer: string, slot: string): Graph {
   return setSlot(graph, consumer, slot, null)
 }
 
-/** Removes a slot's key, so the renderer binds it automatically when it finds one candidate. */
-export function letPlannerChoose(graph: Graph, consumer: string, slot: string): Graph {
-  const m = instanceOf(graph, consumer)
-  if (!m?.uses || !Object.hasOwn(m.uses, slot)) return graph
-  const uses = { ...m.uses }
-  delete uses[slot]
-  return { ...graph, modules: { ...graph.modules, [consumer]: { ...m, uses } } }
+/** The problem code of a required use the graph leaves out that exactly one provide serves (spec 0028). */
+export const RECOMMENDED = 'binding_recommended'
+
+/**
+ * Accepts the provider the checks recommend for a slot the graph leaves out (spec 0028): the same
+ * edit as picking that provider from the list.
+ */
+export function acceptRecommendation(graph: Graph, consumer: string, slot: string, candidate: string): Graph {
+  return bind(graph, consumer, slot, candidate)
+}
+
+/** What {@link acceptAllRecommendations} did: the new graph and how many it had to skip. */
+export interface AcceptedAll {
+  graph: Graph
+  skipped: number
+}
+
+/**
+ * Accepts every `binding_recommended` problem in one edit (spec 0028). Each is bound only while
+ * its consumer exists, the use is still left out and its candidate's instance is still in the
+ * graph; any other is skipped and counted. Optional uses are never accepted in bulk.
+ */
+export function acceptAllRecommendations(graph: Graph, problems: readonly Problem[]): AcceptedAll {
+  let next = graph
+  let skipped = 0
+  for (const p of problems) {
+    if (p.code !== RECOMMENDED) continue
+    const [, consumer, , slot] = p.path.split('.')
+    const candidate = p.candidates?.length === 1 ? p.candidates[0] : undefined
+    const m = consumer === undefined ? undefined : instanceOf(next, consumer)
+    const left = m !== undefined && slot !== undefined && !(m.uses && Object.hasOwn(m.uses, slot))
+    const provider = candidate?.split('.')[0]
+    if (!left || candidate === undefined || provider === undefined || !instanceOf(next, provider)) {
+      skipped++
+      continue
+    }
+    next = bind(next, consumer as string, slot as string, candidate)
+  }
+  return { graph: next, skipped }
 }
 
 /**

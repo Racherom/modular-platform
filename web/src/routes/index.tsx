@@ -44,7 +44,7 @@ function Editor() {
     else if (handoff) select(handoff)
   }, [])
 
-  // one check per open: it validates the file and writes the automatic bindings into the graph
+  // one check per open: it validates the file and fills in the defaults of the resolved graph
   const open = useMutation({
     mutationFn: async (file: File): Promise<WorkingGraph> => {
       if (file.size > MAX_FILE_BYTES) throw new Error('The file is over 1 MB.')

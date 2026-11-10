@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import type { Graph } from '../api/client'
-import { bind, candidates, clearConfig, type Drop, isValidDrop, letPlannerChoose, setConfig, unbind } from '../graph/edit'
+import type { Graph, Problem } from '../api/client'
+import {
+  acceptAllRecommendations,
+  acceptRecommendation,
+  bind,
+  candidates,
+  clearConfig,
+  type Drop,
+  isValidDrop,
+  setConfig,
+  unbind,
+} from '../graph/edit'
 import { testCatalog, testModule } from './fixtures'
 
 const catalog = testCatalog([
@@ -78,7 +88,7 @@ describe('unbind', () => {
   })
 
   it('sets a missing need to null', () => {
-    const g = letPlannerChoose(bound, 'web', 'postgresql')
+    const g: Graph = { ...graph, modules: { ...graph.modules, web: { module: 'whoami' } } }
     expect(unbind(g, 'web', 'postgresql').modules.web?.uses).toEqual({ postgresql: null })
   })
 
@@ -89,20 +99,59 @@ describe('unbind', () => {
   })
 })
 
-describe('letPlannerChoose', () => {
-  it('removes the key and keeps the other needs', () => {
-    const g: Graph = { ...graph, modules: { ...graph.modules, web: { module: 'whoami', uses: { cache: 'x', postgresql: 'db' } } } }
-    const next = letPlannerChoose(g, 'web', 'postgresql')
-    expect(next.modules.web?.uses).toEqual({ cache: 'x' })
-    expect(Object.hasOwn(next.modules.web?.uses ?? {}, 'postgresql')).toBe(false)
-    expect(g.modules.web?.uses).toEqual({ cache: 'x', postgresql: 'db' })
+const recommended = (consumer: string, slot: string, candidate: string): Problem => ({
+  severity: 'error',
+  code: 'binding_recommended',
+  path: `modules.${consumer}.uses.${slot}`,
+  message: `Instance ${consumer} needs ${slot}; ${candidate} provides it.`,
+  candidates: [candidate],
+})
+
+const leftOut: Graph = {
+  ...graph,
+  modules: { ...graph.modules, web: { module: 'whoami' }, app: { module: 'whoami' } },
+}
+
+describe('acceptRecommendation', () => {
+  it('writes the same binding as picking the provider by hand (spec 0028)', () => {
+    const next = acceptRecommendation(leftOut, 'web', 'postgresql', 'db')
+    expect(next.modules.web?.uses).toEqual({ postgresql: 'db' })
+    expect(next).toEqual(bind(leftOut, 'web', 'postgresql', 'db'))
+    expect(leftOut.modules.web?.uses).toBeUndefined()
+  })
+})
+
+describe('acceptAllRecommendations', () => {
+  it('binds every open recommendation in one new graph', () => {
+    const { graph: next, skipped } = acceptAllRecommendations(leftOut, [
+      recommended('web', 'postgresql', 'db'),
+      recommended('app', 'postgresql', 'db2'),
+    ])
+    expect(skipped).toBe(0)
+    expect(next.modules.web?.uses).toEqual({ postgresql: 'db' })
+    expect(next.modules.app?.uses).toEqual({ postgresql: 'db2' })
   })
 
-  it('returns the same graph when the key is already missing, or the consumer is unknown', () => {
-    const g = letPlannerChoose(graph, 'web', 'postgresql')
-    expect(letPlannerChoose(g, 'web', 'postgresql')).toBe(g)
-    expect(letPlannerChoose(graph, 'db', 'postgresql')).toBe(graph)
-    expect(letPlannerChoose(graph, 'constructor', 'postgresql')).toBe(graph)
+  it('skips one whose candidate or consumer is gone, or whose use is no longer left out', () => {
+    const { db2: _, ...rest } = leftOut.modules
+    const g: Graph = { ...leftOut, modules: { ...rest, other: { module: 'mysql', uses: { postgresql: null } } } }
+    const { graph: next, skipped } = acceptAllRecommendations(g, [
+      recommended('web', 'postgresql', 'db'),
+      recommended('app', 'postgresql', 'db2'),
+      recommended('nope', 'postgresql', 'db'),
+      recommended('other', 'postgresql', 'db'),
+    ])
+    expect(skipped).toBe(3)
+    expect(next.modules.web?.uses).toEqual({ postgresql: 'db' })
+    expect(next.modules.app?.uses).toBeUndefined()
+    expect(next.modules.other?.uses).toEqual({ postgresql: null })
+  })
+
+  it('accepts no optional warning in bulk', () => {
+    const optional: Problem = { ...recommended('web', 'postgresql', 'db'), severity: 'warning', code: 'optional_unbound' }
+    const { graph: next, skipped } = acceptAllRecommendations(leftOut, [optional])
+    expect(next).toBe(leftOut)
+    expect(skipped).toBe(0)
   })
 })
 

@@ -147,7 +147,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       (result) => {
         const now = get().working
         if (get().checkSeq !== seq || !now) return
-        // the renderer's graph carries the automatic bindings; adopting it adds no history step
+        // the resolved graph carries the default named values; adopting it adds no history step
         const next = withPositions({ ...now, graph: result.graph, check: result })
         setWorking(next, { checkState: 'current' })
         persist(next)

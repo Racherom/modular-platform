@@ -3,8 +3,12 @@ kind: Graph
 modules:
   caller:
     module: caller
+    uses:
+      greet: greeter
   greeter:
     module: greeter
   notoken:
     module: notoken
+    uses:
+      greet: greeter
 name: missing-token-mapping

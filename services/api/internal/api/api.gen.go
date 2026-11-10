@@ -430,7 +430,7 @@ type ServerInterface interface {
 	// GetCatalog List the catalog, as the renderer answers it
 	// (GET /api/v1/catalog)
 	GetCatalog(w http.ResponseWriter, r *http.Request)
-	// Check Check a graph and fill in its automatic bindings, as the renderer answers it
+	// Check Check a graph and resolve its defaults, as the renderer answers it
 	// (POST /api/v1/check)
 	Check(w http.ResponseWriter, r *http.Request)
 	// Render Render a graph as the static zip, as the renderer answers it
@@ -1708,7 +1708,7 @@ type StrictServerInterface interface {
 	// GetCatalog List the catalog, as the renderer answers it
 	// (GET /api/v1/catalog)
 	GetCatalog(ctx context.Context, request GetCatalogRequestObject) (GetCatalogResponseObject, error)
-	// Check Check a graph and fill in its automatic bindings, as the renderer answers it
+	// Check Check a graph and resolve its defaults, as the renderer answers it
 	// (POST /api/v1/check)
 	Check(ctx context.Context, request CheckRequestObject) (CheckResponseObject, error)
 	// Render Render a graph as the static zip, as the renderer answers it

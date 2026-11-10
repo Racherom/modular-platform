@@ -44,3 +44,30 @@ func TestRenderPassesTheZipThrough(t *testing.T) {
 		t.Errorf("Content-Type %q", got)
 	}
 }
+
+// refusingRenderer answers render with the check result of a graph that holds a recommendation.
+type refusingRenderer struct{ Renderer }
+
+func (refusingRenderer) Render(context.Context, contract.Graph) ([]byte, string, *contract.CheckResult, error) {
+	return nil, "", &contract.CheckResult{Problems: []contract.Problem{{
+		Severity: contract.Error, Code: "binding_recommended", Path: "modules.ingress.uses.trust", Candidates: []string{"cert-issuer"},
+	}}}, nil
+}
+
+// TestRenderRefusesARecommendation covers spec 0027 AC-8 at api: a graph with an open
+// recommendation gets 422 with the renderer's check result, not a zip.
+func TestRenderRefusesARecommendation(t *testing.T) {
+	t.Parallel()
+	s := &Server{renderer: refusingRenderer{}, log: slog.New(slog.DiscardHandler)}
+	resp, err := s.Render(t.Context(), RenderRequestObject{Body: &contract.Graph{Name: "gap"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	if err := resp.VisitRenderResponse(rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != 422 || !bytes.Contains(rec.Body.Bytes(), []byte(`"code":"binding_recommended"`)) {
+		t.Errorf("status %d body %s", rec.Code, rec.Body)
+	}
+}
