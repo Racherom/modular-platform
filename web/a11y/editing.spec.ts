@@ -120,7 +120,7 @@ test('keyboard only: select a module, bind and unbind from the inspector (AC-8, 
   await select.focus()
   await page.keyboard.press('Enter')
   const list = page.getByRole('listbox')
-  await expect(list.getByRole('option')).toHaveText(['a', 'b', 'Not bound', 'Let the planner choose'])
+  await expect(list.getByRole('option')).toHaveText(['a', 'b', 'Not bound'])
   await list.getByRole('option', { name: 'Not bound', exact: true }).press('Enter')
   await expect(page.locator(edges)).toHaveCount(0)
   await expect.poll(() => checks.length).toBe(2)
@@ -137,41 +137,48 @@ test('keyboard only: select a module, bind and unbind from the inspector (AC-8, 
   await expect(inspector(page).getByText('Used by whoami')).toBeVisible()
 })
 
-test('Let the planner choose removes the key; the renderer fills it and the note shows (AC-11)', async ({ page }) => {
-  await mockRenderer(page)
-  // the mock echoes the graph, so fake the automatic binding the renderer would write back
-  await page.route('**/renderer/v1/check', async (route) => {
-    const graph = route.request().postDataJSON()
-    const uses = graph.modules.whoami.uses ?? {}
-    const auto = !Object.hasOwn(uses, 'postgresql')
-    if (auto) graph.modules.whoami.uses = { ...uses, postgresql: 'a' }
-    await route.fulfill({
-      json: {
-        ok: true,
-        graph,
-        bindings: [
-          {
-            consumer: 'whoami',
-            slot: 'postgresql',
-            capability: 'postgresql',
-            provider: graph.modules.whoami.uses.postgresql ?? 'a',
-            provide: 'postgresql',
-            auto,
-            named: false,
-            provisioned: false,
-          },
-        ],
-        problems: [],
-      },
-    })
-  })
-  await openGraph(page, TWO)
-  await node(page, 'whoami').click()
-  const select = inspector(page).getByRole('button', { name: /postgresql Bound to/ })
-  await select.click()
-  await page.getByRole('option', { name: 'Let the planner choose' }).click()
-  await expect(inspector(page).getByText('Bound by the renderer')).toBeVisible()
-  await expect(select).toContainText('a')
+const RECOMMEND = `apiVersion: modular-platform/v1
+kind: Graph
+name: recommend
+modules:
+  db:
+    module: postgres
+  one:
+    module: test-app
+  two:
+    module: test-app
+  whoami:
+    module: whoami
+    uses:
+      postgresql: db
+`
+
+test('the checks recommend and you accept: one in the inspector, the rest with Accept all in one undo step (spec 0028)', async ({
+  page,
+}) => {
+  const { checks } = await mockRenderer(page)
+  await openGraph(page, RECOMMEND)
+  const download = page.getByRole('button', { name: 'Download zip' })
+  await expect(download).toBeDisabled()
+  await expect(page.getByText('Accept or change 2 recommended bindings first')).toBeVisible()
+
+  await node(page, 'one').click()
+  await expect(inspector(page).getByText('Recommended: db')).toBeVisible()
+  await inspector(page).getByRole('button', { name: 'Accept db for postgresql' }).click()
+  const field = inspector(page).getByRole('button', { name: /postgresql Bound to/ })
+  await expect(field).toBeFocused()
+  await expect(field).toContainText('db')
+  await expect.poll(() => checks.at(-1)?.modules.one?.uses).toEqual({ postgresql: 'db' })
+
+  await page.getByRole('button', { name: 'Accept all recommendations (1)' }).click()
+  await expect(page.getByRole('toolbar', { name: 'File' }).getByRole('button').first()).toBeFocused()
+  await expect.poll(() => checks.at(-1)?.modules.two?.uses).toEqual({ postgresql: 'db' })
+  await expect(download).toBeEnabled()
+
+  // Accept all is one edit, so one undo takes it back
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect.poll(() => checks.at(-1)?.modules.two?.uses).toBeUndefined()
+  await expect(page.getByRole('button', { name: 'Accept all recommendations (1)' })).toBeVisible()
 })
 
 test('a binding to an instance that is not a candidate shows as invalid (AC-11)', async ({ page }) => {

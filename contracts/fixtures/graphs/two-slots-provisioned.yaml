@@ -5,4 +5,7 @@ modules:
     module: postgres
   reports:
     module: twodb
+    uses:
+      audit-db: postgres
+      main-db: postgres
 name: two-slots-provisioned

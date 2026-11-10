@@ -96,14 +96,14 @@ type ClientInterface interface {
 	// Corresponds with GET /v1/catalog (the `GetCatalog` operationId).
 	GetCatalog(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// CheckWithBody Check a graph and fill in its automatic bindings
+	// CheckWithBody Check a graph and resolve its defaults
 	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /v1/check (the `Check` operationId).
 	CheckWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// Check Check a graph and fill in its automatic bindings
+	// Check Check a graph and resolve its defaults
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -162,7 +162,7 @@ func (c *Client) GetCatalog(ctx context.Context, reqEditors ...RequestEditorFn) 
 	return c.Client.Do(req)
 }
 
-// CheckWithBody Check a graph and fill in its automatic bindings
+// CheckWithBody Check a graph and resolve its defaults
 //
 // Takes any type of body and a specified content type.
 //
@@ -179,7 +179,7 @@ func (c *Client) CheckWithBody(ctx context.Context, contentType string, body io.
 	return c.Client.Do(req)
 }
 
-// Check Check a graph and fill in its automatic bindings
+// Check Check a graph and resolve its defaults
 //
 // Takes a body of the `application/json` content type.
 //
@@ -470,14 +470,14 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /v1/catalog (the `GetCatalog` operationId).
 	GetCatalogWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCatalogResponse, error)
 
-	// CheckWithBodyWithResponse Check a graph and fill in its automatic bindings
+	// CheckWithBodyWithResponse Check a graph and resolve its defaults
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /v1/check (the `Check` operationId).
 	CheckWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CheckResponse, error)
 
-	// CheckWithResponse Check a graph and fill in its automatic bindings
+	// CheckWithResponse Check a graph and resolve its defaults
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -859,7 +859,7 @@ func (c *ClientWithResponses) GetCatalogWithResponse(ctx context.Context, reqEdi
 	return ParseGetCatalogResponse(rsp)
 }
 
-// CheckWithBodyWithResponse Check a graph and fill in its automatic bindings
+// CheckWithBodyWithResponse Check a graph and resolve its defaults
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -872,7 +872,7 @@ func (c *ClientWithResponses) CheckWithBodyWithResponse(ctx context.Context, con
 	return ParseCheckResponse(rsp)
 }
 
-// CheckWithResponse Check a graph and fill in its automatic bindings
+// CheckWithResponse Check a graph and resolve its defaults
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //

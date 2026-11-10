@@ -22,7 +22,7 @@ type ServerInterface interface {
 	// GetCatalog List the built in catalog
 	// (GET /v1/catalog)
 	GetCatalog(w http.ResponseWriter, r *http.Request)
-	// Check Check a graph and fill in its automatic bindings
+	// Check Check a graph and resolve its defaults
 	// (POST /v1/check)
 	Check(w http.ResponseWriter, r *http.Request)
 	// Render Render a graph as a zip you run with Docker Compose
@@ -630,7 +630,7 @@ type StrictServerInterface interface {
 	// GetCatalog List the built in catalog
 	// (GET /v1/catalog)
 	GetCatalog(ctx context.Context, request GetCatalogRequestObject) (GetCatalogResponseObject, error)
-	// Check Check a graph and fill in its automatic bindings
+	// Check Check a graph and resolve its defaults
 	// (POST /v1/check)
 	Check(ctx context.Context, request CheckRequestObject) (CheckResponseObject, error)
 	// Render Render a graph as a zip you run with Docker Compose

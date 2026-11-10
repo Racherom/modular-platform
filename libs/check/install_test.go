@@ -23,19 +23,19 @@ func TestCheckInstallTime(t *testing.T) {
 	}{
 		"steps in order": {graph: `
   sealer: {module: sealer}
-  web: {module: sealed-client}
-  api: {module: sealed-client}`},
+  web: {module: sealed-client, uses: {seal: sealer}}
+  api: {module: sealed-client, uses: {seal: sealer}}`},
 		"client key written after the provider's steps": {
 			graph: `
   sealer: {module: sealer}
-  late: {module: late-client}`,
+  late: {module: late-client, uses: {seal: sealer}}`,
 			problems: []problem{errorAt(check.CodeSetupOrder, "modules.sealer")},
 			messages: []string{"Setup step mark of sealer reads field key of provide seal, which client late writes in a setup step that runs after this one."},
 		},
 		"later output, run time file, text field": {
 			graph: `
   sealer: {module: sealer}
-  wrong: {module: wrong-steps}`,
+  wrong: {module: wrong-steps, uses: {seal: sealer}}`,
 			problems: []problem{
 				errorAt(check.CodeSetupOrder, "modules.wrong"),
 				errorAt(check.CodeSetupOrder, "modules.wrong"),
@@ -53,7 +53,7 @@ func TestCheckInstallTime(t *testing.T) {
     external:
       provides:
         seal: {capability: seal, version: "1.0", fields: {url: "https://seal.example.test"}}
-  web: {module: sealed-client}`,
+  web: {module: sealed-client, uses: {seal: outside}}`,
 			problems: []problem{errorAt(check.CodeSetupOrder, "modules.web")},
 			messages: []string{"reads field root of slot seal, a file you place, which setup.sh checks only after the setup steps."},
 		},

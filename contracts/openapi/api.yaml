@@ -117,7 +117,7 @@ paths:
   /api/v1/check:
     post:
       operationId: check
-      summary: Check a graph and fill in its automatic bindings, as the renderer answers it
+      summary: Check a graph and resolve its defaults, as the renderer answers it
       requestBody:
         required: true
         content:

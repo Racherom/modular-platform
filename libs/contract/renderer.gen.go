@@ -288,9 +288,6 @@ func (e SlotClient) Valid() bool {
 
 // Binding defines model for Binding.
 type Binding struct {
-	// Auto True when the checks made this binding, not the graph.
-	Auto bool `json:"auto"`
-
 	// Capability The slot's capability.
 	Capability string `json:"capability"`
 	Consumer   string `json:"consumer"`
@@ -363,7 +360,7 @@ type Catalog struct {
 
 // CheckResult defines model for CheckResult.
 type CheckResult struct {
-	// Bindings Explicit and automatic bindings, sorted by consumer then slot.
+	// Bindings The bindings the graph names, sorted by consumer then slot.
 	Bindings []Binding `json:"bindings"`
 
 	// Digest `sha256:<hex>` over the canonical graph, the bindings and the catalog entries the graph

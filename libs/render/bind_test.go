@@ -59,14 +59,14 @@ func TestRevokeJob(t *testing.T) {
 	t.Parallel()
 	catalog := loadCatalog(t, "../../catalog", "testdata/provision/catalog")
 	pg := contract.GraphModule{Module: "postgres"}
-	client := contract.GraphModule{Module: "pg-client"}
+	client := bound("pg-client", map[string]string{"db": "postgres"})
 	tests := map[string]struct {
 		modules map[string]contract.GraphModule
 		keep    string
 		after   []string
 	}{
 		"several bindings": {
-			map[string]contract.GraphModule{"postgres": pg, "b": client, "a": client, "reports": {Module: "pg-pair"}},
+			map[string]contract.GraphModule{"postgres": pg, "b": client, "a": client, "reports": bound("pg-pair", map[string]string{"audit-db": "postgres", "main-db": "postgres"})},
 			"a_db,b_db,reports_audit_db,reports_main_db",
 			[]string{"postgres", "postgres_provision_a_db", "postgres_provision_b_db", "postgres_provision_reports_audit-db", "postgres_provision_reports_main-db"},
 		},
@@ -115,7 +115,7 @@ func TestWaitAnchor(t *testing.T) {
 			[]string{"postgres_revoke_server", "second_revoke_server"},
 		},
 		"no binding":    {map[string]contract.GraphModule{"postgres": {Module: "postgres"}}, []string{"postgres_revoke_server"}},
-		"no job at all": {map[string]contract.GraphModule{"ext": external, "app": {Module: "pg-roaming"}}, nil},
+		"no job at all": {map[string]contract.GraphModule{"ext": external, "app": bound("pg-roaming", map[string]string{"db": "ext"})}, nil},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -183,7 +183,7 @@ func TestEgressFromBindings(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			g := contract.Graph{ApiVersion: contract.APIVersion, Kind: contract.KindGraph, Name: "egress", Modules: map[string]contract.GraphModule{
-				"app": {Module: "pg-roaming"}, "pg": tc.provider,
+				"app": bound("pg-roaming", map[string]string{"db": "pg"}), "pg": tc.provider,
 			}}
 			app := renderServices(t, g, catalog)["app"]
 			_, joined := app.Networks["egress"]
@@ -195,4 +195,14 @@ func TestEgressFromBindings(t *testing.T) {
 			}
 		})
 	}
+}
+
+// bound is an instance of module whose uses bind each slot to the provider named beside it, as a
+// graph must name every binding (spec 0028).
+func bound(module string, uses map[string]string) contract.GraphModule {
+	u := contract.Uses{}
+	for slot, provider := range uses {
+		u[slot] = &contract.GraphBinding{Provider: provider}
+	}
+	return contract.GraphModule{Module: module, Uses: &u}
 }

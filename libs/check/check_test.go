@@ -3,6 +3,7 @@ package check_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"maps"
 	"os"
@@ -78,11 +79,11 @@ func errorAt(code, path string, candidates ...string) problem {
 
 // bind is a binding of slot to provider.provide; a slot named like its capability passes "" as
 // capability.
-func bind(consumer, slot, capability, provider, provide string, auto bool) contract.Binding {
+func bind(consumer, slot, capability, provider, provide string) contract.Binding {
 	if capability == "" {
 		capability = slot
 	}
-	return contract.Binding{Consumer: consumer, Slot: slot, Capability: capability, Provider: provider, Provide: provide, Auto: auto}
+	return contract.Binding{Consumer: consumer, Slot: slot, Capability: capability, Provider: provider, Provide: provide}
 }
 
 // provisioned marks b as a binding to a provisioner; named marks the checks wrote its names.
@@ -104,23 +105,19 @@ func TestCheck(t *testing.T) {
 	tests := map[string]want{
 		"sample": {
 			ok:       true,
-			bindings: []contract.Binding{provisioned(bind("whoami", "postgresql", "", "postgres", "server", false), true)},
+			bindings: []contract.Binding{provisioned(bind("whoami", "postgresql", "", "postgres", "server"), true)},
 			resolved: map[string]string{"whoami.postgresql": "postgres database=whoami_postgresql user=whoami_postgresql"},
 		},
 		"sample-provisioned": {
 			ok:       true,
-			bindings: []contract.Binding{provisioned(bind("whoami", "postgresql", "", "postgres", "server", false), false)},
+			bindings: []contract.Binding{provisioned(bind("whoami", "postgresql", "", "postgres", "server"), false)},
 			resolved: map[string]string{"whoami.postgresql": "postgres database=demo user=demo"},
 		},
 		"sample-no-uses": {ok: true, problems: []problem{
 			warningAt(check.CodeOptionalUnbound, "modules.whoami.uses.postgresql", "postgres"),
 		}},
-		"sample-null": {ok: true},
-		"required-one": {
-			ok:       true,
-			bindings: []contract.Binding{bind("app", "db", "", "db", "db", true)},
-			resolved: map[string]string{"app.db": "db"},
-		},
+		"sample-null":   {ok: true},
+		"required-one":  {problems: []problem{errorAt(check.CodeBindingRecommended, "modules.app.uses.db", "db")}},
 		"required-none": {problems: []problem{errorAt(check.CodeUnmetNeed, "modules.app.uses.db")}},
 		"required-two": {problems: []problem{
 			errorAt(check.CodeAmbiguousProvider, "modules.app.uses.db", "db-a", "db-b"),
@@ -134,32 +131,28 @@ func TestCheck(t *testing.T) {
 		}},
 		"unknown-module": {problems: []problem{errorAt(check.CodeUnknownModule, "modules.ghost.module")}},
 		"unknown-use": {
-			bindings: []contract.Binding{bind("app", "db", "", "db", "db", true)},
+			bindings: []contract.Binding{bind("app", "db", "", "db", "db")},
 			problems: []problem{errorAt(check.CodeUnknownUse, "modules.app.uses.queue")},
 			resolved: map[string]string{"app.db": "db"},
 		},
 		"cycle": {
-			bindings: []contract.Binding{bind("ping", "pong", "", "pong", "pong", true), bind("pong", "ping", "", "ping", "ping", true)},
+			bindings: []contract.Binding{bind("ping", "pong", "", "pong", "pong"), bind("pong", "ping", "", "ping", "ping")},
 			problems: []problem{errorAt(check.CodeBindingCycle, "modules.ping")},
 		},
 		"invalid-names": {problems: []problem{
 			errorAt(check.CodeInvalidName, "modules.Web"),
 			errorAt(check.CodeInvalidName, "modules.yes"),
 		}},
-		"required-and-null": {
-			ok:       true,
-			bindings: []contract.Binding{bind("app", "db", "", "db", "db", true)},
-			resolved: map[string]string{"app.db": "db"},
-		},
+		"required-and-null": {problems: []problem{errorAt(check.CodeBindingRecommended, "modules.app.uses.db", "db")}},
 		"missing-token-mapping": {
-			bindings: []contract.Binding{bind("caller", "greet", "", "greeter", "greet", true), bind("notoken", "greet", "", "greeter", "greet", true)},
+			bindings: []contract.Binding{bind("caller", "greet", "", "greeter", "greet"), bind("notoken", "greet", "", "greeter", "greet")},
 			problems: []problem{errorAt(check.CodeMissingTokenMapping, "modules.notoken.uses.greet")},
 		},
 		"empty":      {ok: true},
 		"empty-uses": {ok: true},
 		"range-match": {
 			ok:       true,
-			bindings: []contract.Binding{provisioned(bind("modern", "db", "postgresql", "postgres", "server", true), true)},
+			bindings: []contract.Binding{provisioned(bind("modern", "db", "postgresql", "postgres", "server"), true)},
 			resolved: map[string]string{"modern.db": "postgres database=modern_db user=modern_db"},
 		},
 		"range-mismatch": {problems: []problem{
@@ -173,26 +166,26 @@ func TestCheck(t *testing.T) {
 		}},
 		"named-provide": {
 			ok:       true,
-			bindings: []contract.Binding{bind("modern", "db", "postgresql", "pg", "replica", false)},
+			bindings: []contract.Binding{bind("modern", "db", "postgresql", "pg", "replica")},
 			resolved: map[string]string{"modern.db": "pg.replica"},
 		},
 		"unknown-provide": {problems: []problem{errorAt(check.CodeUnknownProvide, "modules.modern.uses.db")}},
 		"two-slots": {
 			ok: true,
 			bindings: []contract.Binding{
-				bind("reports", "audit-db", "postgresql", "b", "primary", false),
-				bind("reports", "main-db", "postgresql", "a", "db", false),
+				bind("reports", "audit-db", "postgresql", "b", "primary"),
+				bind("reports", "main-db", "postgresql", "a", "db"),
 			},
 		},
 		"two-slots-duplicate": {
-			bindings: []contract.Binding{bind("reports", "audit-db", "postgresql", "a", "db", false)},
+			bindings: []contract.Binding{bind("reports", "audit-db", "postgresql", "a", "db")},
 			problems: []problem{errorAt(check.CodeDuplicateBinding, "modules.reports.uses.main-db")},
 		},
 		"two-slots-provisioned": {
 			ok: true,
 			bindings: []contract.Binding{
-				provisioned(bind("reports", "audit-db", "postgresql", "postgres", "server", true), true),
-				provisioned(bind("reports", "main-db", "postgresql", "postgres", "server", true), true),
+				provisioned(bind("reports", "audit-db", "postgresql", "postgres", "server"), true),
+				provisioned(bind("reports", "main-db", "postgresql", "postgres", "server"), true),
 			},
 			resolved: map[string]string{
 				"reports.audit-db": "postgres database=reports_audit_db user=reports_audit_db",
@@ -210,19 +203,19 @@ func TestCheck(t *testing.T) {
 			errorAt(check.CodeInvalidNamedValue, "modules.whoami.uses.postgresql.database"),
 		}},
 		"named-admin": {
-			bindings: []contract.Binding{provisioned(bind("whoami", "postgresql", "", "postgres", "server", false), true)},
+			bindings: []contract.Binding{provisioned(bind("whoami", "postgresql", "", "postgres", "server"), true)},
 			problems: []problem{errorAt(check.CodeInvalidNamedValue, "modules.whoami.uses.postgresql.user")},
 		},
 		"named-duplicate": {
 			bindings: []contract.Binding{
-				provisioned(bind("reports", "audit-db", "postgresql", "postgres", "server", false), true),
-				provisioned(bind("reports", "main-db", "postgresql", "postgres", "server", false), true),
+				provisioned(bind("reports", "audit-db", "postgresql", "postgres", "server"), true),
+				provisioned(bind("reports", "main-db", "postgresql", "postgres", "server"), true),
 			},
 			problems: []problem{errorAt(check.CodeDuplicateNamedValue, "modules.reports.uses.main-db.database")},
 		},
 		"external": {
 			ok:       true,
-			bindings: []contract.Binding{bind("modern", "db", "postgresql", "billing-db", "db", true)},
+			bindings: []contract.Binding{bind("modern", "db", "postgresql", "billing-db", "db")},
 			resolved: map[string]string{"modern.db": "billing-db"},
 		},
 		"config-set": {ok: true},
@@ -252,7 +245,7 @@ func TestCheck(t *testing.T) {
 			errorAt(check.CodeInvalidConfig, "modules.s4.config.need"),
 		}},
 		"external-missing": {
-			bindings: []contract.Binding{bind("modern", "db", "postgresql", "billing-db", "db", true)},
+			bindings: []contract.Binding{bind("modern", "db", "postgresql", "billing-db", "db")},
 			problems: []problem{errorAt(check.CodeExternalFieldMissing, "modules.billing-db.external.provides.db.fields.host")},
 		},
 	}
@@ -353,6 +346,15 @@ func TestCheckV0alpha1(t *testing.T) {
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no v0alpha1 fixtures: %v", err)
 	}
+	// twins whose v1 fixture names the bindings the v0alpha1 one leaves out (spec 0028): the
+	// conversion adds no binding, so the converted graph shows a recommendation for each gap
+	gaps := map[string][]string{
+		"cycle": {"error binding_recommended modules.ping.uses.pong [pong]", "error binding_recommended modules.pong.uses.ping [ping]"},
+		"missing-token-mapping": {
+			"error binding_recommended modules.caller.uses.greet [greeter]", "error binding_recommended modules.notoken.uses.greet [greeter]",
+		},
+		"unknown-use": {"error binding_recommended modules.app.uses.db [db]", "error unknown_use modules.app.uses.queue []"},
+	}
 	for _, file := range files {
 		name := strings.TrimSuffix(filepath.Base(file), ".yaml")
 		t.Run(name, func(t *testing.T) {
@@ -365,11 +367,41 @@ func TestCheckV0alpha1(t *testing.T) {
 				t.Fatalf("problems = %+v, want the converted warning", old.Problems)
 			}
 			rest := slices.Delete(slices.Clone(old.Problems), idx, idx+1)
+			if want, ok := gaps[name]; ok {
+				var got []string
+				for _, p := range rest {
+					got = append(got, fmt.Sprintf("%s %s %s %v", p.Severity, p.Code, p.Path, p.Candidates))
+				}
+				if old.Ok || len(old.Bindings) != 0 || !slices.Equal(got, want) {
+					t.Errorf("ok %v, bindings %v, problems %q, want not ok, no binding, %q", old.Ok, old.Bindings, got, want)
+				}
+				return
+			}
 			oldJSON, _ := json.Marshal([]any{old.Ok, old.Graph, old.Bindings, rest, old.Digest})
 			v1JSON, _ := json.Marshal([]any{v1.Ok, v1.Graph, v1.Bindings, v1.Problems, v1.Digest})
 			if !bytes.Equal(oldJSON, v1JSON) {
 				t.Errorf("v0alpha1 result differs from v1:\n%s\n%s", oldJSON, v1JSON)
 			}
 		})
+	}
+}
+
+// TestRecommendationIsNotABinding covers spec 0027 AC-7 and spec 0028: a required use left out
+// with one match is the error binding_recommended with that provide as its only candidate, and
+// the checks write nothing for it, neither into the graph nor into the bindings.
+func TestRecommendationIsNotABinding(t *testing.T) {
+	t.Parallel()
+	result := check.Graph(readFixture(t, "required-one"), testCatalog(t))
+	if result.Ok || result.Digest != "" || len(result.Bindings) != 0 {
+		t.Errorf("ok %v, digest %q, bindings %v, want not ok, no digest, no binding", result.Ok, result.Digest, result.Bindings)
+	}
+	if uses := result.Graph.Modules["app"].Uses; uses != nil {
+		if _, written := (*uses)["db"]; written {
+			t.Errorf("the resolved graph binds app.db: %v", (*uses)["db"])
+		}
+	}
+	want := "Instance app needs db for db; db provides it. Accept the recommendation or pick another provider."
+	if len(result.Problems) != 1 || result.Problems[0].Message != want {
+		t.Errorf("problems = %+v, want one with message %q", result.Problems, want)
 	}
 }

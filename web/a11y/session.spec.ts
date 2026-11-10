@@ -240,7 +240,7 @@ test('an instance whose module is not in the catalog has a badge and no ports; t
     .getByRole('region', { name: 'Inspector' })
     .getByRole('button', { name: /postgresql Bound to/ })
     .click()
-  await expect(page.getByRole('listbox').getByRole('option')).toHaveText(['postgres', 'Not bound', 'Let the planner choose'])
+  await expect(page.getByRole('listbox').getByRole('option')).toHaveText(['postgres', 'Not bound'])
   await page.keyboard.press('Escape')
 
   // the hostile catalog description shows as text and runs nothing

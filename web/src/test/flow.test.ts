@@ -20,6 +20,7 @@ const graph: Graph = {
   },
 }
 const problem = (path: string, severity: Problem['severity'], message = path): Problem => ({ severity, code: 'x', path, message })
+const recommendation = (path: string): Problem => ({ ...problem(path, 'error'), code: 'binding_recommended', candidates: ['db'] })
 
 describe('problemSlot', () => {
   it.each([
@@ -113,6 +114,13 @@ describe('downloadBlocked (AC-14)', () => {
     ['failed', 'failed', check([]), 'Not checked, retry first'],
     ['one error', 'current', check([problem('a', 'error'), problem('b', 'warning')]), 'Fix 1 error to download'],
     ['two errors', 'current', check([problem('a', 'error'), problem('b', 'error')]), 'Fix 2 errors to download'],
+    ['one recommendation (spec 0028)', 'current', check([recommendation('a')]), 'Accept or change 1 recommended binding first'],
+    [
+      'two recommendations and an error',
+      'current',
+      check([recommendation('a'), recommendation('b'), problem('c', 'error')]),
+      'Fix 1 error to download. Accept or change 2 recommended bindings first',
+    ],
   ] as const)('%s', (_, state, p, want) => {
     expect(downloadBlocked(state, p)).toBe(want)
   })

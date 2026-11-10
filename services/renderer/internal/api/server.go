@@ -44,7 +44,7 @@ func (s *Server) GetCatalog(context.Context, GetCatalogRequestObject) (GetCatalo
 	return GetCatalog200JSONResponse(s.catalog), nil
 }
 
-// Check checks the graph and fills in its automatic bindings.
+// Check checks the graph and resolves its defaults.
 func (s *Server) Check(_ context.Context, req CheckRequestObject) (CheckResponseObject, error) {
 	return Check200JSONResponse(check.Graph(*req.Body, s.catalog)), nil
 }

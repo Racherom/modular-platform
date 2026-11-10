@@ -421,7 +421,6 @@ function SelectDemo() {
     { id: 'postgres', label: 'postgres' },
     { id: 'postgres-2', label: 'postgres-2' },
     { id: 'none', label: 'Not bound' },
-    { id: 'auto', label: 'Let the planner choose' },
   ]
   const [value, setValue] = useState<string | null>('postgres')
   return (
@@ -432,10 +431,10 @@ function SelectDemo() {
         options={options}
         value="postgres"
         onChange={() => undefined}
-        description="bound by the checks"
+        description="Recommended: postgres"
       />
       <Select label="Bound to, small" size="sm" options={options} value="none" onChange={() => undefined} />
-      <Select label="Bound to, disabled" options={options} value="auto" onChange={() => undefined} isDisabled />
+      <Select label="Bound to, disabled" options={options} value="postgres-2" onChange={() => undefined} isDisabled />
     </div>
   )
 }

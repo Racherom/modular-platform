@@ -3,6 +3,10 @@ kind: Graph
 modules:
   ping:
     module: ping
+    uses:
+      pong: pong
   pong:
     module: pong
+    uses:
+      ping: ping
 name: cycle

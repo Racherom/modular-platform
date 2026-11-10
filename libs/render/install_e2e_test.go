@@ -114,7 +114,7 @@ func short(secret string) string {
 // setup.sh made, and no secret value shows in any service's env (AC-8).
 func TestInstallSetupEndToEnd(t *testing.T) {
 	dir := t.TempDir()
-	two := "  alpha: {module: client}\n  beta: {module: client}\n  keeper: {module: keeper}\n"
+	two := "  alpha: {module: client, uses: {vault: keeper}}\n  beta: {module: client, uses: {vault: keeper}}\n  keeper: {module: keeper}\n"
 	renderInstall(t, dir, two)
 
 	out, err := setup(t, dir, installAnswers)
@@ -164,7 +164,7 @@ func TestInstallSetupEndToEnd(t *testing.T) {
 		t.Errorf("the second run changed a file's content, mode or mtime")
 	}
 
-	renderInstall(t, dir, two+"  gamma: {module: client}\n")
+	renderInstall(t, dir, two+"  gamma: {module: client, uses: {vault: keeper}}\n")
 	out, err = setup(t, dir, "")
 	if err != nil {
 		t.Fatalf("setup.sh with a third client: %v\n%s", err, out)
@@ -176,7 +176,7 @@ func TestInstallSetupEndToEnd(t *testing.T) {
 		t.Errorf("secrets/keeper/sealed/gamma = %q", secret("keeper/sealed/gamma"))
 	}
 
-	renderInstall(t, dir, "  alpha: {module: client}\n  keeper: {module: keeper}\n")
+	renderInstall(t, dir, "  alpha: {module: client, uses: {vault: keeper}}\n  keeper: {module: keeper}\n")
 	if out, err = setup(t, dir, ""); err != nil {
 		t.Fatalf("setup.sh after unbinding beta: %v\n%s", err, out)
 	}

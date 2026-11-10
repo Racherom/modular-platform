@@ -4,6 +4,7 @@ modules:
   app:
     module: app
     uses:
+      db: db
       queue: db
   db:
     module: db

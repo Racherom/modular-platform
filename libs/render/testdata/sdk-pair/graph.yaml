@@ -3,6 +3,8 @@ kind: Graph
 modules:
   consumer:
     module: pair-consumer
+    uses:
+      greet: provider
   provider:
     module: pair-provider
 name: sdk-pair

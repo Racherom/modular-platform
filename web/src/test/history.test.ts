@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CheckResult, Graph } from '../api/client'
-import { bind, letPlannerChoose, unbind } from '../graph/edit'
+import { bind, unbind } from '../graph/edit'
 import { layout } from '../graph/layout'
 import { useEditor } from '../lib/store'
 import { fetchHandler } from './setup'
@@ -55,7 +55,7 @@ describe('undo and redo (AC-15)', () => {
     await vi.waitFor(() => expect(s().checkState).toBe('current'))
     s().edit((g) => bind(g, 'web', 'postgresql', 'db2'))
     await vi.waitFor(() => expect(s().checkState).toBe('current'))
-    s().edit((g) => letPlannerChoose(g, 'web', 'postgresql'))
+    s().edit((g) => unbind(g, 'web', 'postgresql'))
     await vi.waitFor(() => expect(s().checkState).toBe('current'))
     expect(s().history.past).toHaveLength(3)
 
@@ -76,7 +76,7 @@ describe('undo and redo (AC-15)', () => {
     expect(uses()).toEqual({ postgresql: 'db' })
     s().redo()
     s().redo()
-    expect(uses()).toEqual({})
+    expect(uses()).toEqual({ postgresql: null })
     expect(s().history.future).toHaveLength(0)
     await vi.waitFor(() => expect(s().checkState).toBe('current'))
     expect(calls).toHaveLength(9)

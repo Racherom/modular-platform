@@ -11,8 +11,8 @@ export type CheckReply = { status: number } | { delayMs: number } | 'echo'
 
 /**
  * A renderer stand in. GET /v1/catalog answers the fixture. POST /v1/check echoes the posted
- * graph, builds bindings from its uses (auto false), and reports unbound_required for each
- * required slot set to null, so ok follows. `next` decides how each call is answered, in order;
+ * graph, builds bindings from its uses, reports unbound_required for each required slot set to
+ * null and binding_recommended for a required slot left out with one provider, so ok follows. `next` decides how each call is answered, in order;
  * `entries` replaces the catalog, as the scale check does.
  */
 export async function mockRenderer(page: Page, next: () => CheckReply = () => 'echo', entries: Catalog = catalog) {
@@ -52,12 +52,27 @@ function check(graph: Graph, catalog: Catalog): CheckResult {
         capability,
         provider: instance,
         provide: provide || capability,
-        auto: false,
         named: false,
         provisioned: false,
       })
     }
     for (const [slot, need] of Object.entries(slots)) {
+      if (!need.optional && !(m.uses && Object.hasOwn(m.uses, slot))) {
+        // a required use left out with exactly one provider is a recommendation (spec 0028)
+        const offers = Object.entries(graph.modules)
+          .filter(([name, o]) => name !== consumer && o.module !== undefined)
+          .filter(([, o]) => Object.values(modules.get(o.module as string)?.provides ?? {}).some((p) => p.capability === need.capability))
+          .map(([name]) => name)
+        if (offers.length === 1) {
+          problems.push({
+            severity: 'error',
+            code: 'binding_recommended',
+            path: `modules.${consumer}.uses.${slot}`,
+            message: `Instance ${consumer} needs ${need.capability} for ${slot}; ${offers[0]} provides it. Accept the recommendation or pick another provider.`,
+            candidates: offers,
+          })
+        }
+      }
       if (!need.optional && m.uses?.[slot] === null) {
         problems.push({
           severity: 'error',

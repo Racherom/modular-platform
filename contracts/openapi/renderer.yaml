@@ -40,7 +40,7 @@ paths:
   /v1/check:
     post:
       operationId: check
-      summary: Check a graph and fill in its automatic bindings
+      summary: Check a graph and resolve its defaults
       requestBody:
         required: true
         content:
@@ -908,7 +908,7 @@ components:
     Binding:
       type: object
       additionalProperties: false
-      required: [consumer, slot, capability, provider, provide, auto, named, provisioned]
+      required: [consumer, slot, capability, provider, provide, named, provisioned]
       properties:
         consumer:
           type: string
@@ -922,9 +922,6 @@ components:
         provide:
           type: string
           description: The provide of the provider the slot is bound to.
-        auto:
-          type: boolean
-          description: True when the checks made this binding, not the graph.
         named:
           type: boolean
           description: True when the checks wrote default named values into the graph.
@@ -971,7 +968,7 @@ components:
           $ref: "#/components/schemas/Graph"
         bindings:
           type: array
-          description: Explicit and automatic bindings, sorted by consumer then slot.
+          description: The bindings the graph names, sorted by consumer then slot.
           items:
             $ref: "#/components/schemas/Binding"
         problems:

@@ -3,6 +3,8 @@ kind: Graph
 modules:
   modern:
     module: modern
+    uses:
+      db: postgres
   postgres:
     module: postgres
 name: range-match

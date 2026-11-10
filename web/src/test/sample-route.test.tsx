@@ -44,7 +44,6 @@ describe('sample route', () => {
               capability: 'postgresql',
               provider: 'postgres',
               provide: 'postgresql',
-              auto: false,
               named: false,
               provisioned: false,
             },
