@@ -13,6 +13,12 @@
       "skillPath": "skills/audit/SKILL.md",
       "computedHash": "a8d524118ce6d60911840ef31509f1f5551ce1099cb8fd8a241ed0859e5c62ed"
     },
+    "aws-iam": {
+      "source": "aws/agent-toolkit-for-aws",
+      "sourceType": "github",
+      "skillPath": "skills/core-skills/aws-iam/SKILL.md",
+      "computedHash": "30d11b97e9ade497d23f4f26da033accbe8c4a29c939e2820a996e88d8bcb59c"
+    },
     "check": {
       "source": "JavaScript-Mastery-Pro/skills",
       "sourceType": "github",
@@ -186,6 +192,18 @@
       "sourceType": "github",
       "skillPath": "skills/scope/SKILL.md",
       "computedHash": "cc3683a45b96c1b0ecb23f9aba64263be096cb3ef2487662c0fe7e7c3200fb70"
+    },
+    "seaweedfs": {
+      "source": "itechmeat/llm-code",
+      "sourceType": "github",
+      "skillPath": "skills/seaweedfs/SKILL.md",
+      "computedHash": "937aba7f7a44a79bd7de57a0e7c788f581fbfdfc3a57091f99aa3d1eae2bd69a"
+    },
+    "securing-s3-buckets": {
+      "source": "aws/agent-toolkit-for-aws",
+      "sourceType": "github",
+      "skillPath": "skills/specialized-skills/storage-skills/securing-s3-buckets/SKILL.md",
+      "computedHash": "52712981f43ac145ce7d328ad372fe234ca7c4a4f31d5df0c4a8c41894ce3ea9"
     },
     "supabase-postgres-best-practices": {
       "source": "supabase/agent-skills",

@@ -32,6 +32,7 @@ task test
 task lint
 task dev        # the online tool on https://platform.localhost, editor with hot reload
 task smoke      # the CI smoke job: sample zip end to end, and the editor under /platform
+task skills     # the agent skills from skills-lock.json, for AI coding agents (once per clone)
 ```
 
 `task dev` and `task smoke` bind ports 80 and 443 and use Caddy's internal certificate
