@@ -26,6 +26,27 @@ export function bind(graph: Graph, consumer: string, slot: string, provider: str
   return setSlot(graph, consumer, slot, provider)
 }
 
+/** The longest name an instance may have: a DNS label (spec 0002). */
+const MAX_NAME = 63
+
+/** The new graph and the name its new instance got, from {@link addModule}. */
+export interface Added {
+  graph: Graph
+  instance: string
+}
+
+/**
+ * Adds one instance of a catalog module (spec 0029, AC-2, AC-3): named after the module, or
+ * `<module>-N` with the lowest free N of 2 or more, cut so the whole name is at most 63
+ * characters. The entry holds only the module name; the checks recommend any binding.
+ */
+export function addModule(graph: Graph, module: string): Added {
+  const taken = (name: string) => Object.hasOwn(graph.modules, name)
+  let instance = module.slice(0, MAX_NAME)
+  for (let n = 2; taken(instance); n++) instance = `${module.slice(0, MAX_NAME - `-${n}`.length)}-${n}`
+  return { graph: { ...graph, modules: { ...graph.modules, [instance]: { module } } }, instance }
+}
+
 /** Marks a slot as deliberately not bound (`null`). */
 export function unbind(graph: Graph, consumer: string, slot: string): Graph {
   const m = instanceOf(graph, consumer)

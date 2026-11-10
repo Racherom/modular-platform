@@ -1,5 +1,6 @@
-import type { Graph } from '../api/client'
-import { bindingText, splitText } from './model'
+import type { Catalog, Graph } from '../api/client'
+import { nodeHeight, type Positions } from './flow'
+import { bindingText, isExternal, moduleOf, offersOf, slotsOf, splitText } from './model'
 
 export const COLUMN_GAP = 320
 export const ROW_GAP = 160
@@ -44,4 +45,20 @@ export function layout(graph: Graph): Record<string, { x: number; y: number }> {
       return [name, { x: col * COLUMN_GAP, y: row * ROW_GAP }]
     }),
   )
+}
+
+/**
+ * Where a newly added node goes (spec 0029, AC-4): column 0, one row gap below the lowest bottom
+ * edge of any node already at x 0, or at y 0 when none is there. Existing nodes never move.
+ */
+export function placeNew(graph: Graph, catalog: Catalog, positions: Positions): { x: number; y: number } {
+  let bottom: number | undefined
+  for (const name of Object.keys(graph.modules)) {
+    const at = Object.hasOwn(positions, name) ? positions[name] : undefined
+    if (at?.x !== 0) continue
+    const provides = offersOf(graph, catalog, name).length
+    const uses = isExternal(graph, name) ? 0 : Object.keys(slotsOf(moduleOf(graph, catalog, name))).length
+    bottom = Math.max(bottom ?? Number.NEGATIVE_INFINITY, at.y + nodeHeight(provides, uses))
+  }
+  return { x: 0, y: bottom === undefined ? 0 : bottom + ROW_GAP }
 }

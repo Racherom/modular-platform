@@ -2,17 +2,18 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { SearchX } from 'lucide-react'
 import { useMemo, useRef } from 'react'
-import { checkGraph } from '../api/client'
+import { type Catalog, checkGraph, type Graph } from '../api/client'
 import { GraphScreen } from '../components/GraphScreen'
 import type { GraphEdit } from '../components/GraphView'
 import { useReplaceGuard } from '../components/ReplaceDialog'
 import { EmptyState } from '../components/ui/EmptyState'
 import { Failure } from '../components/ui/Failure'
-import { layout } from '../graph/layout'
+import { addModule } from '../graph/edit'
+import { layout, placeNew } from '../graph/layout'
 import { samples } from '../graph/samples'
 import { parseGraph } from '../graph/yaml'
 import { loadWorking } from '../lib/storage'
-import { useEditor } from '../lib/store'
+import { type EditResult, useEditor } from '../lib/store'
 
 export const Route = createFileRoute('/samples/$name')({ component: Sample })
 
@@ -50,13 +51,14 @@ function SampleGraph({ name, text }: { name: string; text: string }) {
   if (check.isError) return <Failure error={check.error} onRetry={() => void check.refetch()} />
   if (!checked) return <p>Checking the sample…</p>
 
-  const onEdit = (change: GraphEdit) => {
-    if (holding.current || change(checked.graph) === checked.graph) return
+  // an edit holds until the replace prompt is answered, then the copy is made with it applied
+  const hold = (change: (graph: Graph) => EditResult, added?: () => string | undefined) => {
+    if (holding.current) return
     holding.current = true
     const copy = () => {
       holding.current = false
       const base = { fileName: `${checked.graph.name}.yaml`, graph: checked.graph, check: checked, positions }
-      if (useEditor.getState().copySample(base, change)) void navigate({ to: '/' })
+      if (useEditor.getState().copySample(base, change, added?.())) void navigate({ to: '/' })
     }
     const ask = () => replace.guard(copy, () => (holding.current = false))
     // the edited flag lives in the working copy, which this page has not read yet
@@ -69,6 +71,18 @@ function SampleGraph({ name, text }: { name: string; text: string }) {
           ask()
         })
     }
+  }
+  const onEdit = (change: GraphEdit) => {
+    if (change(checked.graph) !== checked.graph) hold(change)
+  }
+  // Add on the sample (spec 0029, AC-11): the copy gets the module at the place the sample's layout leaves free
+  const onAdd = (module: string, loaded: Catalog) => {
+    if (holding.current) return
+    const { graph: next, instance } = addModule(checked.graph, module)
+    hold(
+      () => ({ graph: next, positions: { ...positions, [instance]: placeNew(checked.graph, loaded, positions) } }),
+      () => instance,
+    )
   }
 
   return (
@@ -86,6 +100,7 @@ function SampleGraph({ name, text }: { name: string; text: string }) {
           checkError: null,
           onRetry: () => undefined,
           onEdit,
+          onAdd,
           onSaved: () => undefined,
         }}
       />

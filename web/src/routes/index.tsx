@@ -10,7 +10,7 @@ import { EmptyState } from '../components/ui/EmptyState'
 import { Failure } from '../components/ui/Failure'
 import { MAX_FILE_BYTES, parseGraph } from '../graph/yaml'
 import { loadWorking, type WorkingGraph } from '../lib/storage'
-import { useEditor } from '../lib/store'
+import { EMPTY_CHECK, EMPTY_FILE_NAME, EMPTY_GRAPH, useEditor } from '../lib/store'
 
 export const Route = createFileRoute('/')({ component: Editor })
 
@@ -21,7 +21,7 @@ function Editor() {
   const storageFailed = useEditor((s) => s.storageFailed)
   const canUndo = useEditor((s) => s.history.past.length > 0)
   const canRedo = useEditor((s) => s.history.future.length > 0)
-  const { restore, open: openWorking, edit, retry, saved, undo, redo, tidy } = useEditor.getState()
+  const { restore, open: openWorking, edit, addModule, retry, saved, undo, redo, tidy } = useEditor.getState()
   const replace = useReplaceGuard()
   const catalog = useCatalog()
   const input = useRef<HTMLInputElement>(null)
@@ -38,9 +38,9 @@ function Editor() {
 
   // the sample copy brings its selection along; focus follows a module so the keyboard is not lost
   useEffect(() => {
-    const { takeHandoff, focusModule, select } = useEditor.getState()
+    const { takeHandoff, showModule, select } = useEditor.getState()
     const handoff = takeHandoff()
-    if (handoff?.kind === 'module') focusModule(handoff.instance)
+    if (handoff?.kind === 'module') showModule(handoff.instance)
     else if (handoff) select(handoff)
   }, [])
 
@@ -75,6 +75,11 @@ function Editor() {
         <FolderOpen aria-hidden="true" />
         {open.isPending ? 'Opening…' : 'Open file'}
       </Button>
+      {!working && (
+        <Link to="/samples/$name" params={{ name: 'whoami-postgres' }}>
+          Start from the sample
+        </Link>
+      )}
     </>
   )
 
@@ -83,37 +88,37 @@ function Editor() {
     <>
       {replace.dialog}
       {open.isError && <Failure error={open.error} onRetry={() => input.current?.click()} />}
-      {working ? (
-        <GraphScreen
-          key={opens}
-          graph={working.graph}
-          check={working.check}
-          fileName={working.fileName}
-          toolbar={opener}
-          editing={{
-            positions: working.positions ?? {},
-            edited: working.edited ?? false,
-            checkState,
-            checkError,
-            onRetry: retry,
-            onEdit: edit,
-            onSaved: saved,
-            history: { canUndo, canRedo, onUndo: undo, onRedo: redo, onTidy: tidy },
-            storageFailed,
-          }}
-        />
-      ) : (
-        <EmptyState icon={Workflow} level={1} title="No graph open" actions={opener}>
-          <p>
-            Open a <code>graph.yaml</code> file, or{' '}
-            <Link to="/samples/$name" params={{ name: 'whoami-postgres' }}>
-              start from the sample
-            </Link>
-            .
-          </p>
-          {catalog.isError && <Failure error={catalog.error} onRetry={() => void catalog.refetch()} />}
-        </EmptyState>
-      )}
+      {/* one element for both states, so the first add keeps the canvas, selection and focus (spec 0029, AC-9) */}
+      <GraphScreen
+        key={opens}
+        graph={working?.graph ?? EMPTY_GRAPH}
+        check={working?.check ?? EMPTY_CHECK}
+        fileName={working?.fileName ?? EMPTY_FILE_NAME}
+        toolbar={opener}
+        overlay={
+          working ? undefined : (
+            <EmptyState icon={Workflow} level={2} title="No graph open">
+              <p>
+                Add a module from the catalog, open a <code>graph.yaml</code> file, or start from the sample.
+              </p>
+              {catalog.isError && <Failure error={catalog.error} onRetry={() => void catalog.refetch()} />}
+            </EmptyState>
+          )
+        }
+        editing={{
+          positions: working?.positions ?? {},
+          edited: working?.edited ?? false,
+          checkState,
+          checkError,
+          onRetry: retry,
+          onEdit: edit,
+          onAdd: (module, loaded) => addModule(module, loaded),
+          onSaved: saved,
+          canSave: working !== null,
+          history: { canUndo, canRedo, onUndo: undo, onRedo: redo, onTidy: tidy },
+          storageFailed,
+        }}
+      />
     </>
   )
 }

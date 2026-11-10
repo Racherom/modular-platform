@@ -25,6 +25,15 @@ for (const theme of ['light', 'dark'] as const) {
       await expectNoAxeViolations(page)
     })
 
+    test('the empty editor with the catalog Add buttons', async ({ page }) => {
+      await page.goto('/')
+      await expect(page.getByRole('button', { name: 'Add whoami' })).toBeVisible()
+      await expectNoAxeViolations(page)
+      await page.getByRole('button', { name: 'Add whoami' }).click()
+      await expect(page.getByTestId('node-whoami')).toBeVisible()
+      await expectNoAxeViolations(page)
+    })
+
     test('the editor with a graph open', async ({ page }) => {
       await openGraph(page)
       await expectNoAxeViolations(page)
