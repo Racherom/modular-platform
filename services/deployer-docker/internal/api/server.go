@@ -32,14 +32,14 @@ type Server struct {
 // NewServer serves engine.
 func NewServer(engine *deploy.Engine) *Server { return &Server{engine: engine} }
 
-// ApplyProject starts an apply. It needs an MP-Caller token, whose subject is logged.
-func (s *Server) ApplyProject(ctx context.Context, req ApplyProjectRequestObject) (ApplyProjectResponseObject, error) {
+// ApplyStack starts an apply. It needs an MP-Caller token, whose subject is logged.
+func (s *Server) ApplyStack(ctx context.Context, req ApplyStackRequestObject) (ApplyStackResponseObject, error) {
 	who, ok := sdk.CallerFrom(ctx)
 	if !ok {
-		return ApplyProject401JSONResponse{UnauthorizedJSONResponse{Body: problems("invalid_token", "", "Apply needs an MP-Caller token.")}}, nil
+		return ApplyStack401JSONResponse{UnauthorizedJSONResponse{Body: problems("invalid_token", "", "Apply needs an MP-Caller token.")}}, nil
 	}
 	body := req.Body
-	in := deploy.ApplyRequest{Project: req.Project, Deployment: body.Deployment.String(), Caller: who.User}
+	in := deploy.ApplyRequest{Project: req.Stack, Stack: body.Stack.String(), Caller: who.User}
 	for _, f := range body.Files {
 		in.Files = append(in.Files, deploy.File{Path: f.Path, Data: f.Data})
 	}
@@ -51,38 +51,38 @@ func (s *Server) ApplyProject(ctx context.Context, req ApplyProjectRequestObject
 	}
 	op, err := s.engine.Apply(in)
 	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
-		return ApplyProject422JSONResponse{Body: refusal(refused)}, nil
+		return ApplyStack422JSONResponse{Body: refusal(refused)}, nil
 	}
 	if errors.Is(err, deploy.ErrBusy) {
-		return ApplyProject409JSONResponse{Body: problems("busy", "", "An operation of this project is still running.")}, nil
+		return ApplyStack409JSONResponse{Body: problems("busy", "", "An operation of this project is still running.")}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return ApplyProject202JSONResponse{Body: operation(op)}, nil
+	return ApplyStack202JSONResponse{Body: operation(op)}, nil
 }
 
-// RemoveProject starts a remove. It needs an MP-Caller token, whose subject is logged.
-func (s *Server) RemoveProject(ctx context.Context, req RemoveProjectRequestObject) (RemoveProjectResponseObject, error) {
+// RemoveStack starts a remove. It needs an MP-Caller token, whose subject is logged.
+func (s *Server) RemoveStack(ctx context.Context, req RemoveStackRequestObject) (RemoveStackResponseObject, error) {
 	who, ok := sdk.CallerFrom(ctx)
 	if !ok {
-		return RemoveProject401JSONResponse{UnauthorizedJSONResponse{Body: problems("invalid_token", "", "Remove needs an MP-Caller token.")}}, nil
+		return RemoveStack401JSONResponse{UnauthorizedJSONResponse{Body: problems("invalid_token", "", "Remove needs an MP-Caller token.")}}, nil
 	}
-	op, err := s.engine.Remove(ctx, deploy.RemoveRequest{Project: req.Project, DeleteData: req.Body.DeleteData, Caller: who.User})
+	op, err := s.engine.Remove(ctx, deploy.RemoveRequest{Project: req.Stack, DeleteData: req.Body.DeleteData, Caller: who.User})
 	if _, ok := errors.AsType[*deploy.RefusedError](err); ok {
-		return RemoveProject400JSONResponse{BadRequestJSONResponse{Body: badProject(req.Project)}}, nil
+		return RemoveStack400JSONResponse{BadRequestJSONResponse{Body: badProject(req.Stack)}}, nil
 	}
 	switch {
 	case errors.Is(err, deploy.ErrNotFound):
-		return RemoveProject404JSONResponse{Body: problems("not_found", "project", "The project has neither a folder nor a container.")}, nil
+		return RemoveStack404JSONResponse{Body: problems("not_found", "project", "The project has neither a folder nor a container.")}, nil
 	case errors.Is(err, deploy.ErrBusy):
-		return RemoveProject409JSONResponse{Body: problems("busy", "", "An operation of this project is still running.")}, nil
+		return RemoveStack409JSONResponse{Body: problems("busy", "", "An operation of this project is still running.")}, nil
 	case errors.Is(err, deploy.ErrDocker):
-		return RemoveProject503JSONResponse{Body: problems("docker_unavailable", "", "Docker did not answer.")}, nil
+		return RemoveStack503JSONResponse{Body: problems("docker_unavailable", "", "Docker did not answer.")}, nil
 	case err != nil:
 		return nil, err
 	}
-	return RemoveProject202JSONResponse{Body: operation(op)}, nil
+	return RemoveStack202JSONResponse{Body: operation(op)}, nil
 }
 
 // GetOperation reads an operation this boot knows.
@@ -94,19 +94,19 @@ func (s *Server) GetOperation(_ context.Context, req GetOperationRequestObject) 
 	return GetOperation200JSONResponse{Body: operation(op)}, nil
 }
 
-// GetProjectState reads each container of the project.
-func (s *Server) GetProjectState(ctx context.Context, req GetProjectStateRequestObject) (GetProjectStateResponseObject, error) {
-	if !deploy.ValidProject(req.Project) {
-		return GetProjectState400JSONResponse{BadRequestJSONResponse{Body: badProject(req.Project)}}, nil
+// GetStackState reads each container of the project.
+func (s *Server) GetStackState(ctx context.Context, req GetStackStateRequestObject) (GetStackStateResponseObject, error) {
+	if !deploy.ValidProject(req.Stack) {
+		return GetStackState400JSONResponse{BadRequestJSONResponse{Body: badProject(req.Stack)}}, nil
 	}
-	present, services, err := s.engine.State(ctx, req.Project)
+	present, services, err := s.engine.State(ctx, req.Stack)
 	if errors.Is(err, deploy.ErrDocker) {
-		return GetProjectState503JSONResponse{Body: problems("docker_unavailable", "", "Docker did not answer.")}, err
+		return GetStackState503JSONResponse{Body: problems("docker_unavailable", "", "Docker did not answer.")}, err
 	}
 	if err != nil {
 		return nil, err
 	}
-	out := deploytarget.ProjectState{Present: present, Services: make([]deploytarget.ServiceState, 0, len(services))}
+	out := deploytarget.StackState{Present: present, Services: make([]deploytarget.ServiceState, 0, len(services))}
 	for _, svc := range services {
 		out.Services = append(out.Services, deploytarget.ServiceState{
 			Instance: svc.Instance, Module: svc.Module, Image: svc.Image,
@@ -114,24 +114,24 @@ func (s *Server) GetProjectState(ctx context.Context, req GetProjectStateRequest
 			LastExitCode: svc.LastExitCode, RestartCount: svc.RestartCount, Since: svc.Since,
 		})
 	}
-	return GetProjectState200JSONResponse{Body: out}, nil
+	return GetStackState200JSONResponse{Body: out}, nil
 }
 
-// GetProjectSecrets lists the project's secret files that exist.
-func (s *Server) GetProjectSecrets(_ context.Context, req GetProjectSecretsRequestObject) (GetProjectSecretsResponseObject, error) {
-	if !deploy.ValidProject(req.Project) {
-		return GetProjectSecrets400JSONResponse{BadRequestJSONResponse{Body: badProject(req.Project)}}, nil
+// GetStackSecrets lists the project's secret files that exist.
+func (s *Server) GetStackSecrets(_ context.Context, req GetStackSecretsRequestObject) (GetStackSecretsResponseObject, error) {
+	if !deploy.ValidProject(req.Stack) {
+		return GetStackSecrets400JSONResponse{BadRequestJSONResponse{Body: badProject(req.Stack)}}, nil
 	}
-	present, err := s.engine.Secrets(req.Project)
+	present, err := s.engine.Secrets(req.Stack)
 	if err != nil {
 		return nil, err
 	}
-	return GetProjectSecrets200JSONResponse{Body: deploytarget.PresentSecrets{Present: present}}, nil
+	return GetStackSecrets200JSONResponse{Body: deploytarget.PresentSecrets{Present: present}}, nil
 }
 
 func operation(op deploy.Operation) deploytarget.Operation {
 	return deploytarget.Operation{
-		Id: op.ID, Project: op.Project, Action: deploytarget.OperationAction(op.Action), Status: deploytarget.OperationStatus(op.Status),
+		Id: op.ID, Stack: op.Project, Action: deploytarget.OperationAction(op.Action), Status: deploytarget.OperationStatus(op.Status),
 		Step: deploytarget.OperationStep(op.Step), Error: op.Error, StartedAt: op.StartedAt, FinishedAt: op.FinishedAt,
 	}
 }
@@ -141,7 +141,7 @@ func problems(code, path, message string) contract.ProblemList {
 }
 
 func badProject(project string) contract.ProblemList {
-	return problems(deploy.CodeInvalidProject, "project", fmt.Sprintf("The project %q must be mp- followed by a deployment name.", project))
+	return problems(deploy.CodeInvalidProject, "project", fmt.Sprintf("The project %q must be mp- followed by a stack name.", project))
 }
 
 func refusal(err *deploy.RefusedError) contract.ProblemList {
@@ -157,7 +157,7 @@ func refusal(err *deploy.RefusedError) contract.ProblemList {
 func Setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http.Handler, error) {
 	var cfg deploy.Config
 	var err error
-	if cfg.Dir, err = m.Config.DeploymentsDir(ctx); err != nil {
+	if cfg.Dir, err = m.Config.StacksDir(ctx); err != nil {
 		return nil, err
 	}
 	if cfg.UID, err = m.Config.PlatformUid(ctx); err != nil {
@@ -184,7 +184,7 @@ func Setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 	e := deploy.New(ctx, cfg, docker.Compose{}, engine, m.Log)
 	// before the server listens; shutdown ends ctx, and with it the stream and its reconnects
 	go e.WatchExits(ctx)
-	m.Log.InfoContext(ctx, "deployer starting", slog.String("deployments_dir", cfg.Dir))
+	m.Log.InfoContext(ctx, "deployer starting", slog.String("stacks_dir", cfg.Dir))
 	return NewHandler(e, m.Log), nil
 }
 

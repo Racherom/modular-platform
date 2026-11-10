@@ -21,7 +21,7 @@ var changed = func() contract.Graph {
 
 func stateOf(t *testing.T, st *memStore) deploy.State {
 	t.Helper()
-	d, _, _ := st.Deployment(t.Context(), "sample")
+	d, _, _ := st.Stack(t.Context(), "sample")
 	return d.State()
 }
 
@@ -45,10 +45,10 @@ func waitFinal(t *testing.T, st *memStore, op deploy.Operation) deploy.Operation
 	return done
 }
 
-// history lists the deployment's operations oldest first.
+// history lists the stack's operations oldest first.
 func history(t *testing.T, st *memStore) []deploy.Operation {
 	t.Helper()
-	d, _, _ := st.Deployment(t.Context(), "sample")
+	d, _, _ := st.Stack(t.Context(), "sample")
 	ops, _ := st.Operations(t.Context(), d.ID, nil, 50)
 	slices.SortFunc(ops, func(a, b deploy.Operation) int { return a.StartedAt.Compare(b.StartedAt) })
 	return ops
@@ -76,17 +76,17 @@ func TestRemove(t *testing.T) {
 	}
 	v, err := s.View(t.Context(), "sample")
 	if err != nil || len(v.Modules) != 0 {
-		t.Errorf("a removed deployment shows modules %+v, err %v", v.Modules, err)
+		t.Errorf("a removed stack shows modules %+v, err %v", v.Modules, err)
 	}
 	if _, err := s.Remove(t.Context(), admin, "sample", false, ""); !errors.Is(err, deploy.ErrAlreadyRemoved) {
-		t.Errorf("a plain remove of a removed deployment: %v, want ErrAlreadyRemoved", err)
+		t.Errorf("a plain remove of a removed stack: %v, want ErrAlreadyRemoved", err)
 	}
 	if _, err := s.Remove(t.Context(), admin, "sample", true, "Sample"); !refusedWith(err, "confirm_mismatch") {
 		t.Errorf("delete data with the wrong name: %v", err)
 	}
 	op, err = s.Remove(t.Context(), admin, "sample", true, "sample")
 	if err != nil {
-		t.Fatalf("delete data of a removed deployment is allowed: %v", err)
+		t.Fatalf("delete data of a removed stack is allowed: %v", err)
 	}
 	if !op.DeleteData {
 		t.Errorf("delete data not recorded: %+v", op)
@@ -105,7 +105,7 @@ func TestRemove(t *testing.T) {
 
 func TestRemoveRefusals(t *testing.T) {
 	t.Parallel()
-	t.Run("no such deployment", func(t *testing.T) {
+	t.Run("no such stack", func(t *testing.T) {
 		t.Parallel()
 		s := newService(t, newMem(), &fakeTarget{})
 		if _, err := s.Remove(t.Context(), admin, "sample", false, ""); !errors.Is(err, deploy.ErrNotFound) {
@@ -196,7 +196,7 @@ func TestLatestApplyGraph(t *testing.T) {
 }
 
 // TestRollback: a changed graph that fails at up is followed by a rollback to the last good
-// graph, started as the failed apply's starter, and the deployment shows rolled-back (AC-14).
+// graph, started as the failed apply's starter, and the stack shows rolled-back (AC-14).
 func TestRollback(t *testing.T) {
 	t.Parallel()
 	st := newMem()
@@ -260,7 +260,7 @@ func TestNoRollback(t *testing.T) {
 }
 
 // TestRollbackRetriedOnce: a failed rollback is retried once after the wait, then the
-// deployment shows failed (AC-14).
+// stack shows failed (AC-14).
 func TestRollbackRetriedOnce(t *testing.T) {
 	t.Parallel()
 	st := newMem()

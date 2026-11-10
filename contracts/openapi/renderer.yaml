@@ -108,9 +108,9 @@ paths:
       operationId: renderManaged
       summary: Render a graph as the files the managed deployer applies
       description: |
-        Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+        Internal mode only; public mode answers 404. The Compose stack name is `mp-<graph name>`; every
         service carries the platform labels and `restart: unless-stopped`. The answer lists every
-        secret file the project needs, never a value.
+        secret file the stack needs, never a value.
       requestBody:
         required: true
         content:
@@ -119,11 +119,11 @@ paths:
               $ref: "#/components/schemas/ManagedRenderRequest"
       responses:
         "200":
-          description: The rendered project.
+          description: The rendered stack.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RenderedProject"
+                $ref: "#/components/schemas/RenderedStack"
         "400":
           $ref: "#/components/responses/BadGraph"
         "401":
@@ -142,7 +142,7 @@ paths:
             deployed graph is refused with error `host_access` at `modules.<instance>` for each
             instance whose module publishes ports or mounts host paths, and with error
             `setup_required` for each instance that needs `setup.sh` (an asked value, an asked
-            secret or a setup step) until secrets handling (#9). A rendered project the guard
+            secret or a setup step) until secrets handling (#9). A rendered stack the guard
             refuses also answers here, with `host_access` at the offending Compose key.
           content:
             application/json:
@@ -983,24 +983,24 @@ components:
           type: string
           description: |
             `sha256:<hex>` over the canonical graph, the bindings and the catalog entries the graph
-            uses; set only when `ok` is true. Equal digests mean the same project is rendered.
+            uses; set only when `ok` is true. Equal digests mean the same stack is rendered.
     ManagedRenderRequest:
       type: object
       additionalProperties: false
-      required: [graph, deployment]
+      required: [graph, stack]
       properties:
         graph:
           $ref: "#/components/schemas/Graph"
-        deployment:
+        stack:
           type: string
           format: uuid
-          description: The deployment id, written into every service's `deployment` label.
-    RenderedProject:
+          description: The stack id, written into every service's `stack` label.
+    RenderedStack:
       type: object
       additionalProperties: false
-      required: [project, check, images, publishedPorts, secrets, files]
+      required: [composeProject, check, images, publishedPorts, secrets, files]
       properties:
-        project:
+        composeProject:
           type: string
           description: The Compose project name, `mp-<graph name>`.
         check:
@@ -1012,17 +1012,17 @@ components:
             $ref: "#/components/schemas/ModuleImage"
         publishedPorts:
           type: array
-          description: Host ports the project publishes; always empty for a deployed graph, which never publishes (spec 0013).
+          description: Host ports the stack publishes; always empty for a deployed graph, which never publishes (spec 0013).
           items:
             $ref: "#/components/schemas/PublishedPort"
         secrets:
           type: array
-          description: Every secret file the project mounts, sorted by path.
+          description: Every secret file the stack mounts, sorted by path.
           items:
             $ref: "#/components/schemas/RenderedSecret"
         files:
           type: array
-          description: The project's files, sorted by path.
+          description: The stack's files, sorted by path.
           items:
             $ref: "#/components/schemas/RenderedFile"
     ModuleImage:
@@ -1054,7 +1054,7 @@ components:
       properties:
         path:
           type: string
-          description: "`secrets/<instance>/<name>`, relative to the project folder."
+          description: "`secrets/<instance>/<name>`, relative to the stack's folder."
         kind:
           type: string
           enum: [generated, placed]

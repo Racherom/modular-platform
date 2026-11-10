@@ -159,10 +159,10 @@ services:
       timeout: 3s
     image: ghcr.io/racherom/modular-platform/api:0.0.0-test
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: api
       io.github.racherom.modular-platform.module: api
+      io.github.racherom.modular-platform.stack: platform
     networks:
       internal:
         aliases:
@@ -235,10 +235,10 @@ services:
       timeout: 3s
     image: authelia/authelia:4.39.28
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: authelia
       io.github.racherom.modular-platform.module: authelia
+      io.github.racherom.modular-platform.stack: platform
     networks:
       internal:
         aliases:
@@ -301,10 +301,10 @@ services:
       timeout: 3s
     image: smallstep/step-ca:0.30.2
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: cert-issuer
       io.github.racherom.modular-platform.module: cert-issuer
+      io.github.racherom.modular-platform.stack: platform
     networks:
       internal:
         aliases:
@@ -377,11 +377,11 @@ services:
       MP_SLOT: tls
     image: smallstep/step-cli:0.30.2
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: cert-issuer
       io.github.racherom.modular-platform.job: provision
       io.github.racherom.modular-platform.module: cert-issuer
+      io.github.racherom.modular-platform.stack: platform
     networks:
       internal: {}
     read_only: true
@@ -423,7 +423,7 @@ services:
       MP_CA_FILE: /run/secrets/uses/acme/ca
       MP_CALLER_KEYS_DIR: /run/secrets/clients/deploy/caller_key
       MP_DEPLOY_TARGET_CLIENTS_DIR: /run/secrets/clients/deploy/token
-      MP_DEPLOYMENTS_DIR: ${MP_DIR}/deployments
+      MP_DEPLOYER_STACKS_DIR: ${MP_DIR}/stacks
       MP_DOMAIN: modular-platform.internal
       MP_ENV_FILE: /etc/modular-platform/module.env
       MP_INSTANCE: deployer-docker
@@ -442,10 +442,10 @@ services:
       timeout: 3s
     image: ghcr.io/racherom/modular-platform/deployer-docker:0.0.0-test
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: deployer-docker
       io.github.racherom.modular-platform.module: deployer-docker
+      io.github.racherom.modular-platform.stack: platform
     networks:
       internal:
         aliases:
@@ -468,8 +468,8 @@ services:
     - source: /var/run/docker.sock
       target: /var/run/docker.sock
       type: bind
-    - source: ${MP_DIR}/deployments
-      target: ${MP_DIR}/deployments
+    - source: ${MP_DIR}/stacks
+      target: ${MP_DIR}/stacks
       type: bind
   ingress:
     cap_add:
@@ -505,10 +505,10 @@ services:
       timeout: 3s
     image: caddy:2.11.7-alpine
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: ingress
       io.github.racherom.modular-platform.module: caddy
+      io.github.racherom.modular-platform.stack: platform
     networks:
       egress:
         aliases:
@@ -553,9 +553,9 @@ services:
     image: postgres:18.6
     init: true
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.job: wait
+      io.github.racherom.modular-platform.stack: platform
     network_mode: none
     read_only: true
     restart: unless-stopped
@@ -597,10 +597,10 @@ services:
       timeout: 3s
     image: postgres:18.6-alpine3.24
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: postgres
       io.github.racherom.modular-platform.module: postgres
+      io.github.racherom.modular-platform.stack: platform
     networks:
       internal:
         aliases:
@@ -696,11 +696,11 @@ services:
       MP_USER: api
     image: postgres:18.6
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: postgres
       io.github.racherom.modular-platform.job: provision
       io.github.racherom.modular-platform.module: postgres
+      io.github.racherom.modular-platform.stack: platform
     networks:
       internal: {}
     read_only: true
@@ -787,11 +787,11 @@ services:
       MP_USER: authelia
     image: postgres:18.6
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: postgres
       io.github.racherom.modular-platform.job: provision
       io.github.racherom.modular-platform.module: postgres
+      io.github.racherom.modular-platform.stack: platform
     networks:
       internal: {}
     read_only: true
@@ -853,11 +853,11 @@ services:
       MP_MARKER: mp_provisioned_52d73175
     image: postgres:18.6
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: postgres
       io.github.racherom.modular-platform.job: revoke
       io.github.racherom.modular-platform.module: postgres
+      io.github.racherom.modular-platform.stack: platform
     networks:
       internal: {}
     read_only: true
@@ -904,10 +904,10 @@ services:
       timeout: 3s
     image: ghcr.io/racherom/modular-platform/renderer:0.0.0-test
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: renderer
       io.github.racherom.modular-platform.module: renderer
+      io.github.racherom.modular-platform.stack: platform
     networks:
       internal:
         aliases:
@@ -952,10 +952,10 @@ services:
       timeout: 3s
     image: ghcr.io/racherom/modular-platform/web:0.0.0-test
     labels:
-      io.github.racherom.modular-platform.deployment: platform
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: web
       io.github.racherom.modular-platform.module: web
+      io.github.racherom.modular-platform.stack: platform
     networks:
       internal:
         aliases:

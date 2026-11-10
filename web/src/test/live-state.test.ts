@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { DeploymentSummary, ModuleState, Page } from '../api/platform'
+import type { ModuleState, Page, StackSummary } from '../api/platform'
 import { moduleLabel, restartLine } from '../components/StateBadge'
 import { upsert } from '../hooks/useEvents'
 
@@ -36,25 +36,25 @@ describe('module badge (AC-13)', () => {
   })
 })
 
-const summary = (name: string): DeploymentSummary => ({ name, state: 'running' }) as DeploymentSummary
+const summary = (name: string): StackSummary => ({ name, state: 'running' }) as StackSummary
 
-describe('deployment list updates', () => {
-  it('inserts in name order and replaces a known deployment', () => {
-    let list: Page<DeploymentSummary> = { items: [summary('a'), summary('c')] }
+describe('stack list updates', () => {
+  it('inserts in name order and replaces a known stack', () => {
+    let list: Page<StackSummary> = { items: [summary('a'), summary('c')] }
     list = upsert(list, summary('b'))
-    list = upsert(list, { ...summary('a'), state: 'removed' } as DeploymentSummary)
+    list = upsert(list, { ...summary('a'), state: 'removed' } as StackSummary)
     expect(list.items.map((d) => d.name)).toEqual(['a', 'b', 'c'])
     expect(list.items[0]?.state).toBe('removed')
   })
 
-  it('leaves a new deployment past the loaded pages to the next page', () => {
-    const list: Page<DeploymentSummary> = { items: [summary('a'), summary('b')], next: 'b' }
+  it('leaves a new stack past the loaded pages to the next page', () => {
+    const list: Page<StackSummary> = { items: [summary('a'), summary('b')], next: 'b' }
     expect(upsert(list, summary('z'))).toBe(list)
     expect(upsert(list, summary('aa')).items.map((d) => d.name)).toEqual(['a', 'aa', 'b'])
   })
 
   it('keeps loaded pages when a reconnect sends the first page again', () => {
-    const loaded: Page<DeploymentSummary> = { items: [summary('a'), summary('m'), summary('z')] }
+    const loaded: Page<StackSummary> = { items: [summary('a'), summary('m'), summary('z')] }
     const after = [summary('a'), summary('b')].reduce(upsert, loaded)
     expect(after.items.map((d) => d.name)).toEqual(['a', 'b', 'm', 'z'])
   })

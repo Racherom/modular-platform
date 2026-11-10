@@ -367,7 +367,7 @@ type CheckResult struct {
 	Bindings []Binding `json:"bindings"`
 
 	// Digest `sha256:<hex>` over the canonical graph, the bindings and the catalog entries the graph
-	// uses; set only when `ok` is true. Equal digests mean the same project is rendered.
+	// uses; set only when `ok` is true. Equal digests mean the same stack is rendered.
 	Digest string `json:"digest,omitempty"`
 
 	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
@@ -575,11 +575,11 @@ type Job struct {
 
 // ManagedRenderRequest defines model for ManagedRenderRequest.
 type ManagedRenderRequest struct {
-	// Deployment The deployment id, written into every service's `deployment` label.
-	Deployment openapi_types.UUID `json:"deployment"`
-
 	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
 	Graph Graph `json:"graph"`
+
+	// Stack The stack id, written into every service's `stack` label.
+	Stack openapi_types.UUID `json:"stack"`
 }
 
 // Module One module of the built in catalog (`catalog/modules/<name>/module.yaml`, spec 0013).
@@ -721,26 +721,6 @@ type RenderedFile struct {
 	Path string `json:"path"`
 }
 
-// RenderedProject defines model for RenderedProject.
-type RenderedProject struct {
-	Check CheckResult `json:"check"`
-
-	// Files The project's files, sorted by path.
-	Files []RenderedFile `json:"files"`
-
-	// Images One entry per instance, sorted by instance.
-	Images []ModuleImage `json:"images"`
-
-	// Project The Compose project name, `mp-<graph name>`.
-	Project string `json:"project"`
-
-	// PublishedPorts Host ports the project publishes; always empty for a deployed graph, which never publishes (spec 0013).
-	PublishedPorts []PublishedPort `json:"publishedPorts"`
-
-	// Secrets Every secret file the project mounts, sorted by path.
-	Secrets []RenderedSecret `json:"secrets"`
-}
-
 // RenderedSecret defines model for RenderedSecret.
 type RenderedSecret struct {
 	// Capability Placed only, the capability of the external provide.
@@ -753,12 +733,32 @@ type RenderedSecret struct {
 	// Kind `generated`: the deployer creates it as 32 random bytes in hex. `placed`: you supply it.
 	Kind RenderedSecretKind `json:"kind"`
 
-	// Path `secrets/<instance>/<name>`, relative to the project folder.
+	// Path `secrets/<instance>/<name>`, relative to the stack's folder.
 	Path string `json:"path"`
 }
 
 // RenderedSecretKind `generated`: the deployer creates it as 32 random bytes in hex. `placed`: you supply it.
 type RenderedSecretKind string
+
+// RenderedStack defines model for RenderedStack.
+type RenderedStack struct {
+	Check CheckResult `json:"check"`
+
+	// ComposeProject The Compose project name, `mp-<graph name>`.
+	ComposeProject string `json:"composeProject"`
+
+	// Files The stack's files, sorted by path.
+	Files []RenderedFile `json:"files"`
+
+	// Images One entry per instance, sorted by instance.
+	Images []ModuleImage `json:"images"`
+
+	// PublishedPorts Host ports the stack publishes; always empty for a deployed graph, which never publishes (spec 0013).
+	PublishedPorts []PublishedPort `json:"publishedPorts"`
+
+	// Secrets Every secret file the stack mounts, sorted by path.
+	Secrets []RenderedSecret `json:"secrets"`
+}
 
 // Secret A secret file of the instance, `secrets/<instance>/<name>`.
 type Secret struct {

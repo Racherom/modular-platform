@@ -85,21 +85,21 @@ func (p *Renderer) Render(ctx context.Context, g contract.Graph) (zip []byte, di
 	return nil, "", nil, rendererError("render", resp.StatusCode(), resp.Body)
 }
 
-// RenderManaged renders g for the deployment; a check result with errors is a refusal.
-func (p *Renderer) RenderManaged(ctx context.Context, g contract.Graph, deployment uuid.UUID) (contract.RenderedProject, error) {
-	resp, err := p.c.RenderManagedWithResponse(ctx, contract.ManagedRenderRequest{Graph: g, Deployment: deployment})
+// RenderManaged renders g for the stack; a check result with errors is a refusal.
+func (p *Renderer) RenderManaged(ctx context.Context, g contract.Graph, stack uuid.UUID) (contract.RenderedStack, error) {
+	resp, err := p.c.RenderManagedWithResponse(ctx, contract.ManagedRenderRequest{Graph: g, Stack: stack})
 	if err != nil {
-		return contract.RenderedProject{}, errors.Join(deploy.ErrRenderer, err)
+		return contract.RenderedStack{}, errors.Join(deploy.ErrRenderer, err)
 	}
 	switch {
 	case resp.JSON200 != nil:
 		return *resp.JSON200, nil
 	case resp.JSON422 != nil:
-		return contract.RenderedProject{}, &deploy.RefusedError{Problems: resp.JSON422.Problems}
+		return contract.RenderedStack{}, &deploy.RefusedError{Problems: resp.JSON422.Problems}
 	case resp.JSON400 != nil:
-		return contract.RenderedProject{}, &deploy.RefusedError{Problems: resp.JSON400.Problems}
+		return contract.RenderedStack{}, &deploy.RefusedError{Problems: resp.JSON400.Problems}
 	}
-	return contract.RenderedProject{}, rendererError("managed render", resp.StatusCode(), resp.Body)
+	return contract.RenderedStack{}, rendererError("managed render", resp.StatusCode(), resp.Body)
 }
 
 // Target calls the deploy target through api's deploy-target binding.
@@ -125,9 +125,9 @@ func targetError(op string, status int, body []byte) error {
 	return fmt.Errorf("%w: %s answered %d: %.200s", deploy.ErrTarget, op, status, body)
 }
 
-// Apply starts an apply of the project.
-func (t *Target) Apply(ctx context.Context, project string, req deploytarget.ApplyRequest) (deploy.TargetOperation, error) {
-	resp, err := t.c.ApplyProjectWithResponse(ctx, project, req)
+// Apply starts an apply of the stack.
+func (t *Target) Apply(ctx context.Context, composeProject string, req deploytarget.ApplyRequest) (deploy.TargetOperation, error) {
+	resp, err := t.c.ApplyStackWithResponse(ctx, composeProject, req)
 	if err != nil {
 		return deploy.TargetOperation{}, errors.Join(deploy.ErrTargetUnavailable, err)
 	}
@@ -142,9 +142,9 @@ func (t *Target) Apply(ctx context.Context, project string, req deploytarget.App
 	return deploy.TargetOperation{}, targetError("apply", resp.StatusCode(), resp.Body)
 }
 
-// Remove starts a remove of the project.
-func (t *Target) Remove(ctx context.Context, project string, deleteData bool) (deploy.TargetOperation, error) {
-	resp, err := t.c.RemoveProjectWithResponse(ctx, project, deploytarget.RemoveRequest{DeleteData: deleteData})
+// Remove starts a remove of the stack.
+func (t *Target) Remove(ctx context.Context, composeProject string, deleteData bool) (deploy.TargetOperation, error) {
+	resp, err := t.c.RemoveStackWithResponse(ctx, composeProject, deploytarget.RemoveRequest{DeleteData: deleteData})
 	if err != nil {
 		return deploy.TargetOperation{}, errors.Join(deploy.ErrTargetUnavailable, err)
 	}
@@ -175,21 +175,21 @@ func (t *Target) Operation(ctx context.Context, id string) (deploy.TargetOperati
 	return deploy.TargetOperation{}, "", targetError("operation", resp.StatusCode(), resp.Body)
 }
 
-// State reads the project's containers.
-func (t *Target) State(ctx context.Context, project string) (deploytarget.ProjectState, error) {
-	resp, err := t.c.GetProjectStateWithResponse(ctx, project)
+// State reads the stack's containers.
+func (t *Target) State(ctx context.Context, composeProject string) (deploytarget.StackState, error) {
+	resp, err := t.c.GetStackStateWithResponse(ctx, composeProject)
 	if err != nil {
-		return deploytarget.ProjectState{}, errors.Join(deploy.ErrTargetUnavailable, err)
+		return deploytarget.StackState{}, errors.Join(deploy.ErrTargetUnavailable, err)
 	}
 	if resp.JSON200 == nil {
-		return deploytarget.ProjectState{}, targetError("state", resp.StatusCode(), resp.Body)
+		return deploytarget.StackState{}, targetError("state", resp.StatusCode(), resp.Body)
 	}
 	return *resp.JSON200, nil
 }
 
-// Secrets lists the project's secret files that exist.
-func (t *Target) Secrets(ctx context.Context, project string) ([]string, error) {
-	resp, err := t.c.GetProjectSecretsWithResponse(ctx, project)
+// Secrets lists the stack's secret files that exist.
+func (t *Target) Secrets(ctx context.Context, composeProject string) ([]string, error) {
+	resp, err := t.c.GetStackSecretsWithResponse(ctx, composeProject)
 	if err != nil {
 		return nil, errors.Join(deploy.ErrTargetUnavailable, err)
 	}

@@ -26,7 +26,7 @@ const (
 	runningFor    = 20 * time.Minute
 )
 
-// Service orchestrates deployments.
+// Service orchestrates stacks.
 type Service struct {
 	store    Store
 	renderer Renderer
@@ -42,7 +42,7 @@ type Service struct {
 
 	mu          sync.Mutex
 	polling     map[uuid.UUID]bool
-	watches     map[string]*watch // by deployment name
+	watches     map[string]*watch // by stack name
 	nextWatcher uint64
 	wg          sync.WaitGroup
 }
@@ -59,7 +59,7 @@ func NewService(ctx context.Context, store Store, renderer Renderer, target Targ
 // Wait blocks until every poller has stopped, for tests.
 func (s *Service) Wait() { s.wg.Wait() }
 
-// checkName refuses a graph whose name is not the deployment's, and the platform's own name.
+// checkName refuses a graph whose name is not the stack's, and the platform's own name.
 func checkName(name string, g contract.Graph) error {
 	if g.Name != name {
 		return refused("name_mismatch", "graph.name", fmt.Sprintf("The graph is named %q, not %q.", g.Name, name))
@@ -77,23 +77,23 @@ func (s *Service) Review(ctx context.Context, name string, g contract.Graph) (Re
 		return Review{}, err
 	}
 	id := uuid.Nil
-	if d, ok, err := s.store.Deployment(ctx, name); err != nil {
+	if d, ok, err := s.store.Stack(ctx, name); err != nil {
 		return Review{}, err
 	} else if ok {
 		id = d.ID
 	}
-	project, err := s.renderer.RenderManaged(ctx, g, id)
+	composeProject, err := s.renderer.RenderManaged(ctx, g, id)
 	if err != nil {
 		return Review{}, err
 	}
 	tctx, cancel := context.WithTimeout(ctx, targetTimeout)
 	defer cancel()
-	present, err := s.target.Secrets(tctx, project.Project)
+	present, err := s.target.Secrets(tctx, composeProject.ComposeProject)
 	if err != nil {
 		return Review{}, err
 	}
-	r := Review{Check: project.Check, Modules: project.Images, PublishedPorts: project.PublishedPorts}
-	for _, sec := range project.Secrets {
+	r := Review{Check: composeProject.Check, Modules: composeProject.Images, PublishedPorts: composeProject.PublishedPorts}
+	for _, sec := range composeProject.Secrets {
 		if sec.Kind == contract.Placed {
 			r.Placed = append(r.Placed, PlacedCredential{
 				Path: sec.Path, Instance: sec.Instance, Capability: sec.Capability, Field: sec.Field,
@@ -121,14 +121,14 @@ func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract
 	if result.Digest != digest {
 		return Operation{}, ErrGraphChanged
 	}
-	id, project, created, err := s.store.EnsureDeployment(ctx, name)
+	id, composeProject, created, err := s.store.EnsureStack(ctx, name)
 	if err != nil {
 		return Operation{}, err
 	}
 	dropNew := func() {
 		if created {
-			if err := s.store.DropNewDeployment(context.WithoutCancel(ctx), id); err != nil {
-				s.log.ErrorContext(ctx, "dropping a refused deployment failed", slog.String("deployment", name), slog.Any("error", err))
+			if err := s.store.DropNewStack(context.WithoutCancel(ctx), id); err != nil {
+				s.log.ErrorContext(ctx, "dropping a refused stack failed", slog.String("stack", name), slog.Any("error", err))
 			}
 		}
 	}
@@ -149,7 +149,7 @@ func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract
 		supplied = append(supplied, p.Path)
 	}
 	op, err := s.store.StartOperation(ctx, Operation{
-		DeploymentID: id, Action: ActionApply, Graph: graph, Digest: result.Digest,
+		StackID: id, Action: ActionApply, Graph: graph, Digest: result.Digest,
 		PlacedSupplied: supplied, StartedBy: by,
 	})
 	if err != nil {
@@ -159,11 +159,11 @@ func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract
 
 	tctx, cancel := context.WithTimeout(ctx, targetTimeout)
 	defer cancel()
-	accepted, err := s.target.Apply(tctx, project, req)
+	accepted, err := s.target.Apply(tctx, composeProject, req)
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrTargetUnavailable):
-		s.log.WarnContext(ctx, "deploy target unavailable at apply", slog.String("deployment", name), slog.Any("error", err))
+		s.log.WarnContext(ctx, "deploy target unavailable at apply", slog.String("stack", name), slog.Any("error", err))
 		if _, err := s.store.FinishOperation(context.WithoutCancel(ctx), op.ID, StatusFailed, StepPrepare, "deployer_unavailable"); err != nil {
 			return Operation{}, err
 		}
@@ -176,42 +176,42 @@ func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract
 		}
 		dropNew()
 		if errors.Is(err, ErrTarget) {
-			s.log.ErrorContext(ctx, "deploy target refused api's call", slog.String("deployment", name), slog.Any("error", err))
+			s.log.ErrorContext(ctx, "deploy target refused api's call", slog.String("stack", name), slog.Any("error", err))
 		}
 		return Operation{}, err
 	}
 	if err := s.store.AcceptOperation(ctx, op.ID, accepted.Id, accepted.BootID); err != nil {
 		return Operation{}, err
 	}
-	s.log.InfoContext(ctx, "operation started", slog.String("deployment", name), slog.String("operation", op.ID.String()),
+	s.log.InfoContext(ctx, "operation started", slog.String("stack", name), slog.String("operation", op.ID.String()),
 		slog.String("action", string(ActionApply)), slog.String("caller", by.Subject))
 	op.DeployerOperationID, op.DeployerBootID = accepted.Id, accepted.BootID
-	s.startPolling(RunningOperation{Operation: op, DeploymentName: name, Project: project})
+	s.startPolling(RunningOperation{Operation: op, StackName: name, ComposeProject: composeProject})
 	return s.publishOperation(ctx, name, op.ID)
 }
 
-// applyRequest is the deploy target's apply of a rendered project, without placed values.
-func applyRequest(deployment uuid.UUID, rendered contract.RenderedProject) deploytarget.ApplyRequest {
-	req := deploytarget.ApplyRequest{Deployment: deployment}
+// applyRequest is the deploy target's apply of a rendered stack, without placed values.
+func applyRequest(stack uuid.UUID, rendered contract.RenderedStack) deploytarget.ApplyRequest {
+	req := deploytarget.ApplyRequest{Stack: stack}
 	for _, f := range rendered.Files {
-		req.Files = append(req.Files, deploytarget.ProjectFile{Path: f.Path, Mode: f.Mode, Data: f.Data})
+		req.Files = append(req.Files, deploytarget.StackFile{Path: f.Path, Mode: f.Mode, Data: f.Data})
 	}
-	req.Secrets = make([]deploytarget.ProjectSecret, 0, len(rendered.Secrets))
+	req.Secrets = make([]deploytarget.StackSecret, 0, len(rendered.Secrets))
 	for _, sec := range rendered.Secrets {
-		req.Secrets = append(req.Secrets, deploytarget.ProjectSecret{
-			Path: sec.Path, Kind: deploytarget.ProjectSecretKind(sec.Kind), Instance: sec.Instance,
+		req.Secrets = append(req.Secrets, deploytarget.StackSecret{
+			Path: sec.Path, Kind: deploytarget.StackSecretKind(sec.Kind), Instance: sec.Instance,
 			Capability: sec.Capability, Field: sec.Field,
 		})
 	}
 	return req
 }
 
-// Remove starts a remove of the deployment named name (AC-15). It keeps volumes and secrets
+// Remove starts a remove of the stack named name (AC-15). It keeps volumes and secrets
 // unless deleteData is set, which needs confirmName equal to name. A plain remove of a removed
-// deployment is ErrAlreadyRemoved. As with Apply, a refusal leaves no trace, and a deploy target
+// stack is ErrAlreadyRemoved. As with Apply, a refusal leaves no trace, and a deploy target
 // that does not answer gives an operation recorded as failed with deployer_unavailable.
 func (s *Service) Remove(ctx context.Context, by Starter, name string, deleteData bool, confirmName string) (Operation, error) {
-	d, ok, err := s.store.Deployment(ctx, name)
+	d, ok, err := s.store.Stack(ctx, name)
 	if err != nil {
 		return Operation{}, err
 	}
@@ -220,23 +220,23 @@ func (s *Service) Remove(ctx context.Context, by Starter, name string, deleteDat
 	}
 	if deleteData && confirmName != name {
 		return Operation{}, refused("confirm_mismatch", "confirmName",
-			fmt.Sprintf("Type the deployment's name, %s, to delete its data.", name))
+			fmt.Sprintf("Type the stack's name, %s, to delete its data.", name))
 	}
 	if !deleteData && d.State() == StateRemoved {
 		return Operation{}, ErrAlreadyRemoved
 	}
-	op, err := s.store.StartOperation(ctx, Operation{DeploymentID: d.ID, Action: ActionRemove, DeleteData: deleteData, StartedBy: by})
+	op, err := s.store.StartOperation(ctx, Operation{StackID: d.ID, Action: ActionRemove, DeleteData: deleteData, StartedBy: by})
 	if err != nil {
 		return Operation{}, err
 	}
 
 	tctx, cancel := context.WithTimeout(ctx, targetTimeout)
 	defer cancel()
-	accepted, err := s.target.Remove(tctx, d.Project, deleteData)
+	accepted, err := s.target.Remove(tctx, d.ComposeProject, deleteData)
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrTargetUnavailable):
-		s.log.WarnContext(ctx, "deploy target unavailable at remove", slog.String("deployment", name), slog.Any("error", err))
+		s.log.WarnContext(ctx, "deploy target unavailable at remove", slog.String("stack", name), slog.Any("error", err))
 		if _, err := s.store.FinishOperation(context.WithoutCancel(ctx), op.ID, StatusFailed, StepPrepare, "deployer_unavailable"); err != nil {
 			return Operation{}, err
 		}
@@ -247,46 +247,46 @@ func (s *Service) Remove(ctx context.Context, by Starter, name string, deleteDat
 			return Operation{}, errors.Join(err, derr)
 		}
 		if errors.Is(err, ErrTarget) {
-			s.log.ErrorContext(ctx, "deploy target refused api's call", slog.String("deployment", name), slog.Any("error", err))
+			s.log.ErrorContext(ctx, "deploy target refused api's call", slog.String("stack", name), slog.Any("error", err))
 		}
 		return Operation{}, err
 	}
 	if err := s.store.AcceptOperation(ctx, op.ID, accepted.Id, accepted.BootID); err != nil {
 		return Operation{}, err
 	}
-	s.log.InfoContext(ctx, "operation started", slog.String("deployment", name), slog.String("operation", op.ID.String()),
+	s.log.InfoContext(ctx, "operation started", slog.String("stack", name), slog.String("operation", op.ID.String()),
 		slog.String("action", string(ActionRemove)), slog.Bool("delete_data", deleteData), slog.String("caller", by.Subject))
 	op.DeployerOperationID, op.DeployerBootID = accepted.Id, accepted.BootID
-	s.startPolling(RunningOperation{Operation: op, DeploymentName: name, Project: d.Project})
+	s.startPolling(RunningOperation{Operation: op, StackName: name, ComposeProject: d.ComposeProject})
 	return s.publishOperation(ctx, name, op.ID)
 }
 
-func (s *Service) logEnd(ctx context.Context, deployment string, id uuid.UUID, status Status, step Step, caller string) {
-	s.log.InfoContext(ctx, "operation finished", slog.String("deployment", deployment), slog.String("operation", id.String()),
+func (s *Service) logEnd(ctx context.Context, stack string, id uuid.UUID, status Status, step Step, caller string) {
+	s.log.InfoContext(ctx, "operation finished", slog.String("stack", stack), slog.String("operation", id.String()),
 		slog.String("status", string(status)), slog.String("step", string(step)), slog.String("caller", caller))
 }
 
-// publishOperation reads the operation again and tells every stream about it and its deployment.
+// publishOperation reads the operation again and tells every stream about it and its stack.
 func (s *Service) publishOperation(ctx context.Context, name string, id uuid.UUID) (Operation, error) {
 	op, ok, err := s.store.Operation(ctx, id)
 	if err != nil || !ok {
 		return Operation{}, errors.Join(err, fmt.Errorf("deploy: operation %s is gone", id))
 	}
-	s.hub.Publish(Event{Kind: EventOperation, Deployment: name, Operation: &op})
-	if d, ok, err := s.store.Deployment(ctx, name); err == nil && ok {
-		s.hub.Publish(Event{Kind: EventDeployment, Deployment: name, Summary: &d})
+	s.hub.Publish(Event{Kind: EventOperation, Stack: name, Operation: &op})
+	if d, ok, err := s.store.Stack(ctx, name); err == nil && ok {
+		s.hub.Publish(Event{Kind: EventStack, Stack: name, Summary: &d})
 	}
 	return op, nil
 }
 
-// Deployments lists one page of deployments sorted by name.
-func (s *Service) Deployments(ctx context.Context, after string, limit int) ([]Deployment, error) {
-	return s.store.Deployments(ctx, after, limit)
+// Stacks lists one page of stacks sorted by name.
+func (s *Service) Stacks(ctx context.Context, after string, limit int) ([]Stack, error) {
+	return s.store.Stacks(ctx, after, limit)
 }
 
-// Operations lists one page of a deployment's history, newest first.
+// Operations lists one page of a stack's history, newest first.
 func (s *Service) Operations(ctx context.Context, name string, before *uuid.UUID, limit int) ([]Operation, error) {
-	d, ok, err := s.store.Deployment(ctx, name)
+	d, ok, err := s.store.Stack(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -296,17 +296,17 @@ func (s *Service) Operations(ctx context.Context, name string, before *uuid.UUID
 	return s.store.Operations(ctx, d.ID, before, limit)
 }
 
-// View reads a deployment with its running graph and, unless it is removed, the live state of
+// View reads a stack with the graph it runs and, unless it is removed, the live state of
 // its modules. A state read that fails is reported in StateError, not as an error.
 func (s *Service) View(ctx context.Context, name string) (View, error) {
-	d, ok, err := s.store.Deployment(ctx, name)
+	d, ok, err := s.store.Stack(ctx, name)
 	if err != nil {
 		return View{}, err
 	}
 	if !ok {
 		return View{}, ErrNotFound
 	}
-	v := View{Deployment: d}
+	v := View{Stack: d}
 	if v.Graph, err = graphOf(s.store.LatestSucceededApply(ctx, d.ID)); err != nil {
 		return View{}, err
 	}
@@ -344,10 +344,10 @@ func graphOf(op Operation, ok bool, err error) (*contract.Graph, error) {
 // Modules reads the live state of d's modules: one entry per instance of the latest apply that
 // reached up, missing (or pending while an operation runs) when it has no container, plus any
 // container the graph does not name. Sorted by instance.
-func (s *Service) Modules(ctx context.Context, d Deployment) ([]ModuleState, error) {
+func (s *Service) Modules(ctx context.Context, d Stack) ([]ModuleState, error) {
 	tctx, cancel := context.WithTimeout(ctx, targetTimeout)
 	defer cancel()
-	state, err := s.target.State(tctx, d.Project)
+	state, err := s.target.State(tctx, d.ComposeProject)
 	if err != nil {
 		return nil, err
 	}
@@ -380,8 +380,8 @@ func (s *Service) Modules(ctx context.Context, d Deployment) ([]ModuleState, err
 }
 
 // expectedModules maps each instance of the latest apply that reached up to its module.
-func (s *Service) expectedModules(ctx context.Context, deploymentID uuid.UUID) (map[string]string, error) {
-	op, ok, err := s.store.LatestApplyReachedUp(ctx, deploymentID)
+func (s *Service) expectedModules(ctx context.Context, stackID uuid.UUID) (map[string]string, error) {
+	op, ok, err := s.store.LatestApplyReachedUp(ctx, stackID)
 	if err != nil || !ok {
 		return nil, err
 	}

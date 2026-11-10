@@ -10,8 +10,8 @@ import (
 	"github.com/racherom/modular-platform/libs/render"
 )
 
-// testDeployment is the deployment id the managed golden files carry.
-const testDeployment = "01960000-0000-7000-8000-000000000001"
+// testStack is the stack id the managed golden files carry.
+const testStack = "01960000-0000-7000-8000-000000000001"
 
 // TestRenderManagedGolden pins every managed file of the sample and of the sdk pair, plus the
 // images and secrets lists as managed.json (spec 0006, AC-12). Run with -update after an
@@ -27,7 +27,7 @@ func TestRenderManagedGolden(t *testing.T) {
 	} {
 		t.Run(c.dir, func(t *testing.T) {
 			result, catalog := c.result(t)
-			m, err := render.Managed(result, catalog, builtinTemplates(t), testDeployment)
+			m, err := render.Managed(result, catalog, builtinTemplates(t), testStack)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -49,7 +49,7 @@ func TestRenderManagedGolden(t *testing.T) {
 func TestRenderManagedRules(t *testing.T) {
 	t.Parallel()
 	result, catalog := pairResult(t)
-	m, err := render.Managed(result, catalog, builtinTemplates(t), testDeployment)
+	m, err := render.Managed(result, catalog, builtinTemplates(t), testStack)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestRenderManagedRules(t *testing.T) {
 	}
 	for _, want := range []string{
 		"name: mp-sdk-pair\n",
-		"      io.github.racherom.modular-platform.deployment: " + testDeployment + "\n",
+		"      io.github.racherom.modular-platform.stack: " + testStack + "\n",
 		"      io.github.racherom.modular-platform.graph: sdk-pair\n",
 		"      io.github.racherom.modular-platform.instance: consumer\n",
 		"      io.github.racherom.modular-platform.module: pair-consumer\n",
@@ -95,7 +95,7 @@ func TestRenderManagedRules(t *testing.T) {
 func TestRenderManagedJobLabels(t *testing.T) {
 	t.Parallel()
 	result, catalog := sampleResult(t)
-	m, err := render.Managed(result, catalog, builtinTemplates(t), testDeployment)
+	m, err := render.Managed(result, catalog, builtinTemplates(t), testStack)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestRenderManagedJobLabels(t *testing.T) {
 			t.Errorf("job lacks %q:\n%s", want, job)
 		}
 	}
-	// the wait anchor belongs to no instance: graph, deployment and job: wait only (spec 0014)
+	// the wait anchor belongs to no instance: graph, stack and job: wait only (spec 0014)
 	anchor := from(t, compose, "  mp_jobs:\n")
 	anchor, _, _ = strings.Cut(anchor, "\n  postgres:\n")
 	if !strings.Contains(anchor, "      io.github.racherom.modular-platform.job: wait\n") || !strings.Contains(anchor, "    restart: unless-stopped\n") {
@@ -139,7 +139,7 @@ func TestRenderManagedJobLabels(t *testing.T) {
 
 func TestRenderManagedRefusesBadGraph(t *testing.T) {
 	t.Parallel()
-	if _, err := render.Managed(contract.CheckResult{}, contract.Catalog{}, builtinTemplates(t), testDeployment); err != render.ErrGraphHasErrors { //nolint:errorlint // the sentinel is returned as is
+	if _, err := render.Managed(contract.CheckResult{}, contract.Catalog{}, builtinTemplates(t), testStack); err != render.ErrGraphHasErrors { //nolint:errorlint // the sentinel is returned as is
 		t.Fatalf("err = %v, want ErrGraphHasErrors", err)
 	}
 }

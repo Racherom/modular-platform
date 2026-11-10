@@ -40,7 +40,7 @@ function Shell() {
           <Link to="/samples/$name" params={{ name: 'whoami-postgres' }}>
             Sample
           </Link>
-          {mode === 'managed' && <Link to="/deployments">Deployments</Link>}
+          {mode === 'managed' && <Link to="/stacks">Stacks</Link>}
         </nav>
       }
       account={mode === 'managed' ? <Account /> : undefined}

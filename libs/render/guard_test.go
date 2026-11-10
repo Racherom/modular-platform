@@ -34,7 +34,7 @@ func TestGuardAcceptsEveryRender(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			p, catalog, tmpls := c.result(t)
-			m, err := render.Managed(p, catalog, tmpls, testDeployment)
+			m, err := render.Managed(p, catalog, tmpls, testStack)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -49,7 +49,7 @@ func TestGuardAcceptsEveryRender(t *testing.T) {
 			if !slices.Equal(refused, c.refused) {
 				t.Errorf("the guard refuses %v, want %v", refused, c.refused)
 			}
-			if problems := render.CheckProject(project, m.Name, testDeployment); len(problems) > 0 {
+			if problems := render.CheckProject(project, m.Name, testStack); len(problems) > 0 {
 				t.Errorf("the project check refuses the render: %+v", problems)
 			}
 		})
@@ -63,7 +63,7 @@ services:
   app:
     image: traefik/whoami:v1.12.0
     labels:
-      io.github.racherom.modular-platform.deployment: %s
+      io.github.racherom.modular-platform.stack: %s
       io.github.racherom.modular-platform.graph: sample
       io.github.racherom.modular-platform.instance: app
       io.github.racherom.modular-platform.module: whoami
@@ -71,7 +71,7 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
 %s
-%s`, testDeployment, indent(service, "    "), top)
+%s`, testStack, indent(service, "    "), top)
 }
 
 func indent(s, prefix string) string {
@@ -230,14 +230,14 @@ func replace(old, replacement string) func(string) string {
 func TestCheckProject(t *testing.T) {
 	t.Parallel()
 	for name, tc := range map[string]struct {
-		compose, project, deployment string
-		want                         string
+		compose, project, stack string
+		want                    string
 	}{
-		"its own":            {guarded("", ""), "mp-sample", testDeployment, ""},
-		"another name":       {guarded("", ""), "mp-other", testDeployment, "name"},
-		"another deployment": {guarded("", ""), "mp-sample", "01960000-0000-7000-8000-000000000002", "services.app.labels"},
-		"another graph":      {strings.Replace(guarded("", ""), "name: mp-sample\n", "", 1), "mp-other", testDeployment, "services.app.labels"},
-		"no labels":          {"services:\n  app:\n    image: x\n", "mp-sample", testDeployment, "services.app.labels"},
+		"its own":       {guarded("", ""), "mp-sample", testStack, ""},
+		"another name":  {guarded("", ""), "mp-other", testStack, "name"},
+		"another stack": {guarded("", ""), "mp-sample", "01960000-0000-7000-8000-000000000002", "services.app.labels"},
+		"another graph": {strings.Replace(guarded("", ""), "name: mp-sample\n", "", 1), "mp-other", testStack, "services.app.labels"},
+		"no labels":     {"services:\n  app:\n    image: x\n", "mp-sample", testStack, "services.app.labels"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -245,7 +245,7 @@ func TestCheckProject(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			problems := render.CheckProject(p, tc.project, tc.deployment)
+			problems := render.CheckProject(p, tc.project, tc.stack)
 			if tc.want == "" {
 				if len(problems) > 0 {
 					t.Fatalf("refused: %+v", problems)

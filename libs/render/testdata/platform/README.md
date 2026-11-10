@@ -46,7 +46,7 @@ The admin is bound once. Changing the admin email alone does nothing. To bind a 
 
 1. Open a graph in the editor and choose *Deploy*.
 2. Read the review. It lists every module with its image, the bindings between modules, and each credential you must supply. Nothing runs yet.
-3. Choose *Deploy* in the review. The deployment screen shows each step, then each module's state.
+3. Choose *Deploy* in the review. The stack screen shows each step, then each module's state.
 
 If a changed stack fails to start, the platform returns to the last version that worked by itself, and the history says what failed. *Remove* stops the stack and keeps its data, so deploying it again brings it back with its data. *Delete data too* also deletes its volumes and secrets for good.
 
@@ -57,7 +57,7 @@ Deployed stacks restart with Docker. After a host or Docker restart they come ba
 The `deployer-docker` service holds the Docker socket and runs as root. That gives it full control of the host, so it does as little as possible:
 
 - It runs only the projects `api` sends, and only with the Compose settings the platform renders itself. It refuses anything else, such as privileged mode, host mounts, host networking, devices, added capabilities other than binding low ports, or the Docker socket.
-- It writes only inside `deployments/` in this folder, one folder per deployment.
+- It writes only inside `stacks/` in this folder, one folder per stack.
 - It never joins a deployed stack to the platform's own networks.
 - No route from the internet reaches it. Only `api` can call it, with a token and the signed in admin's identity.
 
@@ -68,19 +68,19 @@ Anyone who controls the admin account can run containers on this host. Keep the 
 Back up these, with the platform stopped (`docker compose stop`):
 
 - `.env`, `config/` and `secrets/`: the settings and every platform secret.
-- `data/`: the database (with the admin, the sessions and every deployment's history), the certificates of the ingress and the certificate issuer's records.
-- `deployments/`: each deployed stack's files and secrets.
-- The volumes of your deployed stacks, named `mp-<deployment>_<volume>`.
+- `data/`: the database (with the admin, the sessions and every stack's history), the certificates of the ingress and the certificate issuer's records.
+- `stacks/`: each deployed stack's files and secrets.
+- The volumes of your deployed stacks, named `mp-<stack>_<volume>`.
 
 ## Upgrade
 
 This version has no upgrade command. To upgrade by hand:
 
 1. Back up as above.
-2. Unzip the new version over this folder. It replaces the platform's own files. Your `.env`, `secrets/`, `data/` and `deployments/` are not in the zip, so they stay as they are. Compare your `config/` files with the new ones before you let the zip replace them.
+2. Unzip the new version over this folder. It replaces the platform's own files. Your `.env`, `secrets/`, `data/` and `stacks/` are not in the zip, so they stay as they are. Compare your `config/` files with the new ones before you let the zip replace them.
 3. Run `sh setup.sh` again. It creates only what the new version adds.
 4. Run `docker compose up -d --wait --remove-orphans`.
 
 ## After *Delete data too*
 
-A deployment removed with *Delete data too* keeps its folder in `deployments/` with the files it last ran, so you can see what ran. Its secrets are gone. Running `docker compose` by hand in that folder fails for that reason. Deploy it from the editor instead, which creates new secrets and asks again for the credentials you supply.
+A stack removed with *Delete data too* keeps its folder in `stacks/` with the files it last ran, so you can see what ran. Its secrets are gone. Running `docker compose` by hand in that folder fails for that reason. Deploy it from the editor instead, which creates new secrets and asks again for the credentials you supply.

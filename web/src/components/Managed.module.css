@@ -1,5 +1,5 @@
 /*
- * The managed mode screens (spec 0006): the deployment list and page, plan review, remove and
+ * The managed mode screens (spec 0006): the stack list and page, review, remove and
  * the signed out view. #16 builds them over on the design system components; until then their
  * layout lives here, with values from tokens.css only.
  */
@@ -61,7 +61,7 @@
   display: none;
 }
 
-/* a deployment: its graph beside its module list */
+/* a stack: its graph beside its module list */
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--catalog-width);
@@ -157,7 +157,7 @@
   overflow-x: auto;
 }
 
-/* the native dialogs of plan review and remove */
+/* the native dialogs of review and remove */
 .dialog {
   width: 90vw;
   max-width: 40rem;

@@ -106,11 +106,11 @@ func toContainer(s container.Summary, in container.InspectResponse) deploy.Conta
 	return c
 }
 
-// labelDeployment marks a deployed container; the platform's own services carry it too, with
+// labelStack marks a deployed container; the platform's own services carry it too, with
 // the value platform, but they are never in a deployed project's state read.
-const labelDeployment = "io.github.racherom.modular-platform.deployment"
+const labelStack = "io.github.racherom.modular-platform.stack"
 
-// Events streams the die and destroy events of containers that carry the deployment label, from
+// Events streams the die and destroy events of containers that carry the stack label, from
 // since on. The error channel gets one error when the stream ends, ctx's error when ctx ended.
 func (e *Engine) Events(ctx context.Context, since time.Time) (<-chan deploy.ExitEvent, <-chan error) {
 	res := e.c.Events(ctx, client.EventsListOptions{
@@ -118,7 +118,7 @@ func (e *Engine) Events(ctx context.Context, since time.Time) (<-chan deploy.Exi
 		Filters: client.Filters{}.
 			Add("type", string(events.ContainerEventType)).
 			Add("event", string(events.ActionDie), string(events.ActionDestroy)).
-			Add("label", labelDeployment),
+			Add("label", labelStack),
 	})
 	out := make(chan deploy.ExitEvent)
 	go func() {

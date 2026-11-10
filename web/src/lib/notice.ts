@@ -1,6 +1,6 @@
-import type { Deployment } from '../api/platform'
+import type { Stack } from '../api/platform'
 
-/** What the deployment screen says about the latest operation, and what it offers to do next. */
+/** What the stack screen says about the latest operation, and what it offers to do next. */
 export interface Notice {
   tone: 'error' | 'info'
   text: string
@@ -11,11 +11,11 @@ export interface Notice {
 }
 
 /**
- * The banner for a deployment, derived from its state and latest operation (spec 0006, "State
+ * The banner for a stack, derived from its state and latest operation (spec 0006, "State
  * transitions"), or undefined when there is nothing to say. Running, applying and removing show
  * none: the progress line covers them.
  */
-export function deploymentNotice(d: Deployment): Notice | undefined {
+export function stackNotice(d: Stack): Notice | undefined {
   const op = d.latestOperation
   if (!op) return undefined
   const step = op.step ?? 'prepare'

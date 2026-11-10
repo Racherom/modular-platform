@@ -11,9 +11,9 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DesignRouteImport } from './routes/design'
-import { Route as DeploymentsIndexRouteImport } from './routes/deployments.index'
-import { Route as DeploymentsNameRouteImport } from './routes/deployments.$name'
 import { Route as SamplesNameRouteImport } from './routes/samples.$name'
+import { Route as StacksIndexRouteImport } from './routes/stacks.index'
+import { Route as StacksNameRouteImport } from './routes/stacks.$name'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -25,65 +25,64 @@ const DesignRoute = DesignRouteImport.update({
   path: '/design',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DeploymentsIndexRoute = DeploymentsIndexRouteImport.update({
-  id: '/deployments/',
-  path: '/deployments/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DeploymentsNameRoute = DeploymentsNameRouteImport.update({
-  id: '/deployments/$name',
-  path: '/deployments/$name',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SamplesNameRoute = SamplesNameRouteImport.update({
   id: '/samples/$name',
   path: '/samples/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StacksIndexRoute = StacksIndexRouteImport.update({
+  id: '/stacks/',
+  path: '/stacks/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StacksNameRoute = StacksNameRouteImport.update({
+  id: '/stacks/$name',
+  path: '/stacks/$name',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
-  '/deployments/$name': typeof DeploymentsNameRoute
   '/samples/$name': typeof SamplesNameRoute
-  '/deployments/': typeof DeploymentsIndexRoute
+  '/stacks/$name': typeof StacksNameRoute
+  '/stacks/': typeof StacksIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
-  '/deployments/$name': typeof DeploymentsNameRoute
   '/samples/$name': typeof SamplesNameRoute
-  '/deployments': typeof DeploymentsIndexRoute
+  '/stacks/$name': typeof StacksNameRoute
+  '/stacks': typeof StacksIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
-  '/deployments/$name': typeof DeploymentsNameRoute
   '/samples/$name': typeof SamplesNameRoute
-  '/deployments/': typeof DeploymentsIndexRoute
+  '/stacks/$name': typeof StacksNameRoute
+  '/stacks/': typeof StacksIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    '/' | '/design' | '/deployments/$name' | '/samples/$name' | '/deployments/'
+  fullPaths: '/' | '/design' | '/samples/$name' | '/stacks/$name' | '/stacks/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/design' | '/deployments/$name' | '/samples/$name' | '/deployments'
+  to: '/' | '/design' | '/samples/$name' | '/stacks/$name' | '/stacks'
   id:
     | '__root__'
     | '/'
     | '/design'
-    | '/deployments/$name'
     | '/samples/$name'
-    | '/deployments/'
+    | '/stacks/$name'
+    | '/stacks/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DesignRoute: typeof DesignRoute
-  DeploymentsNameRoute: typeof DeploymentsNameRoute
   SamplesNameRoute: typeof SamplesNameRoute
-  DeploymentsIndexRoute: typeof DeploymentsIndexRoute
+  StacksNameRoute: typeof StacksNameRoute
+  StacksIndexRoute: typeof StacksIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -102,25 +101,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DesignRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/deployments/': {
-      id: '/deployments/'
-      path: '/deployments'
-      fullPath: '/deployments/'
-      preLoaderRoute: typeof DeploymentsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/deployments/$name': {
-      id: '/deployments/$name'
-      path: '/deployments/$name'
-      fullPath: '/deployments/$name'
-      preLoaderRoute: typeof DeploymentsNameRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/samples/$name': {
       id: '/samples/$name'
       path: '/samples/$name'
       fullPath: '/samples/$name'
       preLoaderRoute: typeof SamplesNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stacks/': {
+      id: '/stacks/'
+      path: '/stacks'
+      fullPath: '/stacks/'
+      preLoaderRoute: typeof StacksIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stacks/$name': {
+      id: '/stacks/$name'
+      path: '/stacks/$name'
+      fullPath: '/stacks/$name'
+      preLoaderRoute: typeof StacksNameRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -129,9 +128,9 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DesignRoute: DesignRoute,
-  DeploymentsNameRoute: DeploymentsNameRoute,
   SamplesNameRoute: SamplesNameRoute,
-  DeploymentsIndexRoute: DeploymentsIndexRoute,
+  StacksNameRoute: StacksNameRoute,
+  StacksIndexRoute: StacksIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

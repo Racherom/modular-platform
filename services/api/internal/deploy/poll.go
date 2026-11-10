@@ -75,7 +75,7 @@ func (s *Service) poll(op RunningOperation) {
 				if changed, err := s.store.ProgressOperation(ctx, op.ID, step); err != nil {
 					s.log.WarnContext(ctx, "recording a step failed", slog.Any("error", err))
 				} else if changed {
-					_, _ = s.publishOperation(ctx, op.DeploymentName, op.ID)
+					_, _ = s.publishOperation(ctx, op.StackName, op.ID)
 				}
 			}
 			continue
@@ -102,8 +102,8 @@ func (s *Service) finish(op RunningOperation, status Status, step Step, errText 
 	if !changed {
 		return
 	}
-	s.logEnd(ctx, op.DeploymentName, op.ID, status, step, op.StartedBy.Subject)
-	done, err := s.publishOperation(ctx, op.DeploymentName, op.ID)
+	s.logEnd(ctx, op.StackName, op.ID, status, step, op.StartedBy.Subject)
+	done, err := s.publishOperation(ctx, op.StackName, op.ID)
 	if err != nil {
 		s.log.ErrorContext(ctx, "reading a finished operation failed", slog.String("operation", op.ID.String()), slog.Any("error", err))
 		return

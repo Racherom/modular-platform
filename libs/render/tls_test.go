@@ -147,7 +147,7 @@ modules:
     uses:
       tls: ca.certs
 `, catalog)
-	if _, err := render.Managed(result, catalog, builtinTemplates(t), testDeployment); !errors.Is(err, render.ErrNotRendered) {
+	if _, err := render.Managed(result, catalog, builtinTemplates(t), testStack); !errors.Is(err, render.ErrNotRendered) {
 		t.Errorf("managed render: %v, want ErrNotRendered", err)
 	}
 	// the static flavor renders it: setup.sh makes the files and you place the CA's secrets

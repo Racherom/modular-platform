@@ -1,12 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { ApiError, removeDeployment } from '../api/platform'
+import { ApiError, removeStack } from '../api/platform'
 import m from './Managed.module.css'
 import { Button } from './ui/Button'
 import { Failure } from './ui/Failure'
 
 /**
- * Remove a deployment (spec 0006, AC-15): stops its containers and keeps volumes, secrets and the
+ * Remove a stack (spec 0006, AC-15): stops its containers and keeps volumes, secrets and the
  * history, so a later apply brings it back with its data. *Delete data too* deletes them for good
  * and asks you to type the name first.
  */
@@ -16,9 +16,9 @@ export function RemoveDialog({ name, deleteData: preset = false, onClose }: { na
   const [deleteData, setDeleteData] = useState(preset)
   const [confirmName, setConfirmName] = useState('')
   const remove = useMutation({
-    mutationFn: () => removeDeployment(name, deleteData, confirmName),
+    mutationFn: () => removeStack(name, deleteData, confirmName),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['deployment', name] })
+      void queryClient.invalidateQueries({ queryKey: ['stack', name] })
       void queryClient.invalidateQueries({ queryKey: ['operations', name] })
       dialog.current?.close()
     },

@@ -14,7 +14,7 @@ export interface StatusBadgeProps {
   'data-testid'?: string
 }
 
-/** The state of something that runs, such as a module or a deployment: a colored dot plus a text label. */
+/** The state of something that runs, such as a module or a stack: a colored dot plus a text label. */
 export function StatusBadge({ tone, children, title, 'data-testid': testId }: StatusBadgeProps) {
   return (
     <span className={styles.badge} data-tone={tone} title={title} data-testid={testId}>

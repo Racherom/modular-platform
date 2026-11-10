@@ -182,7 +182,7 @@ tasks:
     internal: true
     deps: [{task: managed:render, vars: {MANAGED_IMAGE_TAG: dev}}]
     # the rendered folder copied outside the tracked tree, so no secret lands in git; each run
-    # copies a new render over it and keeps .env, secrets/, data/ and deployments/
+    # copies a new render over it and keeps .env, secrets/, data/ and stacks/
     cmds:
       - mkdir -p .dev/managed
       - cp -R build/managed/. .dev/managed/

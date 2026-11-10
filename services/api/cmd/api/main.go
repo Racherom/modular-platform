@@ -1,5 +1,5 @@
 // Command api is the managed platform's control plane (contracts/openapi/api.yaml): it signs the
-// admin in, keeps the deployments and their history in Postgres, and drives the renderer and the
+// admin in, keeps the stacks and their history in Postgres, and drives the renderer and the
 // deploy target. It runs on the module sdk: its config is declared in catalog/modules/api, and
 // `api healthcheck` probes a running one. `api admin reset` deletes the admin binding and every
 // session, so the next verified sign in with the admin email binds again. `api caller-key

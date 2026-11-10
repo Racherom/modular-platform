@@ -19,42 +19,6 @@ import (
 	externalRef0 "github.com/racherom/modular-platform/libs/contract"
 )
 
-// Defines values for DeploymentState.
-const (
-	DeploymentStateApplying    DeploymentState = "applying"
-	DeploymentStateFailed      DeploymentState = "failed"
-	DeploymentStateRemoved     DeploymentState = "removed"
-	DeploymentStateRemoving    DeploymentState = "removing"
-	DeploymentStateRolledBack  DeploymentState = "rolled-back"
-	DeploymentStateRollingBack DeploymentState = "rolling-back"
-	DeploymentStateRunning     DeploymentState = "running"
-	DeploymentStateUnknown     DeploymentState = "unknown"
-)
-
-// Valid indicates whether the value is a known member of the DeploymentState enum.
-func (e DeploymentState) Valid() bool {
-	switch e {
-	case DeploymentStateApplying:
-		return true
-	case DeploymentStateFailed:
-		return true
-	case DeploymentStateRemoved:
-		return true
-	case DeploymentStateRemoving:
-		return true
-	case DeploymentStateRolledBack:
-		return true
-	case DeploymentStateRollingBack:
-		return true
-	case DeploymentStateRunning:
-		return true
-	case DeploymentStateUnknown:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for EventSignedOutReason.
 const (
 	Expired   EventSignedOutReason = "expired"
@@ -178,6 +142,42 @@ func (e OperationStep) Valid() bool {
 	}
 }
 
+// Defines values for StackState.
+const (
+	StackStateApplying    StackState = "applying"
+	StackStateFailed      StackState = "failed"
+	StackStateRemoved     StackState = "removed"
+	StackStateRemoving    StackState = "removing"
+	StackStateRolledBack  StackState = "rolled-back"
+	StackStateRollingBack StackState = "rolling-back"
+	StackStateRunning     StackState = "running"
+	StackStateUnknown     StackState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the StackState enum.
+func (e StackState) Valid() bool {
+	switch e {
+	case StackStateApplying:
+		return true
+	case StackStateFailed:
+		return true
+	case StackStateRemoved:
+		return true
+	case StackStateRemoving:
+		return true
+	case StackStateRolledBack:
+		return true
+	case StackStateRollingBack:
+		return true
+	case StackStateRunning:
+		return true
+	case StackStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // ApplyRequest defines model for ApplyRequest.
 type ApplyRequest struct {
 	// Digest The `check.digest` of the review you confirmed.
@@ -188,59 +188,16 @@ type ApplyRequest struct {
 	Placed []PlacedInput      `json:"placed,omitempty,omitzero"`
 }
 
-// Deployment defines model for Deployment.
-type Deployment struct {
-	CreatedAt time.Time `json:"createdAt"`
-
-	// Graph The graph of the latest succeeded apply.
-	Graph externalRef0.Graph `json:"graph,omitempty,omitzero"`
-
-	// LatestApplyGraph The graph of the newest apply, whatever its status; *Apply again* reviews it. A
-	// rollback counts, so after a failed rollback it is the last good graph.
-	LatestApplyGraph externalRef0.Graph `json:"latestApplyGraph,omitempty,omitzero"`
-	LatestOperation  Operation          `json:"latestOperation,omitempty,omitzero"`
-
-	// Modules Sorted by instance; absent when `stateError` is set.
-	Modules []ModuleState `json:"modules,omitempty,omitzero"`
-	Name    string        `json:"name"`
-	Project string        `json:"project"`
-
-	// RolledBackFrom The failed operation, when `rolled-back`.
-	RolledBackFrom Operation       `json:"rolledBackFrom,omitempty,omitzero"`
-	State          DeploymentState `json:"state"`
-
-	// StateError Why the live state could not be read.
-	StateError string `json:"stateError,omitempty,omitzero"`
-}
-
-// DeploymentPage defines model for DeploymentPage.
-type DeploymentPage struct {
-	Items []DeploymentSummary `json:"items"`
-
-	// Next The cursor of the next page; absent on the last one.
-	Next string `json:"next,omitempty,omitzero"`
-}
-
-// DeploymentState defines model for DeploymentState.
-type DeploymentState string
-
-// DeploymentSummary defines model for DeploymentSummary.
-type DeploymentSummary struct {
-	LatestOperation Operation       `json:"latestOperation,omitempty,omitzero"`
-	Name            string          `json:"name"`
-	State           DeploymentState `json:"state"`
-}
-
 // EventModules defines model for EventModules.
 type EventModules struct {
-	Deployment string        `json:"deployment"`
-	Modules    []ModuleState `json:"modules"`
+	Modules []ModuleState `json:"modules"`
+	Stack   string        `json:"stack"`
 }
 
 // EventOperation defines model for EventOperation.
 type EventOperation struct {
-	Deployment string    `json:"deployment"`
-	Operation  Operation `json:"operation"`
+	Operation Operation `json:"operation"`
+	Stack     string    `json:"stack"`
 }
 
 // EventSignedOut defines model for EventSignedOut.
@@ -253,7 +210,7 @@ type EventSignedOutReason string
 
 // EventSnapshotList defines model for EventSnapshotList.
 type EventSnapshotList struct {
-	Deployments []DeploymentSummary `json:"deployments"`
+	Stacks []StackSummary `json:"stacks"`
 }
 
 // Logout defines model for Logout.
@@ -338,7 +295,7 @@ type PlacedInput struct {
 
 // RemoveRequest defines model for RemoveRequest.
 type RemoveRequest struct {
-	// ConfirmName Required with `deleteData`; must equal the deployment's name.
+	// ConfirmName Required with `deleteData`; must equal the stack's name.
 	ConfirmName string `json:"confirmName,omitempty,omitzero"`
 
 	// DeleteData Also delete the volumes and secrets; the data is gone for good.
@@ -365,6 +322,49 @@ type Session struct {
 	Email         string    `json:"email"`
 	ExpiresAt     time.Time `json:"expiresAt"`
 	IdleExpiresAt time.Time `json:"idleExpiresAt"`
+}
+
+// Stack defines model for Stack.
+type Stack struct {
+	ComposeProject string    `json:"composeProject"`
+	CreatedAt      time.Time `json:"createdAt"`
+
+	// Graph The graph of the latest succeeded apply.
+	Graph externalRef0.Graph `json:"graph,omitempty,omitzero"`
+
+	// LatestApplyGraph The graph of the newest apply, whatever its status; *Apply again* reviews it. A
+	// rollback counts, so after a failed rollback it is the last good graph.
+	LatestApplyGraph externalRef0.Graph `json:"latestApplyGraph,omitempty,omitzero"`
+	LatestOperation  Operation          `json:"latestOperation,omitempty,omitzero"`
+
+	// Modules Sorted by instance; absent when `stateError` is set.
+	Modules []ModuleState `json:"modules,omitempty,omitzero"`
+	Name    string        `json:"name"`
+
+	// RolledBackFrom The failed operation, when `rolled-back`.
+	RolledBackFrom Operation  `json:"rolledBackFrom,omitempty,omitzero"`
+	State          StackState `json:"state"`
+
+	// StateError Why the live state could not be read.
+	StateError string `json:"stateError,omitempty,omitzero"`
+}
+
+// StackPage defines model for StackPage.
+type StackPage struct {
+	Items []StackSummary `json:"items"`
+
+	// Next The cursor of the next page; absent on the last one.
+	Next string `json:"next,omitempty,omitzero"`
+}
+
+// StackState defines model for StackState.
+type StackState string
+
+// StackSummary defines model for StackSummary.
+type StackSummary struct {
+	LatestOperation Operation  `json:"latestOperation,omitempty,omitzero"`
+	Name            string     `json:"name"`
+	State           StackState `json:"state"`
 }
 
 // Name defines model for Name.
@@ -394,8 +394,8 @@ type TooLarge = externalRef0.ProblemList
 // Unauthenticated defines model for Unauthenticated.
 type Unauthenticated = externalRef0.ProblemList
 
-// ListDeploymentsParams defines parameters for ListDeployments.
-type ListDeploymentsParams struct {
+// ListStacksParams defines parameters for ListStacks.
+type ListStacksParams struct {
 	Limit int `form:"limit,omitempty" json:"limit,omitempty,omitzero"`
 
 	// Cursor The last name of the previous page.
@@ -413,17 +413,17 @@ type ListOperationsParams struct {
 // CheckJSONRequestBody defines body for Check for application/json ContentType.
 type CheckJSONRequestBody = externalRef0.Graph
 
-// ApplyDeploymentJSONRequestBody defines body for ApplyDeployment for application/json ContentType.
-type ApplyDeploymentJSONRequestBody = ApplyRequest
-
-// RemoveDeploymentJSONRequestBody defines body for RemoveDeployment for application/json ContentType.
-type RemoveDeploymentJSONRequestBody = RemoveRequest
-
-// ReviewDeploymentJSONRequestBody defines body for ReviewDeployment for application/json ContentType.
-type ReviewDeploymentJSONRequestBody = ReviewRequest
-
 // RenderJSONRequestBody defines body for Render for application/json ContentType.
 type RenderJSONRequestBody = externalRef0.Graph
+
+// ApplyStackJSONRequestBody defines body for ApplyStack for application/json ContentType.
+type ApplyStackJSONRequestBody = ApplyRequest
+
+// RemoveStackJSONRequestBody defines body for RemoveStack for application/json ContentType.
+type RemoveStackJSONRequestBody = RemoveRequest
+
+// ReviewStackJSONRequestBody defines body for ReviewStack for application/json ContentType.
+type ReviewStackJSONRequestBody = ReviewRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -433,30 +433,30 @@ type ServerInterface interface {
 	// Check Check a graph and fill in its automatic bindings, as the renderer answers it
 	// (POST /api/v1/check)
 	Check(w http.ResponseWriter, r *http.Request)
-	// ListDeployments List the deployments, sorted by name
-	// (GET /api/v1/deployments)
-	ListDeployments(w http.ResponseWriter, r *http.Request, params ListDeploymentsParams)
-	// GetDeployment Read a deployment with the live state of its modules
-	// (GET /api/v1/deployments/{name})
-	GetDeployment(w http.ResponseWriter, r *http.Request, name Name)
-	// ApplyDeployment Deploy a reviewed graph
-	// (POST /api/v1/deployments/{name}/apply)
-	ApplyDeployment(w http.ResponseWriter, r *http.Request, name Name)
-	// ListOperations The deployment's history, newest first
-	// (GET /api/v1/deployments/{name}/operations)
-	ListOperations(w http.ResponseWriter, r *http.Request, name Name, params ListOperationsParams)
-	// RemoveDeployment Stop and remove a deployment's containers
-	// (POST /api/v1/deployments/{name}/remove)
-	RemoveDeployment(w http.ResponseWriter, r *http.Request, name Name)
-	// ReviewDeployment Show exactly what an apply of this graph would run
-	// (POST /api/v1/deployments/{name}/review)
-	ReviewDeployment(w http.ResponseWriter, r *http.Request, name Name)
 	// Render Render a graph as the static zip, as the renderer answers it
 	// (POST /api/v1/render)
 	Render(w http.ResponseWriter, r *http.Request)
 	// GetSession Who is signed in, and until when
 	// (GET /api/v1/session)
 	GetSession(w http.ResponseWriter, r *http.Request)
+	// ListStacks List the stacks, sorted by name
+	// (GET /api/v1/stacks)
+	ListStacks(w http.ResponseWriter, r *http.Request, params ListStacksParams)
+	// GetStack Read a stack with the live state of its modules
+	// (GET /api/v1/stacks/{name})
+	GetStack(w http.ResponseWriter, r *http.Request, name Name)
+	// ApplyStack Deploy a reviewed graph
+	// (POST /api/v1/stacks/{name}/apply)
+	ApplyStack(w http.ResponseWriter, r *http.Request, name Name)
+	// ListOperations The stack's history, newest first
+	// (GET /api/v1/stacks/{name}/operations)
+	ListOperations(w http.ResponseWriter, r *http.Request, name Name, params ListOperationsParams)
+	// RemoveStack Stop and remove a stack's containers
+	// (POST /api/v1/stacks/{name}/remove)
+	RemoveStack(w http.ResponseWriter, r *http.Request, name Name)
+	// ReviewStack Show exactly what an apply of this graph would run
+	// (POST /api/v1/stacks/{name}/review)
+	ReviewStack(w http.ResponseWriter, r *http.Request, name Name)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -496,14 +496,42 @@ func (siw *ServerInterfaceWrapper) Check(w http.ResponseWriter, r *http.Request)
 	handler.ServeHTTP(w, r)
 }
 
-// ListDeployments operation middleware
-func (siw *ServerInterfaceWrapper) ListDeployments(w http.ResponseWriter, r *http.Request) {
+// Render operation middleware
+func (siw *ServerInterfaceWrapper) Render(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Render(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSession operation middleware
+func (siw *ServerInterfaceWrapper) GetSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListStacks operation middleware
+func (siw *ServerInterfaceWrapper) ListStacks(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
 	// Parameter object where we will unmarshal all parameters from the context
-	var params ListDeploymentsParams
+	var params ListStacksParams
 
 	// ------------- Optional query parameter "limit" -------------
 
@@ -532,7 +560,7 @@ func (siw *ServerInterfaceWrapper) ListDeployments(w http.ResponseWriter, r *htt
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListDeployments(w, r, params)
+		siw.Handler.ListStacks(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -542,8 +570,8 @@ func (siw *ServerInterfaceWrapper) ListDeployments(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
-// GetDeployment operation middleware
-func (siw *ServerInterfaceWrapper) GetDeployment(w http.ResponseWriter, r *http.Request) {
+// GetStack operation middleware
+func (siw *ServerInterfaceWrapper) GetStack(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -558,7 +586,7 @@ func (siw *ServerInterfaceWrapper) GetDeployment(w http.ResponseWriter, r *http.
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetDeployment(w, r, name)
+		siw.Handler.GetStack(w, r, name)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -568,8 +596,8 @@ func (siw *ServerInterfaceWrapper) GetDeployment(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
-// ApplyDeployment operation middleware
-func (siw *ServerInterfaceWrapper) ApplyDeployment(w http.ResponseWriter, r *http.Request) {
+// ApplyStack operation middleware
+func (siw *ServerInterfaceWrapper) ApplyStack(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -584,7 +612,7 @@ func (siw *ServerInterfaceWrapper) ApplyDeployment(w http.ResponseWriter, r *htt
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ApplyDeployment(w, r, name)
+		siw.Handler.ApplyStack(w, r, name)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -649,8 +677,8 @@ func (siw *ServerInterfaceWrapper) ListOperations(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
-// RemoveDeployment operation middleware
-func (siw *ServerInterfaceWrapper) RemoveDeployment(w http.ResponseWriter, r *http.Request) {
+// RemoveStack operation middleware
+func (siw *ServerInterfaceWrapper) RemoveStack(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -665,7 +693,7 @@ func (siw *ServerInterfaceWrapper) RemoveDeployment(w http.ResponseWriter, r *ht
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RemoveDeployment(w, r, name)
+		siw.Handler.RemoveStack(w, r, name)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -675,8 +703,8 @@ func (siw *ServerInterfaceWrapper) RemoveDeployment(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
-// ReviewDeployment operation middleware
-func (siw *ServerInterfaceWrapper) ReviewDeployment(w http.ResponseWriter, r *http.Request) {
+// ReviewStack operation middleware
+func (siw *ServerInterfaceWrapper) ReviewStack(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -691,35 +719,7 @@ func (siw *ServerInterfaceWrapper) ReviewDeployment(w http.ResponseWriter, r *ht
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ReviewDeployment(w, r, name)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// Render operation middleware
-func (siw *ServerInterfaceWrapper) Render(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.Render(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetSession operation middleware
-func (siw *ServerInterfaceWrapper) GetSession(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetSession(w, r)
+		siw.Handler.ReviewStack(w, r, name)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -853,12 +853,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/catalog", wrapper.GetCatalog)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/check", wrapper.Check)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/render", wrapper.Render)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/deployments", wrapper.ListDeployments)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/deployments/{name}", wrapper.GetDeployment)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/deployments/{name}/operations", wrapper.ListOperations)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/deployments/{name}/review", wrapper.ReviewDeployment)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/deployments/{name}/apply", wrapper.ApplyDeployment)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/deployments/{name}/remove", wrapper.RemoveDeployment)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/stacks", wrapper.ListStacks)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/stacks/{name}", wrapper.GetStack)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/stacks/{name}/operations", wrapper.ListOperations)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/stacks/{name}/review", wrapper.ReviewStack)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/stacks/{name}/apply", wrapper.ApplyStack)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/stacks/{name}/remove", wrapper.RemoveStack)
 
 	return m
 }
@@ -1020,536 +1020,6 @@ func (response Check502JSONResponse) VisitCheckResponse(w http.ResponseWriter) e
 	return err
 }
 
-type ListDeploymentsRequestObject struct {
-	Params ListDeploymentsParams
-}
-
-type ListDeploymentsResponseObject interface {
-	VisitListDeploymentsResponse(w http.ResponseWriter) error
-}
-
-type ListDeployments200JSONResponse DeploymentPage
-
-func (response ListDeployments200JSONResponse) VisitListDeploymentsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListDeployments400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response ListDeployments400JSONResponse) VisitListDeploymentsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListDeployments401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response ListDeployments401JSONResponse) VisitListDeploymentsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetDeploymentRequestObject struct {
-	Name Name `json:"name"`
-}
-
-type GetDeploymentResponseObject interface {
-	VisitGetDeploymentResponse(w http.ResponseWriter) error
-}
-
-type GetDeployment200JSONResponse Deployment
-
-func (response GetDeployment200JSONResponse) VisitGetDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetDeployment401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response GetDeployment401JSONResponse) VisitGetDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetDeployment404JSONResponse struct{ NotFoundJSONResponse }
-
-func (response GetDeployment404JSONResponse) VisitGetDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ApplyDeploymentRequestObject struct {
-	Name Name `json:"name"`
-	Body *ApplyDeploymentJSONRequestBody
-}
-
-type ApplyDeploymentResponseObject interface {
-	VisitApplyDeploymentResponse(w http.ResponseWriter) error
-}
-
-type ApplyDeployment202JSONResponse Operation
-
-func (response ApplyDeployment202JSONResponse) VisitApplyDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(202)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ApplyDeployment400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response ApplyDeployment400JSONResponse) VisitApplyDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ApplyDeployment401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response ApplyDeployment401JSONResponse) VisitApplyDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ApplyDeployment403JSONResponse struct{ BadOriginJSONResponse }
-
-func (response ApplyDeployment403JSONResponse) VisitApplyDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ApplyDeployment409JSONResponse externalRef0.ProblemList
-
-func (response ApplyDeployment409JSONResponse) VisitApplyDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ApplyDeployment413JSONResponse struct{ TooLargeJSONResponse }
-
-func (response ApplyDeployment413JSONResponse) VisitApplyDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(413)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ApplyDeployment422JSONResponse struct{ RefusedJSONResponse }
-
-func (response ApplyDeployment422JSONResponse) VisitApplyDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ApplyDeployment502JSONResponse struct{ RendererErrorJSONResponse }
-
-func (response ApplyDeployment502JSONResponse) VisitApplyDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(502)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListOperationsRequestObject struct {
-	Name   Name `json:"name"`
-	Params ListOperationsParams
-}
-
-type ListOperationsResponseObject interface {
-	VisitListOperationsResponse(w http.ResponseWriter) error
-}
-
-type ListOperations200JSONResponse OperationPage
-
-func (response ListOperations200JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListOperations400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response ListOperations400JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListOperations401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response ListOperations401JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListOperations404JSONResponse struct{ NotFoundJSONResponse }
-
-func (response ListOperations404JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RemoveDeploymentRequestObject struct {
-	Name Name `json:"name"`
-	Body *RemoveDeploymentJSONRequestBody
-}
-
-type RemoveDeploymentResponseObject interface {
-	VisitRemoveDeploymentResponse(w http.ResponseWriter) error
-}
-
-type RemoveDeployment202JSONResponse Operation
-
-func (response RemoveDeployment202JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(202)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RemoveDeployment400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response RemoveDeployment400JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RemoveDeployment401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response RemoveDeployment401JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RemoveDeployment403JSONResponse struct{ BadOriginJSONResponse }
-
-func (response RemoveDeployment403JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RemoveDeployment404JSONResponse struct{ NotFoundJSONResponse }
-
-func (response RemoveDeployment404JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RemoveDeployment409JSONResponse externalRef0.ProblemList
-
-func (response RemoveDeployment409JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RemoveDeployment422JSONResponse externalRef0.ProblemList
-
-func (response RemoveDeployment422JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type RemoveDeployment502JSONResponse externalRef0.ProblemList
-
-func (response RemoveDeployment502JSONResponse) VisitRemoveDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(502)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReviewDeploymentRequestObject struct {
-	Name Name `json:"name"`
-	Body *ReviewDeploymentJSONRequestBody
-}
-
-type ReviewDeploymentResponseObject interface {
-	VisitReviewDeploymentResponse(w http.ResponseWriter) error
-}
-
-type ReviewDeployment200JSONResponse Review
-
-func (response ReviewDeployment200JSONResponse) VisitReviewDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReviewDeployment400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response ReviewDeployment400JSONResponse) VisitReviewDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReviewDeployment401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response ReviewDeployment401JSONResponse) VisitReviewDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReviewDeployment403JSONResponse struct{ BadOriginJSONResponse }
-
-func (response ReviewDeployment403JSONResponse) VisitReviewDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReviewDeployment413JSONResponse struct{ TooLargeJSONResponse }
-
-func (response ReviewDeployment413JSONResponse) VisitReviewDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(413)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReviewDeployment422JSONResponse struct{ RefusedJSONResponse }
-
-func (response ReviewDeployment422JSONResponse) VisitReviewDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(422)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReviewDeployment502JSONResponse struct{ RendererErrorJSONResponse }
-
-func (response ReviewDeployment502JSONResponse) VisitReviewDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(502)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ReviewDeployment503JSONResponse struct {
-	DeployerUnavailableJSONResponse
-}
-
-func (response ReviewDeployment503JSONResponse) VisitReviewDeploymentResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(503)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
 type RenderRequestObject struct {
 	Body *RenderJSONRequestBody
 }
@@ -1703,6 +1173,536 @@ func (response GetSession401JSONResponse) VisitGetSessionResponse(w http.Respons
 	return err
 }
 
+type ListStacksRequestObject struct {
+	Params ListStacksParams
+}
+
+type ListStacksResponseObject interface {
+	VisitListStacksResponse(w http.ResponseWriter) error
+}
+
+type ListStacks200JSONResponse StackPage
+
+func (response ListStacks200JSONResponse) VisitListStacksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListStacks400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListStacks400JSONResponse) VisitListStacksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListStacks401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListStacks401JSONResponse) VisitListStacksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStackRequestObject struct {
+	Name Name `json:"name"`
+}
+
+type GetStackResponseObject interface {
+	VisitGetStackResponse(w http.ResponseWriter) error
+}
+
+type GetStack200JSONResponse Stack
+
+func (response GetStack200JSONResponse) VisitGetStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStack401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetStack401JSONResponse) VisitGetStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStack404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetStack404JSONResponse) VisitGetStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyStackRequestObject struct {
+	Name Name `json:"name"`
+	Body *ApplyStackJSONRequestBody
+}
+
+type ApplyStackResponseObject interface {
+	VisitApplyStackResponse(w http.ResponseWriter) error
+}
+
+type ApplyStack202JSONResponse Operation
+
+func (response ApplyStack202JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyStack400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ApplyStack400JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyStack401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ApplyStack401JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyStack403JSONResponse struct{ BadOriginJSONResponse }
+
+func (response ApplyStack403JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyStack409JSONResponse externalRef0.ProblemList
+
+func (response ApplyStack409JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyStack413JSONResponse struct{ TooLargeJSONResponse }
+
+func (response ApplyStack413JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyStack422JSONResponse struct{ RefusedJSONResponse }
+
+func (response ApplyStack422JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyStack502JSONResponse struct{ RendererErrorJSONResponse }
+
+func (response ApplyStack502JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOperationsRequestObject struct {
+	Name   Name `json:"name"`
+	Params ListOperationsParams
+}
+
+type ListOperationsResponseObject interface {
+	VisitListOperationsResponse(w http.ResponseWriter) error
+}
+
+type ListOperations200JSONResponse OperationPage
+
+func (response ListOperations200JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOperations400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ListOperations400JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOperations401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListOperations401JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListOperations404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListOperations404JSONResponse) VisitListOperationsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveStackRequestObject struct {
+	Name Name `json:"name"`
+	Body *RemoveStackJSONRequestBody
+}
+
+type RemoveStackResponseObject interface {
+	VisitRemoveStackResponse(w http.ResponseWriter) error
+}
+
+type RemoveStack202JSONResponse Operation
+
+func (response RemoveStack202JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveStack400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response RemoveStack400JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveStack401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RemoveStack401JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveStack403JSONResponse struct{ BadOriginJSONResponse }
+
+func (response RemoveStack403JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveStack404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response RemoveStack404JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveStack409JSONResponse externalRef0.ProblemList
+
+func (response RemoveStack409JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveStack422JSONResponse externalRef0.ProblemList
+
+func (response RemoveStack422JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveStack502JSONResponse externalRef0.ProblemList
+
+func (response RemoveStack502JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewStackRequestObject struct {
+	Name Name `json:"name"`
+	Body *ReviewStackJSONRequestBody
+}
+
+type ReviewStackResponseObject interface {
+	VisitReviewStackResponse(w http.ResponseWriter) error
+}
+
+type ReviewStack200JSONResponse Review
+
+func (response ReviewStack200JSONResponse) VisitReviewStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewStack400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ReviewStack400JSONResponse) VisitReviewStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewStack401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ReviewStack401JSONResponse) VisitReviewStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewStack403JSONResponse struct{ BadOriginJSONResponse }
+
+func (response ReviewStack403JSONResponse) VisitReviewStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewStack413JSONResponse struct{ TooLargeJSONResponse }
+
+func (response ReviewStack413JSONResponse) VisitReviewStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewStack422JSONResponse struct{ RefusedJSONResponse }
+
+func (response ReviewStack422JSONResponse) VisitReviewStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewStack502JSONResponse struct{ RendererErrorJSONResponse }
+
+func (response ReviewStack502JSONResponse) VisitReviewStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewStack503JSONResponse struct {
+	DeployerUnavailableJSONResponse
+}
+
+func (response ReviewStack503JSONResponse) VisitReviewStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// GetCatalog List the catalog, as the renderer answers it
@@ -1711,30 +1711,30 @@ type StrictServerInterface interface {
 	// Check Check a graph and fill in its automatic bindings, as the renderer answers it
 	// (POST /api/v1/check)
 	Check(ctx context.Context, request CheckRequestObject) (CheckResponseObject, error)
-	// ListDeployments List the deployments, sorted by name
-	// (GET /api/v1/deployments)
-	ListDeployments(ctx context.Context, request ListDeploymentsRequestObject) (ListDeploymentsResponseObject, error)
-	// GetDeployment Read a deployment with the live state of its modules
-	// (GET /api/v1/deployments/{name})
-	GetDeployment(ctx context.Context, request GetDeploymentRequestObject) (GetDeploymentResponseObject, error)
-	// ApplyDeployment Deploy a reviewed graph
-	// (POST /api/v1/deployments/{name}/apply)
-	ApplyDeployment(ctx context.Context, request ApplyDeploymentRequestObject) (ApplyDeploymentResponseObject, error)
-	// ListOperations The deployment's history, newest first
-	// (GET /api/v1/deployments/{name}/operations)
-	ListOperations(ctx context.Context, request ListOperationsRequestObject) (ListOperationsResponseObject, error)
-	// RemoveDeployment Stop and remove a deployment's containers
-	// (POST /api/v1/deployments/{name}/remove)
-	RemoveDeployment(ctx context.Context, request RemoveDeploymentRequestObject) (RemoveDeploymentResponseObject, error)
-	// ReviewDeployment Show exactly what an apply of this graph would run
-	// (POST /api/v1/deployments/{name}/review)
-	ReviewDeployment(ctx context.Context, request ReviewDeploymentRequestObject) (ReviewDeploymentResponseObject, error)
 	// Render Render a graph as the static zip, as the renderer answers it
 	// (POST /api/v1/render)
 	Render(ctx context.Context, request RenderRequestObject) (RenderResponseObject, error)
 	// GetSession Who is signed in, and until when
 	// (GET /api/v1/session)
 	GetSession(ctx context.Context, request GetSessionRequestObject) (GetSessionResponseObject, error)
+	// ListStacks List the stacks, sorted by name
+	// (GET /api/v1/stacks)
+	ListStacks(ctx context.Context, request ListStacksRequestObject) (ListStacksResponseObject, error)
+	// GetStack Read a stack with the live state of its modules
+	// (GET /api/v1/stacks/{name})
+	GetStack(ctx context.Context, request GetStackRequestObject) (GetStackResponseObject, error)
+	// ApplyStack Deploy a reviewed graph
+	// (POST /api/v1/stacks/{name}/apply)
+	ApplyStack(ctx context.Context, request ApplyStackRequestObject) (ApplyStackResponseObject, error)
+	// ListOperations The stack's history, newest first
+	// (GET /api/v1/stacks/{name}/operations)
+	ListOperations(ctx context.Context, request ListOperationsRequestObject) (ListOperationsResponseObject, error)
+	// RemoveStack Stop and remove a stack's containers
+	// (POST /api/v1/stacks/{name}/remove)
+	RemoveStack(ctx context.Context, request RemoveStackRequestObject) (RemoveStackResponseObject, error)
+	// ReviewStack Show exactly what an apply of this graph would run
+	// (POST /api/v1/stacks/{name}/review)
+	ReviewStack(ctx context.Context, request ReviewStackRequestObject) (ReviewStackResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -1831,184 +1831,6 @@ func (sh *strictHandler) Check(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ListDeployments operation middleware
-func (sh *strictHandler) ListDeployments(w http.ResponseWriter, r *http.Request, params ListDeploymentsParams) {
-	var request ListDeploymentsRequestObject
-
-	request.Params = params
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ListDeployments(ctx, request.(ListDeploymentsRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListDeployments")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ListDeploymentsResponseObject); ok {
-		if err := validResponse.VisitListDeploymentsResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetDeployment operation middleware
-func (sh *strictHandler) GetDeployment(w http.ResponseWriter, r *http.Request, name Name) {
-	var request GetDeploymentRequestObject
-
-	request.Name = name
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetDeployment(ctx, request.(GetDeploymentRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetDeployment")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetDeploymentResponseObject); ok {
-		if err := validResponse.VisitGetDeploymentResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ApplyDeployment operation middleware
-func (sh *strictHandler) ApplyDeployment(w http.ResponseWriter, r *http.Request, name Name) {
-	var request ApplyDeploymentRequestObject
-
-	request.Name = name
-
-	var body ApplyDeploymentJSONRequestBody
-	if err := runtime.BindJSONBody(r, &body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ApplyDeployment(ctx, request.(ApplyDeploymentRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ApplyDeployment")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ApplyDeploymentResponseObject); ok {
-		if err := validResponse.VisitApplyDeploymentResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ListOperations operation middleware
-func (sh *strictHandler) ListOperations(w http.ResponseWriter, r *http.Request, name Name, params ListOperationsParams) {
-	var request ListOperationsRequestObject
-
-	request.Name = name
-	request.Params = params
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ListOperations(ctx, request.(ListOperationsRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListOperations")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ListOperationsResponseObject); ok {
-		if err := validResponse.VisitListOperationsResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// RemoveDeployment operation middleware
-func (sh *strictHandler) RemoveDeployment(w http.ResponseWriter, r *http.Request, name Name) {
-	var request RemoveDeploymentRequestObject
-
-	request.Name = name
-
-	var body RemoveDeploymentJSONRequestBody
-	if err := runtime.BindJSONBody(r, &body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.RemoveDeployment(ctx, request.(RemoveDeploymentRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "RemoveDeployment")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(RemoveDeploymentResponseObject); ok {
-		if err := validResponse.VisitRemoveDeploymentResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ReviewDeployment operation middleware
-func (sh *strictHandler) ReviewDeployment(w http.ResponseWriter, r *http.Request, name Name) {
-	var request ReviewDeploymentRequestObject
-
-	request.Name = name
-
-	var body ReviewDeploymentJSONRequestBody
-	if err := runtime.BindJSONBody(r, &body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ReviewDeployment(ctx, request.(ReviewDeploymentRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ReviewDeployment")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ReviewDeploymentResponseObject); ok {
-		if err := validResponse.VisitReviewDeploymentResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
 // Render operation middleware
 func (sh *strictHandler) Render(w http.ResponseWriter, r *http.Request) {
 	var request RenderRequestObject
@@ -2057,6 +1879,184 @@ func (sh *strictHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetSessionResponseObject); ok {
 		if err := validResponse.VisitGetSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListStacks operation middleware
+func (sh *strictHandler) ListStacks(w http.ResponseWriter, r *http.Request, params ListStacksParams) {
+	var request ListStacksRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListStacks(ctx, request.(ListStacksRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListStacks")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListStacksResponseObject); ok {
+		if err := validResponse.VisitListStacksResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetStack operation middleware
+func (sh *strictHandler) GetStack(w http.ResponseWriter, r *http.Request, name Name) {
+	var request GetStackRequestObject
+
+	request.Name = name
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetStack(ctx, request.(GetStackRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetStack")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetStackResponseObject); ok {
+		if err := validResponse.VisitGetStackResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ApplyStack operation middleware
+func (sh *strictHandler) ApplyStack(w http.ResponseWriter, r *http.Request, name Name) {
+	var request ApplyStackRequestObject
+
+	request.Name = name
+
+	var body ApplyStackJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ApplyStack(ctx, request.(ApplyStackRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ApplyStack")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ApplyStackResponseObject); ok {
+		if err := validResponse.VisitApplyStackResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListOperations operation middleware
+func (sh *strictHandler) ListOperations(w http.ResponseWriter, r *http.Request, name Name, params ListOperationsParams) {
+	var request ListOperationsRequestObject
+
+	request.Name = name
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListOperations(ctx, request.(ListOperationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListOperations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListOperationsResponseObject); ok {
+		if err := validResponse.VisitListOperationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveStack operation middleware
+func (sh *strictHandler) RemoveStack(w http.ResponseWriter, r *http.Request, name Name) {
+	var request RemoveStackRequestObject
+
+	request.Name = name
+
+	var body RemoveStackJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveStack(ctx, request.(RemoveStackRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveStack")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveStackResponseObject); ok {
+		if err := validResponse.VisitRemoveStackResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReviewStack operation middleware
+func (sh *strictHandler) ReviewStack(w http.ResponseWriter, r *http.Request, name Name) {
+	var request ReviewStackRequestObject
+
+	request.Name = name
+
+	var body ReviewStackJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReviewStack(ctx, request.(ReviewStackRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReviewStack")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReviewStackResponseObject); ok {
+		if err := validResponse.VisitReviewStackResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

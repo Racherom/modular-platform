@@ -97,17 +97,17 @@ type Placed struct {
 
 // ApplyRequest is a rendered project to apply. Caller is the MP-Caller subject, for the log.
 type ApplyRequest struct {
-	Project, Deployment string
-	Files               []File
-	Secrets             []Secret
-	Placed              []Placed
-	Caller              string
+	Project, Stack string
+	Files          []File
+	Secrets        []Secret
+	Placed         []Placed
+	Caller         string
 }
 
 // Config is where and as whom the engine writes, how long Compose may take, and which host
 // ports no project may publish.
 type Config struct {
-	Dir           string // the deployments folder; project p lives in Dir/p
+	Dir           string // the stacks folder; project p lives in Dir/p
 	UID, GID      int    // owner of every file and folder the engine writes
 	PullTimeout   time.Duration
 	WaitTimeout   time.Duration

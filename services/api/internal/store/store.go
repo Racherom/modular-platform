@@ -141,15 +141,15 @@ func (s *Store) ResetAdmin(ctx context.Context) error {
 	})
 }
 
-// EnsureDeployment returns the deployment named name, creating it when missing.
-func (s *Store) EnsureDeployment(ctx context.Context, name string) (uuid.UUID, string, bool, error) {
-	row, err := s.q.EnsureDeployment(ctx, name)
-	return row.ID, row.Project, row.Created, err
+// EnsureStack returns the stack named name, creating it when missing.
+func (s *Store) EnsureStack(ctx context.Context, name string) (uuid.UUID, string, bool, error) {
+	row, err := s.q.EnsureStack(ctx, name)
+	return row.ID, row.ComposeProject, row.Created, err
 }
 
-// DropNewDeployment deletes a deployment without operations.
-func (s *Store) DropNewDeployment(ctx context.Context, id uuid.UUID) error {
-	return s.q.DeleteDeployment(ctx, id)
+// DropNewStack deletes a stack without operations.
+func (s *Store) DropNewStack(ctx context.Context, id uuid.UUID) error {
+	return s.q.DeleteStack(ctx, id)
 }
 
 // StartOperation inserts op as running and makes it latest; the partial unique index turns a
@@ -162,7 +162,7 @@ func (s *Store) StartOperation(ctx context.Context, op deploy.Operation) (deploy
 		if err != nil {
 			return err
 		}
-		if err := q.SetLatestOperation(ctx, queries.SetLatestOperationParams{ID: op.DeploymentID, LatestOperationID: &row.ID}); err != nil {
+		if err := q.SetLatestOperation(ctx, queries.SetLatestOperationParams{ID: op.StackID, LatestOperationID: &row.ID}); err != nil {
 			return err
 		}
 		out = operation(row)
@@ -174,15 +174,15 @@ func (s *Store) StartOperation(ctx context.Context, op deploy.Operation) (deploy
 	return out, err
 }
 
-// StartOperationIfLatest starts op only while latest is the deployment's latest operation. The
-// deployment row stays locked from the check to the insert, so an apply or remove that another
+// StartOperationIfLatest starts op only while latest is the stack's latest operation. The
+// stack row stays locked from the check to the insert, so an apply or remove that another
 // api process starts meanwhile either comes first (false) or waits.
 func (s *Store) StartOperationIfLatest(ctx context.Context, op deploy.Operation, latest uuid.UUID) (deploy.Operation, bool, error) {
 	var out deploy.Operation
 	var started bool
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		current, err := q.LockLatestOperation(ctx, op.DeploymentID)
+		current, err := q.LockLatestOperation(ctx, op.StackID)
 		if err != nil || current == nil || *current != latest {
 			return err
 		}
@@ -190,7 +190,7 @@ func (s *Store) StartOperationIfLatest(ctx context.Context, op deploy.Operation,
 		if err != nil {
 			return err
 		}
-		if err := q.SetLatestOperation(ctx, queries.SetLatestOperationParams{ID: op.DeploymentID, LatestOperationID: &row.ID}); err != nil {
+		if err := q.SetLatestOperation(ctx, queries.SetLatestOperationParams{ID: op.StackID, LatestOperationID: &row.ID}); err != nil {
 			return err
 		}
 		out, started = operation(row), true
@@ -206,7 +206,7 @@ func (s *Store) StartOperationIfLatest(ctx context.Context, op deploy.Operation,
 func (s *Store) DropOperation(ctx context.Context, op deploy.Operation) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.q.WithTx(tx)
-		if err := q.ResetLatestOperation(ctx, queries.ResetLatestOperationParams{Refused: op.ID, DeploymentID: op.DeploymentID}); err != nil {
+		if err := q.ResetLatestOperation(ctx, queries.ResetLatestOperationParams{Refused: op.ID, StackID: op.StackID}); err != nil {
 			return err
 		}
 		return q.DeleteOperation(ctx, op.ID)
@@ -241,7 +241,7 @@ func (s *Store) Operation(ctx context.Context, id uuid.UUID) (deploy.Operation, 
 	return operation(row), true, nil
 }
 
-// RunningOperations lists every running operation with its deployment's name and project.
+// RunningOperations lists every running operation with its stack's name and stack.
 func (s *Store) RunningOperations(ctx context.Context) ([]deploy.RunningOperation, error) {
 	rows, err := s.q.RunningOperations(ctx)
 	if err != nil {
@@ -249,27 +249,27 @@ func (s *Store) RunningOperations(ctx context.Context) ([]deploy.RunningOperatio
 	}
 	out := make([]deploy.RunningOperation, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, deploy.RunningOperation{Operation: operation(r.Operation), DeploymentName: r.DeploymentName, Project: r.Project})
+		out = append(out, deploy.RunningOperation{Operation: operation(r.Operation), StackName: r.StackName, ComposeProject: r.ComposeProject})
 	}
 	return out, nil
 }
 
-// Deployment reads a deployment with its latest operation.
-func (s *Store) Deployment(ctx context.Context, name string) (deploy.Deployment, bool, error) {
-	row, ok, err := found(s.q.GetDeployment(ctx, name))
+// Stack reads a stack with its latest operation.
+func (s *Store) Stack(ctx context.Context, name string) (deploy.Stack, bool, error) {
+	row, ok, err := found(s.q.GetStack(ctx, name))
 	if !ok {
-		return deploy.Deployment{}, false, err
+		return deploy.Stack{}, false, err
 	}
-	out, err := s.withLatest(ctx, []queries.Deployment{row})
+	out, err := s.withLatest(ctx, []queries.Stack{row})
 	if err != nil {
-		return deploy.Deployment{}, false, err
+		return deploy.Stack{}, false, err
 	}
 	return out[0], true, nil
 }
 
-// Deployments lists deployments by name after after.
-func (s *Store) Deployments(ctx context.Context, after string, limit int) ([]deploy.Deployment, error) {
-	rows, err := s.q.ListDeployments(ctx, queries.ListDeploymentsParams{After: after, MaxRows: int32(min(limit, 1000))}) //nolint:gosec // bounded above
+// Stacks lists stacks by name after after.
+func (s *Store) Stacks(ctx context.Context, after string, limit int) ([]deploy.Stack, error) {
+	rows, err := s.q.ListStacks(ctx, queries.ListStacksParams{After: after, MaxRows: int32(min(limit, 1000))}) //nolint:gosec // bounded above
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +277,7 @@ func (s *Store) Deployments(ctx context.Context, after string, limit int) ([]dep
 }
 
 // withLatest maps rows and reads their latest operations in one query.
-func (s *Store) withLatest(ctx context.Context, rows []queries.Deployment) ([]deploy.Deployment, error) {
+func (s *Store) withLatest(ctx context.Context, rows []queries.Stack) ([]deploy.Stack, error) {
 	var ids []uuid.UUID
 	for _, r := range rows {
 		if r.LatestOperationID != nil {
@@ -294,9 +294,9 @@ func (s *Store) withLatest(ctx context.Context, rows []queries.Deployment) ([]de
 			latest[op.ID] = operation(op)
 		}
 	}
-	out := make([]deploy.Deployment, 0, len(rows))
+	out := make([]deploy.Stack, 0, len(rows))
 	for _, r := range rows {
-		d := deploy.Deployment{ID: r.ID, Name: r.Name, Project: r.Project, CreatedAt: r.CreatedAt}
+		d := deploy.Stack{ID: r.ID, Name: r.Name, ComposeProject: r.ComposeProject, CreatedAt: r.CreatedAt}
 		if r.LatestOperationID != nil {
 			if op, ok := latest[*r.LatestOperationID]; ok {
 				d.Latest = &op
@@ -307,9 +307,9 @@ func (s *Store) withLatest(ctx context.Context, rows []queries.Deployment) ([]de
 	return out, nil
 }
 
-// Operations lists a deployment's history newest first.
-func (s *Store) Operations(ctx context.Context, deploymentID uuid.UUID, before *uuid.UUID, limit int) ([]deploy.Operation, error) {
-	rows, err := s.q.ListOperations(ctx, queries.ListOperationsParams{DeploymentID: deploymentID, Before: before, MaxRows: int32(min(limit, 1000))}) //nolint:gosec // bounded above
+// Operations lists a stack's history newest first.
+func (s *Store) Operations(ctx context.Context, stackID uuid.UUID, before *uuid.UUID, limit int) ([]deploy.Operation, error) {
+	rows, err := s.q.ListOperations(ctx, queries.ListOperationsParams{StackID: stackID, Before: before, MaxRows: int32(min(limit, 1000))}) //nolint:gosec // bounded above
 	if err != nil {
 		return nil, err
 	}
@@ -320,9 +320,9 @@ func (s *Store) Operations(ctx context.Context, deploymentID uuid.UUID, before *
 	return out, nil
 }
 
-// LatestSucceededApply returns the apply whose graph the deployment runs now.
-func (s *Store) LatestSucceededApply(ctx context.Context, deploymentID uuid.UUID) (deploy.Operation, bool, error) {
-	row, ok, err := found(s.q.LatestSucceededApply(ctx, deploymentID))
+// LatestSucceededApply returns the apply whose graph the stack runs now.
+func (s *Store) LatestSucceededApply(ctx context.Context, stackID uuid.UUID) (deploy.Operation, bool, error) {
+	row, ok, err := found(s.q.LatestSucceededApply(ctx, stackID))
 	if !ok {
 		return deploy.Operation{}, false, err
 	}
@@ -330,8 +330,8 @@ func (s *Store) LatestSucceededApply(ctx context.Context, deploymentID uuid.UUID
 }
 
 // LatestApplyReachedUp returns the apply whose instances the state read expects.
-func (s *Store) LatestApplyReachedUp(ctx context.Context, deploymentID uuid.UUID) (deploy.Operation, bool, error) {
-	row, ok, err := found(s.q.LatestApplyReachedUp(ctx, deploymentID))
+func (s *Store) LatestApplyReachedUp(ctx context.Context, stackID uuid.UUID) (deploy.Operation, bool, error) {
+	row, ok, err := found(s.q.LatestApplyReachedUp(ctx, stackID))
 	if !ok {
 		return deploy.Operation{}, false, err
 	}
@@ -339,8 +339,8 @@ func (s *Store) LatestApplyReachedUp(ctx context.Context, deploymentID uuid.UUID
 }
 
 // LatestApply returns the newest apply, whatever its status.
-func (s *Store) LatestApply(ctx context.Context, deploymentID uuid.UUID) (deploy.Operation, bool, error) {
-	row, ok, err := found(s.q.LatestApply(ctx, deploymentID))
+func (s *Store) LatestApply(ctx context.Context, stackID uuid.UUID) (deploy.Operation, bool, error) {
+	row, ok, err := found(s.q.LatestApply(ctx, stackID))
 	if !ok {
 		return deploy.Operation{}, false, err
 	}
@@ -348,8 +348,8 @@ func (s *Store) LatestApply(ctx context.Context, deploymentID uuid.UUID) (deploy
 }
 
 // LatestSucceededBefore returns the newest succeeded operation started before failed.
-func (s *Store) LatestSucceededBefore(ctx context.Context, deploymentID, failed uuid.UUID) (deploy.Operation, bool, error) {
-	row, ok, err := found(s.q.LatestSucceededBefore(ctx, queries.LatestSucceededBeforeParams{DeploymentID: deploymentID, Failed: failed}))
+func (s *Store) LatestSucceededBefore(ctx context.Context, stackID, failed uuid.UUID) (deploy.Operation, bool, error) {
+	row, ok, err := found(s.q.LatestSucceededBefore(ctx, queries.LatestSucceededBeforeParams{StackID: stackID, Failed: failed}))
 	if !ok {
 		return deploy.Operation{}, false, err
 	}
@@ -364,7 +364,7 @@ func (s *Store) CountRollbacks(ctx context.Context, of uuid.UUID) (int, error) {
 
 func insertParams(op deploy.Operation) queries.InsertOperationParams {
 	return queries.InsertOperationParams{
-		DeploymentID: op.DeploymentID, Action: string(op.Action), Graph: op.Graph, PlanDigest: optional(op.Digest),
+		StackID: op.StackID, Action: string(op.Action), Graph: op.Graph, Digest: optional(op.Digest),
 		DeleteData: op.DeleteData, RollbackOf: op.RollbackOf, PlacedSupplied: nonNil(op.PlacedSupplied),
 		StartedByIss: op.StartedBy.Issuer, StartedBySub: op.StartedBy.Subject, StartedByEmail: op.StartedBy.Email,
 	}
@@ -372,8 +372,8 @@ func insertParams(op deploy.Operation) queries.InsertOperationParams {
 
 func operation(r queries.Operation) deploy.Operation {
 	return deploy.Operation{
-		ID: r.ID, DeploymentID: r.DeploymentID, Action: deploy.Action(r.Action), Status: deploy.Status(r.Status),
-		Step: deploy.Step(deref(r.Step)), Graph: r.Graph, Digest: deref(r.PlanDigest), DeleteData: r.DeleteData,
+		ID: r.ID, StackID: r.StackID, Action: deploy.Action(r.Action), Status: deploy.Status(r.Status),
+		Step: deploy.Step(deref(r.Step)), Graph: r.Graph, Digest: deref(r.Digest), DeleteData: r.DeleteData,
 		RollbackOf: r.RollbackOf, PlacedSupplied: nonNil(r.PlacedSupplied),
 		StartedBy:           deploy.Starter{Issuer: r.StartedByIss, Subject: r.StartedBySub, Email: r.StartedByEmail},
 		DeployerOperationID: deref(r.DeployerOperationID), DeployerBootID: deref(r.DeployerBootID),

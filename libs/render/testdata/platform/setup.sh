@@ -18,8 +18,8 @@ set_id() {
 set_id MP_UID "$(id -u)"
 set_id MP_GID "$(id -g)"
 
-# The install folder, as an absolute path: the platform mounts its deployments folder at the same
-# path inside the deployer, so the host's Docker finds every file a deployment names.
+# The install folder, as an absolute path: the platform mounts its stacks folder at the same
+# path inside the deployer, so the host's Docker finds every file a stack names.
 case $(pwd) in
 *"'"* | *\\* | *'$'*)
 	echo "setup.sh: the path of this folder holds ', \\ or \$, which .env cannot keep; move the folder" >&2
@@ -96,10 +96,10 @@ check_env() {
 		MP_API__SESSION_IDLE) ;;
 		MP_API__SESSION_MAX) ;;
 		MP_AUTHELIA__ADMIN_EMAIL) check_value MP_AUTHELIA__ADMIN_EMAIL 'string' '' '' '^((([]\001-\010\013\016-\037!-,.-?A-\\_-\177^-]|[\302-\364][\200-\277]{1,3}))+@(([]\001-\010\013\016-\037!-,.-?A-\\_-\177^-]|[\302-\364][\200-\277]{1,3}))+)$' false ;;
-		MP_DEPLOYER_DOCKER__DEPLOYMENTS_DIR) ;;
 		MP_DEPLOYER_DOCKER__PLATFORM_GID) ;;
 		MP_DEPLOYER_DOCKER__PLATFORM_UID) ;;
 		MP_DEPLOYER_DOCKER__PULL_TIMEOUT) ;;
+		MP_DEPLOYER_DOCKER__STACKS_DIR) ;;
 		MP_DEPLOYER_DOCKER__WAIT_TIMEOUT) ;;
 		MP_INGRESS__ACME_EMAIL) check_value MP_INGRESS__ACME_EMAIL 'string' '' '' '' true ;;
 		MP_INGRESS__BASE_PATH) check_value MP_INGRESS__BASE_PATH 'string' '' '' '^(((/([.0-9A-Z_a-z~-])+))+)$' true ;;
@@ -484,7 +484,7 @@ new_folder data/ingress/config
 new_folder data/ingress/data
 new_folder data/ingress/data/caddy/pki/authorities/local
 new_folder data/postgres/data
-new_folder deployments
+new_folder stacks
 
 echo
 echo "Done. Start the platform with: docker compose up -d --wait"

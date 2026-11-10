@@ -19,7 +19,7 @@ def main(source: str, prefix: str, out: str) -> None:
         dirs.sort()
         for name in files:
             rel = os.path.relpath(os.path.join(root, name), source)
-            if name not in SKIP and not rel.startswith(("secrets", "deployments", ".env" + os.sep)) and rel != ".env":
+            if name not in SKIP and not rel.startswith(("secrets", "stacks", ".env" + os.sep)) and rel != ".env":
                 paths.append(rel)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for rel in sorted(paths):

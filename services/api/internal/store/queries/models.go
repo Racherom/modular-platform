@@ -19,22 +19,14 @@ type AdminBinding struct {
 	BoundAt   time.Time
 }
 
-type Deployment struct {
-	ID                uuid.UUID
-	Name              string
-	Project           string
-	CreatedAt         time.Time
-	LatestOperationID *uuid.UUID
-}
-
 type Operation struct {
 	ID                  uuid.UUID
-	DeploymentID        uuid.UUID
+	StackID             uuid.UUID
 	Action              string
 	Status              string
 	Step                *string
 	Graph               json.RawMessage
-	PlanDigest          *string
+	Digest              *string
 	DeleteData          bool
 	RollbackOf          *uuid.UUID
 	PlacedSupplied      []string
@@ -57,4 +49,12 @@ type Session struct {
 	CreatedAt  time.Time
 	LastSeenAt time.Time
 	ExpiresAt  time.Time
+}
+
+type Stack struct {
+	ID                uuid.UUID
+	Name              string
+	ComposeProject    string
+	CreatedAt         time.Time
+	LatestOperationID *uuid.UUID
 }

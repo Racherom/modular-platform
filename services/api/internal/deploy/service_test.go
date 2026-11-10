@@ -21,18 +21,18 @@ import (
 	"github.com/racherom/modular-platform/services/api/internal/deploy"
 )
 
-// memStore keeps deployments and operations in memory, with the database's busy rule.
+// memStore keeps stacks and operations in memory, with the database's busy rule.
 type memStore struct {
 	mu   sync.Mutex
-	deps map[string]*deploy.Deployment
+	deps map[string]*deploy.Stack
 	ops  map[uuid.UUID]*deploy.Operation
 }
 
 func newMem() *memStore {
-	return &memStore{deps: map[string]*deploy.Deployment{}, ops: map[uuid.UUID]*deploy.Operation{}}
+	return &memStore{deps: map[string]*deploy.Stack{}, ops: map[uuid.UUID]*deploy.Operation{}}
 }
 
-func (m *memStore) byID(id uuid.UUID) *deploy.Deployment {
+func (m *memStore) byID(id uuid.UUID) *deploy.Stack {
 	for _, d := range m.deps {
 		if d.ID == id {
 			return d
@@ -41,18 +41,18 @@ func (m *memStore) byID(id uuid.UUID) *deploy.Deployment {
 	return nil
 }
 
-func (m *memStore) EnsureDeployment(_ context.Context, name string) (uuid.UUID, string, bool, error) {
+func (m *memStore) EnsureStack(_ context.Context, name string) (uuid.UUID, string, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if d, ok := m.deps[name]; ok {
-		return d.ID, d.Project, false, nil
+		return d.ID, d.ComposeProject, false, nil
 	}
-	d := &deploy.Deployment{ID: uuid.Must(uuid.NewV7()), Name: name, Project: "mp-" + name, CreatedAt: time.Now()}
+	d := &deploy.Stack{ID: uuid.Must(uuid.NewV7()), Name: name, ComposeProject: "mp-" + name, CreatedAt: time.Now()}
 	m.deps[name] = d
-	return d.ID, d.Project, true, nil
+	return d.ID, d.ComposeProject, true, nil
 }
 
-func (m *memStore) DropNewDeployment(_ context.Context, id uuid.UUID) error {
+func (m *memStore) DropNewStack(_ context.Context, id uuid.UUID) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for name, d := range m.deps {
@@ -67,20 +67,20 @@ func (m *memStore) StartOperation(_ context.Context, op deploy.Operation) (deplo
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, o := range m.ops {
-		if o.DeploymentID == op.DeploymentID && o.Status == deploy.StatusRunning {
+		if o.StackID == op.StackID && o.Status == deploy.StatusRunning {
 			return deploy.Operation{}, deploy.ErrBusy
 		}
 	}
 	op.ID, op.Status, op.Step, op.StartedAt = uuid.Must(uuid.NewV7()), deploy.StatusRunning, deploy.StepPrepare, time.Now()
 	stored := op
 	m.ops[op.ID] = &stored
-	m.byID(op.DeploymentID).Latest = &stored
+	m.byID(op.StackID).Latest = &stored
 	return op, nil
 }
 
 func (m *memStore) StartOperationIfLatest(ctx context.Context, op deploy.Operation, latest uuid.UUID) (deploy.Operation, bool, error) {
 	m.mu.Lock()
-	d := m.byID(op.DeploymentID)
+	d := m.byID(op.StackID)
 	current := d.Latest != nil && d.Latest.ID == latest
 	m.mu.Unlock()
 	if !current {
@@ -97,10 +97,10 @@ func (m *memStore) DropOperation(_ context.Context, op deploy.Operation) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.ops, op.ID)
-	d := m.byID(op.DeploymentID)
+	d := m.byID(op.StackID)
 	d.Latest = nil
 	for _, o := range m.ops {
-		if o.DeploymentID == d.ID && (d.Latest == nil || o.StartedAt.After(d.Latest.StartedAt)) {
+		if o.StackID == d.ID && (d.Latest == nil || o.StartedAt.After(d.Latest.StartedAt)) {
 			d.Latest = o
 		}
 	}
@@ -153,19 +153,19 @@ func (m *memStore) RunningOperations(context.Context) ([]deploy.RunningOperation
 	var out []deploy.RunningOperation
 	for _, op := range m.ops {
 		if op.Status == deploy.StatusRunning {
-			d := m.byID(op.DeploymentID)
-			out = append(out, deploy.RunningOperation{Operation: *op, DeploymentName: d.Name, Project: d.Project})
+			d := m.byID(op.StackID)
+			out = append(out, deploy.RunningOperation{Operation: *op, StackName: d.Name, ComposeProject: d.ComposeProject})
 		}
 	}
 	return out, nil
 }
 
-func (m *memStore) Deployment(_ context.Context, name string) (deploy.Deployment, bool, error) {
+func (m *memStore) Stack(_ context.Context, name string) (deploy.Stack, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	d, ok := m.deps[name]
 	if !ok {
-		return deploy.Deployment{}, false, nil
+		return deploy.Stack{}, false, nil
 	}
 	out := *d
 	if d.Latest != nil {
@@ -175,7 +175,7 @@ func (m *memStore) Deployment(_ context.Context, name string) (deploy.Deployment
 	return out, true, nil
 }
 
-func (m *memStore) Deployments(ctx context.Context, after string, limit int) ([]deploy.Deployment, error) {
+func (m *memStore) Stacks(ctx context.Context, after string, limit int) ([]deploy.Stack, error) {
 	var names []string
 	m.mu.Lock()
 	for n := range m.deps {
@@ -185,9 +185,9 @@ func (m *memStore) Deployments(ctx context.Context, after string, limit int) ([]
 	}
 	m.mu.Unlock()
 	slices.Sort(names)
-	var out []deploy.Deployment
+	var out []deploy.Stack
 	for _, n := range names[:min(limit, len(names))] {
-		d, _, _ := m.Deployment(ctx, n)
+		d, _, _ := m.Stack(ctx, n)
 		out = append(out, d)
 	}
 	return out, nil
@@ -198,7 +198,7 @@ func (m *memStore) Operations(_ context.Context, id uuid.UUID, _ *uuid.UUID, _ i
 	defer m.mu.Unlock()
 	var out []deploy.Operation
 	for _, op := range m.ops {
-		if op.DeploymentID == id {
+		if op.StackID == id {
 			out = append(out, *op)
 		}
 	}
@@ -210,7 +210,7 @@ func (m *memStore) latest(id uuid.UUID, keep func(*deploy.Operation) bool) (depl
 	defer m.mu.Unlock()
 	var best *deploy.Operation
 	for _, op := range m.ops {
-		if op.DeploymentID == id && keep(op) && (best == nil || op.StartedAt.After(best.StartedAt)) {
+		if op.StackID == id && keep(op) && (best == nil || op.StartedAt.After(best.StartedAt)) {
 			best = op
 		}
 	}
@@ -263,9 +263,9 @@ func (p fakeRenderer) Check(_ context.Context, g contract.Graph) (contract.Check
 	return contract.CheckResult{Ok: true, Graph: g, Digest: p.digest}, nil
 }
 
-func (p fakeRenderer) RenderManaged(_ context.Context, g contract.Graph, _ uuid.UUID) (contract.RenderedProject, error) {
-	return contract.RenderedProject{
-		Project: "mp-" + g.Name, Check: contract.CheckResult{Ok: true, Graph: g, Digest: p.digest},
+func (p fakeRenderer) RenderManaged(_ context.Context, g contract.Graph, _ uuid.UUID) (contract.RenderedStack, error) {
+	return contract.RenderedStack{
+		ComposeProject: "mp-" + g.Name, Check: contract.CheckResult{Ok: true, Graph: g, Digest: p.digest},
 		Images:  []contract.ModuleImage{{Instance: "web", Module: "whoami", Image: "traefik/whoami:v1.12.0"}},
 		Secrets: []contract.RenderedSecret{{Path: "secrets/app/uses_db_password", Kind: contract.Placed, Instance: "app", Capability: "postgresql", Field: "password"}},
 		Files:   []contract.RenderedFile{{Path: "docker-compose.yml", Mode: 0o644, Data: []byte("name: x\n")}},
@@ -337,7 +337,7 @@ func (f *fakeTarget) Operation(ctx context.Context, id string) (deploy.TargetOpe
 	return deploy.TargetOperation{Operation: deploytarget.Operation{Id: id, Status: status, Step: step}}, f.boot, nil
 }
 
-func (f *fakeTarget) State(ctx context.Context, _ string) (deploytarget.ProjectState, error) {
+func (f *fakeTarget) State(ctx context.Context, _ string) (deploytarget.StackState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.stateReads++
@@ -345,9 +345,9 @@ func (f *fakeTarget) State(ctx context.Context, _ string) (deploytarget.ProjectS
 		f.stateCallers = append(f.stateCallers, c.User)
 	}
 	if f.services != nil {
-		return deploytarget.ProjectState{Present: true, Services: slices.Clone(f.services)}, nil
+		return deploytarget.StackState{Present: true, Services: slices.Clone(f.services)}, nil
 	}
-	return deploytarget.ProjectState{Present: true, Services: []deploytarget.ServiceState{
+	return deploytarget.StackState{Present: true, Services: []deploytarget.ServiceState{
 		{Instance: "web", Module: "whoami", State: deploytarget.ServiceStateStateRunning},
 	}}, nil
 }
@@ -397,7 +397,7 @@ func TestApplyRunsToRunning(t *testing.T) {
 		t.Errorf("placed supplied %q", op.PlacedSupplied)
 	}
 	waitFor(t, "running", func() bool {
-		d, _, _ := st.Deployment(t.Context(), "sample")
+		d, _, _ := st.Stack(t.Context(), "sample")
 		return d.State() == deploy.StateRunning
 	})
 	v, err := s.View(t.Context(), "sample")
@@ -453,7 +453,7 @@ func TestApplyRefusals(t *testing.T) {
 				}
 			}
 			if len(st.deps) != 0 || len(st.ops) != 0 {
-				t.Errorf("a refusal left %d deployments and %d operations", len(st.deps), len(st.ops))
+				t.Errorf("a refusal left %d stacks and %d operations", len(st.deps), len(st.ops))
 			}
 		})
 	}
@@ -480,7 +480,7 @@ func TestApplyWithTheDeployerDown(t *testing.T) {
 	if op.Status != deploy.StatusFailed || op.Error != "deployer_unavailable" {
 		t.Errorf("operation %+v", op)
 	}
-	d, _, _ := st.Deployment(t.Context(), "sample")
+	d, _, _ := st.Stack(t.Context(), "sample")
 	if d.State() != deploy.StateFailed {
 		t.Errorf("state %s", d.State())
 	}
@@ -495,7 +495,7 @@ func TestPollMarksUnknownOnANewBoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "unknown", func() bool {
-		d, _, _ := st.Deployment(t.Context(), "sample")
+		d, _, _ := st.Stack(t.Context(), "sample")
 		return d.State() == deploy.StateUnknown
 	})
 }
@@ -541,7 +541,7 @@ func TestStateIsDerived(t *testing.T) {
 		{&deploy.Operation{Action: deploy.ActionApply, Status: deploy.StatusFailed}, deploy.StateFailed},
 		{&deploy.Operation{Action: deploy.ActionApply, Status: deploy.StatusUnknown}, deploy.StateUnknown},
 	} {
-		if got := (deploy.Deployment{Latest: tc.op}).State(); got != tc.want {
+		if got := (deploy.Stack{Latest: tc.op}).State(); got != tc.want {
 			t.Errorf("%+v: %s, want %s", tc.op, got, tc.want)
 		}
 	}

@@ -16,14 +16,14 @@ const LabelPrefix = "io.github.racherom.modular-platform."
 
 // The platform labels on every service of a managed project.
 const (
-	LabelGraph      = LabelPrefix + "graph"      // the graph name
-	LabelInstance   = LabelPrefix + "instance"   // the instance name; a job's provisioner instance
-	LabelModule     = LabelPrefix + "module"     // the catalog module name; a job's provisioner module
-	LabelDeployment = LabelPrefix + "deployment" // the deployment id; "platform" on the platform's own services
-	LabelJob        = LabelPrefix + "job"        // provision or revoke on a one shot job, wait on mp_jobs (spec 0013)
+	LabelGraph    = LabelPrefix + "graph"    // the graph name
+	LabelInstance = LabelPrefix + "instance" // the instance name; a job's provisioner instance
+	LabelModule   = LabelPrefix + "module"   // the catalog module name; a job's provisioner module
+	LabelStack    = LabelPrefix + "stack"    // the stack id; "platform" on the platform's own services
+	LabelJob      = LabelPrefix + "job"      // provision or revoke on a one shot job, wait on mp_jobs (spec 0013)
 )
 
-// ProjectPrefix starts every managed project name, so a deployment can never be or clash with
+// ProjectPrefix starts every managed project name, so a stack can never be or clash with
 // the platform's own project, modular-platform.
 const ProjectPrefix = "mp-"
 
@@ -123,11 +123,11 @@ func refusals(result contract.CheckResult, catalog contract.Catalog) []contract.
 }
 
 // label writes the platform labels on every service of project p of graph g (spec 0013,
-// "Labels"): graph and deployment on each, instance and module on a module's service, and on a
+// "Labels"): graph and stack on each, instance and module on a module's service, and on a
 // job those of its provisioner plus the job label.
-func label(p *types.Project, g contract.Graph, jobs map[string]job, deployment string) {
+func label(p *types.Project, g contract.Graph, jobs map[string]job, stack string) {
 	for name, svc := range p.Services {
-		labels := types.Labels{LabelGraph: g.Name, LabelDeployment: deployment}
+		labels := types.Labels{LabelGraph: g.Name, LabelStack: stack}
 		if j, ok := jobs[name]; ok {
 			labels[LabelJob] = j.kind
 			if j.instance != "" { // the wait anchor belongs to no instance
@@ -147,9 +147,9 @@ func label(p *types.Project, g contract.Graph, jobs map[string]job, deployment s
 // Managed renders an ok check result for the managed deployer (spec 0006, grown by 0013): the static
 // output plus the platform labels on every service (and the job label on each one shot job),
 // restart: unless-stopped on every long running service, and the project named mp-<graph>.
-// Host names stay <instance>.<graph>.internal. deployment is the deployment id written into the
-// deployment label. A graph with an instance the managed flavor refuses returns a *RefusedError.
-func Managed(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates, deployment string) (ManagedProject, error) {
+// Host names stay <instance>.<graph>.internal. stack is the stack id written into the
+// stack label. A graph with an instance the managed flavor refuses returns a *RefusedError.
+func Managed(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates, stack string) (ManagedProject, error) {
 	if !result.Ok {
 		return ManagedProject{}, ErrGraphHasErrors
 	}
@@ -157,7 +157,7 @@ func Managed(result contract.CheckResult, catalog contract.Catalog, templates co
 		return ManagedProject{}, &RefusedError{Problems: problems}
 	}
 	r, err := renderProject(result, catalog, templates, flavorManaged, func(p *types.Project, jobs map[string]job) {
-		label(p, result.Graph, jobs, deployment)
+		label(p, result.Graph, jobs, stack)
 		p.Name = ProjectPrefix + p.Name
 	})
 	if err != nil {

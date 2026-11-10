@@ -19,8 +19,8 @@ set_id MP_UID "$(id -u)"
 set_id MP_GID "$(id -g)"
 {{- if .Platform}}
 
-# The install folder, as an absolute path: the platform mounts its deployments folder at the same
-# path inside the deployer, so the host's Docker finds every file a deployment names.
+# The install folder, as an absolute path: the platform mounts its stacks folder at the same
+# path inside the deployer, so the host's Docker finds every file a stack names.
 case $(pwd) in
 *"'"* | *\\* | *'$'*)
 	echo "setup.sh: the path of this folder holds ', \\ or \$, which .env cannot keep; move the folder" >&2

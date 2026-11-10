@@ -69,13 +69,13 @@ func TestSchemaIsLive(t *testing.T) {
 		}
 		tables = append(tables, name)
 	}
-	want := []string{"admin_binding", "deployments", "goose_db_version", "operations", "sessions"}
+	want := []string{"admin_binding", "goose_db_version", "operations", "sessions", "stacks"}
 	if !slices.Equal(tables, want) {
 		t.Errorf("tables = %q, want %q", tables, want)
 	}
 	var indexes int
 	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM pg_indexes WHERE indexname IN
-		('operations_one_running_idx', 'operations_deployment_started_idx', 'sessions_expires_at_idx')`).Scan(&indexes); err != nil {
+		('operations_one_running_idx', 'operations_stack_started_idx', 'sessions_expires_at_idx')`).Scan(&indexes); err != nil {
 		t.Fatal(err)
 	}
 	if indexes != 3 {
@@ -139,7 +139,7 @@ func TestSessions(t *testing.T) {
 
 func applyOp(id uuid.UUID) deploy.Operation {
 	return deploy.Operation{
-		DeploymentID: id, Action: deploy.ActionApply, Graph: json.RawMessage(`{"name":"sample"}`), Digest: "sha256:x",
+		StackID: id, Action: deploy.ActionApply, Graph: json.RawMessage(`{"name":"sample"}`), Digest: "sha256:x",
 		StartedBy: deploy.Starter{Issuer: "i", Subject: "s", Email: "a@b.c"},
 	}
 }
@@ -147,14 +147,14 @@ func applyOp(id uuid.UUID) deploy.Operation {
 func TestOperations(t *testing.T) {
 	st, _ := startStore(t)
 	ctx := t.Context()
-	if _, _, _, err := st.EnsureDeployment(ctx, "modular-platform"); err == nil {
+	if _, _, _, err := st.EnsureStack(ctx, "modular-platform"); err == nil {
 		t.Error("the reserved name was stored")
 	}
-	id, project, created, err := st.EnsureDeployment(ctx, "sample")
-	if err != nil || !created || project != "mp-sample" {
-		t.Fatalf("ensure: %v %q %v %v", id, project, created, err)
+	id, composeProject, created, err := st.EnsureStack(ctx, "sample")
+	if err != nil || !created || composeProject != "mp-sample" {
+		t.Fatalf("ensure: %v %q %v %v", id, composeProject, created, err)
 	}
-	if again, _, created, _ := st.EnsureDeployment(ctx, "sample"); again != id || created {
+	if again, _, created, _ := st.EnsureStack(ctx, "sample"); again != id || created {
 		t.Errorf("second ensure: %v created %v", again, created)
 	}
 	first, err := st.StartOperation(ctx, applyOp(id))
@@ -164,9 +164,9 @@ func TestOperations(t *testing.T) {
 	if _, err := st.StartOperation(ctx, applyOp(id)); !errors.Is(err, deploy.ErrBusy) {
 		t.Errorf("a second running operation: %v, want ErrBusy", err)
 	}
-	d, _, _ := st.Deployment(ctx, "sample")
+	d, _, _ := st.Stack(ctx, "sample")
 	if d.Latest == nil || d.Latest.ID != first.ID || d.State() != deploy.StateApplying {
-		t.Errorf("deployment %+v", d)
+		t.Errorf("stack %+v", d)
 	}
 	if changed, err := st.ProgressOperation(ctx, first.ID, deploy.StepPull); err != nil || !changed {
 		t.Errorf("progress: %v %v", changed, err)
@@ -177,7 +177,7 @@ func TestOperations(t *testing.T) {
 	if changed, _ := st.FinishOperation(ctx, first.ID, deploy.StatusFailed, deploy.StepUp, "x"); changed {
 		t.Error("a final status changed")
 	}
-	d, _, _ = st.Deployment(ctx, "sample")
+	d, _, _ = st.Stack(ctx, "sample")
 	if d.State() != deploy.StateRunning {
 		t.Errorf("state %s, want running", d.State())
 	}
@@ -190,7 +190,7 @@ func TestOperations(t *testing.T) {
 	if err := st.DropOperation(ctx, second); err != nil {
 		t.Fatal(err)
 	}
-	d, _, _ = st.Deployment(ctx, "sample")
+	d, _, _ = st.Stack(ctx, "sample")
 	if d.Latest == nil || d.Latest.ID != first.ID {
 		t.Errorf("latest after a drop: %+v", d.Latest)
 	}
@@ -199,15 +199,15 @@ func TestOperations(t *testing.T) {
 		t.Errorf("history %d rows, err %v", len(ops), err)
 	}
 
-	// a new deployment refused before any operation is dropped whole
-	other, _, _, _ := st.EnsureDeployment(ctx, "other")
-	if err := st.DropNewDeployment(ctx, other); err != nil {
+	// a new stack refused before any operation is dropped whole
+	other, _, _, _ := st.EnsureStack(ctx, "other")
+	if err := st.DropNewStack(ctx, other); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, _ := st.Deployment(ctx, "other"); ok {
-		t.Error("the refused deployment is still there")
+	if _, ok, _ := st.Stack(ctx, "other"); ok {
+		t.Error("the refused stack is still there")
 	}
-	list, err := st.Deployments(ctx, "", 10)
+	list, err := st.Stacks(ctx, "", 10)
 	if err != nil || len(list) != 1 || list[0].Name != "sample" {
 		t.Errorf("list %+v, err %v", list, err)
 	}
@@ -219,7 +219,7 @@ func TestOperations(t *testing.T) {
 func TestRunningOperations(t *testing.T) {
 	st, _ := startStore(t)
 	ctx := context.Background()
-	id, _, _, _ := st.EnsureDeployment(ctx, "sample")
+	id, _, _, _ := st.EnsureStack(ctx, "sample")
 	op, err := st.StartOperation(ctx, applyOp(id))
 	if err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestRunningOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	running, err := st.RunningOperations(ctx)
-	if err != nil || len(running) != 1 || running[0].DeployerBootID != "boot-1" || running[0].Project != "mp-sample" {
+	if err != nil || len(running) != 1 || running[0].DeployerBootID != "boot-1" || running[0].ComposeProject != "mp-sample" {
 		t.Errorf("running %+v, err %v", running, err)
 	}
 }
@@ -236,7 +236,7 @@ func TestRunningOperations(t *testing.T) {
 func TestRollbackQueries(t *testing.T) {
 	st, _ := startStore(t)
 	ctx := t.Context()
-	id, _, _, _ := st.EnsureDeployment(ctx, "sample")
+	id, _, _, _ := st.EnsureStack(ctx, "sample")
 	good, err := st.StartOperation(ctx, applyOp(id))
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +269,7 @@ func TestRollbackQueries(t *testing.T) {
 	if err != nil || !started || rb.RollbackOf == nil || *rb.RollbackOf != bad.ID {
 		t.Fatalf("rollback %+v started %v err %v", rb, started, err)
 	}
-	if d, _, _ := st.Deployment(ctx, "sample"); d.State() != deploy.StateRollingBack {
+	if d, _, _ := st.Stack(ctx, "sample"); d.State() != deploy.StateRollingBack {
 		t.Errorf("state %s, want rolling-back", d.State())
 	}
 	if _, started, err := st.StartOperationIfLatest(ctx, rollback, rb.ID); err != nil || started {
@@ -281,7 +281,7 @@ func TestRollbackQueries(t *testing.T) {
 }
 
 // TestBusyAcrossProcesses: two api processes, each with its own pool, start an operation of the
-// same deployment at once; exactly one gets it (AC-9).
+// same stack at once; exactly one gets it (AC-9).
 func TestBusyAcrossProcesses(t *testing.T) {
 	first, pool := startStore(t)
 	otherPool, err := pgxpool.New(t.Context(), pool.Config().ConnString())
@@ -290,7 +290,7 @@ func TestBusyAcrossProcesses(t *testing.T) {
 	}
 	t.Cleanup(otherPool.Close)
 	second := store.New(otherPool)
-	id, _, _, _ := first.EnsureDeployment(t.Context(), "sample")
+	id, _, _, _ := first.EnsureStack(t.Context(), "sample")
 
 	for round := range 10 {
 		var wg sync.WaitGroup

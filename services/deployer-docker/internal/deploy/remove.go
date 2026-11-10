@@ -33,7 +33,7 @@ type RemoveRequest struct {
 func (e *Engine) Remove(ctx context.Context, req RemoveRequest) (Operation, error) {
 	if !ValidProject(req.Project) {
 		return Operation{}, &RefusedError{Problems: []Problem{{
-			Code: CodeInvalidProject, Path: "project", Message: fmt.Sprintf("The project %q must be mp- followed by a deployment name.", req.Project),
+			Code: CodeInvalidProject, Path: "project", Message: fmt.Sprintf("The project %q must be mp- followed by a stack name.", req.Project),
 		}}}
 	}
 	present, _, err := e.State(ctx, req.Project)

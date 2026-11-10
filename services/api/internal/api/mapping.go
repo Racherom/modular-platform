@@ -23,8 +23,8 @@ func operation(op deploy.Operation) Operation {
 	return out
 }
 
-func summary(d deploy.Deployment) DeploymentSummary {
-	out := DeploymentSummary{Name: d.Name, State: DeploymentState(d.State())}
+func summary(d deploy.Stack) StackSummary {
+	out := StackSummary{Name: d.Name, State: StackState(d.State())}
 	if d.Latest != nil {
 		out.LatestOperation = operation(*d.Latest)
 	}
@@ -42,10 +42,10 @@ func moduleStates(in []deploy.ModuleState) []ModuleState {
 	return out
 }
 
-func view(v deploy.View) Deployment {
-	s := summary(v.Deployment)
-	out := Deployment{
-		Name: s.Name, State: s.State, LatestOperation: s.LatestOperation, Project: v.Project, CreatedAt: v.CreatedAt,
+func view(v deploy.View) Stack {
+	s := summary(v.Stack)
+	out := Stack{
+		Name: s.Name, State: s.State, LatestOperation: s.LatestOperation, ComposeProject: v.ComposeProject, CreatedAt: v.CreatedAt,
 		StateError: v.StateError,
 	}
 	if v.Graph != nil {

@@ -20,7 +20,7 @@ import (
 const (
 	// CodeHostAccess refuses a key or value the managed render never emits.
 	CodeHostAccess = "host_access"
-	// CodeInvalidProject refuses a project that is not the deployment's own.
+	// CodeInvalidProject refuses a project that is not the stack's own.
 	CodeInvalidProject = "invalid_project"
 )
 
@@ -32,7 +32,7 @@ var (
 	dataFolder = regexp.MustCompile(`^\./data/([a-z0-9-]+)/[a-z0-9-]+$`)
 	// platformLabels are the only labels a managed service carries; LabelJob only on a job or
 	// the wait anchor, with one of jobKinds.
-	platformLabels = []string{LabelDeployment, LabelGraph, LabelInstance, LabelJob, LabelModule}
+	platformLabels = []string{LabelStack, LabelGraph, LabelInstance, LabelJob, LabelModule}
 	jobKinds       = []string{jobProvision, jobRevoke, jobWait}
 )
 
@@ -119,10 +119,10 @@ func Guard(p Project, reservedPorts []int) []contract.Problem {
 	return g.problems
 }
 
-// CheckProject refuses, as invalid_project, a project that is not the deployment's own: a
+// CheckProject refuses, as invalid_project, a project that is not the stack's own: a
 // name other than project, or a service whose graph label is not project without mp- or whose
-// deployment label is not deployment.
-func CheckProject(p Project, project, deployment string) []contract.Problem {
+// stack label is not the stack id stack.
+func CheckProject(p Project, project, stack string) []contract.Problem {
 	var problems []contract.Problem
 	refuse := func(path, format string, args ...any) {
 		problems = append(problems, contract.Problem{
@@ -140,8 +140,8 @@ func CheckProject(p Project, project, deployment string) []contract.Problem {
 		if labels[LabelGraph] != graph {
 			refuse("services."+i+".labels", "Service %s does not carry the graph label %s.", i, graph)
 		}
-		if labels[LabelDeployment] != deployment {
-			refuse("services."+i+".labels", "Service %s does not carry this deployment's label.", i)
+		if labels[LabelStack] != stack {
+			refuse("services."+i+".labels", "Service %s does not carry this stack's label.", i)
 		}
 	}
 	return problems
