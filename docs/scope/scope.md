@@ -213,10 +213,19 @@ Every module the managed platform ships with is only a default: ingress, databas
 **Done when:** you render the managed zip with at least two bundled modules replaced by other providers of the same capabilities, `setup.sh` and `docker compose up` bring it up, sign in and deploy work as with the defaults, no platform service changed to accept the replacement, and the planner refuses a replacement that does not provide what the platform needs.
 - [ ] Design it (spec): `/architect replace the platform's own modules`
 
-### 24. Planner website standalone or in your site · needs a decision
-In managed mode the planner website runs on its own domain, or under a path of a website you already have (for example `example.com/platform`) behind your own reverse proxy, which can stand in for the bundled ingress (#23). Sign in, cookies, the origin check and live updates work in both placements. A widget inside another site's page is deferred.
+### 24. Stack editor standalone or in your site · needs a decision
+In managed mode the stack editor runs on its own domain, or under a path of a website you already have (for example `example.com/platform`) behind your own reverse proxy, which can stand in for the bundled ingress (#23). Sign in, cookies, the origin check and live updates work in both placements. A widget inside another site's page is deferred.
 **Done when:** the same managed install works standalone and mounted under a sub path of an existing site; in both you can sign in, plan, deploy and see live state, and the platform's cookies and routes never clash with the rest of the site.
-- [ ] Design it (spec): `/architect planner website standalone or in your site`
+spec [0026](../specs/0001-platform-stack-architecture/0026-identity-provider-own-host.md) (the identity provider on its own host, one part of this feature) · code in `libs/contract/`, `libs/planner/`, `libs/render/`, `catalog/`, `contracts/openapi/planner.yaml`, `deploy/managed/`, `scripts/smoke-managed.sh`, `web/smoke/`
+- [ ] Design it (spec): `/architect stack editor standalone or in your site` (0026 settles Authelia's placement; your own proxy and the rest of the placement work stay open)
+- [ ] Build the identity provider's own host: `/develop the identity provider on its own host`
+   - [ ] Spike and contract: Authelia on `auth.platform.localhost` by hand, then graph set `host` with `{field}` tokens and the planner refusals (AC-1, AC-3, AC-8, AC-10)
+   - [ ] Render and entries: token filling, aliases, the Caddy host site, the `authelia` entry and the platform graph, goldens (AC-5, AC-6, AC-8)
+   - [ ] Smoke at the root and under `/platform` in CI, then the README and the 0001, 0015 doc updates (AC-1, AC-2, AC-3, AC-4, AC-7, AC-9)
+- [ ] Verify it: `/check verify the identity provider on its own host`
+- [ ] Test it: `/test the identity provider on its own host`
+- [ ] Review it (fresh model): `/check review the identity provider on its own host`
+- [ ] Document it: `/document the identity provider on its own host`
 
 ### 25. Upgrade a managed install · needs a decision
 Move a running managed platform to a newer version: new images, database migrations, and setup steps a newer zip adds, while your secrets, volumes, deployments and replaced modules (#23) stay. Until this lands, an upgrade means installing the new zip over the old folder by hand. Surfaced by spec 0004.
