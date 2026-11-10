@@ -89,7 +89,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/plan": {
+    "/api/v1/check": {
         parameters: {
             query?: never;
             header?: never;
@@ -99,7 +99,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Check a graph and fill in its automatic bindings, as the renderer answers it */
-        post: operations["plan"];
+        post: operations["check"];
         delete?: never;
         options?: never;
         head?: never;
@@ -325,7 +325,7 @@ export interface components {
             deleteData: boolean;
             /** @description Paths of the placed values this apply wrote; never the values. */
             placedSupplied: string[];
-            planDigest?: string;
+            digest?: string;
         };
         OperationPage: {
             items: components["schemas"]["Operation"][];
@@ -350,7 +350,7 @@ export interface components {
             graph: components["schemas"]["Graph"];
         };
         Review: {
-            plan: components["schemas"]["PlanResult"];
+            check: components["schemas"]["CheckResult"];
             modules: components["schemas"]["ModuleImage"][];
             bindings: components["schemas"]["Binding"][];
             publishedPorts: components["schemas"]["PublishedPort"][];
@@ -366,8 +366,8 @@ export interface components {
         };
         ApplyRequest: {
             graph: components["schemas"]["Graph"];
-            /** @description The `plan.digest` of the review you confirmed. */
-            planDigest: string;
+            /** @description The `check.digest` of the review you confirmed. */
+            digest: string;
             placed?: components["schemas"]["PlacedInput"][];
         };
         RemoveRequest: {
@@ -826,7 +826,7 @@ export interface components {
             /** @description True when the provide's capability yields the slot's capability, so a provision job makes it. */
             provisioned: boolean;
         };
-        PlanResult: {
+        CheckResult: {
             ok: boolean;
             graph: components["schemas"]["Graph"];
             /** @description Explicit and automatic bindings, sorted by consumer then slot. */
@@ -897,7 +897,7 @@ export interface components {
             };
         };
         /**
-         * @description Nothing happened: `name_mismatch`, `reserved_name`, the plan's own problems,
+         * @description Nothing happened: `name_mismatch`, `reserved_name`, the check result's own problems,
          *     `host_access`, `invalid_project`, `placed_missing` or `placed_invalid`.
          */
         Refused: {
@@ -1060,7 +1060,7 @@ export interface operations {
             502: components["responses"]["RendererError"];
         };
     };
-    plan: {
+    check: {
         parameters: {
             query?: never;
             header?: never;
@@ -1073,13 +1073,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The plan. */
+            /** @description The check result. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlanResult"];
+                    "application/json": components["schemas"]["CheckResult"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -1102,7 +1102,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The zip, byte for byte what the online tool gives for the same graph. */
+            /** @description The zip, byte for byte what the online editor gives for the same graph. */
             200: {
                 headers: {
                     "Content-Disposition"?: string;
@@ -1116,13 +1116,13 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["BadOrigin"];
             413: components["responses"]["TooLarge"];
-            /** @description The plan has an error, so nothing was rendered. */
+            /** @description The graph has an error, so nothing was rendered. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlanResult"];
+                    "application/json": components["schemas"]["CheckResult"];
                 };
             };
             502: components["responses"]["RendererError"];
@@ -1274,7 +1274,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["BadOrigin"];
-            /** @description An operation of this deployment runs (`busy`), or the plan differs from the reviewed one (`plan_changed`). */
+            /** @description An operation of this deployment runs (`busy`), or the check result differs from the reviewed one (`graph_changed`). */
             409: {
                 headers: {
                     [name: string]: unknown;

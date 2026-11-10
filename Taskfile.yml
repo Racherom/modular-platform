@@ -142,18 +142,18 @@ tasks:
       - test -f deploy/online/.env
 
   online:up:
-    desc: Run the online tool from the images in versions.env (MP_VERSION=dev for your own task images)
+    desc: Run the online editor from the images in versions.env (MP_VERSION=dev for your own task images)
     deps: [online:env]
     cmds:
       - "{{.ONLINE}} -f deploy/online/compose.yaml up -d --wait --wait-timeout 120"
 
   online:down:
-    desc: Stop the online tool
+    desc: Stop the online editor
     cmds:
       - "{{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.dev.yaml down"
 
   dev:
-    desc: Run the online tool graph with the editor served by the Vite dev server, on https://platform.localhost
+    desc: Run the online editor graph with the editor served by the Vite dev server, on https://platform.localhost
     deps: [online:env, web:install]
     env:
       MP_VERSION: dev

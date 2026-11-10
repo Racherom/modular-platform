@@ -1,26 +1,26 @@
 import { readFileSync } from 'node:fs'
 import type { Page, Route } from '@playwright/test'
-import type { Catalog, Graph, PlanResult, Problem } from '../src/api/client'
+import type { Catalog, CheckResult, Graph, Problem } from '../src/api/client'
 import { bindingText, splitText } from '../src/graph/model'
 
 /** The catalog every test sees: built in modules plus test modules, each provide named like its capability. */
 export const catalog: Catalog = JSON.parse(readFileSync(new URL('./fixtures/catalog.json', import.meta.url), 'utf8')) as Catalog
 
-/** How the mock answers one plan call. */
-export type PlanReply = { status: number } | { delayMs: number } | 'echo'
+/** How the mock answers one check call. */
+export type CheckReply = { status: number } | { delayMs: number } | 'echo'
 
 /**
- * A renderer stand in. GET /v1/catalog answers the fixture. POST /v1/plan echoes the posted
+ * A renderer stand in. GET /v1/catalog answers the fixture. POST /v1/check echoes the posted
  * graph, builds bindings from its uses (auto false), and reports unbound_required for each
  * required slot set to null, so ok follows. `next` decides how each call is answered, in order;
  * `entries` replaces the catalog, as the scale check does.
  */
-export async function mockRenderer(page: Page, next: () => PlanReply = () => 'echo', entries: Catalog = catalog) {
-  const plans: Graph[] = []
+export async function mockRenderer(page: Page, next: () => CheckReply = () => 'echo', entries: Catalog = catalog) {
+  const checks: Graph[] = []
   await page.route('**/renderer/v1/catalog', (route) => route.fulfill({ json: entries }))
-  await page.route('**/renderer/v1/plan', async (route: Route) => {
+  await page.route('**/renderer/v1/check', async (route: Route) => {
     const graph = route.request().postDataJSON() as Graph
-    plans.push(graph)
+    checks.push(graph)
     const reply = next()
     if (typeof reply === 'object' && 'status' in reply) {
       await route.fulfill({
@@ -30,14 +30,14 @@ export async function mockRenderer(page: Page, next: () => PlanReply = () => 'ec
       return
     }
     if (typeof reply === 'object') await new Promise((r) => setTimeout(r, reply.delayMs))
-    await route.fulfill({ json: plan(graph, entries) }).catch(() => undefined) // an aborted call has no one to answer
+    await route.fulfill({ json: check(graph, entries) }).catch(() => undefined) // an aborted call has no one to answer
   })
-  return { plans }
+  return { checks }
 }
 
-function plan(graph: Graph, catalog: Catalog): PlanResult {
+function check(graph: Graph, catalog: Catalog): CheckResult {
   const modules = new Map(catalog.modules.map((e) => [e.name, e]))
-  const bindings: PlanResult['bindings'] = []
+  const bindings: CheckResult['bindings'] = []
   const problems: Problem[] = []
   for (const [consumer, m] of Object.entries(graph.modules)) {
     const slots = (m.module === undefined ? undefined : modules.get(m.module)?.uses) ?? {}

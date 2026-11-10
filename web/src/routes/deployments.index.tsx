@@ -21,7 +21,7 @@ export function OnlyManaged() {
   return (
     <EmptyState icon={Server} level={1} title="Deployments live in the managed platform">
       <p>
-        The online tool stores nothing. <Link to="/">Go to the editor</Link> and download a zip instead.
+        The online editor stores nothing. <Link to="/">Go to the editor</Link> and download a zip instead.
       </p>
     </EmptyState>
   )

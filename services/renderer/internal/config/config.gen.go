@@ -25,7 +25,7 @@ func (c Config) ProxyHops(ctx context.Context) (int, error) {
 	return sdk.Value[int](ctx, c.v, "proxy-hops")
 }
 
-// RendererMode is where the renderer runs, public behind the online tool or internal inside the platform.
+// RendererMode is where the renderer runs, public behind the online editor or internal inside the platform.
 func (c Config) RendererMode(ctx context.Context) (RendererMode, error) {
 	s, err := sdk.Value[string](ctx, c.v, "renderer-mode")
 	return RendererMode(s), err
@@ -65,7 +65,7 @@ var Module = sdk.Declaration[Config, Uses]{
 	Name: "renderer",
 	Values: []sdk.ValueSpec{
 		{Name: "proxy-hops", Env: "MP_PROXY_HOPS", Type: "int", Default: "1", Min: "0", Description: "Proxies in front of the renderer that append X-Forwarded-For."},
-		{Name: "renderer-mode", Env: "MP_RENDERER_MODE", Type: "enum", Values: []string{"public", "internal"}, Description: "Where the renderer runs, public behind the online tool or internal inside the platform."},
+		{Name: "renderer-mode", Env: "MP_RENDERER_MODE", Type: "enum", Values: []string{"public", "internal"}, Description: "Where the renderer runs, public behind the online editor or internal inside the platform."},
 		{Name: "renderer-rate", Env: "MP_RENDERER_RATE", Type: "int", Default: "60", Min: "1", Description: "Requests per minute per client address in public mode."},
 	},
 	Bindings: []sdk.BindingSpec{

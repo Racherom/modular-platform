@@ -18,7 +18,7 @@ const (
 	CodeFormatTooNew       = "format_too_new"
 )
 
-// CodeConvertedFromV0alpha1 is the warning a plan of a converted v0alpha1 graph carries.
+// CodeConvertedFromV0alpha1 is the warning a check result of a converted v0alpha1 graph carries.
 const CodeConvertedFromV0alpha1 = "converted_from_v0alpha1"
 
 // header is the part of a file read before strict decoding, so a newer format gets

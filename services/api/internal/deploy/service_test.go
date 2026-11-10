@@ -259,13 +259,13 @@ func (m *memStore) CountRollbacks(_ context.Context, of uuid.UUID) (int, error) 
 
 type fakeRenderer struct{ digest string }
 
-func (p fakeRenderer) Plan(_ context.Context, g contract.Graph) (contract.PlanResult, error) {
-	return contract.PlanResult{Ok: true, Graph: g, Digest: p.digest}, nil
+func (p fakeRenderer) Check(_ context.Context, g contract.Graph) (contract.CheckResult, error) {
+	return contract.CheckResult{Ok: true, Graph: g, Digest: p.digest}, nil
 }
 
 func (p fakeRenderer) RenderManaged(_ context.Context, g contract.Graph, _ uuid.UUID) (contract.RenderedProject, error) {
 	return contract.RenderedProject{
-		Project: "mp-" + g.Name, Plan: contract.PlanResult{Ok: true, Graph: g, Digest: p.digest},
+		Project: "mp-" + g.Name, Check: contract.CheckResult{Ok: true, Graph: g, Digest: p.digest},
 		Images:  []contract.ModuleImage{{Instance: "web", Module: "whoami", Image: "traefik/whoami:v1.12.0"}},
 		Secrets: []contract.RenderedSecret{{Path: "secrets/app/uses_db_password", Kind: contract.Placed, Instance: "app", Capability: "postgresql", Field: "password"}},
 		Files:   []contract.RenderedFile{{Path: "docker-compose.yml", Mode: 0o644, Data: []byte("name: x\n")}},
@@ -433,7 +433,7 @@ func TestApplyRefusals(t *testing.T) {
 		wantCode     string
 	}{
 		"name mismatch":     {"other", "sha256:abc", nil, nil, "name_mismatch"},
-		"plan changed":      {"sample", "sha256:old", nil, deploy.ErrPlanChanged, ""},
+		"graph changed":     {"sample", "sha256:old", nil, deploy.ErrGraphChanged, ""},
 		"deployer refuses":  {"sample", "sha256:abc", refusal, nil, "host_access"},
 		"deployer busy":     {"sample", "sha256:abc", deploy.ErrBusy, deploy.ErrBusy, ""},
 		"deployer miswired": {"sample", "sha256:abc", deploy.ErrTarget, deploy.ErrTarget, ""},

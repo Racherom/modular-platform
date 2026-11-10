@@ -140,49 +140,49 @@ func TestCatalogSorted(t *testing.T) {
 	}
 }
 
-// TestPlanConvertsV0alpha1 covers AC-14: a v0alpha1 graph is answered in v1 with a warning.
-func TestPlanConvertsV0alpha1(t *testing.T) {
+// TestCheckConvertsV0alpha1 covers AC-14: a v0alpha1 graph is answered in v1 with a warning.
+func TestCheckConvertsV0alpha1(t *testing.T) {
 	t.Parallel()
 	p := start(t, public)
-	resp, body := p.do(t, http.MethodPost, "/v1/plan", strings.Replace(sampleJSON, "modular-platform/v1", "modular-platform/v0alpha1", 1), nil)
+	resp, body := p.do(t, http.MethodPost, "/v1/check", strings.Replace(sampleJSON, "modular-platform/v1", "modular-platform/v0alpha1", 1), nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d: %s", resp.StatusCode, body)
 	}
-	var plan contract.PlanResult
-	if err := json.Unmarshal(body, &plan); err != nil {
+	var result contract.CheckResult
+	if err := json.Unmarshal(body, &result); err != nil {
 		t.Fatal(err)
 	}
-	if !plan.Ok || plan.Graph.ApiVersion != contract.APIVersion || len(plan.Problems) != 1 || plan.Problems[0].Code != contract.CodeConvertedFromV0alpha1 {
-		t.Errorf("plan = %+v, want an ok v1 plan with the converted warning", plan)
+	if !result.Ok || result.Graph.ApiVersion != contract.APIVersion || len(result.Problems) != 1 || result.Problems[0].Code != contract.CodeConvertedFromV0alpha1 {
+		t.Errorf("result = %+v, want an ok v1 result with the converted warning", result)
 	}
 	newer := strings.Replace(sampleJSON, `"kind"`, `"formatVersion":"1.7","later":1,"kind"`, 1)
-	if resp, body := p.do(t, http.MethodPost, "/v1/plan", newer, nil); resp.StatusCode != http.StatusBadRequest ||
+	if resp, body := p.do(t, http.MethodPost, "/v1/check", newer, nil); resp.StatusCode != http.StatusBadRequest ||
 		!strings.Contains(string(body), `"code":"`+contract.CodeFormatTooNew+`"`) {
 		t.Errorf("newer format: status %d body %s, want 400 format_too_new", resp.StatusCode, body)
 	}
 }
 
-func TestPlanSample(t *testing.T) {
+func TestCheckSample(t *testing.T) {
 	t.Parallel()
 	p := start(t, public)
-	resp, first := p.do(t, http.MethodPost, "/v1/plan", sampleJSON, nil)
+	resp, first := p.do(t, http.MethodPost, "/v1/check", sampleJSON, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d: %s", resp.StatusCode, first)
 	}
-	var res contract.PlanResult
+	var res contract.CheckResult
 	if err := json.Unmarshal(first, &res); err != nil {
 		t.Fatal(err)
 	}
 	if !res.Ok || len(res.Bindings) != 1 || len(res.Problems) != 0 {
-		t.Errorf("plan = %s", first)
+		t.Errorf("result = %s", first)
 	}
-	_, again := p.do(t, http.MethodPost, "/v1/plan", sampleJSON, nil)
+	_, again := p.do(t, http.MethodPost, "/v1/check", sampleJSON, nil)
 	if !bytes.Equal(first, again) {
 		t.Error("the same request gave different bytes (AC-8)")
 	}
 }
 
-func TestPlanBadRequests(t *testing.T) {
+func TestCheckBadRequests(t *testing.T) {
 	t.Parallel()
 	p := start(t, public)
 	for name, tc := range map[string]struct{ body, code string }{
@@ -192,7 +192,7 @@ func TestPlanBadRequests(t *testing.T) {
 		"kind":          {strings.Replace(sampleJSON, `"Graph"`, `"Module"`, 1), contract.CodeWrongKind},
 		"not json":      {"{", contract.CodeInvalidGraph},
 	} {
-		for _, path := range []string{"/v1/plan", "/v1/render"} {
+		for _, path := range []string{"/v1/check", "/v1/render"} {
 			resp, body := p.do(t, http.MethodPost, path, tc.body, nil)
 			if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), `"code":"`+tc.code+`"`) {
 				t.Errorf("%s %s: status %d body %s", name, path, resp.StatusCode, body)
@@ -233,14 +233,14 @@ func TestPublicLimits(t *testing.T) {
 	p := start(t, publicEnv("1"))
 
 	huge := strings.Replace(sampleJSON, `"name":"whoami-postgres"`, `"name":"`+strings.Repeat("a", 1<<20)+`"`, 1)
-	if resp, _ := p.do(t, http.MethodPost, "/v1/plan", huge, nil); resp.StatusCode != http.StatusRequestEntityTooLarge {
+	if resp, _ := p.do(t, http.MethodPost, "/v1/check", huge, nil); resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Errorf("body over 1 MB: status %d, want 413", resp.StatusCode)
 	}
 
 	// the burst is 10; the 413 above took one token, from the peer address
 	for i := range 20 {
 		forged := http.Header{"X-Forwarded-For": {fmt.Sprintf("10.9.9.%d, 203.0.113.7", i)}}
-		resp, _ := p.do(t, http.MethodPost, "/v1/plan", sampleJSON, forged)
+		resp, _ := p.do(t, http.MethodPost, "/v1/check", sampleJSON, forged)
 		want := http.StatusOK
 		if i >= 10 {
 			want = http.StatusTooManyRequests
@@ -253,7 +253,7 @@ func TestPublicLimits(t *testing.T) {
 		}
 	}
 	other := http.Header{"X-Forwarded-For": {"203.0.113.8"}}
-	if resp, _ := p.do(t, http.MethodPost, "/v1/plan", sampleJSON, other); resp.StatusCode != http.StatusOK {
+	if resp, _ := p.do(t, http.MethodPost, "/v1/check", sampleJSON, other); resp.StatusCode != http.StatusOK {
 		t.Errorf("another client was limited too: status %d", resp.StatusCode)
 	}
 	limited := http.Header{"X-Forwarded-For": {"203.0.113.7"}}
@@ -327,11 +327,11 @@ func TestInternalAuth(t *testing.T) {
 		t.Errorf("no token: status %d, want 401", resp.StatusCode)
 	}
 	wrong := http.Header{"Authorization": {"Bearer " + strings.Repeat("b2", 16)}}
-	if resp, _ := p.do(t, http.MethodPost, "/v1/plan", sampleJSON, wrong); resp.StatusCode != http.StatusUnauthorized {
+	if resp, _ := p.do(t, http.MethodPost, "/v1/check", sampleJSON, wrong); resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("wrong token: status %d, want 401", resp.StatusCode)
 	}
 	right := http.Header{"Authorization": {"Bearer " + token}}
-	if resp, _ := p.do(t, http.MethodPost, "/v1/plan", sampleJSON, right); resp.StatusCode != http.StatusOK {
+	if resp, _ := p.do(t, http.MethodPost, "/v1/check", sampleJSON, right); resp.StatusCode != http.StatusOK {
 		t.Errorf("right token: status %d, want 200", resp.StatusCode)
 	}
 	if resp, _ := p.do(t, http.MethodGet, "/readyz", "", nil); resp.StatusCode != http.StatusOK {
@@ -456,8 +456,8 @@ func TestRenderManaged(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Project != "mp-whoami-postgres" || !got.Plan.Ok || got.Plan.Digest == "" {
-		t.Errorf("project %q, ok %v, digest %q", got.Project, got.Plan.Ok, got.Plan.Digest)
+	if got.Project != "mp-whoami-postgres" || !got.Check.Ok || got.Check.Digest == "" {
+		t.Errorf("project %q, ok %v, digest %q", got.Project, got.Check.Ok, got.Check.Digest)
 	}
 	// the postgres password and the provisioned binding's password, both made by the deployer
 	if len(got.Images) != 2 || len(got.Secrets) != 2 || got.Secrets[0].Kind != contract.Generated || got.Secrets[1].Kind != contract.Generated {
@@ -477,11 +477,11 @@ func TestRenderManaged(t *testing.T) {
 		body string
 		want int
 	}{
-		"bare graph":       {sampleJSON, http.StatusBadRequest},
-		"extra key":        {`{"graph":` + sampleJSON + `,"deployment":"` + deployment + `","x":1}`, http.StatusBadRequest},
-		"bad uuid":         {`{"graph":` + sampleJSON + `,"deployment":"nope"}`, http.StatusBadRequest},
-		"graph extra key":  {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{},"x":1},"deployment":"` + deployment + `"}`, http.StatusBadRequest},
-		"plan with errors": {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{"w":{"module":"nope"}}},"deployment":"` + deployment + `"}`, http.StatusUnprocessableEntity},
+		"bare graph":         {sampleJSON, http.StatusBadRequest},
+		"extra key":          {`{"graph":` + sampleJSON + `,"deployment":"` + deployment + `","x":1}`, http.StatusBadRequest},
+		"bad uuid":           {`{"graph":` + sampleJSON + `,"deployment":"nope"}`, http.StatusBadRequest},
+		"graph extra key":    {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{},"x":1},"deployment":"` + deployment + `"}`, http.StatusBadRequest},
+		"result with errors": {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{"w":{"module":"nope"}}},"deployment":"` + deployment + `"}`, http.StatusUnprocessableEntity},
 	} {
 		if resp, data := internal.do(t, http.MethodPost, "/v1/render/managed", tc.body, auth); resp.StatusCode != tc.want {
 			t.Errorf("%s: status %d, want %d: %s", name, resp.StatusCode, tc.want, data)
@@ -494,7 +494,7 @@ func TestRenderManaged(t *testing.T) {
 	}
 }
 
-// TestRenderManagedRefuses covers AC-11 through the contract: the plan warns of host access,
+// TestRenderManagedRefuses covers AC-11 through the contract: the check result warns of host access,
 // and the managed render answers 422 with error host_access at the instance that publishes and
 // error setup_required at the one that asks a value, the warning replaced by the error.
 func TestRenderManagedRefuses(t *testing.T) {
@@ -546,23 +546,23 @@ config:
 
 	problems := func(data []byte) []string {
 		t.Helper()
-		var plan contract.PlanResult
-		if err := json.Unmarshal(data, &plan); err != nil {
+		var result contract.CheckResult
+		if err := json.Unmarshal(data, &result); err != nil {
 			t.Fatal(err)
 		}
-		out := []string{fmt.Sprintf("ok %v, digest %v", plan.Ok, plan.Digest != "")}
-		for _, pr := range plan.Problems {
+		out := []string{fmt.Sprintf("ok %v, digest %v", result.Ok, result.Digest != "")}
+		for _, pr := range result.Problems {
 			out = append(out, string(pr.Severity)+" "+pr.Code+" "+pr.Path)
 		}
 		return out
 	}
 
-	resp, data := p.do(t, http.MethodPost, "/v1/plan", graph, auth)
+	resp, data := p.do(t, http.MethodPost, "/v1/check", graph, auth)
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("plan: status %d: %s", resp.StatusCode, data)
+		t.Fatalf("result: status %d: %s", resp.StatusCode, data)
 	}
 	if got, want := problems(data), []string{"ok true, digest true", "warning host_access modules.web"}; !slices.Equal(got, want) {
-		t.Errorf("plan = %v, want %v", got, want)
+		t.Errorf("result = %v, want %v", got, want)
 	}
 
 	resp, data = p.do(t, http.MethodPost, "/v1/render/managed", `{"graph":`+graph+`,"deployment":"01960000-0000-7000-8000-000000000001"}`, auth)

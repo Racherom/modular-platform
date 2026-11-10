@@ -64,7 +64,7 @@ jobs:
       - run: task test:integration
 
   smoke:
-    name: Smoke (online tool, sample zip, sub path)
+    name: Smoke (online editor, sample zip, sub path)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -81,7 +81,7 @@ jobs:
           version: 3.54.0
       - run: pnpm --dir web install --frozen-lockfile
       - run: pnpm --dir web exec playwright install --with-deps chromium
-      # the online tool answers on platform.localhost with Caddy's internal certificate authority
+      # the online editor answers on platform.localhost with Caddy's internal certificate authority
       - run: task smoke
 
   smoke-managed:

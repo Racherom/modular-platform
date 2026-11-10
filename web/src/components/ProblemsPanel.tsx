@@ -9,7 +9,7 @@ import styles from './ProblemsPanel.module.css'
 const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 
 /**
- * The problems of the shown plan. A problem that belongs to a module is a button: it selects
+ * The problems of the shown check result. A problem that belongs to a module is a button: it selects
  * the module, centers the canvas on it at the current zoom (at least 1) and moves focus to it
  * (AC-13). Must render inside the canvas's ReactFlowProvider.
  */

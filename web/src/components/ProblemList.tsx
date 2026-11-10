@@ -2,7 +2,7 @@ import type { Problem } from '../api/client'
 import { problemInstance } from '../graph/flow'
 import styles from './ProblemList.module.css'
 
-/** The renderer's problems as a plain list, for plan review (spec 0006). */
+/** The renderer's problems as a plain list, for review (spec 0006). */
 export function ProblemList({ problems }: { problems: Problem[] }) {
   if (problems.length === 0) return <p className={styles.none}>No problems.</p>
   return (

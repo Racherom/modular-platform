@@ -15,7 +15,7 @@ import (
 var ErrNoTemplate = errors.New("contract: template not loaded")
 
 // TemplateData is what a module template reads (spec 0013, "Templates"): graph facts known at
-// plan time, never a secret, an install answer or a run time value.
+// check time, never a secret, an install answer or a run time value.
 type TemplateData struct {
 	Graph    string                      // graph name
 	Instance string                      // instance name
@@ -38,7 +38,7 @@ type TemplateSlot struct {
 	Host              string
 	Port              int
 	URL               string
-	Values            map[string]string // the plan known non secret fields the provider gives
+	Values            map[string]string // the non secret fields known at check time that the provider gives
 }
 
 // TemplateClient is one binding to a provide of the instance, from consumer Instance's Slot.
@@ -145,7 +145,7 @@ func checkTemplates(fsys fs.FS, file string, m Module, caps map[string]Capabilit
 
 // placeholderData is the template data of an instance of m named after the module in graph
 // "graph". With bound set every slot is bound and every provide has one client; otherwise every
-// optional slot is unbound and no provide has a client. Each plan known field holds its name.
+// optional slot is unbound and no provide has a client. Each field known at check time holds its name.
 func placeholderData(m Module, caps map[string]Capability, bound bool) TemplateData {
 	const graph = "graph"
 	host := func(i string) string { return i + "." + graph + ".internal" }

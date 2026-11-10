@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { SearchX } from 'lucide-react'
 import { useMemo, useRef } from 'react'
-import { planGraph } from '../api/client'
+import { checkGraph } from '../api/client'
 import { GraphScreen } from '../components/GraphScreen'
 import type { GraphEdit } from '../components/GraphView'
 import { useReplaceGuard } from '../components/ReplaceDialog'
@@ -39,23 +39,23 @@ function Sample() {
  */
 function SampleGraph({ name, text }: { name: string; text: string }) {
   const graph = useMemo(() => parseGraph(text), [text])
-  const plan = useQuery({ queryKey: ['sample-plan', name], queryFn: () => planGraph(graph) })
-  const planned = plan.data
-  const positions = useMemo(() => (planned ? layout(planned.graph) : {}), [planned])
+  const check = useQuery({ queryKey: ['sample-check', name], queryFn: () => checkGraph(graph) })
+  const checked = check.data
+  const positions = useMemo(() => (checked ? layout(checked.graph) : {}), [checked])
   const navigate = useNavigate()
   const replace = useReplaceGuard()
   // one held edit at a time; more edits while the prompt is open are dropped
   const holding = useRef(false)
 
-  if (plan.isError) return <Failure error={plan.error} onRetry={() => void plan.refetch()} />
-  if (!planned) return <p>Planning the sample…</p>
+  if (check.isError) return <Failure error={check.error} onRetry={() => void check.refetch()} />
+  if (!checked) return <p>Checking the sample…</p>
 
   const onEdit = (change: GraphEdit) => {
-    if (holding.current || change(planned.graph) === planned.graph) return
+    if (holding.current || change(checked.graph) === checked.graph) return
     holding.current = true
     const copy = () => {
       holding.current = false
-      const base = { fileName: `${planned.graph.name}.yaml`, graph: planned.graph, plan: planned, positions }
+      const base = { fileName: `${checked.graph.name}.yaml`, graph: checked.graph, check: checked, positions }
       if (useEditor.getState().copySample(base, change)) void navigate({ to: '/' })
     }
     const ask = () => replace.guard(copy, () => (holding.current = false))
@@ -75,15 +75,15 @@ function SampleGraph({ name, text }: { name: string; text: string }) {
     <>
       {replace.dialog}
       <GraphScreen
-        graph={planned.graph}
-        plan={planned}
+        graph={checked.graph}
+        check={checked}
         fileName="graph.yaml"
         notice="This is a sample. Your first change makes a copy in the editor; the sample itself stays as it is."
         editing={{
           positions,
           edited: false,
-          planState: 'current',
-          planError: null,
+          checkState: 'current',
+          checkError: null,
           onRetry: () => undefined,
           onEdit,
           onSaved: () => undefined,

@@ -56,7 +56,7 @@ func (c *Client) URL() *url.URL {
 	return &u
 }
 
-// NewRequest builds a request to ref (a path with an optional query, like /plan?x=1) below the
+// NewRequest builds a request to ref (a path with an optional query, like /items?x=1) below the
 // base URL.
 func (c *Client) NewRequest(ctx context.Context, method, ref string, body io.Reader) (*http.Request, error) {
 	r, err := url.Parse(ref)

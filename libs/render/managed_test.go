@@ -18,16 +18,16 @@ const testDeployment = "01960000-0000-7000-8000-000000000001"
 // intended change.
 func TestRenderManagedGolden(t *testing.T) {
 	for _, c := range []struct {
-		dir  string
-		plan func(*testing.T) (contract.PlanResult, contract.Catalog)
+		dir    string
+		result func(*testing.T) (contract.CheckResult, contract.Catalog)
 	}{
-		{filepath.Join("testdata", "whoami-postgres-managed"), samplePlan},
-		{filepath.Join(pairDir, "golden-managed"), pairPlan},
-		{filepath.Join("testdata", "bindings", "golden-managed"), bindingsPlan},
+		{filepath.Join("testdata", "whoami-postgres-managed"), sampleResult},
+		{filepath.Join(pairDir, "golden-managed"), pairResult},
+		{filepath.Join("testdata", "bindings", "golden-managed"), bindingsResult},
 	} {
 		t.Run(c.dir, func(t *testing.T) {
-			plan, catalog := c.plan(t)
-			m, err := render.Managed(plan, catalog, builtinTemplates(t), testDeployment)
+			result, catalog := c.result(t)
+			m, err := render.Managed(result, catalog, builtinTemplates(t), testDeployment)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -48,8 +48,8 @@ func TestRenderManagedGolden(t *testing.T) {
 // TestRenderManagedRules covers the managed additions one rule at a time.
 func TestRenderManagedRules(t *testing.T) {
 	t.Parallel()
-	plan, catalog := pairPlan(t)
-	m, err := render.Managed(plan, catalog, builtinTemplates(t), testDeployment)
+	result, catalog := pairResult(t)
+	m, err := render.Managed(result, catalog, builtinTemplates(t), testDeployment)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,8 +94,8 @@ func TestRenderManagedRules(t *testing.T) {
 // no instance or module (spec 0013, "Labels").
 func TestRenderManagedJobLabels(t *testing.T) {
 	t.Parallel()
-	plan, catalog := samplePlan(t)
-	m, err := render.Managed(plan, catalog, builtinTemplates(t), testDeployment)
+	result, catalog := sampleResult(t)
+	m, err := render.Managed(result, catalog, builtinTemplates(t), testDeployment)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,9 +137,9 @@ func TestRenderManagedJobLabels(t *testing.T) {
 	}
 }
 
-func TestRenderManagedRefusesBadPlan(t *testing.T) {
+func TestRenderManagedRefusesBadGraph(t *testing.T) {
 	t.Parallel()
-	if _, err := render.Managed(contract.PlanResult{}, contract.Catalog{}, builtinTemplates(t), testDeployment); err != render.ErrPlanHasErrors { //nolint:errorlint // the sentinel is returned as is
-		t.Fatalf("err = %v, want ErrPlanHasErrors", err)
+	if _, err := render.Managed(contract.CheckResult{}, contract.Catalog{}, builtinTemplates(t), testDeployment); err != render.ErrGraphHasErrors { //nolint:errorlint // the sentinel is returned as is
+		t.Fatalf("err = %v, want ErrGraphHasErrors", err)
 	}
 }

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { Graph, Module, PlanResult, Problem } from '../api/client'
+import type { CheckResult, Graph, Module, Problem } from '../api/client'
 import type { GraphEdit } from '../components/GraphView'
 import { Inspector } from '../components/Inspector'
 import { settableConfig } from '../graph/model'
@@ -34,16 +34,16 @@ const graphWith = (config?: Record<string, string>): Graph => ({
   },
 })
 
-const planOf = (graph: Graph, problems: Problem[] = []): PlanResult => ({ ok: true, graph, bindings: [], problems })
+const resultOf = (graph: Graph, problems: Problem[] = []): CheckResult => ({ ok: true, graph, bindings: [], problems })
 
 /** Renders the inspector on the graph; edits apply to `state.graph` and render again. */
 function show(start: Graph, problems: Problem[] = []) {
   const state = { graph: start }
   const onEdit = (edit: GraphEdit) => {
     state.graph = edit(state.graph)
-    view.rerender(<Inspector graph={state.graph} catalog={catalog} plan={planOf(state.graph, problems)} planCurrent onEdit={onEdit} />)
+    view.rerender(<Inspector graph={state.graph} catalog={catalog} check={resultOf(state.graph, problems)} checkCurrent onEdit={onEdit} />)
   }
-  const view = render(<Inspector graph={start} catalog={catalog} plan={planOf(start, problems)} planCurrent onEdit={onEdit} />)
+  const view = render(<Inspector graph={start} catalog={catalog} check={resultOf(start, problems)} checkCurrent onEdit={onEdit} />)
   return state
 }
 
@@ -85,7 +85,7 @@ describe('the inspector Config section (spec 0025, AC-29)', () => {
     expect(state.graph.modules.t).toEqual({ module: 'tuned' })
   })
 
-  it('shows a plan problem under its field', () => {
+  it('shows a check problem under its field', () => {
     const problem: Problem = {
       severity: 'error',
       code: 'invalid_config',

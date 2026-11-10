@@ -1,4 +1,4 @@
-# The online tool's ingress: one origin. <base>/renderer/* goes to the renderer with that prefix
+# The online editor's ingress: one origin. <base>/renderer/* goes to the renderer with that prefix
 # stripped (the renderer builds no URLs); everything else under <base>/ goes to the web module
 # with the path unchanged.
 {

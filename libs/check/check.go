@@ -1,9 +1,9 @@
-// Package planner binds each module's slots (uses) to another instance's provides by the v1
-// matching rules of spec 0012: the capability, or a provisioner that yields it, and a version
+// Package check holds the rules a graph must meet (spec 0027 glossary). It binds each module's
+// slots (uses) to another instance's provides by the v1 matching rules of spec 0012: the capability, or a provisioner that yields it, and a version
 // inside the slot's range. It fills automatic bindings and the default named values of bindings
 // to a provisioner into the graph. It is pure: no I/O, and the same input always gives the same
 // result.
-package planner
+package check
 
 import (
 	"cmp"
@@ -16,7 +16,7 @@ import (
 	"github.com/racherom/modular-platform/libs/contract"
 )
 
-// Problem codes of a plan (spec 0002, grown by 0012 and 0014).
+// Problem codes of a check result (spec 0002, grown by 0012 and 0014).
 const (
 	CodeInvalidName           = "invalid_name"
 	CodeUnknownModule         = "unknown_module"
@@ -47,15 +47,15 @@ const (
 // maxName is the longest named value a default may be, PostgreSQL's identifier limit.
 const maxName = 63
 
-// Plan checks g against the catalog and fills in the automatic bindings and default named
+// Graph checks g against the catalog and fills in the automatic bindings and default named
 // values. A v0alpha1 graph is converted to v1 first and warned about. The returned graph is a
-// copy of g with those changes and nothing else. An ok plan carries its Digest.
-func Plan(g contract.Graph, catalog contract.Catalog) contract.PlanResult {
+// copy of g with those changes and nothing else. An ok check result carries its Digest.
+func Graph(g contract.Graph, catalog contract.Catalog) contract.CheckResult {
 	graph, converted := contract.ConvertGraph(g)
 	if graph.FormatVersion == "1.0" {
 		graph.FormatVersion = ""
 	}
-	p := planning{
+	p := checking{
 		graph:   graph,
 		modules: make(map[string]contract.Module, len(catalog.Modules)),
 		caps:    make(map[string]contract.Capability, len(catalog.Capabilities)),
@@ -80,7 +80,7 @@ func Plan(g contract.Graph, catalog contract.Catalog) contract.PlanResult {
 	})
 	sortBindings(p.bindings)
 	ok := !slices.ContainsFunc(p.problems, func(pr contract.Problem) bool { return pr.Severity == contract.Error })
-	result := contract.PlanResult{
+	result := contract.CheckResult{
 		Ok:       ok,
 		Graph:    p.graph,
 		Bindings: append([]contract.Binding{}, p.bindings...),
@@ -114,7 +114,7 @@ func (o offer) text(short bool) string {
 	return o.instance + "." + o.provide
 }
 
-type planning struct {
+type checking struct {
 	graph    contract.Graph
 	modules  map[string]contract.Module
 	caps     map[string]contract.Capability
@@ -123,7 +123,7 @@ type planning struct {
 	problems []contract.Problem
 }
 
-func (p *planning) run() {
+func (p *checking) run() {
 	if !contract.ValidName(p.graph.Name) {
 		p.fail(CodeInvalidName, "name", "The graph name %q must be a lowercase DNS label of at most 63 characters and not a YAML reserved word.", p.graph.Name)
 	}
@@ -157,7 +157,7 @@ func (p *planning) run() {
 }
 
 // offers lists the provides of instance i in name order; nil for an unknown module.
-func (p *planning) offers(i string) []offer {
+func (p *checking) offers(i string) []offer {
 	m := p.graph.Modules[i]
 	var out []offer
 	if m.External != nil {
@@ -181,7 +181,7 @@ func (p *planning) offers(i string) []offer {
 }
 
 // serves reports whether o's capability is c or yields c.
-func (p *planning) serves(o offer, c string) bool {
+func (p *checking) serves(o offer, c string) bool {
 	if o.capability == c {
 		return true
 	}
@@ -190,11 +190,11 @@ func (p *planning) serves(o offer, c string) bool {
 }
 
 // provisions reports whether o yields c rather than providing it directly.
-func (p *planning) provisions(o offer, c string) bool {
+func (p *checking) provisions(o offer, c string) bool {
 	return o.capability != c && p.serves(o, c)
 }
 
-func (p *planning) instance(i string) {
+func (p *checking) instance(i string) {
 	m := p.graph.Modules[i]
 	entry, ok := p.modules[m.Module]
 	if !ok {
@@ -254,7 +254,7 @@ func (p *planning) instance(i string) {
 
 // explicit checks a binding the graph wrote and records it. It returns the offer it binds to, or
 // nil when the binding has a problem.
-func (p *planning) explicit(i, s string, slot contract.Slot, r contract.Range, b *contract.GraphBinding) *offer {
+func (p *checking) explicit(i, s string, slot contract.Slot, r contract.Range, b *contract.GraphBinding) *offer {
 	path := usePath(i, s)
 	pv, q := b.Instance(), b.Provide()
 	if _, exists := p.graph.Modules[pv]; !exists {
@@ -349,7 +349,7 @@ func (p *planning) explicit(i, s string, slot contract.Slot, r contract.Range, b
 
 // versionMismatch reports offers that serve the slot's capability outside its range; short
 // lists the instances whose one serving provide may go without its name.
-func (p *planning) versionMismatch(path, i string, slot contract.Slot, offers []offer, short map[string]bool) {
+func (p *checking) versionMismatch(path, i string, slot contract.Slot, offers []offer, short map[string]bool) {
 	candidates := make([]string, len(offers))
 	versions := make([]string, len(offers))
 	for n, o := range offers {
@@ -363,7 +363,7 @@ func (p *planning) versionMismatch(path, i string, slot contract.Slot, offers []
 }
 
 // undecided handles a slot the graph leaves out: auto bind the one match, or report.
-func (p *planning) undecided(i, s string, slot contract.Slot, r contract.Range) *offer {
+func (p *checking) undecided(i, s string, slot contract.Slot, r contract.Range) *offer {
 	path := usePath(i, s)
 	c := slot.Capability
 	var matches, outside []offer
@@ -428,7 +428,7 @@ func (p *planning) undecided(i, s string, slot contract.Slot, r contract.Range) 
 // namedValues fills the default named values of every binding to a provisioner into the graph
 // (spec 0014), then checks that each value is unique per provisioner provide and that no login
 // equals the provider's admin user.
-func (p *planning) namedValues() {
+func (p *checking) namedValues() {
 	sortBindings(p.bindings)
 	seen := map[string]map[string]string{} // provide text, field=value to the first binding path
 	for n := range p.bindings {
@@ -474,7 +474,7 @@ func (p *planning) namedValues() {
 	}
 }
 
-func (p *planning) offerCapability(instance, provide string) string {
+func (p *checking) offerCapability(instance, provide string) string {
 	for _, o := range p.offers(instance) {
 		if o.provide == provide {
 			return o.capability
@@ -485,7 +485,7 @@ func (p *planning) offerCapability(instance, provide string) string {
 
 // adminLogin is the literal value of the provisioner's admin_<login> field, the login the
 // provider itself signs in with, or "" when the provide does not give it as a value.
-func (p *planning) adminLogin(instance, provide, login string) string {
+func (p *checking) adminLogin(instance, provide, login string) string {
 	m := p.graph.Modules[instance]
 	field := "admin_" + login
 	if m.External != nil {
@@ -494,7 +494,7 @@ func (p *planning) adminLogin(instance, provide, login string) string {
 	return p.modules[m.Module].Provides[provide].Fields[field].Value
 }
 
-// DefaultName is the named value the planner writes for a binding that leaves it out (spec
+// DefaultName is the named value the checks write for a binding that leaves it out (spec
 // 0014): <consumer>_<slot> with - as _, cut to 54 characters plus _ and 8 hex digits of its
 // SHA-256 when longer than 63.
 func DefaultName(consumer, slot string) string {
@@ -508,7 +508,7 @@ func DefaultName(consumer, slot string) string {
 
 // external checks an external instance's provides: known capability, a version, every
 // required non secret field given, no secret written in the graph, values within their rules.
-func (p *planning) external(i string) {
+func (p *checking) external(i string) {
 	ext := p.graph.Modules[i].External
 	for _, q := range sortedKeys(ext.Provides) {
 		ep := ext.Provides[q]
@@ -548,7 +548,7 @@ func (p *planning) external(i string) {
 
 // tokens reports each binding to a provide that checks a token per binding (spec 0005) whose
 // consumer maps no token, so the consumer could never prove who calls.
-func (p *planning) tokens() {
+func (p *checking) tokens() {
 	for _, b := range p.bindings {
 		pm := p.graph.Modules[b.Provider]
 		if pm.External != nil {
@@ -567,7 +567,7 @@ func (p *planning) tokens() {
 
 // cycles reports each group of instances that bind each other in a circle, once, at the first
 // instance of the group in name order.
-func (p *planning) cycles(instances []string) {
+func (p *checking) cycles(instances []string) {
 	edges := map[string][]string{}
 	for _, b := range p.bindings {
 		edges[b.Consumer] = append(edges[b.Consumer], b.Provider)
@@ -587,11 +587,11 @@ func (p *planning) cycles(instances []string) {
 	}
 }
 
-func (p *planning) fail(code, path, format string, args ...any) {
+func (p *checking) fail(code, path, format string, args ...any) {
 	p.add(contract.Problem{Severity: contract.Error, Code: code, Path: path, Message: fmt.Sprintf(format, args...)})
 }
 
-func (p *planning) add(pr contract.Problem) {
+func (p *checking) add(pr contract.Problem) {
 	p.problems = append(p.problems, pr)
 }
 

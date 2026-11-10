@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// Drives the running online tool (scripts/smoke.sh starts it). The smoke stack uses Caddy's
+// Drives the running online editor (scripts/smoke.sh starts it). The smoke stack uses Caddy's
 // internal certificate authority, so certificate errors are ignored, and only when SMOKE_TLS is
 // internal (smoke.sh sets it); against any other origin certificates are checked.
 export default defineConfig({

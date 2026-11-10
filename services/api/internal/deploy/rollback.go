@@ -35,7 +35,7 @@ func (s *Service) afterFailure(op RunningOperation) {
 
 // rollback applies the graph of the newest succeeded apply before failed, as an operation whose
 // rollback_of is failed and whose starter is failed's, provided latest is still the deployment's
-// latest operation. The plan is checked again, only the digest compare is skipped, and no placed
+// latest operation. The check result is checked again, only the digest compare is skipped, and no placed
 // value is sent: the existing files are reused. When no succeeded apply came before, nothing
 // happens.
 func (s *Service) rollback(at RunningOperation, failed Operation, latest uuid.UUID) {
@@ -53,9 +53,9 @@ func (s *Service) rollback(at RunningOperation, failed Operation, latest uuid.UU
 		s.log.ErrorContext(ctx, "a stored graph does not decode", slog.String("operation", good.ID.String()), slog.Any("error", err))
 		return
 	}
-	plan, planErr := s.renderer.Plan(ctx, g)
+	result, checkErr := s.renderer.Check(ctx, g)
 	op, started, err := s.store.StartOperationIfLatest(ctx, Operation{
-		DeploymentID: failed.DeploymentID, Action: ActionApply, Graph: good.Graph, PlanDigest: plan.Digest,
+		DeploymentID: failed.DeploymentID, Action: ActionApply, Graph: good.Graph, Digest: result.Digest,
 		RollbackOf: &failed.ID, StartedBy: failed.StartedBy,
 	}, latest)
 	if err != nil {
@@ -69,19 +69,19 @@ func (s *Service) rollback(at RunningOperation, failed Operation, latest uuid.UU
 	s.log.InfoContext(ctx, "rollback started", slog.String("deployment", run.DeploymentName), slog.String("operation", op.ID.String()),
 		slog.String("rollback_of", failed.ID.String()), slog.String("caller", failed.StartedBy.Subject))
 	_, _ = s.publishOperation(ctx, run.DeploymentName, op.ID)
-	if text := s.sendRollback(ctx, run, g, plan, planErr); text != "" {
+	if text := s.sendRollback(ctx, run, g, result, checkErr); text != "" {
 		s.finish(run, StatusFailed, StepPrepare, text)
 	}
 }
 
 // sendRollback hands a started rollback to the deploy target and polls it. It returns why it
 // could not, as the operation's error text, or "" once polling runs.
-func (s *Service) sendRollback(ctx context.Context, run RunningOperation, g contract.Graph, plan contract.PlanResult, planErr error) string {
+func (s *Service) sendRollback(ctx context.Context, run RunningOperation, g contract.Graph, result contract.CheckResult, checkErr error) string {
 	switch {
-	case planErr != nil:
-		return failureText(planErr)
-	case !plan.Ok:
-		return problemsText(plan.Problems)
+	case checkErr != nil:
+		return failureText(checkErr)
+	case !result.Ok:
+		return problemsText(result.Problems)
 	}
 	rendered, err := s.renderer.RenderManaged(ctx, g, run.DeploymentID)
 	if err != nil {

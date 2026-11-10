@@ -44,7 +44,7 @@ type value struct {
 	owner  string // the instance whose volume holds folder
 }
 
-// isText reports whether v is a text value known when the plan is made: a file is a secret, a
+// isText reports whether v is a text value known when the check result is made: a file is a secret, a
 // volume file appears at run time, and a Compose variable is known only at run time.
 func (v value) isText() bool { return v.file == "" && v.folder == "" && !v.raw }
 

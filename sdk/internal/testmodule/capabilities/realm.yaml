@@ -14,7 +14,7 @@ fields:
   retries: {type: int, optional: true, description: Calls the consumer may retry.}
   strict: {type: bool, optional: true, description: Whether the realm refuses unknown members.}
   home: {type: url, optional: true, description: URL of the realm's home page.}
-  tier: {type: enum, values: [free, paid], optional: true, description: Plan of the realm.}
+  tier: {type: enum, values: [free, paid], optional: true, description: Pricing tier of the realm.}
   pin: {type: secret, optional: true, description: Second key for the consumer.}
   roots: {type: certificate, optional: true, description: Extra roots of the realm.}
   member: {type: string, direction: to_provider, optional: true, description: Name the consumer goes by.}

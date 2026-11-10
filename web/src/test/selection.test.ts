@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Graph, PlanResult } from '../api/client'
+import type { CheckResult, Graph } from '../api/client'
 import { bind, unbind } from '../graph/edit'
 import { followSelection, useEditor } from '../lib/store'
 import { fetchHandler } from './setup'
@@ -15,7 +15,7 @@ const graph: Graph = {
   name: 'g',
   modules: { db: { module: 'postgres' }, db2: { module: 'postgres' }, web: { module: 'whoami', uses: { postgresql: 'db' } } },
 }
-const planFor = (g: Graph): PlanResult => ({ ok: true, graph: g, bindings: [], problems: [] })
+const resultFor = (g: Graph): CheckResult => ({ ok: true, graph: g, bindings: [], problems: [] })
 
 describe('followSelection (AC-8)', () => {
   it.each([
@@ -46,9 +46,9 @@ describe('followSelection (AC-8)', () => {
 
 describe('the store keeps the selection in step with the graph', () => {
   beforeEach(() => {
-    fetchHandler.current = async (req) => Response.json(planFor((await req.json()) as Graph))
-    useEditor.setState({ working: undefined, selection: null, focusRequest: null, planSeq: 0 })
-    useEditor.getState().open({ fileName: 'g.yaml', graph, plan: planFor(graph) })
+    fetchHandler.current = async (req) => Response.json(resultFor((await req.json()) as Graph))
+    useEditor.setState({ working: undefined, selection: null, focusRequest: null, checkSeq: 0 })
+    useEditor.getState().open({ fileName: 'g.yaml', graph, check: resultFor(graph) })
   })
 
   it('unbinding the selected binding selects the consumer and asks for focus', () => {
@@ -61,21 +61,21 @@ describe('the store keeps the selection in step with the graph', () => {
     expect(useEditor.getState().focusRequest).toBeNull()
   })
 
-  it('a plan reply that drops the binding moves the selection too', async () => {
+  it('a check reply that drops the binding moves the selection too', async () => {
     fetchHandler.current = async (req) => {
       const g = (await req.json()) as Graph
-      return Response.json(planFor(unbind(g, 'web', 'postgresql')))
+      return Response.json(resultFor(unbind(g, 'web', 'postgresql')))
     }
     useEditor.getState().select({ kind: 'binding', consumer: 'web', slot: 'postgresql' })
     useEditor.getState().edit((g) => bind(g, 'web', 'postgresql', 'db2'))
     expect(useEditor.getState().selection?.kind).toBe('binding')
-    await vi.waitFor(() => expect(useEditor.getState().planState).toBe('current'))
+    await vi.waitFor(() => expect(useEditor.getState().checkState).toBe('current'))
     expect(useEditor.getState().selection).toEqual({ kind: 'module', instance: 'web' })
   })
 
   it('opening a graph clears the selection', () => {
     useEditor.getState().select({ kind: 'module', instance: 'db' })
-    useEditor.getState().open({ fileName: 'g.yaml', graph, plan: planFor(graph) })
+    useEditor.getState().open({ fileName: 'g.yaml', graph, check: resultFor(graph) })
     expect(useEditor.getState().selection).toBeNull()
   })
 

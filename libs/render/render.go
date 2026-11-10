@@ -1,4 +1,4 @@
-// Package render turns a plan into the files of a runnable Compose project: docker-compose.yml,
+// Package render turns a check result into the files of a runnable Compose project: docker-compose.yml,
 // graph.yaml, setup.sh, .env, README.md and a config/<instance>.env per module built on the sdk
 // (spec 0013, "Render"; spec 0014, "Jobs in the render"; spec 0005, render additions). The zip
 // download and the managed deploy both use it, so they cannot drift.
@@ -26,8 +26,8 @@ import (
 	"github.com/racherom/modular-platform/libs/contract"
 )
 
-// ErrPlanHasErrors is returned for a plan that is not ok; such a plan is never rendered.
-var ErrPlanHasErrors = errors.New("render: the plan has errors")
+// ErrGraphHasErrors is returned for a check result that is not ok; such a check result is never rendered.
+var ErrGraphHasErrors = errors.New("render: the check result has errors")
 
 // ErrNotRendered is returned for a catalog field this release declares but does not render yet.
 var ErrNotRendered = errors.New("render: not rendered by this release")
@@ -99,10 +99,10 @@ func (d templateData) HasOutputs() bool {
 	return slices.ContainsFunc(d.Secrets, func(s secret) bool { return s.Output })
 }
 
-// Render renders the resolved graph of an ok plan. catalog must hold every module and
+// Render renders the resolved graph of an ok check result. catalog must hold every module and
 // capability the graph uses, and templates the templates of those modules.
-func Render(plan contract.PlanResult, catalog contract.Catalog, templates contract.Templates) (Output, error) {
-	r, err := renderProject(plan, catalog, templates, flavorStatic, nil)
+func Render(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates) (Output, error) {
+	r, err := renderProject(result, catalog, templates, flavorStatic, nil)
 	if err != nil {
 		return Output{}, err
 	}
@@ -149,20 +149,20 @@ type renderer struct {
 	egress     bool                                   // some service joins the egress network
 }
 
-// renderProject renders plan in flavor f: the managed and platform flavors set restart:
+// renderProject renders result in flavor f: the managed and platform flavors set restart:
 // unless-stopped on every long running service, and finish is called on the project before it
 // is written.
-func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates contract.Templates, f flavor, finish func(*types.Project, map[string]job)) (rendered, error) {
-	if !plan.Ok {
-		return rendered{}, ErrPlanHasErrors
+func renderProject(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates, f flavor, finish func(*types.Project, map[string]job)) (rendered, error) {
+	if !result.Ok {
+		return rendered{}, ErrGraphHasErrors
 	}
 	r := renderer{
-		g:          plan.Graph,
+		g:          result.Graph,
 		flavor:     f,
 		templates:  templates,
 		modules:    make(map[string]contract.Module, len(catalog.Modules)),
 		caps:       make(map[string]contract.Capability, len(catalog.Capabilities)),
-		data:       templateData{Name: plan.Graph.Name, Platform: f == flavorPlatform},
+		data:       templateData{Name: result.Graph.Name, Platform: f == flavorPlatform},
 		jobs:       map[string]job{},
 		declared:   map[string]bool{},
 		bound:      map[string]map[string]map[string]value{},
@@ -170,7 +170,7 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates
 		keep:       map[string][]string{},
 		provisions: map[string][]string{},
 		project: types.Project{
-			Name:     plan.Graph.Name,
+			Name:     result.Graph.Name,
 			Services: types.Services{},
 			Networks: types.Networks{networkInternal: types.NetworkConfig{Internal: true}},
 		},
@@ -198,7 +198,7 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates
 		}
 		r.project.Services[i] = svc
 	}
-	for _, b := range deliveryOrder(instances, plan.Bindings) {
+	for _, b := range deliveryOrder(instances, result.Bindings) {
 		if err := r.binding(b); err != nil {
 			return rendered{}, err
 		}
@@ -206,11 +206,11 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates
 	if err := r.revokeJobs(); err != nil {
 		return rendered{}, err
 	}
-	if err := r.steps(plan.Bindings); err != nil {
+	if err := r.steps(result.Bindings); err != nil {
 		return rendered{}, err
 	}
 	if f == flavorPlatform {
-		r.askInBindingOrder(instances, plan.Bindings)
+		r.askInBindingOrder(instances, result.Bindings)
 	}
 	for _, i := range instances {
 		if gm := r.g.Modules[i]; gm.External == nil {
@@ -219,7 +219,7 @@ func renderProject(plan contract.PlanResult, catalog contract.Catalog, templates
 			}
 		}
 	}
-	configs, err := r.templateFiles(plan.Bindings)
+	configs, err := r.templateFiles(result.Bindings)
 	if err != nil {
 		return rendered{}, err
 	}
@@ -307,7 +307,7 @@ func readmeTemplate(f flavor) string {
 }
 
 // deliveryOrder sorts bindings by their consumer's place in the binding order (providers before
-// consumers, spec 0013), keeping the plan's slot order per consumer. A provider's own bindings
+// consumers, spec 0013), keeping the check result's slot order per consumer. A provider's own bindings
 // are then delivered before any binding to it, so a field source that reads one of them (its
 // TLS certificate source, a {uses} field) finds it resolved.
 func deliveryOrder(instances []string, bindings []contract.Binding) []contract.Binding {

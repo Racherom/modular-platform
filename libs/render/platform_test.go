@@ -22,9 +22,9 @@ const (
 	testTag             = "0.0.0-test"
 )
 
-// platformPlan plans deploy/managed/graph.yaml with the built in catalog, the platform's own
+// platformResult checks deploy/managed/graph.yaml with the built in catalog, the platform's own
 // images tagged testTag (spec 0015, "Platform render flavor").
-func platformPlan(t *testing.T) (contract.PlanResult, contract.Catalog, contract.Templates) {
+func platformResult(t *testing.T) (contract.CheckResult, contract.Catalog, contract.Templates) {
 	t.Helper()
 	catalog, templates := loadCatalogTemplates(t, "../../catalog")
 	for i, m := range catalog.Modules {
@@ -32,21 +32,21 @@ func platformPlan(t *testing.T) (contract.PlanResult, contract.Catalog, contract
 			catalog.Modules[i].Image = platformImagePrefix + name[:strings.LastIndex(name, ":")] + ":" + testTag
 		}
 	}
-	return planFile(t, "../../deploy/managed/graph.yaml", catalog), catalog, templates
+	return checkFile(t, "../../deploy/managed/graph.yaml", catalog), catalog, templates
 }
 
 // TestRenderPlatformGolden pins every file of the rendered platform folder, one golden per
 // rendered template (spec 0015, AC-16, AC-9). Run with -update after an intended change.
 func TestRenderPlatformGolden(t *testing.T) {
 	t.Parallel()
-	plan, catalog, templates := platformPlan(t)
-	out, err := render.Platform(plan, catalog, templates)
+	result, catalog, templates := platformResult(t)
+	out, err := render.Platform(result, catalog, templates)
 	if err != nil {
 		t.Fatal(err)
 	}
 	checkGolden(t, filepath.Join("testdata", "platform"), out)
 
-	again, err := render.Platform(plan, catalog, templates)
+	again, err := render.Platform(result, catalog, templates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,8 +67,8 @@ func TestRenderPlatformGolden(t *testing.T) {
 // of setup.sh, and the Caddyfile's routes (AC-16, AC-30).
 func TestRenderPlatformFolder(t *testing.T) {
 	t.Parallel()
-	plan, catalog, templates := platformPlan(t)
-	out, err := render.Platform(plan, catalog, templates)
+	result, catalog, templates := platformResult(t)
+	out, err := render.Platform(result, catalog, templates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,12 +171,12 @@ func TestRenderPlatformFolder(t *testing.T) {
 // access and the setup steps (spec 0013).
 func TestPlatformOnlyFeatures(t *testing.T) {
 	t.Parallel()
-	plan, catalog, templates := platformPlan(t)
-	if _, err := render.Render(plan, catalog, templates); !errors.Is(err, render.ErrNotRendered) {
+	result, catalog, templates := platformResult(t)
+	if _, err := render.Render(result, catalog, templates); !errors.Is(err, render.ErrNotRendered) {
 		t.Errorf("static render: %v, want ErrNotRendered", err)
 	}
 	var refused *render.RefusedError
-	if _, err := render.Managed(plan, catalog, templates, testDeployment); !errors.As(err, &refused) {
+	if _, err := render.Managed(result, catalog, templates, testDeployment); !errors.As(err, &refused) {
 		t.Fatalf("managed render: %v, want a RefusedError", err)
 	}
 	var got []string

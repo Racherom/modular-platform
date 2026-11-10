@@ -22,7 +22,7 @@ import (
 	"github.com/racherom/modular-platform/sdk/internal/testmodule"
 )
 
-// Test images, pinned (spec 0005, "Build plan"). MinIO publishes no public image any more, so the
+// Test images, pinned (spec 0005, its build tasks). MinIO publishes no public image any more, so the
 // S3 tests run Chainguard's maintained build, pinned by digest because only its latest tag is free.
 const (
 	postgresImage = "postgres:18.6-alpine3.24"

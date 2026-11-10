@@ -1,4 +1,4 @@
-package planner_test
+package check_test
 
 import (
 	"bytes"
@@ -12,8 +12,8 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/racherom/modular-platform/libs/check"
 	"github.com/racherom/modular-platform/libs/contract"
-	"github.com/racherom/modular-platform/libs/planner"
 )
 
 const fixtures = "../../contracts/fixtures/graphs"
@@ -61,7 +61,7 @@ type want struct {
 	ok       bool
 	bindings []contract.Binding
 	problems []problem
-	// resolved lists bindings the planner must have written into the graph, as
+	// resolved lists bindings the checks must have written into the graph, as
 	// instance.slot: provider text, then named values as field=value in name order
 	resolved map[string]string
 }
@@ -85,7 +85,7 @@ func bind(consumer, slot, capability, provider, provide string, auto bool) contr
 	return contract.Binding{Consumer: consumer, Slot: slot, Capability: capability, Provider: provider, Provide: provide, Auto: auto}
 }
 
-// provisioned marks b as a binding to a provisioner; named marks the planner wrote its names.
+// provisioned marks b as a binding to a provisioner; named marks the checks wrote its names.
 func provisioned(b contract.Binding, named bool) contract.Binding {
 	b.Provisioned, b.Named = true, named
 	return b
@@ -95,9 +95,9 @@ func warningAt(code, path string, candidates ...string) problem {
 	return problem{contract.Warning, code, path, candidates}
 }
 
-// TestPlan covers every row of spec 0002's critical test scenarios, rewritten in v1, and spec
+// TestCheck covers every row of spec 0002's critical test scenarios, rewritten in v1, and spec
 // 0012's (AC-3, AC-4, AC-7, AC-15).
-func TestPlan(t *testing.T) {
+func TestCheck(t *testing.T) {
 	t.Parallel()
 	catalog := testCatalog(t)
 
@@ -113,7 +113,7 @@ func TestPlan(t *testing.T) {
 			resolved: map[string]string{"whoami.postgresql": "postgres database=demo user=demo"},
 		},
 		"sample-no-uses": {ok: true, problems: []problem{
-			warningAt(planner.CodeOptionalUnbound, "modules.whoami.uses.postgresql", "postgres"),
+			warningAt(check.CodeOptionalUnbound, "modules.whoami.uses.postgresql", "postgres"),
 		}},
 		"sample-null": {ok: true},
 		"required-one": {
@@ -121,30 +121,30 @@ func TestPlan(t *testing.T) {
 			bindings: []contract.Binding{bind("app", "db", "", "db", "db", true)},
 			resolved: map[string]string{"app.db": "db"},
 		},
-		"required-none": {problems: []problem{errorAt(planner.CodeUnmetNeed, "modules.app.uses.db")}},
+		"required-none": {problems: []problem{errorAt(check.CodeUnmetNeed, "modules.app.uses.db")}},
 		"required-two": {problems: []problem{
-			errorAt(planner.CodeAmbiguousProvider, "modules.app.uses.db", "db-a", "db-b"),
+			errorAt(check.CodeAmbiguousProvider, "modules.app.uses.db", "db-a", "db-b"),
 		}},
-		"required-null":    {problems: []problem{errorAt(planner.CodeUnboundRequired, "modules.app.uses.db")}},
-		"self-binding":     {problems: []problem{errorAt(planner.CodeSelfBinding, "modules.app.uses.db")}},
-		"unknown-provider": {problems: []problem{errorAt(planner.CodeUnknownProvider, "modules.app.uses.db")}},
+		"required-null":    {problems: []problem{errorAt(check.CodeUnboundRequired, "modules.app.uses.db")}},
+		"self-binding":     {problems: []problem{errorAt(check.CodeSelfBinding, "modules.app.uses.db")}},
+		"unknown-provider": {problems: []problem{errorAt(check.CodeUnknownProvider, "modules.app.uses.db")}},
 		"not-provided": {problems: []problem{
-			warningAt(planner.CodeOptionalUnbound, "modules.app.uses.cache", "cache"),
-			errorAt(planner.CodeCapabilityNotProvided, "modules.app.uses.db"),
+			warningAt(check.CodeOptionalUnbound, "modules.app.uses.cache", "cache"),
+			errorAt(check.CodeCapabilityNotProvided, "modules.app.uses.db"),
 		}},
-		"unknown-module": {problems: []problem{errorAt(planner.CodeUnknownModule, "modules.ghost.module")}},
+		"unknown-module": {problems: []problem{errorAt(check.CodeUnknownModule, "modules.ghost.module")}},
 		"unknown-use": {
 			bindings: []contract.Binding{bind("app", "db", "", "db", "db", true)},
-			problems: []problem{errorAt(planner.CodeUnknownUse, "modules.app.uses.queue")},
+			problems: []problem{errorAt(check.CodeUnknownUse, "modules.app.uses.queue")},
 			resolved: map[string]string{"app.db": "db"},
 		},
 		"cycle": {
 			bindings: []contract.Binding{bind("ping", "pong", "", "pong", "pong", true), bind("pong", "ping", "", "ping", "ping", true)},
-			problems: []problem{errorAt(planner.CodeBindingCycle, "modules.ping")},
+			problems: []problem{errorAt(check.CodeBindingCycle, "modules.ping")},
 		},
 		"invalid-names": {problems: []problem{
-			errorAt(planner.CodeInvalidName, "modules.Web"),
-			errorAt(planner.CodeInvalidName, "modules.yes"),
+			errorAt(check.CodeInvalidName, "modules.Web"),
+			errorAt(check.CodeInvalidName, "modules.yes"),
 		}},
 		"required-and-null": {
 			ok:       true,
@@ -153,7 +153,7 @@ func TestPlan(t *testing.T) {
 		},
 		"missing-token-mapping": {
 			bindings: []contract.Binding{bind("caller", "greet", "", "greeter", "greet", true), bind("notoken", "greet", "", "greeter", "greet", true)},
-			problems: []problem{errorAt(planner.CodeMissingTokenMapping, "modules.notoken.uses.greet")},
+			problems: []problem{errorAt(check.CodeMissingTokenMapping, "modules.notoken.uses.greet")},
 		},
 		"empty":      {ok: true},
 		"empty-uses": {ok: true},
@@ -163,20 +163,20 @@ func TestPlan(t *testing.T) {
 			resolved: map[string]string{"modern.db": "postgres database=modern_db user=modern_db"},
 		},
 		"range-mismatch": {problems: []problem{
-			errorAt(planner.CodeVersionMismatch, "modules.modern.uses.db", "legacy"),
+			errorAt(check.CodeVersionMismatch, "modules.modern.uses.db", "legacy"),
 		}},
 		"range-mismatch-explicit": {problems: []problem{
-			errorAt(planner.CodeVersionMismatch, "modules.modern.uses.db", "legacy.db"),
+			errorAt(check.CodeVersionMismatch, "modules.modern.uses.db", "legacy.db"),
 		}},
 		"ambiguous-provide": {problems: []problem{
-			errorAt(planner.CodeAmbiguousProvide, "modules.modern.uses.db", "pg.primary", "pg.replica"),
+			errorAt(check.CodeAmbiguousProvide, "modules.modern.uses.db", "pg.primary", "pg.replica"),
 		}},
 		"named-provide": {
 			ok:       true,
 			bindings: []contract.Binding{bind("modern", "db", "postgresql", "pg", "replica", false)},
 			resolved: map[string]string{"modern.db": "pg.replica"},
 		},
-		"unknown-provide": {problems: []problem{errorAt(planner.CodeUnknownProvide, "modules.modern.uses.db")}},
+		"unknown-provide": {problems: []problem{errorAt(check.CodeUnknownProvide, "modules.modern.uses.db")}},
 		"two-slots": {
 			ok: true,
 			bindings: []contract.Binding{
@@ -186,7 +186,7 @@ func TestPlan(t *testing.T) {
 		},
 		"two-slots-duplicate": {
 			bindings: []contract.Binding{bind("reports", "audit-db", "postgresql", "a", "db", false)},
-			problems: []problem{errorAt(planner.CodeDuplicateBinding, "modules.reports.uses.main-db")},
+			problems: []problem{errorAt(check.CodeDuplicateBinding, "modules.reports.uses.main-db")},
 		},
 		"two-slots-provisioned": {
 			ok: true,
@@ -200,25 +200,25 @@ func TestPlan(t *testing.T) {
 			},
 		},
 		"named-direct": {problems: []problem{
-			errorAt(planner.CodeUnboundRequired, "modules.reports.uses.audit-db"),
-			errorAt(planner.CodeNamedNotAllowed, "modules.reports.uses.main-db"),
+			errorAt(check.CodeUnboundRequired, "modules.reports.uses.audit-db"),
+			errorAt(check.CodeNamedNotAllowed, "modules.reports.uses.main-db"),
 		}},
 		"named-unknown": {problems: []problem{
-			errorAt(planner.CodeUnknownNamedField, "modules.whoami.uses.postgresql.owner"),
+			errorAt(check.CodeUnknownNamedField, "modules.whoami.uses.postgresql.owner"),
 		}},
 		"named-invalid": {problems: []problem{
-			errorAt(planner.CodeInvalidNamedValue, "modules.whoami.uses.postgresql.database"),
+			errorAt(check.CodeInvalidNamedValue, "modules.whoami.uses.postgresql.database"),
 		}},
 		"named-admin": {
 			bindings: []contract.Binding{provisioned(bind("whoami", "postgresql", "", "postgres", "server", false), true)},
-			problems: []problem{errorAt(planner.CodeInvalidNamedValue, "modules.whoami.uses.postgresql.user")},
+			problems: []problem{errorAt(check.CodeInvalidNamedValue, "modules.whoami.uses.postgresql.user")},
 		},
 		"named-duplicate": {
 			bindings: []contract.Binding{
 				provisioned(bind("reports", "audit-db", "postgresql", "postgres", "server", false), true),
 				provisioned(bind("reports", "main-db", "postgresql", "postgres", "server", false), true),
 			},
-			problems: []problem{errorAt(planner.CodeDuplicateNamedValue, "modules.reports.uses.main-db.database")},
+			problems: []problem{errorAt(check.CodeDuplicateNamedValue, "modules.reports.uses.main-db.database")},
 		},
 		"external": {
 			ok:       true,
@@ -227,33 +227,33 @@ func TestPlan(t *testing.T) {
 		},
 		"config-set": {ok: true},
 		"config-problems": {problems: []problem{
-			errorAt(planner.CodeUnknownConfig, "modules.a.config.ghost"),
-			errorAt(planner.CodeInvalidConfig, "modules.a.config.label"),
-			errorAt(planner.CodeInvalidConfig, "modules.a.config.level"),
-			errorAt(planner.CodeInvalidConfig, "modules.a.config.mode"),
-			errorAt(planner.CodeInvalidConfig, "modules.a.config.need"),
-			errorAt(planner.CodeConfigNotSettable, "modules.a.config.token"),
-			errorAt(planner.CodeConfigNotSettable, "modules.a.config.uid"),
-			errorAt(planner.CodeMissingConfig, "modules.c.config.need"),
-			errorAt(planner.CodeConfigNotAllowed, "modules.e.config.need"),
-			warningAt(planner.CodeHostAccess, "modules.m"),
-			errorAt(planner.CodeConfigNotSettable, "modules.m.config.root"),
-			warningAt(planner.CodeMissingConfig, "modules.s.config.need"),
+			errorAt(check.CodeUnknownConfig, "modules.a.config.ghost"),
+			errorAt(check.CodeInvalidConfig, "modules.a.config.label"),
+			errorAt(check.CodeInvalidConfig, "modules.a.config.level"),
+			errorAt(check.CodeInvalidConfig, "modules.a.config.mode"),
+			errorAt(check.CodeInvalidConfig, "modules.a.config.need"),
+			errorAt(check.CodeConfigNotSettable, "modules.a.config.token"),
+			errorAt(check.CodeConfigNotSettable, "modules.a.config.uid"),
+			errorAt(check.CodeMissingConfig, "modules.c.config.need"),
+			errorAt(check.CodeConfigNotAllowed, "modules.e.config.need"),
+			warningAt(check.CodeHostAccess, "modules.m"),
+			errorAt(check.CodeConfigNotSettable, "modules.m.config.root"),
+			warningAt(check.CodeMissingConfig, "modules.s.config.need"),
 		}},
 		"config-quotes": {problems: []problem{
-			errorAt(planner.CodeInvalidConfig, "modules.q1.config.need"),
-			errorAt(planner.CodeInvalidConfig, "modules.q2.config.need"),
-			errorAt(planner.CodeInvalidConfig, "modules.q3.config.need"),
-			errorAt(planner.CodeInvalidConfig, "modules.q4.config.need"),
-			errorAt(planner.CodeInvalidConfig, "modules.q5.config.need"),
-			errorAt(planner.CodeInvalidConfig, "modules.s1.config.need"),
-			errorAt(planner.CodeInvalidConfig, "modules.s2.config.need"),
-			errorAt(planner.CodeInvalidConfig, "modules.s3.config.need"),
-			errorAt(planner.CodeInvalidConfig, "modules.s4.config.need"),
+			errorAt(check.CodeInvalidConfig, "modules.q1.config.need"),
+			errorAt(check.CodeInvalidConfig, "modules.q2.config.need"),
+			errorAt(check.CodeInvalidConfig, "modules.q3.config.need"),
+			errorAt(check.CodeInvalidConfig, "modules.q4.config.need"),
+			errorAt(check.CodeInvalidConfig, "modules.q5.config.need"),
+			errorAt(check.CodeInvalidConfig, "modules.s1.config.need"),
+			errorAt(check.CodeInvalidConfig, "modules.s2.config.need"),
+			errorAt(check.CodeInvalidConfig, "modules.s3.config.need"),
+			errorAt(check.CodeInvalidConfig, "modules.s4.config.need"),
 		}},
 		"external-missing": {
 			bindings: []contract.Binding{bind("modern", "db", "postgresql", "billing-db", "db", true)},
-			problems: []problem{errorAt(planner.CodeExternalFieldMissing, "modules.billing-db.external.provides.db.fields.host")},
+			problems: []problem{errorAt(check.CodeExternalFieldMissing, "modules.billing-db.external.provides.db.fields.host")},
 		},
 	}
 
@@ -261,7 +261,7 @@ func TestPlan(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			g := readFixture(t, name)
-			got := planner.Plan(g, catalog)
+			got := check.Graph(g, catalog)
 
 			if got.Ok != w.ok {
 				t.Errorf("ok = %v, want %v", got.Ok, w.ok)
@@ -306,27 +306,27 @@ func equalProblem(a, b problem) bool {
 	return a.severity == b.severity && a.code == b.code && a.path == b.path && slices.Equal(a.candidates, b.candidates)
 }
 
-// TestPlanDeterministic checks that the same request always gives byte identical JSON (AC-8)
-// and that planning never changes its input.
-func TestPlanDeterministic(t *testing.T) {
+// TestCheckDeterministic checks that the same request always gives byte identical JSON (AC-8)
+// and that checking never changes its input.
+func TestCheckDeterministic(t *testing.T) {
 	t.Parallel()
 	catalog := testCatalog(t)
 	for _, name := range []string{"cycle", "required-two", "invalid-names", "required-one"} {
 		g := readFixture(t, name)
 		before, _ := contract.MarshalGraph(g)
-		first, err := json.Marshal(planner.Plan(g, catalog))
+		first, err := json.Marshal(check.Graph(g, catalog))
 		if err != nil {
 			t.Fatal(err)
 		}
 		for range 20 {
-			again, _ := json.Marshal(planner.Plan(g, catalog))
+			again, _ := json.Marshal(check.Graph(g, catalog))
 			if !bytes.Equal(first, again) {
-				t.Fatalf("%s: plan differs between runs:\n%s\n%s", name, first, again)
+				t.Fatalf("%s: result differs between runs:\n%s\n%s", name, first, again)
 			}
 		}
 		after, _ := contract.MarshalGraph(g)
 		if !bytes.Equal(before, after) {
-			t.Errorf("%s: planning changed the input graph", name)
+			t.Errorf("%s: checking changed the input graph", name)
 		}
 	}
 }
@@ -334,19 +334,19 @@ func TestPlanDeterministic(t *testing.T) {
 // TestDefaultName checks spec 0014's default for a missing named value (AC-7).
 func TestDefaultName(t *testing.T) {
 	t.Parallel()
-	if got := planner.DefaultName("reports", "main-db"); got != "reports_main_db" {
+	if got := check.DefaultName("reports", "main-db"); got != "reports_main_db" {
 		t.Errorf("DefaultName = %q, want reports_main_db", got)
 	}
 	long := strings.Repeat("a", 60)
-	got := planner.DefaultName(long, "slot")
-	if len(got) != 63 || !strings.HasPrefix(got, long[:54]+"_") || got == planner.DefaultName(long, "other") {
+	got := check.DefaultName(long, "slot")
+	if len(got) != 63 || !strings.HasPrefix(got, long[:54]+"_") || got == check.DefaultName(long, "other") {
 		t.Errorf("DefaultName of a long name = %q, want 54 characters, _ and 8 hex digits, unique per slot", got)
 	}
 }
 
-// TestPlanV0alpha1 plans every v0alpha1 fixture and its v1 twin: the same bindings and problems
+// TestCheckV0alpha1 checks every v0alpha1 fixture and its v1 twin: the same bindings and problems
 // plus the converted_from_v0alpha1 warning, and the same digest (AC-14).
-func TestPlanV0alpha1(t *testing.T) {
+func TestCheckV0alpha1(t *testing.T) {
 	t.Parallel()
 	catalog := testCatalog(t)
 	files, err := filepath.Glob(filepath.Join(fixtures, "v0alpha1", "*.yaml"))
@@ -357,8 +357,8 @@ func TestPlanV0alpha1(t *testing.T) {
 		name := strings.TrimSuffix(filepath.Base(file), ".yaml")
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			old := planner.Plan(readFixture(t, filepath.Join("v0alpha1", name)), catalog)
-			v1 := planner.Plan(readFixture(t, name), catalog)
+			old := check.Graph(readFixture(t, filepath.Join("v0alpha1", name)), catalog)
+			v1 := check.Graph(readFixture(t, name), catalog)
 			warn := contract.Problem{Severity: contract.Warning, Code: contract.CodeConvertedFromV0alpha1, Path: "apiVersion"}
 			idx := slices.IndexFunc(old.Problems, func(p contract.Problem) bool { return p.Code == warn.Code })
 			if idx < 0 || old.Problems[idx].Path != warn.Path || old.Problems[idx].Severity != warn.Severity {
@@ -368,7 +368,7 @@ func TestPlanV0alpha1(t *testing.T) {
 			oldJSON, _ := json.Marshal([]any{old.Ok, old.Graph, old.Bindings, rest, old.Digest})
 			v1JSON, _ := json.Marshal([]any{v1.Ok, v1.Graph, v1.Bindings, v1.Problems, v1.Digest})
 			if !bytes.Equal(oldJSON, v1JSON) {
-				t.Errorf("v0alpha1 plan differs from v1:\n%s\n%s", oldJSON, v1JSON)
+				t.Errorf("v0alpha1 result differs from v1:\n%s\n%s", oldJSON, v1JSON)
 			}
 		})
 	}

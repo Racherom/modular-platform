@@ -21,7 +21,7 @@ import (
 func envCheckOutput(t *testing.T) render.Output {
 	t.Helper()
 	catalog := loadCatalog(t, "testdata/env-check/catalog")
-	out, err := render.Render(planFile(t, "testdata/env-check/graph.yaml", catalog), catalog, builtinTemplates(t))
+	out, err := render.Render(checkFile(t, "testdata/env-check/graph.yaml", catalog), catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}

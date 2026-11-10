@@ -1,6 +1,6 @@
 # Modular Platform, managed mode
 
-This folder runs the Modular Platform on your own host. Once it runs, you sign in as the admin, plan a stack in the editor, deploy it to this host, and watch each module's state live.
+This folder runs the Modular Platform on your own host. Once it runs, you sign in as the admin, design a stack in the editor, deploy it to this host, and watch each module's state live.
 
 You need a Linux host with Docker Engine and the Docker Compose plugin. Nothing else.
 

@@ -22,8 +22,8 @@ import (
 // Compose plugin; run it with go test -tags e2e.
 func TestProvisionEndToEnd(t *testing.T) {
 	catalog := loadCatalog(t, "../../catalog", "testdata/provision/catalog")
-	plan := planFile(t, "testdata/provision/graph.yaml", catalog)
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	result := checkFile(t, "testdata/provision/graph.yaml", catalog)
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}

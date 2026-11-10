@@ -10,7 +10,7 @@ import (
 )
 
 // watchEvery is how often a watched deployment's module state is read while no operation of it
-// runs; while one runs it is read at the poll interval (spec 0006, Build plan task 17).
+// runs; while one runs it is read at the poll interval (spec 0006, build task 17).
 const watchEvery = 5 * time.Second
 
 // watcher is one open screen watching a deployment, as whom its state reads call.

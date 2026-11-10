@@ -7,7 +7,7 @@ info:
     The deploy target holds the host's container engine, so it does as little as possible: it
     takes a rendered project from `api`, checks it again, writes it into the deployment's folder,
     creates missing secrets and runs `docker compose` (spec 0006, child 0007). It keeps running
-    operations in memory only; it never plans, never stores history and never decides a rollback.
+    operations in memory only; it never checks, never stores history and never decides a rollback.
 
     Every call needs the consumer's binding token. Apply and remove need an `MP-Caller` token too
     (401 `invalid_token` without one). Every answer, error answers included, carries the

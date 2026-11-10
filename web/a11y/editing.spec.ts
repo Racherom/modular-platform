@@ -41,7 +41,7 @@ const node = (page: Page, id: string) => page.locator(`.react-flow__node[data-id
 const inspector = (page: Page) => page.getByRole('region', { name: 'Inspector' })
 
 test('dragging the provider end of an edge rebinds it; dropping elsewhere keeps it (AC-9)', async ({ page }) => {
-  const { plans } = await mockRenderer(page)
+  const { checks } = await mockRenderer(page)
   await openGraph(page, TWO)
   await expect(edge(page, 'whoami.postgresql')).toHaveAttribute('aria-label', 'whoami uses postgresql from a')
 
@@ -50,8 +50,8 @@ test('dragging the provider end of an edge rebinds it; dropping elsewhere keeps 
     await expect(handle(page, 'b', 'provides:postgresql')).toHaveAttribute('data-drop', 'valid')
   })
   await expect(edge(page, 'whoami.postgresql')).toHaveAttribute('aria-label', 'whoami uses postgresql from b')
-  await expect.poll(() => plans.length).toBe(2)
-  expect(plans[1]?.modules.whoami?.uses).toEqual({ postgresql: 'b' })
+  await expect.poll(() => checks.length).toBe(2)
+  expect(checks[1]?.modules.whoami?.uses).toEqual({ postgresql: 'b' })
 
   // a reconnect dropped on empty canvas changes nothing
   const pane = await page.locator('.react-flow__pane').boundingBox()
@@ -61,14 +61,14 @@ test('dragging the provider end of an edge rebinds it; dropping elsewhere keeps 
   await page.mouse.move(pane!.x + 20, pane!.y + pane!.height - 20, { steps: 8 })
   await page.mouse.up()
   await expect(edge(page, 'whoami.postgresql')).toHaveAttribute('aria-label', 'whoami uses postgresql from b')
-  expect(plans).toHaveLength(2)
+  expect(checks).toHaveLength(2)
 
   // the consumer end cannot be dragged
   await expect(edge(page, 'whoami.postgresql').locator('.react-flow__edgeupdater-source')).toHaveCount(0)
 })
 
 test('Delete unbinds the selected binding, then the consumer is selected and focused (AC-8, AC-10)', async ({ page }) => {
-  const { plans } = await mockRenderer(page)
+  const { checks } = await mockRenderer(page)
   await openGraph(page, TWO)
   await edge(page, 'whoami.postgresql').click()
   await expect(inspector(page).getByRole('heading', { name: 'Binding' })).toBeVisible()
@@ -79,15 +79,15 @@ test('Delete unbinds the selected binding, then the consumer is selected and foc
   await expect(node(page, 'whoami')).toBeFocused()
   await expect(node(page, 'whoami')).toHaveClass(/selected/)
   await expect(inspector(page).getByRole('heading', { name: 'whoami' })).toBeVisible()
-  await expect.poll(() => plans.length).toBe(2)
-  expect(plans[1]?.modules.whoami?.uses).toEqual({ postgresql: null })
+  await expect.poll(() => checks.length).toBe(2)
+  expect(checks[1]?.modules.whoami?.uses).toEqual({ postgresql: null })
   // nothing else changed: every module is still there
-  expect(Object.keys(plans[1]?.modules ?? {}).sort()).toEqual(['a', 'b', 'whoami'])
+  expect(Object.keys(checks[1]?.modules ?? {}).sort()).toEqual(['a', 'b', 'whoami'])
 
   // with the module selected, Delete never removes it
   await page.keyboard.press('Delete')
   await expect(page.locator('.react-flow__node')).toHaveCount(3)
-  expect(plans).toHaveLength(2)
+  expect(checks).toHaveLength(2)
 })
 
 test('the Remove binding button unbinds and selects the consumer (AC-10)', async ({ page }) => {
@@ -101,7 +101,7 @@ test('the Remove binding button unbinds and selects the consumer (AC-10)', async
 })
 
 test('keyboard only: select a module, bind and unbind from the inspector (AC-8, AC-11)', async ({ page }) => {
-  const { plans } = await mockRenderer(page)
+  const { checks } = await mockRenderer(page)
   await openGraph(page, TWO)
 
   // nodes and edges are reached with Tab
@@ -123,8 +123,8 @@ test('keyboard only: select a module, bind and unbind from the inspector (AC-8, 
   await expect(list.getByRole('option')).toHaveText(['a', 'b', 'Not bound', 'Let the planner choose'])
   await list.getByRole('option', { name: 'Not bound', exact: true }).press('Enter')
   await expect(page.locator(edges)).toHaveCount(0)
-  await expect.poll(() => plans.length).toBe(2)
-  expect(plans[1]?.modules.whoami?.uses).toEqual({ postgresql: null })
+  await expect.poll(() => checks.length).toBe(2)
+  expect(checks[1]?.modules.whoami?.uses).toEqual({ postgresql: null })
 
   await select.focus()
   await page.keyboard.press('Enter')
@@ -140,7 +140,7 @@ test('keyboard only: select a module, bind and unbind from the inspector (AC-8, 
 test('Let the planner choose removes the key; the renderer fills it and the note shows (AC-11)', async ({ page }) => {
   await mockRenderer(page)
   // the mock echoes the graph, so fake the automatic binding the renderer would write back
-  await page.route('**/renderer/v1/plan', async (route) => {
+  await page.route('**/renderer/v1/check', async (route) => {
     const graph = route.request().postDataJSON()
     const uses = graph.modules.whoami.uses ?? {}
     const auto = !Object.hasOwn(uses, 'postgresql')

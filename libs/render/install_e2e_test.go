@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/racherom/modular-platform/libs/check"
 	"github.com/racherom/modular-platform/libs/contract"
-	"github.com/racherom/modular-platform/libs/planner"
 	"github.com/racherom/modular-platform/libs/render"
 )
 
@@ -37,11 +37,11 @@ func renderInstall(t *testing.T, dir, modules string) {
 	if p != nil {
 		t.Fatal(p.Message)
 	}
-	plan := planner.Plan(g, catalog)
-	if !plan.Ok {
-		t.Fatalf("plan: %+v", plan.Problems)
+	result := check.Graph(g, catalog)
+	if !result.Ok {
+		t.Fatalf("result: %+v", result.Problems)
 	}
-	out, err := render.Render(plan, catalog, builtinTemplates(t))
+	out, err := render.Render(result, catalog, builtinTemplates(t))
 	if err != nil {
 		t.Fatal(err)
 	}

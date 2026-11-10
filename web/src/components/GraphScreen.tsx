@@ -2,12 +2,12 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { ReactFlowProvider } from '@xyflow/react'
 import { Download, Info, LayoutGrid, Redo2, Rocket, Save, Undo2 } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
-import { fetchCatalog, type Graph, type PlanResult, type RendererError, renderGraph } from '../api/client'
+import { type CheckResult, fetchCatalog, type Graph, type RendererError, renderGraph } from '../api/client'
 import type { Positions } from '../graph/flow'
 import { mode } from '../lib/config'
 import { download, saveGraphFile } from '../lib/download'
 import { historyKey, historyShortcut, isApple, isFormControl } from '../lib/keys'
-import type { PlanState } from '../lib/store'
+import type { CheckState } from '../lib/store'
 import { HeaderContent, Workspace } from './AppShell'
 import { CatalogPanel } from './CatalogPanel'
 import styles from './GraphScreen.module.css'
@@ -39,8 +39,8 @@ export interface HistoryControls {
 export interface Editing {
   positions: Positions
   edited: boolean
-  planState: PlanState
-  planError: RendererError | null
+  checkState: CheckState
+  checkError: RendererError | null
   onRetry: () => void
   /** Applies a user edit to the working graph. */
   onEdit: (edit: GraphEdit) => void
@@ -54,7 +54,7 @@ export interface Editing {
 
 interface Props {
   graph: Graph
-  plan: PlanResult
+  check: CheckResult
   fileName: string
   toolbar?: ReactNode
   /** Makes the canvas editable; without it the graph is only shown. */
@@ -65,37 +65,37 @@ interface Props {
 
 /**
  * Why Download zip (and Deploy) is disabled, or null when it is allowed (AC-14): only a current
- * plan without errors allows it; warnings never block.
+ * check without errors allows it; warnings never block.
  */
-export function downloadBlocked(planState: PlanState, plan: PlanResult): string | null {
-  if (planState === 'checking') return 'Checking the graph'
-  if (planState === 'failed') return 'Not checked, retry first'
-  if (plan.ok) return null
-  const errors = plan.problems.filter((p) => p.severity === 'error').length
+export function downloadBlocked(checkState: CheckState, check: CheckResult): string | null {
+  if (checkState === 'checking') return 'Checking the graph'
+  if (checkState === 'failed') return 'Not checked, retry first'
+  if (check.ok) return null
+  const errors = check.problems.filter((p) => p.severity === 'error').length
   return errors > 0 ? `Fix ${errors} ${errors === 1 ? 'error' : 'errors'} to download` : 'Fix the errors to download'
 }
 
-/** A planned graph in the editor: header toolbar, catalog, canvas, inspector and problems. */
-export function GraphScreen({ graph, plan, fileName, toolbar, editing, notice }: Props) {
+/** A checked graph in the editor: header toolbar, catalog, canvas, inspector and problems. */
+export function GraphScreen({ graph, check, fileName, toolbar, editing, notice }: Props) {
   const catalog = useCatalog()
-  // a render that finds an error returns a newer plan to show, but only for the plan it came from
-  const [rendered, setRendered] = useState<{ from: PlanResult; plan: PlanResult }>()
-  const shownPlan = rendered?.from === plan ? rendered.plan : plan
+  // a render that finds an error returns a newer check to show, but only for the check result it came from
+  const [rendered, setRendered] = useState<{ from: CheckResult; check: CheckResult }>()
+  const shownResult = rendered?.from === check ? rendered.check : check
   const [reviewing, setReviewing] = useState(false)
   const reasonId = useId()
   const zip = useMutation({
     mutationFn: () => renderGraph(graph),
     onSuccess: (result) => {
       if ('zip' in result) download(result.zip, `${graph.name}.zip`)
-      else setRendered({ from: plan, plan: result.plan })
+      else setRendered({ from: check, check: result.check })
     },
   })
 
   if (catalog.isError) return <Failure error={catalog.error} onRetry={() => void catalog.refetch()} />
   if (!catalog.data) return <p>Loading the catalog…</p>
 
-  const planState = editing?.planState ?? 'current'
-  const blocked = downloadBlocked(planState, shownPlan)
+  const checkState = editing?.checkState ?? 'current'
+  const blocked = downloadBlocked(checkState, shownResult)
   const save = () => {
     saveGraphFile(graph, fileName)
     editing?.onSaved()
@@ -161,7 +161,7 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing, notice }:
               <GraphView
                 graph={graph}
                 catalog={catalog.data}
-                problems={shownPlan.problems}
+                problems={shownResult.problems}
                 positions={editing?.positions}
                 onEdit={editing?.onEdit}
               />
@@ -171,22 +171,22 @@ export function GraphScreen({ graph, plan, fileName, toolbar, editing, notice }:
             <Inspector
               graph={graph}
               catalog={catalog.data}
-              plan={shownPlan}
-              planCurrent={planState === 'current'}
+              check={shownResult}
+              checkCurrent={checkState === 'current'}
               onEdit={editing?.onEdit}
             />
           }
           problemsStatus={
             <span role="status" className={styles.status}>
-              {planState === 'checking' ? 'Checking the graph…' : planState === 'failed' ? 'Not checked' : ''}
+              {checkState === 'checking' ? 'Checking the graph…' : checkState === 'failed' ? 'Not checked' : ''}
             </span>
           }
           problems={
-            planState === 'failed' && editing?.planError ? (
+            checkState === 'failed' && editing?.checkError ? (
               // a 400 means the renderer refused this graph: retrying cannot help, undo is the way back
-              <Failure error={editing.planError} onRetry={editing.planError.status === 400 ? undefined : editing.onRetry} />
+              <Failure error={editing.checkError} onRetry={editing.checkError.status === 400 ? undefined : editing.onRetry} />
             ) : (
-              <ProblemsPanel problems={shownPlan.problems} graph={graph} />
+              <ProblemsPanel problems={shownResult.problems} graph={graph} />
             )
           }
         />

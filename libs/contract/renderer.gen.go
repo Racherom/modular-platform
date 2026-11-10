@@ -361,6 +361,23 @@ type Catalog struct {
 	Modules []Module `json:"modules"`
 }
 
+// CheckResult defines model for CheckResult.
+type CheckResult struct {
+	// Bindings Explicit and automatic bindings, sorted by consumer then slot.
+	Bindings []Binding `json:"bindings"`
+
+	// Digest `sha256:<hex>` over the canonical graph, the bindings and the catalog entries the graph
+	// uses; set only when `ok` is true. Equal digests mean the same project is rendered.
+	Digest string `json:"digest,omitempty"`
+
+	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
+	Graph Graph `json:"graph"`
+	Ok    bool  `json:"ok"`
+
+	// Problems Sorted by path, then code.
+	Problems []Problem `json:"problems"`
+}
+
 // ConfigBound A whole number for an `int`, a duration like `10s` for a `duration`.
 type ConfigBound struct {
 	union json.RawMessage
@@ -637,23 +654,6 @@ type Network struct {
 	Egress  bool        `json:"egress,omitempty"`
 }
 
-// PlanResult defines model for PlanResult.
-type PlanResult struct {
-	// Bindings Explicit and automatic bindings, sorted by consumer then slot.
-	Bindings []Binding `json:"bindings"`
-
-	// Digest `sha256:<hex>` over the canonical graph, the bindings and the catalog entries the graph
-	// uses; set only when `ok` is true. Equal digests mean the same project is rendered.
-	Digest string `json:"digest,omitempty"`
-
-	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
-	Graph Graph `json:"graph"`
-	Ok    bool  `json:"ok"`
-
-	// Problems Sorted by path, then code.
-	Problems []Problem `json:"problems"`
-}
-
 // Problem defines model for Problem.
 type Problem struct {
 	Candidates []string `json:"candidates,omitempty"`
@@ -723,12 +723,13 @@ type RenderedFile struct {
 
 // RenderedProject defines model for RenderedProject.
 type RenderedProject struct {
+	Check CheckResult `json:"check"`
+
 	// Files The project's files, sorted by path.
 	Files []RenderedFile `json:"files"`
 
 	// Images One entry per instance, sorted by instance.
 	Images []ModuleImage `json:"images"`
-	Plan   PlanResult    `json:"plan"`
 
 	// Project The Compose project name, `mp-<graph name>`.
 	Project string `json:"project"`
@@ -900,8 +901,8 @@ type TooLarge = ProblemList
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = ProblemList
 
-// PlanJSONRequestBody defines body for Plan for application/json ContentType.
-type PlanJSONRequestBody = Graph
+// CheckJSONRequestBody defines body for Check for application/json ContentType.
+type CheckJSONRequestBody = Graph
 
 // RenderJSONRequestBody defines body for Render for application/json ContentType.
 type RenderJSONRequestBody = Graph

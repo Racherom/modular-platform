@@ -22,9 +22,9 @@ type ServerInterface interface {
 	// GetCatalog List the built in catalog
 	// (GET /v1/catalog)
 	GetCatalog(w http.ResponseWriter, r *http.Request)
-	// Plan Check a graph and fill in its automatic bindings
-	// (POST /v1/plan)
-	Plan(w http.ResponseWriter, r *http.Request)
+	// Check Check a graph and fill in its automatic bindings
+	// (POST /v1/check)
+	Check(w http.ResponseWriter, r *http.Request)
 	// Render Render a graph as a zip you run with Docker Compose
 	// (POST /v1/render)
 	Render(w http.ResponseWriter, r *http.Request)
@@ -56,11 +56,11 @@ func (siw *ServerInterfaceWrapper) GetCatalog(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
-// Plan operation middleware
-func (siw *ServerInterfaceWrapper) Plan(w http.ResponseWriter, r *http.Request) {
+// Check operation middleware
+func (siw *ServerInterfaceWrapper) Check(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.Plan(w, r)
+		siw.Handler.Check(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -219,7 +219,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/catalog", wrapper.GetCatalog)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/plan", wrapper.Plan)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/check", wrapper.Check)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/render", wrapper.Render)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/render/managed", wrapper.RenderManaged)
 
@@ -307,17 +307,17 @@ func (response GetCatalog503JSONResponse) VisitGetCatalogResponse(w http.Respons
 	return err
 }
 
-type PlanRequestObject struct {
-	Body *PlanJSONRequestBody
+type CheckRequestObject struct {
+	Body *CheckJSONRequestBody
 }
 
-type PlanResponseObject interface {
-	VisitPlanResponse(w http.ResponseWriter) error
+type CheckResponseObject interface {
+	VisitCheckResponse(w http.ResponseWriter) error
 }
 
-type Plan200JSONResponse PlanResult
+type Check200JSONResponse CheckResult
 
-func (response Plan200JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
+func (response Check200JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -329,9 +329,9 @@ func (response Plan200JSONResponse) VisitPlanResponse(w http.ResponseWriter) err
 	return err
 }
 
-type Plan400JSONResponse struct{ BadGraphJSONResponse }
+type Check400JSONResponse struct{ BadGraphJSONResponse }
 
-func (response Plan400JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
+func (response Check400JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -343,9 +343,9 @@ func (response Plan400JSONResponse) VisitPlanResponse(w http.ResponseWriter) err
 	return err
 }
 
-type Plan401JSONResponse struct{ UnauthorizedJSONResponse }
+type Check401JSONResponse struct{ UnauthorizedJSONResponse }
 
-func (response Plan401JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
+func (response Check401JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -357,9 +357,9 @@ func (response Plan401JSONResponse) VisitPlanResponse(w http.ResponseWriter) err
 	return err
 }
 
-type Plan413JSONResponse struct{ TooLargeJSONResponse }
+type Check413JSONResponse struct{ TooLargeJSONResponse }
 
-func (response Plan413JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
+func (response Check413JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -371,9 +371,9 @@ func (response Plan413JSONResponse) VisitPlanResponse(w http.ResponseWriter) err
 	return err
 }
 
-type Plan429JSONResponse struct{ RateLimitedJSONResponse }
+type Check429JSONResponse struct{ RateLimitedJSONResponse }
 
-func (response Plan429JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
+func (response Check429JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -386,9 +386,9 @@ func (response Plan429JSONResponse) VisitPlanResponse(w http.ResponseWriter) err
 	return err
 }
 
-type Plan503JSONResponse struct{ TimedOutJSONResponse }
+type Check503JSONResponse struct{ TimedOutJSONResponse }
 
-func (response Plan503JSONResponse) VisitPlanResponse(w http.ResponseWriter) error {
+func (response Check503JSONResponse) VisitCheckResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response); err != nil {
@@ -476,7 +476,7 @@ func (response Render413JSONResponse) VisitRenderResponse(w http.ResponseWriter)
 	return err
 }
 
-type Render422JSONResponse PlanResult
+type Render422JSONResponse CheckResult
 
 func (response Render422JSONResponse) VisitRenderResponse(w http.ResponseWriter) error {
 
@@ -597,7 +597,7 @@ func (response RenderManaged413JSONResponse) VisitRenderManagedResponse(w http.R
 	return err
 }
 
-type RenderManaged422JSONResponse PlanResult
+type RenderManaged422JSONResponse CheckResult
 
 func (response RenderManaged422JSONResponse) VisitRenderManagedResponse(w http.ResponseWriter) error {
 
@@ -630,9 +630,9 @@ type StrictServerInterface interface {
 	// GetCatalog List the built in catalog
 	// (GET /v1/catalog)
 	GetCatalog(ctx context.Context, request GetCatalogRequestObject) (GetCatalogResponseObject, error)
-	// Plan Check a graph and fill in its automatic bindings
-	// (POST /v1/plan)
-	Plan(ctx context.Context, request PlanRequestObject) (PlanResponseObject, error)
+	// Check Check a graph and fill in its automatic bindings
+	// (POST /v1/check)
+	Check(ctx context.Context, request CheckRequestObject) (CheckResponseObject, error)
 	// Render Render a graph as a zip you run with Docker Compose
 	// (POST /v1/render)
 	Render(ctx context.Context, request RenderRequestObject) (RenderResponseObject, error)
@@ -704,11 +704,11 @@ func (sh *strictHandler) GetCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Plan operation middleware
-func (sh *strictHandler) Plan(w http.ResponseWriter, r *http.Request) {
-	var request PlanRequestObject
+// Check operation middleware
+func (sh *strictHandler) Check(w http.ResponseWriter, r *http.Request) {
+	var request CheckRequestObject
 
-	var body PlanJSONRequestBody
+	var body CheckJSONRequestBody
 	if err := runtime.BindJSONBody(r, &body); err != nil {
 		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
 		return
@@ -716,18 +716,18 @@ func (sh *strictHandler) Plan(w http.ResponseWriter, r *http.Request) {
 	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.Plan(ctx, request.(PlanRequestObject))
+		return sh.ssi.Check(ctx, request.(CheckRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "Plan")
+		handler = middleware(handler, "Check")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(PlanResponseObject); ok {
-		if err := validResponse.VisitPlanResponse(w); err != nil {
+	} else if validResponse, ok := response.(CheckResponseObject); ok {
+		if err := validResponse.VisitCheckResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

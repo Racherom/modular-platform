@@ -1,13 +1,13 @@
 // The editor store (spec 0010). The graph in here is the only source of truth: the canvas is
 // derived from it, every edit is a pure function on it, and the renderer checks each edit.
 import { create } from 'zustand'
-import { type Graph, planGraph, RendererError } from '../api/client'
+import { checkGraph, type Graph, RendererError } from '../api/client'
 import type { Positions } from '../graph/flow'
 import { layout } from '../graph/layout'
 import { saveWorking, type WorkingGraph, withPositions } from './storage'
 
-/** Whether the shown plan belongs to the shown graph. */
-export type PlanState = 'current' | 'checking' | 'failed'
+/** Whether the shown check result belongs to the shown graph. */
+export type CheckState = 'current' | 'checking' | 'failed'
 
 /** The slot a connect drag started from. */
 export interface DragFrom {
@@ -56,10 +56,10 @@ export function followSelection(graph: Graph, selection: Selection): { selection
 export interface EditorState {
   /** undefined until IndexedDB answered; null when nothing was opened yet */
   working: WorkingGraph | null | undefined
-  planState: PlanState
-  /** Counts plan calls; only the reply to the latest one is used. */
-  planSeq: number
-  planError: RendererError | null
+  checkState: CheckState
+  /** Counts check calls; only the reply to the latest one is used. */
+  checkSeq: number
+  checkError: RendererError | null
   dragFrom: DragFrom | null
   selection: Selection
   /** A node that should take keyboard focus once drawn; the canvas clears it after moving focus. */
@@ -77,19 +77,19 @@ export interface EditorState {
 
   /** Shows the working copy read from IndexedDB, unless a graph was opened meanwhile. */
   restore: (working: WorkingGraph | null) => void
-  /** Shows a graph that was just opened and planned, and keeps it. */
+  /** Shows a graph that was just opened and checked, and keeps it. */
   open: (working: WorkingGraph) => void
-  /** Applies a user edit at once, then plans the edited graph. */
+  /** Applies a user edit at once, then checks the edited graph. */
   edit: (change: (graph: Graph) => Graph) => void
-  /** Steps back to the graph and positions before the last edit, then plans it (AC-15). */
+  /** Steps back to the graph and positions before the last edit, then checks it (AC-15). */
   undo: () => void
-  /** Steps forward again after an undo, then plans it (AC-15). */
+  /** Steps forward again after an undo, then checks it (AC-15). */
   redo: () => void
-  /** Lays out the whole graph again; changes positions only and plans nothing (AC-16). */
+  /** Lays out the whole graph again; changes positions only and checks nothing (AC-16). */
   tidy: () => void
   /**
    * Makes the working copy from a sample and applies the first edit to it (AC-18): history holds
-   * the unedited copy, the edited flag is set and a plan call starts. Returns false when the edit
+   * the unedited copy, the edited flag is set and a check call starts. Returns false when the edit
    * changes nothing, so no copy is made.
    */
   copySample: (base: WorkingGraph, change: (graph: Graph) => Graph) => boolean
@@ -98,7 +98,7 @@ export interface EditorState {
   setCatalogFilter: (text: string) => void
   /** Filters the catalog by a capability and asks the catalog panel to take focus (AC-19). */
   findProviders: (capability: string) => void
-  /** Plans the current graph again after a failed call. */
+  /** Checks the current graph again after a failed call. */
   retry: () => void
   /** Clears the edited flag after Save as file. */
   saved: () => void
@@ -133,28 +133,28 @@ export const useEditor = create<EditorState>()((set, get) => {
     )
   }
 
-  // AC-12: one POST /v1/plan per edit; a newer call aborts the older one, and a reply whose
+  // AC-12: one POST /v1/check per edit; a newer call aborts the older one, and a reply whose
   // sequence is no longer the latest is dropped
-  const plan = () => {
+  const check = () => {
     const working = get().working
     if (!working) return
     inflight?.abort()
     const controller = new AbortController()
     inflight = controller
-    const seq = get().planSeq + 1
-    set({ planSeq: seq, planState: 'checking', planError: null })
-    planGraph(working.graph, controller.signal).then(
+    const seq = get().checkSeq + 1
+    set({ checkSeq: seq, checkState: 'checking', checkError: null })
+    checkGraph(working.graph, controller.signal).then(
       (result) => {
         const now = get().working
-        if (get().planSeq !== seq || !now) return
+        if (get().checkSeq !== seq || !now) return
         // the renderer's graph carries the automatic bindings; adopting it adds no history step
-        const next = withPositions({ ...now, graph: result.graph, plan: result })
-        setWorking(next, { planState: 'current' })
+        const next = withPositions({ ...now, graph: result.graph, check: result })
+        setWorking(next, { checkState: 'current' })
         persist(next)
       },
       (error: unknown) => {
-        if (get().planSeq !== seq || controller.signal.aborted) return
-        set({ planState: 'failed', planError: toRendererError(error) })
+        if (get().checkSeq !== seq || controller.signal.aborted) return
+        set({ checkState: 'failed', checkError: toRendererError(error) })
       },
     )
   }
@@ -165,7 +165,7 @@ export const useEditor = create<EditorState>()((set, get) => {
   }
 
   // undo takes from past and keeps the current state for redo; redo is the mirror image. Either
-  // way the restored graph is planned again, since no plan is kept in history
+  // way the restored graph is checked again, since no check is kept in history
   const step = (direction: 'undo' | 'redo') => {
     const { working, history } = get()
     const from = direction === 'undo' ? history.past : history.future
@@ -175,14 +175,14 @@ export const useEditor = create<EditorState>()((set, get) => {
     const rest = { from: from.slice(0, -1), to: [...to, snapshot(working)] }
     set({ history: direction === 'undo' ? { past: rest.from, future: rest.to } : { past: rest.to, future: rest.from } })
     setWorking(withPositions({ ...working, graph: target.graph, positions: target.positions, edited: true }))
-    plan()
+    check()
   }
 
   return {
     working: undefined,
-    planState: 'current',
-    planSeq: 0,
-    planError: null,
+    checkState: 'current',
+    checkSeq: 0,
+    checkError: null,
     dragFrom: null,
     selection: null,
     focusRequest: null,
@@ -202,9 +202,9 @@ export const useEditor = create<EditorState>()((set, get) => {
       const next = withPositions({ ...working, positions: undefined, edited: false })
       set((s) => ({
         working: next,
-        planSeq: s.planSeq + 1,
-        planState: 'current',
-        planError: null,
+        checkSeq: s.checkSeq + 1,
+        checkState: 'current',
+        checkError: null,
         dragFrom: null,
         selection: null,
         focusRequest: null,
@@ -220,7 +220,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       if (graph === working.graph) return
       record(working)
       setWorking({ ...working, graph, edited: true })
-      plan()
+      check()
     },
     undo: () => step('undo'),
     redo: () => step('redo'),
@@ -232,18 +232,18 @@ export const useEditor = create<EditorState>()((set, get) => {
       record(working)
       const next = { ...working, positions, edited: true }
       set({ working: next })
-      // a checking plan saves the new positions with its reply; a failed one saves nothing
-      if (get().planState === 'current') persist(next)
+      // a check still running saves the new positions with its reply; a failed one saves nothing
+      if (get().checkState === 'current') persist(next)
     },
     copySample: (base, change) => {
       const graph = change(base.graph)
       if (graph === base.graph) return false
       inflight?.abort()
       const start = withPositions({ ...base, edited: false })
-      set({ history: { past: [snapshot(start)], future: [] }, planError: null, dragFrom: null })
+      set({ history: { past: [snapshot(start)], future: [] }, checkError: null, dragFrom: null })
       setWorking({ ...start, graph, edited: true })
       set({ handoff: get().selection })
-      plan()
+      check()
       return true
     },
     takeHandoff: () => {
@@ -253,14 +253,14 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
     setCatalogFilter: (catalogFilter) => set({ catalogFilter }),
     findProviders: (capability) => set((s) => ({ catalogFilter: capability, filterFocus: s.filterFocus + 1 })),
-    retry: plan,
+    retry: check,
     saved: () => {
       const working = get().working
       if (!working?.edited) return
       const next = { ...working, edited: false }
       set({ working: next })
-      // the copy in storage must hold a plan for exactly its graph
-      if (get().planState === 'current') persist(next)
+      // the copy in storage must hold a check result for exactly its graph
+      if (get().checkState === 'current') persist(next)
     },
     setDragFrom: (dragFrom) => set({ dragFrom }),
     select: (selection) => set({ selection }),

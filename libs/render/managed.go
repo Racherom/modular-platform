@@ -64,7 +64,7 @@ type ManagedProject struct {
 // CodeSetupRequired refuses a deployed instance that needs setup.sh (spec 0013, Managed flavor).
 const CodeSetupRequired = "setup_required"
 
-// RefusedError lists why the managed flavor refuses an ok plan, one error per instance and
+// RefusedError lists why the managed flavor refuses an ok check result, one error per instance and
 // code, sorted by path then code; nothing was rendered.
 type RefusedError struct {
 	Problems []contract.Problem
@@ -74,34 +74,34 @@ func (e *RefusedError) Error() string {
 	return fmt.Sprintf("render: the managed flavor refuses the graph: %d problems", len(e.Problems))
 }
 
-// Refuse returns plan refused with problems: not ok, no digest, a warning that one of problems
+// Refuse returns result refused with problems: not ok, no digest, a warning that one of problems
 // repeats as an error (same code and path) left out, and every problem sorted by path then code.
-func Refuse(plan contract.PlanResult, problems []contract.Problem) contract.PlanResult {
-	plan.Ok, plan.Digest = false, ""
-	kept := slices.DeleteFunc(slices.Clone(plan.Problems), func(w contract.Problem) bool {
+func Refuse(result contract.CheckResult, problems []contract.Problem) contract.CheckResult {
+	result.Ok, result.Digest = false, ""
+	kept := slices.DeleteFunc(slices.Clone(result.Problems), func(w contract.Problem) bool {
 		return w.Severity == contract.Warning && slices.ContainsFunc(problems, func(e contract.Problem) bool {
 			return e.Code == w.Code && e.Path == w.Path
 		})
 	})
-	plan.Problems = slices.Concat(kept, problems)
-	slices.SortStableFunc(plan.Problems, func(a, b contract.Problem) int {
+	result.Problems = slices.Concat(kept, problems)
+	slices.SortStableFunc(result.Problems, func(a, b contract.Problem) int {
 		return cmp.Or(strings.Compare(a.Path, b.Path), strings.Compare(a.Code, b.Code))
 	})
-	return plan
+	return result
 }
 
 // refusals lists what a deployed graph may not have (spec 0013, Host access and Managed flavor):
 // host_access at each instance whose module publishes a port, mounts a host path or adds a Linux
 // capability other than NET_BIND_SERVICE (spec 0022), one problem naming every reason, and
 // setup_required at each one that needs setup.sh, which the deployer cannot run until #9.
-func refusals(plan contract.PlanResult, catalog contract.Catalog) []contract.Problem {
+func refusals(result contract.CheckResult, catalog contract.Catalog) []contract.Problem {
 	modules := make(map[string]contract.Module, len(catalog.Modules))
 	for _, m := range catalog.Modules {
 		modules[m.Name] = m
 	}
 	var out []contract.Problem
-	for _, i := range sortedKeys(plan.Graph.Modules) {
-		gm := plan.Graph.Modules[i]
+	for _, i := range sortedKeys(result.Graph.Modules) {
+		gm := result.Graph.Modules[i]
 		m, ok := modules[gm.Module]
 		if gm.External != nil || !ok {
 			continue
@@ -144,20 +144,20 @@ func label(p *types.Project, g contract.Graph, jobs map[string]job, deployment s
 	}
 }
 
-// Managed renders an ok plan for the managed deployer (spec 0006, grown by 0013): the static
+// Managed renders an ok check result for the managed deployer (spec 0006, grown by 0013): the static
 // output plus the platform labels on every service (and the job label on each one shot job),
 // restart: unless-stopped on every long running service, and the project named mp-<graph>.
 // Host names stay <instance>.<graph>.internal. deployment is the deployment id written into the
 // deployment label. A graph with an instance the managed flavor refuses returns a *RefusedError.
-func Managed(plan contract.PlanResult, catalog contract.Catalog, templates contract.Templates, deployment string) (ManagedProject, error) {
-	if !plan.Ok {
-		return ManagedProject{}, ErrPlanHasErrors
+func Managed(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates, deployment string) (ManagedProject, error) {
+	if !result.Ok {
+		return ManagedProject{}, ErrGraphHasErrors
 	}
-	if problems := refusals(plan, catalog); len(problems) > 0 {
+	if problems := refusals(result, catalog); len(problems) > 0 {
 		return ManagedProject{}, &RefusedError{Problems: problems}
 	}
-	r, err := renderProject(plan, catalog, templates, flavorManaged, func(p *types.Project, jobs map[string]job) {
-		label(p, plan.Graph, jobs, deployment)
+	r, err := renderProject(result, catalog, templates, flavorManaged, func(p *types.Project, jobs map[string]job) {
+		label(p, result.Graph, jobs, deployment)
 		p.Name = ProjectPrefix + p.Name
 	})
 	if err != nil {
@@ -168,8 +168,8 @@ func Managed(plan contract.PlanResult, catalog contract.Catalog, templates contr
 	for _, e := range catalog.Modules {
 		images[e.Name] = e.Image
 	}
-	for _, i := range sortedKeys(plan.Graph.Modules) {
-		if gm := plan.Graph.Modules[i]; gm.External == nil {
+	for _, i := range sortedKeys(result.Graph.Modules) {
+		if gm := result.Graph.Modules[i]; gm.External == nil {
 			m.Images = append(m.Images, Image{Instance: i, Module: gm.Module, Image: images[gm.Module]})
 		}
 	}

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { Graph, PlanResult } from '../api/client'
+import type { CheckResult, Graph } from '../api/client'
 import { routeTree } from '../routeTree.gen'
 import { testCatalog, testModule } from './fixtures'
 import { fetchHandler } from './setup'
@@ -30,10 +30,10 @@ describe('open file', () => {
     fetchHandler.current = async (req) => {
       const url = new URL(req.url)
       if (url.pathname === '/renderer/v1/catalog') return Response.json(catalog)
-      if (url.pathname === '/renderer/v1/plan') {
+      if (url.pathname === '/renderer/v1/check') {
         const graph = (await req.json()) as Graph
         const known = graph.modules.web?.module === 'whoami'
-        const plan: PlanResult = {
+        const check: CheckResult = {
           ok: known,
           graph,
           bindings: [],
@@ -41,13 +41,13 @@ describe('open file', () => {
             ? []
             : [{ severity: 'error', code: 'unknown_module', path: 'modules.web.module', message: 'No catalog entry is named nope.' }],
         }
-        return Response.json(plan)
+        return Response.json(check)
       }
       return new Response('not found', { status: 404 })
     }
   })
 
-  it('shows the new plan when a fixed file with the same names is opened again', async () => {
+  it('shows the new check when a fixed file with the same names is opened again', async () => {
     const { container } = renderEditor()
     await screen.findByRole('button', { name: 'Open file' })
     const input = () => container.querySelector<HTMLInputElement>('input[type=file]')!

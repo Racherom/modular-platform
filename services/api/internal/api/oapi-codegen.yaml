@@ -1,5 +1,5 @@
 # Models and the strict server on net/http, in one package: only api uses them. The
-# shared kernel types (Graph, PlanResult, ProblemList) come from libs/contract.
+# shared kernel types (Graph, CheckResult, ProblemList) come from libs/contract.
 package: api
 generate:
   models: true

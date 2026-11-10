@@ -8,7 +8,7 @@ export const MAX_FILE_BYTES = 1 << 20
 
 /**
  * Reads a graph file. Only apiVersion and kind are checked here; the renderer is the one
- * validator, so the graph goes to POST /v1/plan right after (and a v0alpha1 graph comes back
+ * validator, so the graph goes to POST /v1/check right after (and a v0alpha1 graph comes back
  * converted to v1).
  */
 export function parseGraph(text: string): Graph {

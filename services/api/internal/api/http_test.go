@@ -43,9 +43,9 @@ func TestGuards(t *testing.T) {
 	}{
 		"read without session":       {http.MethodGet, "/api/v1/session", "", http.StatusUnauthorized, "unauthenticated"},
 		"stream without session":     {http.MethodGet, "/api/v1/events", "", http.StatusUnauthorized, "unauthenticated"},
-		"write without origin":       {http.MethodPost, "/api/v1/plan", "", http.StatusForbidden, "bad_origin"},
+		"write without origin":       {http.MethodPost, "/api/v1/check", "", http.StatusForbidden, "bad_origin"},
 		"write from another origin":  {http.MethodPost, "/api/v1/deployments/x/apply", "https://evil.example", http.StatusForbidden, "bad_origin"},
-		"write, origin, no session":  {http.MethodPost, "/api/v1/plan", "https://platform.localhost", http.StatusUnauthorized, "unauthenticated"},
+		"write, origin, no session":  {http.MethodPost, "/api/v1/check", "https://platform.localhost", http.StatusUnauthorized, "unauthenticated"},
 		"logout from another origin": {http.MethodPost, "/api/v1/auth/logout", "https://evil.example", http.StatusForbidden, "bad_origin"},
 		"login before discovery":     {http.MethodGet, "/api/v1/auth/login", "", http.StatusServiceUnavailable, "provider_unavailable"},
 	} {
@@ -70,13 +70,13 @@ func TestCleanBody(t *testing.T) {
 	for name, tc := range map[string]struct {
 		path, body, wantCode string
 	}{
-		"plan graph":              {"/api/v1/plan", graph, ""},
-		"plan graph, unknown key": {"/api/v1/plan", strings.Replace(graph, `"modules"`, `"x":1,"modules"`, 1), "invalid_graph"},
-		"review":                  {"/api/v1/deployments/s/review", `{"graph":` + graph + `}`, ""},
-		"review, unknown key":     {"/api/v1/deployments/s/review", `{"graph":` + graph + `,"planDigest":"x"}`, "invalid_request"},
-		"apply":                   {"/api/v1/deployments/s/apply", `{"graph":` + graph + `,"planDigest":"x","placed":[]}`, ""},
-		"apply, bad graph":        {"/api/v1/deployments/s/apply", `{"graph":{"kind":"Graph"},"planDigest":"x"}`, "unsupported_version"},
-		"two objects":             {"/api/v1/deployments/s/apply", `{} {}`, "invalid_request"},
+		"check graph":              {"/api/v1/check", graph, ""},
+		"check graph, unknown key": {"/api/v1/check", strings.Replace(graph, `"modules"`, `"x":1,"modules"`, 1), "invalid_graph"},
+		"review":                   {"/api/v1/deployments/s/review", `{"graph":` + graph + `}`, ""},
+		"review, unknown key":      {"/api/v1/deployments/s/review", `{"graph":` + graph + `,"digest":"x"}`, "invalid_request"},
+		"apply":                    {"/api/v1/deployments/s/apply", `{"graph":` + graph + `,"digest":"x","placed":[]}`, ""},
+		"apply, bad graph":         {"/api/v1/deployments/s/apply", `{"graph":{"kind":"Graph"},"digest":"x"}`, "unsupported_version"},
+		"two objects":              {"/api/v1/deployments/s/apply", `{} {}`, "invalid_request"},
 		// remove carries no graph, so its keys are not the graph envelope's
 		"remove":           {"/api/v1/deployments/s/remove", `{"deleteData":false}`, ""},
 		"remove with data": {"/api/v1/deployments/s/remove", `{"deleteData":true,"confirmName":"s"}`, ""},

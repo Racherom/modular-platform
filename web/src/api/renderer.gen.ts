@@ -21,7 +21,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/plan": {
+    "/v1/check": {
         parameters: {
             query?: never;
             header?: never;
@@ -31,7 +31,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Check a graph and fill in its automatic bindings */
-        post: operations["plan"];
+        post: operations["check"];
         delete?: never;
         options?: never;
         head?: never;
@@ -509,7 +509,7 @@ export interface components {
         ProblemList: {
             problems: components["schemas"]["Problem"][];
         };
-        PlanResult: {
+        CheckResult: {
             ok: boolean;
             graph: components["schemas"]["Graph"];
             /** @description Explicit and automatic bindings, sorted by consumer then slot. */
@@ -533,7 +533,7 @@ export interface components {
         RenderedProject: {
             /** @description The Compose project name, `mp-<graph name>`. */
             project: string;
-            plan: components["schemas"]["PlanResult"];
+            check: components["schemas"]["CheckResult"];
             /** @description One entry per instance, sorted by instance. */
             images: components["schemas"]["ModuleImage"][];
             /** @description Host ports the project publishes; always empty for a deployed graph, which never publishes (spec 0013). */
@@ -661,7 +661,7 @@ export interface operations {
             503: components["responses"]["TimedOut"];
         };
     };
-    plan: {
+    check: {
         parameters: {
             query?: never;
             header?: never;
@@ -674,13 +674,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The plan. `ok` is false when a problem has severity `error`. */
+            /** @description The check result. `ok` is false when a problem has severity `error`. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlanResult"];
+                    "application/json": components["schemas"]["CheckResult"];
                 };
             };
             400: components["responses"]["BadGraph"];
@@ -717,13 +717,13 @@ export interface operations {
             400: components["responses"]["BadGraph"];
             401: components["responses"]["Unauthorized"];
             413: components["responses"]["TooLarge"];
-            /** @description The plan has an error, so nothing was rendered. */
+            /** @description The graph has an error, so nothing was rendered. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlanResult"];
+                    "application/json": components["schemas"]["CheckResult"];
                 };
             };
             429: components["responses"]["RateLimited"];
@@ -765,7 +765,7 @@ export interface operations {
             };
             413: components["responses"]["TooLarge"];
             /**
-             * @description The plan has an error, so nothing was rendered. Besides the plan's own errors, a
+             * @description The graph has an error, so nothing was rendered. Besides the graph's own errors, a
              *     deployed graph is refused with error `host_access` at `modules.<instance>` for each
              *     instance whose module publishes ports or mounts host paths, and with error
              *     `setup_required` for each instance that needs `setup.sh` (an asked value, an asked
@@ -777,7 +777,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlanResult"];
+                    "application/json": components["schemas"]["CheckResult"];
                 };
             };
             503: components["responses"]["TimedOut"];

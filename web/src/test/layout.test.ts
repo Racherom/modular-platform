@@ -45,7 +45,7 @@ describe('withPositions (AC-16)', () => {
     name: 'g',
     modules: { a: { module: 'x' }, b: { module: 'x', uses: { c: 'a' } } },
   }
-  const w = { fileName: 'g.yaml', graph: g, plan: { ok: true, graph: g, bindings: [], problems: [] } }
+  const w = { fileName: 'g.yaml', graph: g, check: { ok: true, graph: g, bindings: [], problems: [] } }
 
   it('keeps stored positions when every instance has one', () => {
     const positions = { a: { x: 7, y: 7 }, b: { x: 9, y: 9 } }

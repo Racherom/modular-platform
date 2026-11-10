@@ -21,7 +21,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// pebble v2.10.1, pinned by digest (spec 0005, "Build plan").
+// pebble v2.10.1, pinned by digest (spec 0005, its build tasks).
 const (
 	pebbleImage    = "ghcr.io/letsencrypt/pebble@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199"
 	tlsModuleImage = "modular-platform/sdk-tls-module:test"

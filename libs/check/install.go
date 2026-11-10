@@ -1,4 +1,4 @@
-package planner
+package check
 
 import (
 	"fmt"
@@ -20,7 +20,7 @@ const (
 // 0013, Host access) or adds a Linux capability other than NET_BIND_SERVICE (spec 0022), in
 // public and internal mode alike: a downloaded zip gives it that access, while a deployed graph
 // is refused it. One warning per instance names every reason.
-func (p *planning) hostAccess(instances []string) {
+func (p *checking) hostAccess(instances []string) {
 	for _, i := range instances {
 		m, ok := p.entry(i)
 		if !ok {
@@ -40,7 +40,7 @@ func (p *planning) hostAccess(instances []string) {
 // envNames reports two config values that become one Compose variable, possible because an
 // instance or value name may hold -- (spec 0013, "Asked values"). It reports the later pair in
 // instance then value order, at its instance.
-func (p *planning) envNames(instances []string) {
+func (p *checking) envNames(instances []string) {
 	seen := map[string]string{} // variable to "value of instance"
 	for _, i := range instances {
 		m, ok := p.entry(i)
@@ -61,7 +61,7 @@ func (p *planning) envNames(instances []string) {
 
 // entry returns the catalog entry of module instance i, when i is a valid instance of a known
 // module.
-func (p *planning) entry(i string) (contract.Module, bool) {
+func (p *checking) entry(i string) (contract.Module, bool) {
 	gm := p.graph.Modules[i]
 	if !p.valid[i] || gm.External != nil {
 		return contract.Module{}, false
@@ -74,14 +74,14 @@ func (p *planning) entry(i string) (contract.Module, bool) {
 // (spec 0013): a step reads only the files steps 2 to 4 make (asked and generated files), its
 // own secrets, and the outputs of steps before it; the steps of a provider run before those of
 // its consumers.
-func (p *planning) setupOrder(instances []string) {
+func (p *checking) setupOrder(instances []string) {
 	bound := map[string]contract.Binding{}     // consumer.slot to its binding
 	clients := map[string][]contract.Binding{} // provider.provide to the bindings to it
 	for _, b := range p.bindings {
 		bound[b.Consumer+"."+b.Slot] = b
 		clients[b.Provider+"."+b.Provide] = append(clients[b.Provider+"."+b.Provide], b)
 	}
-	o := orderCheck{planning: p, bound: bound}
+	o := orderCheck{checking: p, bound: bound}
 	for _, i := range instances {
 		m, ok := p.entry(i)
 		if !ok {
@@ -147,11 +147,11 @@ func ownSecret(m contract.Module, k int, n string) string {
 
 // orderCheck follows a binding's field to the file behind it.
 type orderCheck struct {
-	*planning
+	*checking
 	bound map[string]contract.Binding
 }
 
-// maxDepth bounds how many {uses} pass throughs a field may follow; the planner refuses cycles.
+// maxDepth bounds how many {uses} pass throughs a field may follow; the checks refuse cycles.
 const maxDepth = 8
 
 // boundFile tells why field f of binding b is not a file setup.sh has made before its consumer's
