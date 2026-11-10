@@ -8,6 +8,7 @@ vars:
   IMAGE_TAG: dev
   GOLANGCI_LINT_VERSION: v2.15.0
   LEFTHOOK_VERSION: v2.2.2
+  SKILLS_VERSION: 1.7.6
   # go run pkg@version builds with the toolchain the tool's module asks for; golangci-lint must be
   # built with at least the toolchain go.work pins, or it refuses the code
   GO_TOOLCHAIN:
@@ -116,6 +117,14 @@ tasks:
     cmds:
       - go install github.com/evilmartians/lefthook/v2@{{.LEFTHOOK_VERSION}}
       - gobin="$(go env GOBIN)"; "${gobin:-$(go env GOPATH)/bin}/lefthook" install
+
+  skills:
+    desc: Restore the agent skills in skills-lock.json into .agents/skills and link each into .claude/skills (once per clone; skills {{.SKILLS_VERSION}})
+    cmds:
+      # experimental_install fills only .agents/skills; Claude Code reads .claude/skills, so link each skill there
+      - pnpm dlx skills@{{.SKILLS_VERSION}} experimental_install
+      - mkdir -p .claude/skills
+      - for dir in .agents/skills/*/; do name="$(basename "$dir")"; [ -e ".claude/skills/$name" ] || [ -L ".claude/skills/$name" ] || ln -s "../../.agents/skills/$name" ".claude/skills/$name"; done
 
   online:env:
     internal: true

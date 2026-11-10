@@ -26,6 +26,7 @@ task test:integration  # the Docker tests (build tags integration and e2e)
 task lint       # golangci-lint (gofumpt), Biome, tsc
 task fmt        # gofumpt, goimports and Biome, applying safe fixes
 task hooks      # install lefthook and the pre commit hook (once per clone)
+task skills     # restore the agent skills in skills-lock.json, workflow skills included (once per clone)
 task smoke      # sample zip end to end plus the editor under /platform (needs Chromium)
 ```
 
@@ -63,6 +64,8 @@ Installed and enforced:
 - commit: per-milestone
 
 ## Agent skills
+
+Git tracks only `skills-lock.json` (each skill's source and hash), not the skill folders. After a clone, run `task skills`: it restores every skill into `.agents/skills/` and links it into `.claude/skills/`. Add or update a skill with `pnpm dlx skills` so the lock file stays current. The workflow skills (`architect`, `audit`, `check`, `debug`, `develop`, `document`, `scope`, `sync`, `test`) come from `JavaScript-Mastery-Pro/skills` and are not listed below.
 
 - [golang-project-layout](.agents/skills/golang-project-layout/): `samber/cc-skills-golang`, module and package layout, `go.work`
 - [golang-code-style](.agents/skills/golang-code-style/): `samber/cc-skills-golang`, Go style

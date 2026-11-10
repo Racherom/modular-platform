@@ -28,3 +28,7 @@ secrets/
 # local agent caches and TypeScript incremental build info
 docs/.agent-cache/
 *.tsbuildinfo
+
+# agent skills: git tracks only skills-lock.json, task skills restores the folders
+/.agents/skills/
+/.claude/skills/
