@@ -1,7 +1,7 @@
 # 0016. Start the platform from one container
 
 **Date**: 2026-11-05
-**Status**: Proposed
+**Status**: In Progress
 **Scope**: [#32 Start the platform from one container](../../scope/scope.md)
 **Builds on**: [0007](../0006-managed-mode-control-plane/0007-deploy-target-deployer.md) (the deployer), [0013](../0011-capability-module-contract/0013-module-manifest-v1.md) (install time), [0015](../0011-capability-module-contract/0015-platform-graph-managed-zip.md) (the platform graph and its render)
 

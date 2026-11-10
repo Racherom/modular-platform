@@ -1,11 +1,27 @@
 # Scope: Modular Platform
 
-A platform that builds a microservice stack from exchangeable modules. Each module wraps an existing open source container image and declares the capabilities it provides and the capabilities it uses; a capability can also come from an external service. A graph based planner checks that every need has a provider and deploys the result in one of two modes. **Static mode:** you design the stack in a hosted online tool, download a zip (a Compose file, config files and env vars, a setup script) and run it with standard tools alone, for a small self hosted stack. **Managed mode:** for bigger setups, you download the platform itself and it runs inside the network as a control plane with sign in and deploy to the host; every module it ships with, down to its own services, is only a default you can replace, and its planner website runs standalone or under a path of a website you already have; config, users, groups and permissions come from exchangeable modules, the running stack can change at runtime, and an aware module can use different providers for different users. Open source, built by a small team, for self hosters, platform teams and module authors alike.
+A platform that builds a microservice stack from exchangeable modules. Each module wraps an existing open source container image and declares the capabilities it provides and the capabilities it uses; a capability can also come from an external service. You describe a stack in a graph; checks at every stage make sure every need has a provider, and a renderer turns the graph into a zip or into the files the deployer applies, in one of two modes. **Static mode:** you design the stack in the online editor, download a zip (a Compose file, config files and env vars, a setup script) and run it with standard tools alone, for a small self hosted stack. **Managed mode:** for bigger setups, you download the platform itself and it runs inside the network as a control plane with sign in and deploy to the host; every module it ships with, down to its own services, is only a default you can replace, and its stack editor runs standalone or under a path of a website you already have; config, users, groups and permissions come from exchangeable modules, the running stack can change at runtime, and an aware module can use different providers for different users. Open source, built by a small team, for self hosters, platform teams and module authors alike.
 
 **Build approach:** Tracer Bullet (each slice runs end to end through catalog, planner, editor and deploy; every later slice thickens one strand of a thread that already works). (basis: vertical slices ship real value early)
 **Workflow:** GA (after develop: check verify, test, a fresh model check review, then document). The project default level of rigor. `/architect` is the recommended first stop for a feature with a real decision, but skippable when you already know the build. Any feature can carry its own tag (e.g. `· Beta`) to do more or less. (basis: small team codebase handling sign in and secrets, with a public module contract)
 
 _These are recommendations to keep your build orderly, not requirements. Skip anything that does not fit: if you already know how to build a feature, use `/develop` and skip `/architect`. You decide when a feature is `done`._
+
+## Words
+
+One name for each thing (your answers of 2026-11-10). #41 brings code, contracts and specs in line; older feature text below may still say planner until then.
+
+| Word | What it names |
+|------|---------------|
+| stack | the modules that run together, while you design them and while they run. A network stays the Docker network that render makes for a binding |
+| graph | the file that describes a stack: its modules, config values, capabilities and bindings. It may be incomplete; shared or ready (#40) |
+| zip | the ready to deploy files of a stack, made by the renderer; it carries its graph |
+| online editor | the editor before anything runs: open a graph, a zip (#42), a sample or a shared graph, edit it, download a new graph or a zip |
+| stack editor | the same editor on a running stack (managed mode): health, the edit layer, adding a graph (#43) and apply |
+| renderer | turns a graph into a zip, or into the files the deployer applies: downloads what each module needs, unpacks it, and generates files from capabilities and config values |
+| apply | starting the renderer's files on a running stack, module by module so the providers each module uses stay up (#19) |
+| checks | the rules a graph must meet, run at several stages (the editors, the renderer, apply); not one component |
+| retired | planner, planner website, managed editor, public planner, running graph |
 
 ## At a glance
 
@@ -14,6 +30,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 1 | Stack & architecture | Foundation | in-progress |
 | 2 | Coding standards & tooling | Foundation | done |
 | 5 | Design system & graph editor foundation | Foundation | in-progress |
+| 41 | One vocabulary | Foundation | in-progress |
 | 44 | Skills from a list, not from git | Foundation | in-progress |
 | 27 | Module SDK | Slice 1 | in-progress |
 | 16 | Managed mode control plane | Slice 1 | in-progress |
@@ -21,11 +38,14 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 10 | External capability providers | Slice 2 | in-progress |
 | 4 | Platform data model | Slice 2 | planned |
 | 6 | Design online, download, compose up | Slice 3 | planned |
+| 42 | Open a zip in the editor | Slice 3 | planned |
+| 40 | Shared graphs and ready graphs | Slice 3 | planned |
 | 34 | Edit layer and gated apply | Slice 3 | planned |
+| 43 | Add a graph to a running stack | Slice 3 | planned |
 | 35 | Apply history and diff | Slice 3 | planned |
 | 32 | Start the platform from one container | Slice 4 | in-progress |
 | 23 | Replace the platform's own modules | Slice 4 | planned |
-| 24 | Planner website standalone or in your site | Slice 4 | planned |
+| 24 | Stack editor standalone or in your site | Slice 4 | planned |
 | 25 | Upgrade a managed install | Slice 4 | planned |
 | 28 | Exchangeable sign in methods | Slice 4 | planned |
 | 37 | First run setup on the web | Slice 4 | planned |
@@ -35,7 +55,8 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 8 | Capability conformance checks | Slice 6 | planned |
 | 9 | Secrets handling | Slice 7 | planned |
 | 26 | Config and secrets wired from the network | Slice 7 | planned |
-| 12 | Plan from files and command line | Slice 9 | planned |
+| 39 | Static content on a shared host module | Slice 8 | planned |
+| 12 | Render from files and command line | Slice 9 | planned |
 | 13 | Shared catalog repositories | Slice 10 | planned |
 | 14 | Roles and permissions | Slice 11 | planned |
 | 15 | Audit log | Slice 11 | planned |
@@ -46,7 +67,7 @@ _These are recommendations to keep your build orderly, not requirements. Skip an
 | 36 | Live health and binding statistics | Slice 14 | planned |
 | 20 | Scale modules | Slice 15 | planned |
 | 21 | Per user provider routing | Slice 16 | planned |
-| 22 | Run the public online tool | Deferred | planned |
+| 22 | Run the public online editor | Deferred | planned |
 | 33 | Managed network on Kubernetes | Deferred | planned |
 | 38 | Sample graphs for Nextcloud and WordPress | Deferred | planned |
 | 11 | Standalone export | | dropped |
@@ -92,6 +113,22 @@ spec [0010](../specs/0010-design-system-graph-editor/index.md) · code in `web/s
 - [ ] Test it: `/test design system & graph editor foundation`
 - [ ] Review it (fresh model): `/check review design system & graph editor foundation`
 - [x] Document it: `/document design system & graph editor foundation`
+
+### 41. One vocabulary · in-progress
+One name for each thing, the same in code, contracts, specs, editor text and this scope, taken from the Words table above. Today "planner" names the matching step, the service that also renders, the managed website and the public tool, and the running stack has five names. Its spec writes the glossary (spec 0001 and the ubiquitous language in `AGENTS.md`) and decides what `libs/planner` and `services/planner` become (the renderer and checks shared by the editors, the renderer and apply), where binding a need automatically lives, whether "plan" stays a word, and how renamed contract paths (such as `/api/v1/deployments`) stay compatible.
+**Done when:** the glossary lists each word once with what it names; no code identifier, contract path, spec, editor text or scope row uses a retired name for these things; the renamed packages, services and routes pass `task generate`, lint and tests; and an old contract path either still answers or was removed on purpose with a note in the changelog.
+spec [0027](../specs/0027-one-vocabulary/index.md) · code in `libs/planner` → `libs/check`, `services/planner` → `services/renderer`, `contracts/openapi/`, `services/api/`, `services/deployer-docker/`, `libs/render/`, `catalog/`, `web/src/`, `deploy/`, `scripts/vocabulary.sh`
+- [x] Design it (spec): `/architect one vocabulary`
+- [ ] Build it: `/develop one vocabulary`
+   - [ ] Glossary in spec 0001 and the retired word check, report only (AC-1, AC-12)
+   - [ ] planner to renderer, plan to check and resolved graph: service, catalog, settings, image, CI, contracts, `libs/check`, editor text (AC-2, AC-3, AC-6)
+   - [ ] deployments and projects to stacks: both contracts, migration `00002`, store, deployer folder, managed label, editor routes (AC-4, AC-5, AC-6)
+   - [ ] Recommended bindings instead of automatic binding, every shipped graph explicit (spec 0028; AC-7, AC-8, AC-9, AC-10, AC-11)
+   - [ ] Living text rewritten, `/sync` and `/scope` run, the check turned on in `task lint` and lefthook (AC-12, AC-13, AC-14)
+- [ ] Verify it: `/check verify one vocabulary`
+- [ ] Test it: `/test one vocabulary`
+- [ ] Review it (fresh model): `/check review one vocabulary`
+- [ ] Document it: `/document one vocabulary`
 
 ### 44. Skills from a list, not from git · Alpha · in-progress
 Stop tracking the installed skill folders (`.agents/skills/`, `.claude/skills/`) in git and commit only `skills-lock.json`, the list of recommended skills with source and hash. A fresh clone installs the skills from that list.
@@ -177,14 +214,29 @@ The graph text file format that the editor saves and every zip carries (replacin
 ## Slice 3: Edit the graph
 
 ### 6. Design online, download, compose up · needs a decision
-Graph editing in the editor (spec 0004): load the catalog, place a consumer module and a provider module on the graph, let the planner bind the needed capability, then either deploy it (managed mode, #16) or download the zip, run `setup.sh` and `docker compose up` and see both running. The zip is the standalone export (the former #11): it runs with standard open source tools alone. The walking skeleton is now #16; this adds drawing, deleting and renaming on top of it. Its spec decides how the planner resolves needs (matching, version rules, what happens when two providers fit) on top of the rules pinned in spec 0002.
-**Done when:** you build a two module graph in the editor, the planner rejects an unmet need and accepts a bound one, the graph saves as a text file, the same graph deploys from the managed editor, and the downloaded zip starts both containers wired together on a clean host without the platform, with secrets created by `setup.sh` and never inside the zip.
+Graph editing in the editor (spec 0004): load the catalog, place a consumer module and a provider module on the graph, let the checks bind the needed capability, then either deploy it (managed mode, #16) or download the zip, run `setup.sh` and `docker compose up` and see both running. The zip is the standalone export (the former #11): it runs with standard open source tools alone. The online editor and the stack editor are one tool with the same screens; the stack editor adds health, the edit layer and apply on a running stack (#34, #36, #43). The walking skeleton is now #16; this adds drawing, deleting and renaming on top of it. Its spec decides how needs are resolved (matching, version rules, what happens when two providers fit) on top of the rules pinned in spec 0002.
+**Done when:** you build a two module graph in the online editor, the checks reject an unmet need and accept a bound one, the graph saves as a text file, the same graph deploys from the managed editor, and the downloaded zip starts both containers wired together on a clean host without the platform, with secrets created by `setup.sh` and never inside the zip.
 - [ ] Design it (spec): `/architect design online, download, compose up`
 
+### 42. Open a zip in the editor · needs a decision
+The online editor opens two kinds of file: a graph, which may be incomplete, and a ready to deploy zip. From a zip it reads the graph the zip carries and shows it like any graph you open, so you can change a stack you only kept as a zip and download a new graph or a new zip. The stack editor takes the same two kinds when you add a graph to a running stack (#43). Its spec decides what happens when a zip's files no longer match its graph (edited by hand), which zips it accepts (a stack's and the platform's), and the limits that keep an untrusted zip safe.
+**Done when:** you open a zip the editor gave out and see the same modules, bindings and config values it was made from; downloading it again without an edit gives the same files; a zip changed by hand is flagged and names what differs; a zip that is not a stack's zip, is too large, or holds unsafe paths is refused with a clear message; and nothing from a zip runs in the browser.
+- [ ] Design it (spec): `/architect open a zip in the editor`
+
+### 40. Shared graphs and ready graphs · needs a decision
+A graph is either shared (generic, with open values) or ready (every value set, so it can deploy). Values that overlap are linked in a shared graph: the whole graph runs under one domain, every config that uses the domain links to it, and each host name links to it as `{sub}.{domain}` (Authelia's `auth.{domain}`, spec 0026, is the first). So every domain and host name a graph needs is planned before setup, and you see the full list of DNS names up front. You take a shared graph from a file or the samples route and make it ready in the editor by filling its last open values. A ready graph always gives a zip. A graph with open values gives one only when the core of its managed stack can start without them, with a warning naming each value you then set in the stack editor; any other graph with an open value gives no zip. The released platform graph is the first shared graph: at install `setup.sh` asks whether to continue without a domain, the core then starts on a self signed certificate, and once you set the domain in the editor the deployment finishes (with #37, which owns the setup site before the domain is known). Its spec decides how a graph marks itself shared or ready, how a link and a `{sub}.{domain}` pattern are written, which values stay open, what counts as the core of a managed stack, and how a ready graph turns back into a shared one. Publishing shared graphs from catalog repositories waits for #13.
+**Done when:** a shared graph opens from a file and from the samples route with its open values listed and its linked values shown as links; filling the domain once fills every config and host name linked to it; a graph with open values downloads as a zip only when its managed core can start without them, with a warning naming each open value; otherwise download and deploy refuse it and name each open value; the platform installs without a domain on a self signed certificate and finishes its deployment after you set the domain in the editor; and the README of a ready graph lists every DNS name it needs.
+- [ ] Design it (spec): `/architect shared graphs and ready graphs`
+
 ### 34. Edit layer and gated apply · needs a decision
-In managed mode the graph shows the running stack by default. You switch on an edit layer to change it: add, remove or rebind modules as a draft drawn on top of the running stack, with every change marked against what runs. Switching the layer off shows the running stack again, untouched by the draft. Apply stays locked until every capability each module uses is bound to a provider, and the editor names what is still missing. Until #19 lands, apply deploys the whole draft as #16 does today; #19 later applies only the difference and shows its impact on this layer. Managed mode only: the online tool has no running stack. Its spec decides where the draft lives (one browser or the platform, one per admin or shared) and what happens when the running stack changes under an open draft.
+The stack editor shows the running stack by default. You switch on an edit layer to change it: add, remove or rebind modules as a draft drawn on top of the running stack, with every change marked against what runs. Switching the layer off shows the running stack again, untouched by the draft. Apply stays locked until every capability each module uses is bound to a provider, and the editor names what is still missing. Until #19 lands, apply deploys the whole draft as #16 does today; #19 later applies only the difference and shows its impact on this layer. Managed mode only: the online editor has no running stack. Its spec decides where the draft lives (one browser or the platform, one per admin or shared) and what happens when the running stack changes under an open draft.
 **Done when:** in managed mode you switch the edit layer on, change the graph, and see each added, removed and rebound part marked against the running stack; switching it off shows the running stack unchanged; apply is disabled while any need is unbound and names the missing capabilities; once every need is bound, apply deploys the draft, and with the layer off the graph then shows the new running stack.
 - [ ] Design it (spec): `/architect edit layer and gated apply`
+
+### 43. Add a graph to a running stack · needs a decision
+In the stack editor you upload a graph (or a zip, #42) and add it to the running stack as a draft on the edit layer (#34). Its modules join the stack, and a module that already exists in the stack is replaced by the uploaded one. Each config value can be linked to a value the stack already has instead of being set again (links from #40). Apply then runs the same checks as any draft. Managed mode only. Its spec decides when a module counts as already existing (same name, same module, or same capability), what happens to the bindings and data of a replaced module (the data warning of #7), how a config link is chosen (automatic for matching values, or picked by you), and how conflicts show before apply.
+**Done when:** you upload a graph into a running stack and see each added, replaced and linked part marked on the edit layer before apply; a replaced module's consumers stay bound to it; a config value linked to an existing one takes that value and follows it when it changes; apply is refused while a check fails and names what is missing; and every module the upload did not touch keeps running.
+- [ ] Design it (spec): `/architect add a graph to a running stack`
 
 ### 35. Apply history and diff · needs a decision
 Every apply writes one history entry: who applied it, when, the full graph and whether it succeeded. You pick any two entries and see the difference between them (modules, bindings and config added, removed or changed) on the graph and as a list. Restoring an entry loads it as the draft in the edit layer (#34), so it passes the same checks and the same apply button. It builds on the apply history table #16 creates; the audit log (#15) records that an apply happened, this keeps the graphs themselves. Managed mode only.
@@ -278,16 +330,21 @@ In managed mode, a compatible module's config and secrets come from the network 
 **Done when:** you bind a module that needs a database to the bundled Postgres module, and the platform creates the database and a login for that module and fills its config, with no value typed or copied; a second module gets its own database and login; no screen, log, graph file or export shows a password or token between modules; a value you do enter (such as an external provider's admin login) is asked for once and reused everywhere it is needed.
 - [ ] Design it (spec): `/architect config and secrets wired from the network`
 
-## Slice 8: External providers
+## Slice 8: Static hosting
 
-External providers moved into Slice 2 (#10), so they are designed together with the contract.
+_External providers, once planned here, moved into Slice 2 (#10), so they are designed together with the contract._
+
+### 39. Static content on a shared host module · needs a decision
+A module no longer has to serve its own web files. A capability carries its static content (a site, or an app's web front end), and in planning you link it to a static host module that serves it; one host serves the content of many capabilities, each on its own host name or path. The host is an ordinary exchangeable module, so the web server behind it can be replaced like any provider. Its spec decides how content travels with a capability, how a link names its host name or path, how new content reaches a running host, and the shared mechanism that PHP apps on one PHP module (#38) reuse.
+**Done when:** you link the content of two capabilities to one static host module in the editor; the static zip and the managed deploy both serve each under its own host name or path; no module in the graph serves web files of its own; and swapping the host module for another provider of the same capability serves the same content unchanged.
+- [ ] Design it (spec): `/architect static content on a shared host module`
 
 ## Slice 9: Files and command line
 
-### 12. Plan from files and command line · needs a decision
-The editor already saves and opens graph text files (slice 1). This decides first whether a command line is worth having at all, and if so validates, plans and renders straight from those files so a stack can live in version control and run in automation.
-**Done when:** the same graph files give the same plan from automation and from the editor, and an invalid file gives a clear error that points at the place to fix.
-- [ ] Design it (spec): `/architect plan from files and command line`
+### 12. Render from files and command line · needs a decision
+The editor already saves and opens graph text files (slice 1). This decides first whether a command line is worth having at all, and if so runs the checks and the renderer straight from those files so a stack can live in version control and run in automation.
+**Done when:** the same graph files give the same check results and the same zip from automation and from the editor, and an invalid file gives a clear error that points at the place to fix.
+- [ ] Design it (spec): `/architect render from files and command line`
 
 ## Slice 10: Shared catalogs
 
@@ -330,8 +387,8 @@ Config decides which sign in methods (#28) count for what: per app in the stack,
 ## Slice 14: Live graph changes and health
 
 ### 19. Live graph changes · needs a decision
-Change the running stack without a full redeploy: swap a provider, add a module or remove one. The platform compares the running graph to the new plan and applies only the difference, rewiring consumers as it goes. This includes the platform's own graph (#23), so the deployer applies such a change without stopping itself mid apply.
-**Done when:** in managed mode a swap, an add and a remove each apply while the rest of the stack keeps running, a platform module (for example the ingress) can be swapped on a running platform, the planner shows the impact before you apply, and a failed change leaves the previous graph running.
+Change the running stack without a full redeploy: swap a provider, add a module or remove one. The platform compares the running stack to the new graph and applies only the difference, rewiring consumers as it goes. Apply works module by module, the way the renderer works for a zip but one module at a time: a module starts only once the providers it uses are up, and a provider stops only after its consumers have moved or stopped, so every module keeps what it depends on. This includes the platform's own graph (#23), so the deployer applies such a change without stopping itself mid apply.
+**Done when:** in managed mode a swap, an add and a remove each apply while the rest of the stack keeps running, a platform module (for example the ingress) can be swapped on a running platform, the stack editor shows the impact before you apply, no module runs while a provider it uses is down during an apply, and a failed change leaves the previous stack running.
 - [ ] Design it (spec): `/architect live graph changes`
 
 ### 36. Live health and binding statistics · needs a decision
@@ -361,10 +418,10 @@ Folded into #6 by spec 0001: the zip that slice 1 downloads is the standalone ex
 ## Deferred
 Out of scope for the current build pass, kept so the plan stays honest.
 
-### 22. Run the public online tool · needs a decision
-Operate the online tool on your own network as a public service: choose the public domain, open only 80 and 443 to the ingress, decide on protection in front against floods, keep TLS renewal and patching going, and publish a short privacy note (nothing stored, request bodies not logged). Surfaced by spec 0001. Deferred by spec 0004 until you choose to host it: the online tool's code keeps compiling and passing unit tests, but nothing runs its smoke check automatically. When it returns, its spec restores the online smoke job in CI first.
-**Done when:** the online tool answers on its public domain over TLS, only the ingress is reachable from outside, a flood is stopped before it reaches the planner, and the privacy note is published and true.
-- [ ] Design it (spec): `/architect run the public online tool`
+### 22. Run the public online editor · needs a decision
+Operate the online editor on your own network as a public service: choose the public domain, open only 80 and 443 to the ingress, decide on protection in front against floods, keep TLS renewal and patching going, and publish a short privacy note (nothing stored, request bodies not logged). Surfaced by spec 0001. Deferred by spec 0004 until you choose to host it: the online tool's code keeps compiling and passing unit tests, but nothing runs its smoke check automatically. When it returns, its spec restores the online smoke job in CI first.
+**Done when:** the online editor answers on its public domain over TLS, only the ingress is reachable from outside, a flood is stopped before it reaches the renderer, and the privacy note is published and true.
+- [ ] Design it (spec): `/architect run the public online editor`
 
 ### 33. Managed network on Kubernetes · needs a decision
 A managed network runs on a Kubernetes cluster, not only on one Docker host. You install the platform itself on the cluster, and it deploys your stacks to the same cluster, spread across its machines; Kubernetes is a second deploy target beside the Docker host, behind the same target seam (spec 0001), so no module and no graph changes to move between the two. Static mode stays a Compose zip. Replaces the deferred idea of a cluster deploy target. Its spec decides how the platform is installed and upgraded on a cluster (#25), how the starting state from files (#32) maps onto it, how modules, bindings, config, secrets and volumes become cluster resources, how ingress and TLS (#31) work there, how host level refusals (#8) translate, and how it meets scaling (#20) and live changes (#19).
@@ -372,8 +429,8 @@ A managed network runs on a Kubernetes cluster, not only on one Docker host. You
 - [ ] Design it (spec): `/architect managed network on Kubernetes`
 
 ### 38. Sample graphs for Nextcloud and WordPress · needs a decision
-Two real world sample graphs beside today's one edge sample, so you can open a familiar app in the editor, see how its needs are bound, and run it. Each wraps the unchanged official images as catalog modules, with the providers they need (a database, ingress, and for Nextcloud a cache and storage). They show the contract on apps nobody built for the platform. Its spec decides which capabilities and provider modules each app needs, how much setup each sample carries, and whether both ship together or one at a time.
-**Done when:** both samples open from the editor's samples route with every need bound; each downloads as a zip that starts on a clean host with `setup.sh` and `docker compose up` and serves its app's first page; the same graphs deploy from the managed editor; and swapping one of their providers for another of the same capability works without a change to the app module.
+Two real world sample graphs beside today's one edge sample, so you can open a familiar app in the editor, see how its needs are bound, and run it. Neither app gets a module of its own: each is a capability that carries its PHP files, and in planning you link both to one shared PHP module that runs them side by side. This is the mechanism of static content (#39) with a PHP runtime as the host, and it builds on #39. Each sample also binds the providers its app needs (a database, ingress, and for Nextcloud a cache and storage). They show the contract on apps nobody built for the platform. Its spec decides how PHP files travel with a capability, how apps on one PHP module stay apart (files, config, the PHP extensions and version each needs), which capabilities and provider modules each app needs, how much setup each sample carries, and whether both ship together or one at a time.
+**Done when:** both samples open from the editor's samples route with every need bound; one PHP module in the graph runs Nextcloud and WordPress together, each on its own host name or path; each downloads as a zip that starts on a clean host with `setup.sh` and `docker compose up` and serves its app's first page; the same graphs deploy from the managed editor; removing one app from the PHP module leaves the other running; and swapping one of their providers for another of the same capability works without a change to the app capability.
 - [ ] Design it (spec): `/architect sample graphs for nextcloud and wordpress`
 
 Other deferred ideas, not yet numbered:
@@ -434,6 +491,8 @@ Other deferred ideas, not yet numbered:
 - Your answers in the `/scope` add pass (2026-11-05): the managed platform starts from one container (most likely the deployer) that reads its starting state from files, starts existing containers, recreates ones that no longer match the files, and creates missing ones; platform modules only, deployed stacks keep Docker's restart policy; new #32 first in slice 4, after #3's milestone 4.
 - Your answers in the `/scope` add pass (2026-11-05, second): a managed network must also run on a Kubernetes cluster; both the platform and the stacks it deploys run on the cluster; static mode stays Compose only; numbered as #33 but kept deferred, replacing the unnumbered cluster deploy target idea.
 - Your answers in the `/scope` add pass (2026-11-05, third): the graph shows the running stack's health and per binding requests, errors and latency; the admin edits on a switchable layer over the same view and can apply only when every need is bound; every apply is kept in a history where any two entries can be compared and one restored as the draft; split into three features: #34 and #35 at the end of slice 3, #36 in slice 14 after #19, replacing the Observability idea for health and metrics.
+- Your answers in the `/scope` add pass (2026-11-10): every domain and host name is planned before setup; a graph is shared (open values) or ready (deployable), and the admin makes a shared one ready by filling its last open values; overlapping values are linked, host names as `{sub}.{domain}`; shared graphs travel as files and samples, catalog repositories wait for #13; the platform graph is the first shared graph, and its core starts without a domain on a self signed certificate until the domain is set in the editor; new #40 in slice 3, after #6.
+- Your answers in the `/scope` pass (2026-11-10, second): one name per thing (the Words table); the running whole is a stack, network stays the Docker network; one editor in two modes, the online editor and the stack editor; the renderer turns a graph into a zip or the deployer's files; checks run at several stages and are not one component; "planner" retires as a name. A complete graph always gives a zip; an incomplete one gives a zip with a warning only when the core of its managed stack can start, so the rest is set in the stack editor (#40 updated). New #41 (foundation), #42 (slice 3, after #6) and #43 (slice 3, after #34); module by module apply folded into #19; #24, #12 and #22 renamed.
 
 **Practices & standards**
 - Vertical slices ship real value early (tracer bullet development)
