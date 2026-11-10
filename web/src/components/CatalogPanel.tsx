@@ -1,4 +1,4 @@
-import { SearchX } from 'lucide-react'
+import { Plus, SearchX } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { Module } from '../api/client'
 import { filterCatalog } from '../graph/catalog'
@@ -14,8 +14,9 @@ import { SearchField } from './ui/SearchField'
  * provide's capability and version, spec 0011 AC-19) and what it uses (each slot's capability and
  * range), filtered by the text in the editor store. Find providers in the inspector
  * sets the filter and moves focus here. Every text from the catalog renders as plain text (AC-20).
+ * With `onAdd`, each entry has an Add button (spec 0029, AC-1); the managed stack view passes none.
  */
-export function CatalogPanel({ entries }: { entries: Module[] }) {
+export function CatalogPanel({ entries, onAdd }: { entries: Module[]; onAdd?: (module: string) => void }) {
   const filter = useEditor((s) => s.catalogFilter)
   const filterFocus = useEditor((s) => s.filterFocus)
   const { setCatalogFilter } = useEditor.getState()
@@ -61,7 +62,15 @@ export function CatalogPanel({ entries }: { entries: Module[] }) {
             <ul className={styles.list}>
               {shown.map((e) => (
                 <li key={e.name} className={styles.entry}>
-                  <h3 className={styles.name}>{e.name}</h3>
+                  <div className={styles.head}>
+                    <h3 className={styles.name}>{e.name}</h3>
+                    {onAdd && (
+                      <Button size="sm" aria-label={`Add ${e.name}`} onPress={() => onAdd(e.name)}>
+                        <Plus aria-hidden="true" />
+                        Add
+                      </Button>
+                    )}
+                  </div>
                   <p className={styles.description}>{e.description}</p>
                   <Capabilities
                     label="Provides"

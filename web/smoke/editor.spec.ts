@@ -80,6 +80,34 @@ test('a config value set in the inspector reaches the downloaded zip (spec 0025,
   expect(execFileSync('unzip', ['-p', zip, 'graph.yaml'], { encoding: 'utf8' })).toContain('    config:\n      proxy-hops: "2"\n')
 })
 
+test('two modules from nothing, accept the recommendation, download the zip (spec 0029, AC-1, AC-6, AC-7, AC-9, AC-10)', async ({
+  page,
+}) => {
+  test.skip(base !== '', 'the zip is checked once, at the site root')
+  await page.goto(`${base}/`)
+  await expect(page.getByRole('button', { name: 'Download zip' })).toBeDisabled()
+  await expect(page.getByText('Add a module first')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Add postgres' }).click()
+  await expect(page.getByTestId('node-postgres')).toBeVisible()
+  await expect(page.getByText('Added postgres')).toBeVisible()
+  await page.getByRole('button', { name: 'Add whoami' }).click()
+  await expect(page.getByTestId('node-whoami')).toBeVisible()
+  await expect(page.getByText('Checking the graph…')).toHaveCount(0)
+
+  // the editor wrote no binding: the checks recommend one and you accept it
+  await page.getByRole('button', { name: /^Accept postgres for / }).click()
+  await expect(page.getByText('Checking the graph…')).toHaveCount(0)
+  await expect(page.locator('.react-flow__edge')).toHaveCount(1)
+
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download zip' }).click()
+  const zip = await (await download).path()
+  const graph = execFileSync('unzip', ['-p', zip, 'graph.yaml'], { encoding: 'utf8' })
+  expect(graph).toContain('postgres')
+  expect(graph).toContain('whoami')
+})
+
 test('everything stays under the base path (AC-7, AC-12)', async ({ page }) => {
   test.skip(base === '', 'only meaningful under a sub path')
   const paths = recordRequests(page)

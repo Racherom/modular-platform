@@ -2,13 +2,13 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { ReactFlowProvider } from '@xyflow/react'
 import { Check, Download, Info, LayoutGrid, Redo2, Rocket, Save, Undo2 } from 'lucide-react'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
-import { type CheckResult, fetchCatalog, type Graph, type RendererError, renderGraph } from '../api/client'
+import { type Catalog, type CheckResult, fetchCatalog, type Graph, type RendererError, renderGraph } from '../api/client'
 import { acceptAllRecommendations, RECOMMENDED } from '../graph/edit'
 import type { Positions } from '../graph/flow'
 import { mode } from '../lib/config'
 import { download, saveGraphFile } from '../lib/download'
 import { historyKey, historyShortcut, isApple, isFormControl } from '../lib/keys'
-import type { CheckState } from '../lib/store'
+import { type CheckState, useEditor } from '../lib/store'
 import { HeaderContent, Workspace } from './AppShell'
 import { CatalogPanel } from './CatalogPanel'
 import styles from './GraphScreen.module.css'
@@ -49,6 +49,10 @@ export interface Editing {
   onSaved: () => void
   /** Undo, redo and Tidy layout; without them the buttons show disabled (the sample). */
   history?: HistoryControls
+  /** Adds one instance of a catalog module, placed with the catalog's node sizes (spec 0029); the managed stack view has none. */
+  onAdd?: (module: string, catalog: Catalog) => void
+  /** False while the graph is the empty start graph: there is nothing to save yet (AC-9). */
+  canSave?: boolean
   /** Saving the working copy failed, so changes are not kept after a reload (AC-17). */
   storageFailed?: boolean
 }
@@ -62,14 +66,17 @@ interface Props {
   editing?: Editing
   /** A hint above the canvas, such as the sample's "changes make a copy". */
   notice?: ReactNode
+  /** A message over the empty canvas, such as "No graph open" (spec 0029, AC-9). */
+  overlay?: ReactNode
 }
 
 /**
  * Why Download zip (and Deploy) is disabled, or null when it is allowed (AC-14): only a current
  * check without errors allows it; warnings never block. An open recommendation is an error too,
- * with its own reason (spec 0028).
+ * with its own reason (spec 0028). A graph with no module has the first reason (spec 0029, AC-10).
  */
-export function downloadBlocked(checkState: CheckState, check: CheckResult): string | null {
+export function downloadBlocked(checkState: CheckState, check: CheckResult, modules = 1): string | null {
+  if (modules === 0) return 'Add a module first'
   if (checkState === 'checking') return 'Checking the graph'
   if (checkState === 'failed') return 'Not checked, retry first'
   if (check.ok) return null
@@ -82,7 +89,7 @@ export function downloadBlocked(checkState: CheckState, check: CheckResult): str
 }
 
 /** A checked graph in the editor: header toolbar, catalog, canvas, inspector and problems. */
-export function GraphScreen({ graph, check, fileName, toolbar, editing, notice }: Props) {
+export function GraphScreen({ graph, check, fileName, toolbar, editing, notice, overlay }: Props) {
   const catalog = useCatalog()
   // a render that finds an error returns a newer check to show, but only for the check result it came from
   const [rendered, setRendered] = useState<{ from: CheckResult; check: CheckResult }>()
@@ -90,6 +97,7 @@ export function GraphScreen({ graph, check, fileName, toolbar, editing, notice }
   const [reviewing, setReviewing] = useState(false)
   const [skipped, setSkipped] = useState(0)
   const fileToolbar = useRef<HTMLDivElement>(null)
+  const announcement = useEditor((s) => s.announcement)
   const reasonId = useId()
   const zip = useMutation({
     mutationFn: () => renderGraph(graph),
@@ -103,7 +111,7 @@ export function GraphScreen({ graph, check, fileName, toolbar, editing, notice }
   if (!catalog.data) return <p>Loading the catalog…</p>
 
   const checkState = editing?.checkState ?? 'current'
-  const blocked = downloadBlocked(checkState, shownResult)
+  const blocked = downloadBlocked(checkState, shownResult, Object.keys(graph.modules).length)
   // a stale check shows no Accept, so you never accept against an old graph (spec 0028)
   const recommendations = checkState === 'current' ? shownResult.problems.filter((p) => p.code === RECOMMENDED) : []
   const acceptAll = () => {
@@ -129,7 +137,7 @@ export function GraphScreen({ graph, check, fileName, toolbar, editing, notice }
           <h1 className={styles.fileName}>{fileName}</h1>
           {editing?.edited && <Badge>Edited</Badge>}
           <span role="status" className={styles.note}>
-            {editing?.storageFailed ? 'Changes are not kept after reload in this browser.' : ''}
+            {editing?.storageFailed ? 'Changes are not kept after reload in this browser.' : (announcement ?? '')}
           </span>
         </div>
         {editing && <HistoryButtons history={editing.history} />}
@@ -142,7 +150,7 @@ export function GraphScreen({ graph, check, fileName, toolbar, editing, notice }
                 Accept all recommendations ({recommendations.length})
               </Button>
             )}
-            <Button size="sm" onPress={save}>
+            <Button size="sm" onPress={save} isDisabled={editing !== undefined && editing.canSave === false}>
               <Save aria-hidden="true" />
               Save as file
             </Button>
@@ -183,7 +191,7 @@ export function GraphScreen({ graph, check, fileName, toolbar, editing, notice }
       {reviewing && <ReviewDialog graph={graph} onClose={() => setReviewing(false)} />}
       <ReactFlowProvider>
         <Workspace
-          catalog={<CatalogPanel entries={catalog.data.modules} />}
+          catalog={<CatalogPanel entries={catalog.data.modules} onAdd={editing?.onAdd && ((m) => editing.onAdd?.(m, catalog.data))} />}
           canvas={
             <div className={styles.canvas}>
               {notice && (
@@ -192,6 +200,7 @@ export function GraphScreen({ graph, check, fileName, toolbar, editing, notice }
                   <span>{notice}</span>
                 </p>
               )}
+              {overlay && <div className={styles.overlay}>{overlay}</div>}
               {zip.isError && <Failure error={zip.error} onRetry={() => zip.mutate()} />}
               <GraphView
                 graph={graph}
@@ -247,7 +256,15 @@ function HistoryButtons({ history }: { history?: HistoryControls }) {
       const step = historyKey(e, apple)
       if (!step) return
       e.preventDefault()
-      if (step === 'undo' && h.canUndo) h.onUndo()
+      if (step === 'undo' && h.canUndo) {
+        h.onUndo()
+        // an undone add removes the focused node; focus then moves to the canvas region (spec 0029, AC-5)
+        requestAnimationFrame(() => {
+          if (document.activeElement === null || document.activeElement === document.body) {
+            document.querySelector<HTMLElement>('[data-workspace] section[aria-label^="Graph"]')?.focus()
+          }
+        })
+      }
       if (step === 'redo' && h.canRedo) h.onRedo()
     }
     document.addEventListener('keydown', onKey)

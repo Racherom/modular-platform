@@ -1,9 +1,10 @@
 // The editor store (spec 0010). The graph in here is the only source of truth: the canvas is
 // derived from it, every edit is a pure function on it, and the renderer checks each edit.
 import { create } from 'zustand'
-import { checkGraph, type Graph, RendererError } from '../api/client'
+import { type Catalog, type CheckResult, checkGraph, type Graph, RendererError } from '../api/client'
+import { addModule } from '../graph/edit'
 import type { Positions } from '../graph/flow'
-import { layout } from '../graph/layout'
+import { layout, placeNew } from '../graph/layout'
 import { saveWorking, type WorkingGraph, withPositions } from './storage'
 
 /** Whether the shown check result belongs to the shown graph. */
@@ -31,6 +32,34 @@ export interface History {
 }
 
 const emptyHistory: History = { past: [], future: [] }
+
+/** An edit that also sets positions, such as adding a module (spec 0029, AC-4, AC-5). */
+export interface PlacedGraph {
+  graph: Graph
+  positions: Positions
+}
+
+/** What an edit returns: a new graph, or a new graph with the positions to go with it. */
+export type EditResult = Graph | PlacedGraph
+
+const isPlaced = (result: EditResult): result is PlacedGraph => 'positions' in result
+
+/** The empty graph the editor starts from when nothing is open (spec 0029, AC-9). */
+export const EMPTY_GRAPH: Graph = { apiVersion: 'modular-platform/v1', kind: 'Graph', name: 'untitled', modules: {} }
+
+/** The check result shown for the empty graph, before any check call (AC-9). */
+export const EMPTY_CHECK: CheckResult = { ok: true, graph: EMPTY_GRAPH, bindings: [], problems: [] }
+
+/** The file name of the graph the editor starts from (AC-9). */
+export const EMPTY_FILE_NAME = 'untitled.yaml'
+
+/**
+ * The working copy that stands behind an empty editor: not saved anywhere until a check reply
+ * arrives for the graph that comes out of the first add (AC-9).
+ */
+export function emptyWorking(): WorkingGraph {
+  return { fileName: EMPTY_FILE_NAME, graph: EMPTY_GRAPH, check: EMPTY_CHECK, positions: {} }
+}
 
 /** True when the graph still binds this slot to an instance (string or object form). */
 export function bindingExists(graph: Graph, consumer: string, slot: string): boolean {
@@ -74,13 +103,23 @@ export interface EditorState {
   filterFocus: number
   /** A selection carried from the sample screen to the editor root after the sample copy. */
   handoff: Selection
+  /** The status line text for the last add; every other change clears it first (AC-8). */
+  announcement: string | null
+  /** A node the canvas should center on once drawn; the canvas clears it after centering (AC-8). */
+  centerRequest: string | null
 
   /** Shows the working copy read from IndexedDB, unless a graph was opened meanwhile. */
   restore: (working: WorkingGraph | null) => void
   /** Shows a graph that was just opened and checked, and keeps it. */
   open: (working: WorkingGraph) => void
   /** Applies a user edit at once, then checks the edited graph. */
-  edit: (change: (graph: Graph) => Graph) => void
+  edit: (change: (graph: Graph) => EditResult) => void
+  /**
+   * Adds one instance of a catalog module with its position (spec 0029): the empty working copy
+   * is made first when nothing is open. Selects the new node, announces it and asks the canvas
+   * to center on it. Returns the instance name.
+   */
+  addModule: (module: string, catalog: Catalog) => string
   /** Steps back to the graph and positions before the last edit, then checks it (AC-15). */
   undo: () => void
   /** Steps forward again after an undo, then checks it (AC-15). */
@@ -92,7 +131,7 @@ export interface EditorState {
    * the unedited copy, the edited flag is set and a check call starts. Returns false when the edit
    * changes nothing, so no copy is made.
    */
-  copySample: (base: WorkingGraph, change: (graph: Graph) => Graph) => boolean
+  copySample: (base: WorkingGraph, change: (graph: Graph) => EditResult, added?: string) => boolean
   /** Takes the selection carried over by the sample copy, once. */
   takeHandoff: () => Selection
   setCatalogFilter: (text: string) => void
@@ -109,6 +148,10 @@ export interface EditorState {
   focusModule: (instance: string) => void
   /** Called by the canvas once it moved focus. */
   focused: () => void
+  /** Selects a module, moves focus to it and asks the canvas to center on it (problems panel, add). */
+  showModule: (instance: string) => void
+  /** Called by the canvas once it centered. */
+  centered: () => void
 }
 
 // the call in flight; a newer call aborts it
@@ -173,8 +216,14 @@ export const useEditor = create<EditorState>()((set, get) => {
     const target = from.at(-1)
     if (!working || !target) return
     const rest = { from: from.slice(0, -1), to: [...to, snapshot(working)] }
-    set({ history: direction === 'undo' ? { past: rest.from, future: rest.to } : { past: rest.to, future: rest.from } })
+    set({
+      history: direction === 'undo' ? { past: rest.from, future: rest.to } : { past: rest.to, future: rest.from },
+      announcement: null,
+    })
     setWorking(withPositions({ ...working, graph: target.graph, positions: target.positions, edited: true }))
+    // redo of an add brings the node back selected, with focus on it (spec 0029, AC-5)
+    const back = direction === 'redo' ? Object.keys(target.graph.modules).find((n) => !Object.hasOwn(working.graph.modules, n)) : undefined
+    if (back !== undefined) get().focusModule(back)
     check()
   }
 
@@ -191,6 +240,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     catalogFilter: '',
     filterFocus: 0,
     handoff: null,
+    announcement: null,
+    centerRequest: null,
 
     restore: (working) => {
       if (get().working !== undefined) return
@@ -210,17 +261,35 @@ export const useEditor = create<EditorState>()((set, get) => {
         focusRequest: null,
         history: emptyHistory,
         handoff: null,
+        announcement: null,
+        centerRequest: null,
       }))
       persist(next)
     },
     edit: (change) => {
       const working = get().working
       if (!working) return
-      const graph = change(working.graph)
+      const result = change(working.graph)
+      const { graph, positions } = isPlaced(result) ? result : { graph: result, positions: working.positions }
       if (graph === working.graph) return
       record(working)
-      setWorking({ ...working, graph, edited: true })
+      set({ announcement: null })
+      // graph and positions land in one set, so the check reply never lays out the whole graph (AC-4)
+      setWorking({ ...working, graph, ...(positions ? { positions } : {}), edited: true })
       check()
+    },
+    addModule: (module, catalog) => {
+      if (!get().working) set({ working: emptyWorking() })
+      let instance = ''
+      get().edit((g) => {
+        const positions = get().working?.positions ?? {}
+        const added = addModule(g, module)
+        instance = added.instance
+        return { graph: added.graph, positions: { ...positions, [instance]: placeNew(g, catalog, positions) } }
+      })
+      get().showModule(instance)
+      set({ announcement: `Added ${instance}` })
+      return instance
     },
     undo: () => step('undo'),
     redo: () => step('redo'),
@@ -231,17 +300,22 @@ export const useEditor = create<EditorState>()((set, get) => {
       if (samePositions(positions, working.positions)) return
       record(working)
       const next = { ...working, positions, edited: true }
-      set({ working: next })
+      set({ working: next, announcement: null })
       // a check still running saves the new positions with its reply; a failed one saves nothing
       if (get().checkState === 'current') persist(next)
     },
-    copySample: (base, change) => {
-      const graph = change(base.graph)
+    copySample: (base, change, added) => {
+      const start = withPositions({ ...base, edited: false })
+      const result = change(start.graph)
+      const { graph, positions } = isPlaced(result) ? result : { graph: result, positions: start.positions }
       if (graph === base.graph) return false
       inflight?.abort()
-      const start = withPositions({ ...base, edited: false })
-      set({ history: { past: [snapshot(start)], future: [] }, checkError: null, dragFrom: null })
-      setWorking({ ...start, graph, edited: true })
+      set({ history: { past: [snapshot(start)], future: [] }, checkError: null, dragFrom: null, announcement: null })
+      setWorking({ ...start, graph, ...(positions ? { positions } : {}), edited: true })
+      if (added !== undefined) {
+        get().showModule(added)
+        set({ announcement: `Added ${added}` })
+      }
       set({ handoff: get().selection })
       check()
       return true
@@ -266,6 +340,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     select: (selection) => set({ selection }),
     focusModule: (instance) => set({ selection: { kind: 'module', instance }, focusRequest: instance }),
     focused: () => set({ focusRequest: null }),
+    showModule: (instance) => set({ selection: { kind: 'module', instance }, focusRequest: instance, centerRequest: instance }),
+    centered: () => set({ centerRequest: null }),
   }
 })
 

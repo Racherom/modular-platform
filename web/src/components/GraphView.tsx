@@ -9,12 +9,23 @@ import {
   type NodeChange,
   type OnConnectStart,
   ReactFlow,
+  useReactFlow,
 } from '@xyflow/react'
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Catalog, Graph, Problem } from '../api/client'
 import type { ModuleState } from '../api/platform'
 import { bind, type Drop, dropText, isValidDrop, unbind } from '../graph/edit'
-import { emphasize, type ModuleFlowNode, type Positions, parseHandle, providesHandle, reuseNodes, toFlow, usesHandle } from '../graph/flow'
+import {
+  emphasize,
+  type ModuleFlowNode,
+  NODE_WIDTH,
+  type Positions,
+  parseHandle,
+  providesHandle,
+  reuseNodes,
+  toFlow,
+  usesHandle,
+} from '../graph/flow'
 import { layout } from '../graph/layout'
 import { isFormControl } from '../lib/keys'
 import { useEditor } from '../lib/store'
@@ -31,6 +42,37 @@ const ariaLabelConfig = {
   'controls.zoomIn.ariaLabel': 'Zoom in',
   'controls.zoomOut.ariaLabel': 'Zoom out',
   'controls.fitView.ariaLabel': 'Fit the graph to the view',
+}
+
+const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+
+/**
+ * Centers the canvas on the node the store names (spec 0029, AC-8; the problems panel uses the
+ * same path), at the current zoom (at least 1), without animation under reduced motion. It uses
+ * the stored position and the node's known size, since a new node is not drawn yet. Renders
+ * inside the canvas, where React Flow's own provider is.
+ */
+function CenterOnRequest({ nodes }: { nodes: ModuleFlowNode[] }) {
+  const flow = useReactFlow()
+  const request = useEditor((s) => s.centerRequest)
+  const { centered } = useEditor.getState()
+  const latest = useRef(nodes)
+  latest.current = nodes
+  useEffect(() => {
+    if (!request) return
+    const frame = requestAnimationFrame(() => {
+      const node = latest.current.find((n) => n.id === request)
+      if (node) {
+        void flow.setCenter(node.position.x + NODE_WIDTH / 2, node.position.y + (node.height ?? 0) / 2, {
+          zoom: Math.max(flow.getZoom(), 1),
+          duration: prefersReducedMotion() ? 0 : 200,
+        })
+      }
+      centered()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [request, flow, centered])
+  return null
 }
 
 /** A graph edit, as a pure function on the graph (spec 0010). */
@@ -172,7 +214,7 @@ export function GraphView({ graph, catalog, problems, positions, states, onEdit 
   useEffect(() => () => select(null), [select])
 
   return (
-    <section ref={wrapper} className={styles.view} aria-label={`Graph ${graph.name}`} onKeyDown={onKeyDown}>
+    <section ref={wrapper} className={styles.view} aria-label={`Graph ${graph.name}`} tabIndex={-1} onKeyDown={onKeyDown}>
       <ReactFlow
         nodes={nodes}
         edges={shown.edges}
@@ -202,6 +244,7 @@ export function GraphView({ graph, catalog, problems, positions, states, onEdit 
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1.5} />
         <Controls showInteractive={false} />
+        <CenterOnRequest nodes={nodes} />
       </ReactFlow>
     </section>
   )

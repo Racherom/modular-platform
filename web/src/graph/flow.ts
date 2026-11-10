@@ -12,6 +12,11 @@ export const NODE_HEADER = 56
 export const PORT_ROW = 32
 export const HANDLE_SIZE = 12
 
+/** The drawn height of a node with this many provides and slots; the one height rule of the canvas. */
+export function nodeHeight(provides: number, uses: number): number {
+  return NODE_HEADER + Math.max(provides, uses, 1) * PORT_ROW + 8
+}
+
 /** An instance's place on the canvas. */
 export type Positions = Record<string, { x: number; y: number }>
 
@@ -146,7 +151,7 @@ export function toFlow(graph: Graph, catalog: Catalog, problems: Problem[], posi
       })
       .sort((a, b) => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0))
     const mark = markOf(own.filter((p) => onPort(p) === undefined))
-    const height = NODE_HEADER + Math.max(provides.length, uses.length, 1) * PORT_ROW + 8
+    const height = nodeHeight(provides.length, uses.length)
     const handles: NodeHandle[] = [
       ...provides.map((p, i) => handle(providesHandle(p.name), 'target', Position.Left, -HANDLE_SIZE / 2, portY(i))),
       ...uses.map((u, i) => handle(usesHandle(u.slot), 'source', Position.Right, NODE_WIDTH - HANDLE_SIZE / 2, portY(i))),

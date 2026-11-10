@@ -23,9 +23,20 @@
 }
 
 .canvas {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* the "No graph open" message sits over the empty canvas and lets every press through */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
 }
 
 .canvas > :last-child {
