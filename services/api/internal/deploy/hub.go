@@ -7,19 +7,19 @@ type EventKind string
 
 // The live updates api publishes.
 const (
-	EventDeployment EventKind = "deployment"
-	EventOperation  EventKind = "operation"
-	// EventModules is a watched deployment's module state that changed.
+	EventStack     EventKind = "stack"
+	EventOperation EventKind = "operation"
+	// EventModules is a watched stack's module state that changed.
 	EventModules EventKind = "modules"
 )
 
-// Event is one live update about a deployment.
+// Event is one live update about a stack.
 type Event struct {
-	Kind       EventKind
-	Deployment string
-	Operation  *Operation    // EventOperation
-	Summary    *Deployment   // EventDeployment
-	Modules    []ModuleState // EventModules
+	Kind      EventKind
+	Stack     string
+	Operation *Operation    // EventOperation
+	Summary   *Stack        // EventStack
+	Modules   []ModuleState // EventModules
 }
 
 // subscriberBuffer is how many events a slow stream may lag before it is dropped.

@@ -107,7 +107,7 @@ services:
   app:
     image: traefik/whoami:v1.12.0
     labels:
-      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
       io.github.racherom.modular-platform.graph: sample
       io.github.racherom.modular-platform.instance: app
       io.github.racherom.modular-platform.module: whoami
@@ -120,7 +120,7 @@ services:
   postgres:
     image: postgres:18.6
     labels:
-      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
       io.github.racherom.modular-platform.graph: sample
       io.github.racherom.modular-platform.instance: postgres
       io.github.racherom.modular-platform.module: postgres
@@ -137,7 +137,7 @@ services:
 
 func sampleRequest() deploy.ApplyRequest {
 	return deploy.ApplyRequest{
-		Project: "mp-sample", Deployment: "01960000-0000-7000-8000-000000000001", Caller: "user-1",
+		Project: "mp-sample", Stack: "01960000-0000-7000-8000-000000000001", Caller: "user-1",
 		Files: []deploy.File{
 			{Path: "docker-compose.yml", Data: []byte(sampleCompose)},
 			{Path: ".env", Data: []byte("# env\n")},
@@ -335,7 +335,7 @@ func TestApplyRefused(t *testing.T) {
 		"no compose file":         {func(r *deploy.ApplyRequest) { r.Files = r.Files[1:] }, deploy.CodeInvalidProject},
 		"a broken compose file":   {func(r *deploy.ApplyRequest) { r.Files[0].Data = []byte("services: [") }, deploy.CodeInvalidProject},
 		"another project's name":  {func(r *deploy.ApplyRequest) { r.Project = "mp-other" }, deploy.CodeInvalidProject},
-		"another deployment":      {func(r *deploy.ApplyRequest) { r.Deployment = "01960000-0000-7000-8000-000000000002" }, deploy.CodeInvalidProject},
+		"another stack":           {func(r *deploy.ApplyRequest) { r.Stack = "01960000-0000-7000-8000-000000000002" }, deploy.CodeInvalidProject},
 		"privileged":              {composeEdit("    restart: unless-stopped\n", "    restart: unless-stopped\n    privileged: true\n"), deploy.CodeHostAccess},
 		"the docker socket":       {composeEdit("    restart: unless-stopped\n", "    restart: unless-stopped\n    volumes: [/var/run/docker.sock:/var/run/docker.sock]\n"), deploy.CodeHostAccess},
 		"a reserved port":         {composeEdit("    restart: unless-stopped\n", "    restart: unless-stopped\n    ports: [\"443:8080\"]\n"), deploy.CodeHostAccess},

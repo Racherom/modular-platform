@@ -56,7 +56,7 @@ export interface ModuleNodeData extends Record<string, unknown> {
   dimmed?: boolean
   /** Handle ids highlighted because they belong to the selection. */
   highlight?: string[]
-  /** The module's live state on a deployment screen. */
+  /** The module's live state on a stack screen. */
   state?: ModuleState
   /** Only during a connect drag: the provides of this node that accept the drop. */
   dropTargets?: string[]

@@ -12,11 +12,6 @@ import (
 // Config holds the deployer-docker module's declared values; read them only through the getters.
 type Config struct{ v *sdk.Values }
 
-// DeploymentsDir is absolute path of the deployments folder, the same path on the host and in the deployer.
-func (c Config) DeploymentsDir(ctx context.Context) (string, error) {
-	return sdk.Value[string](ctx, c.v, "deployments-dir")
-}
-
 // PlatformGid is group id that owns deployed files and secrets and runs deployed sdk modules.
 func (c Config) PlatformGid(ctx context.Context) (int, error) {
 	return sdk.Value[int](ctx, c.v, "platform-gid")
@@ -30,6 +25,11 @@ func (c Config) PlatformUid(ctx context.Context) (int, error) {
 // PullTimeout is longest time an apply may spend pulling images.
 func (c Config) PullTimeout(ctx context.Context) (time.Duration, error) {
 	return sdk.Value[time.Duration](ctx, c.v, "pull-timeout")
+}
+
+// StacksDir is absolute path of the stacks folder, the same path on the host and in the deployer.
+func (c Config) StacksDir(ctx context.Context) (string, error) {
+	return sdk.Value[string](ctx, c.v, "stacks-dir")
 }
 
 // WaitTimeout is longest time an apply waits for every service to run and pass its healthcheck.
@@ -64,10 +64,10 @@ func (u Uses) Ingress(ctx context.Context) (IngressBinding, error) {
 var Module = sdk.Declaration[Config, Uses]{
 	Name: "deployer-docker",
 	Values: []sdk.ValueSpec{
-		{Name: "deployments-dir", Env: "MP_DEPLOYMENTS_DIR", Type: "string", Pattern: "/.+", Description: "Absolute path of the deployments folder, the same path on the host and in the deployer."},
 		{Name: "platform-gid", Env: "MP_PLATFORM_GID", Type: "int", Min: "0", Description: "Group id that owns deployed files and secrets and runs deployed sdk modules."},
 		{Name: "platform-uid", Env: "MP_PLATFORM_UID", Type: "int", Min: "0", Description: "User id that owns deployed files and secrets and runs deployed sdk modules."},
 		{Name: "pull-timeout", Env: "MP_PULL_TIMEOUT", Type: "duration", Default: "10m", Min: "1m", Description: "Longest time an apply may spend pulling images."},
+		{Name: "stacks-dir", Env: "MP_DEPLOYER_STACKS_DIR", Type: "string", Pattern: "/.+", Description: "Absolute path of the stacks folder, the same path on the host and in the deployer."},
 		{Name: "wait-timeout", Env: "MP_WAIT_TIMEOUT", Type: "duration", Default: "5m", Min: "10s", Description: "Longest time an apply waits for every service to run and pass its healthcheck."},
 	},
 	Bindings: []sdk.BindingSpec{

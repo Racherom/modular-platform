@@ -28,9 +28,9 @@ services:
     image: postgres:18.6
     init: true
     labels:
-      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
       io.github.racherom.modular-platform.graph: whoami-postgres
       io.github.racherom.modular-platform.job: wait
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
     network_mode: none
     read_only: true
     restart: unless-stopped
@@ -65,10 +65,10 @@ services:
       timeout: 3s
     image: postgres:18.6-alpine3.24
     labels:
-      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
       io.github.racherom.modular-platform.graph: whoami-postgres
       io.github.racherom.modular-platform.instance: postgres
       io.github.racherom.modular-platform.module: postgres
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
     networks:
       internal:
         aliases:
@@ -159,11 +159,11 @@ services:
       MP_USER: whoami_postgresql
     image: postgres:18.6
     labels:
-      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
       io.github.racherom.modular-platform.graph: whoami-postgres
       io.github.racherom.modular-platform.instance: postgres
       io.github.racherom.modular-platform.job: provision
       io.github.racherom.modular-platform.module: postgres
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
     networks:
       internal: {}
     read_only: true
@@ -219,11 +219,11 @@ services:
       MP_MARKER: mp_provisioned_66cfa81b
     image: postgres:18.6
     labels:
-      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
       io.github.racherom.modular-platform.graph: whoami-postgres
       io.github.racherom.modular-platform.instance: postgres
       io.github.racherom.modular-platform.job: revoke
       io.github.racherom.modular-platform.module: postgres
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
     networks:
       internal: {}
     read_only: true
@@ -249,10 +249,10 @@ services:
       DEMO_POSTGRESQL_PORT: "5432"
     image: traefik/whoami:v1.12.0
     labels:
-      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
       io.github.racherom.modular-platform.graph: whoami-postgres
       io.github.racherom.modular-platform.instance: whoami
       io.github.racherom.modular-platform.module: whoami
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
     networks:
       internal:
         aliases:

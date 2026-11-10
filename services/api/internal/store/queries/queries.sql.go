@@ -98,15 +98,6 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 	return err
 }
 
-const deleteDeployment = `-- name: DeleteDeployment :exec
-DELETE FROM deployments WHERE id = $1 AND latest_operation_id IS NULL
-`
-
-func (q *Queries) DeleteDeployment(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteDeployment, id)
-	return err
-}
-
 const deleteOperation = `-- name: DeleteOperation :exec
 DELETE FROM operations WHERE id = $1
 `
@@ -125,6 +116,15 @@ func (q *Queries) DeleteSession(ctx context.Context, tokenHash []byte) error {
 	return err
 }
 
+const deleteStack = `-- name: DeleteStack :exec
+DELETE FROM stacks WHERE id = $1 AND latest_operation_id IS NULL
+`
+
+func (q *Queries) DeleteStack(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteStack, id)
+	return err
+}
+
 const deleteStaleSessions = `-- name: DeleteStaleSessions :execrows
 DELETE FROM sessions
 WHERE expires_at <= now() OR last_seen_at <= now() - $1::interval
@@ -138,29 +138,29 @@ func (q *Queries) DeleteStaleSessions(ctx context.Context, idle pgtype.Interval)
 	return result.RowsAffected(), nil
 }
 
-const ensureDeployment = `-- name: EnsureDeployment :one
+const ensureStack = `-- name: EnsureStack :one
 WITH created AS (
-    INSERT INTO deployments (name) VALUES ($1)
+    INSERT INTO stacks (name) VALUES ($1)
     ON CONFLICT (name) DO NOTHING
-    RETURNING id, project, true AS created
+    RETURNING id, compose_project, true AS created
 )
-SELECT id, project, created FROM created
+SELECT id, compose_project, created FROM created
 UNION ALL
-SELECT id, project, false FROM deployments WHERE name = $1
+SELECT id, compose_project, false FROM stacks WHERE name = $1
 LIMIT 1
 `
 
-type EnsureDeploymentRow struct {
-	ID      uuid.UUID
-	Project string
-	Created bool
+type EnsureStackRow struct {
+	ID             uuid.UUID
+	ComposeProject string
+	Created        bool
 }
 
-// returns the deployment named $1, creating it when it does not exist yet
-func (q *Queries) EnsureDeployment(ctx context.Context, name string) (EnsureDeploymentRow, error) {
-	row := q.db.QueryRow(ctx, ensureDeployment, name)
-	var i EnsureDeploymentRow
-	err := row.Scan(&i.ID, &i.Project, &i.Created)
+// returns the stack named $1, creating it when it does not exist yet
+func (q *Queries) EnsureStack(ctx context.Context, name string) (EnsureStackRow, error) {
+	row := q.db.QueryRow(ctx, ensureStack, name)
+	var i EnsureStackRow
+	err := row.Scan(&i.ID, &i.ComposeProject, &i.Created)
 	return i, err
 }
 
@@ -206,26 +206,8 @@ func (q *Queries) GetAdminBinding(ctx context.Context) (AdminBinding, error) {
 	return i, err
 }
 
-const getDeployment = `-- name: GetDeployment :one
-SELECT d.id, d.name, d.project, d.created_at, d.latest_operation_id
-FROM deployments d WHERE d.name = $1
-`
-
-func (q *Queries) GetDeployment(ctx context.Context, name string) (Deployment, error) {
-	row := q.db.QueryRow(ctx, getDeployment, name)
-	var i Deployment
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Project,
-		&i.CreatedAt,
-		&i.LatestOperationID,
-	)
-	return i, err
-}
-
 const getOperation = `-- name: GetOperation :one
-SELECT id, deployment_id, action, status, step, graph, plan_digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations WHERE id = $1
+SELECT id, stack_id, action, status, step, graph, digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations WHERE id = $1
 `
 
 func (q *Queries) GetOperation(ctx context.Context, id uuid.UUID) (Operation, error) {
@@ -233,12 +215,12 @@ func (q *Queries) GetOperation(ctx context.Context, id uuid.UUID) (Operation, er
 	var i Operation
 	err := row.Scan(
 		&i.ID,
-		&i.DeploymentID,
+		&i.StackID,
 		&i.Action,
 		&i.Status,
 		&i.Step,
 		&i.Graph,
-		&i.PlanDigest,
+		&i.Digest,
 		&i.DeleteData,
 		&i.RollbackOf,
 		&i.PlacedSupplied,
@@ -255,7 +237,7 @@ func (q *Queries) GetOperation(ctx context.Context, id uuid.UUID) (Operation, er
 }
 
 const getOperationsByIDs = `-- name: GetOperationsByIDs :many
-SELECT id, deployment_id, action, status, step, graph, plan_digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations WHERE id = ANY($1::uuid[])
+SELECT id, stack_id, action, status, step, graph, digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations WHERE id = ANY($1::uuid[])
 `
 
 func (q *Queries) GetOperationsByIDs(ctx context.Context, ids []uuid.UUID) ([]Operation, error) {
@@ -269,12 +251,12 @@ func (q *Queries) GetOperationsByIDs(ctx context.Context, ids []uuid.UUID) ([]Op
 		var i Operation
 		if err := rows.Scan(
 			&i.ID,
-			&i.DeploymentID,
+			&i.StackID,
 			&i.Action,
 			&i.Status,
 			&i.Step,
 			&i.Graph,
-			&i.PlanDigest,
+			&i.Digest,
 			&i.DeleteData,
 			&i.RollbackOf,
 			&i.PlacedSupplied,
@@ -317,19 +299,37 @@ func (q *Queries) GetSession(ctx context.Context, tokenHash []byte) (Session, er
 	return i, err
 }
 
+const getStack = `-- name: GetStack :one
+SELECT d.id, d.name, d.compose_project, d.created_at, d.latest_operation_id
+FROM stacks d WHERE d.name = $1
+`
+
+func (q *Queries) GetStack(ctx context.Context, name string) (Stack, error) {
+	row := q.db.QueryRow(ctx, getStack, name)
+	var i Stack
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ComposeProject,
+		&i.CreatedAt,
+		&i.LatestOperationID,
+	)
+	return i, err
+}
+
 const insertOperation = `-- name: InsertOperation :one
 INSERT INTO operations (
-    deployment_id, action, status, step, graph, plan_digest, delete_data, rollback_of,
+    stack_id, action, status, step, graph, digest, delete_data, rollback_of,
     placed_supplied, started_by_iss, started_by_sub, started_by_email
 ) VALUES ($1, $2, 'running', 'prepare', $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, deployment_id, action, status, step, graph, plan_digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at
+RETURNING id, stack_id, action, status, step, graph, digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at
 `
 
 type InsertOperationParams struct {
-	DeploymentID   uuid.UUID
+	StackID        uuid.UUID
 	Action         string
 	Graph          json.RawMessage
-	PlanDigest     *string
+	Digest         *string
 	DeleteData     bool
 	RollbackOf     *uuid.UUID
 	PlacedSupplied []string
@@ -340,10 +340,10 @@ type InsertOperationParams struct {
 
 func (q *Queries) InsertOperation(ctx context.Context, arg InsertOperationParams) (Operation, error) {
 	row := q.db.QueryRow(ctx, insertOperation,
-		arg.DeploymentID,
+		arg.StackID,
 		arg.Action,
 		arg.Graph,
-		arg.PlanDigest,
+		arg.Digest,
 		arg.DeleteData,
 		arg.RollbackOf,
 		arg.PlacedSupplied,
@@ -354,12 +354,12 @@ func (q *Queries) InsertOperation(ctx context.Context, arg InsertOperationParams
 	var i Operation
 	err := row.Scan(
 		&i.ID,
-		&i.DeploymentID,
+		&i.StackID,
 		&i.Action,
 		&i.Status,
 		&i.Step,
 		&i.Graph,
-		&i.PlanDigest,
+		&i.Digest,
 		&i.DeleteData,
 		&i.RollbackOf,
 		&i.PlacedSupplied,
@@ -376,24 +376,24 @@ func (q *Queries) InsertOperation(ctx context.Context, arg InsertOperationParams
 }
 
 const latestApply = `-- name: LatestApply :one
-SELECT id, deployment_id, action, status, step, graph, plan_digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations
-WHERE deployment_id = $1 AND action = 'apply'
+SELECT id, stack_id, action, status, step, graph, digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations
+WHERE stack_id = $1 AND action = 'apply'
 ORDER BY started_at DESC, id DESC
 LIMIT 1
 `
 
 // the graph Apply again reviews: the newest apply, whatever its status
-func (q *Queries) LatestApply(ctx context.Context, deploymentID uuid.UUID) (Operation, error) {
-	row := q.db.QueryRow(ctx, latestApply, deploymentID)
+func (q *Queries) LatestApply(ctx context.Context, stackID uuid.UUID) (Operation, error) {
+	row := q.db.QueryRow(ctx, latestApply, stackID)
 	var i Operation
 	err := row.Scan(
 		&i.ID,
-		&i.DeploymentID,
+		&i.StackID,
 		&i.Action,
 		&i.Status,
 		&i.Step,
 		&i.Graph,
-		&i.PlanDigest,
+		&i.Digest,
 		&i.DeleteData,
 		&i.RollbackOf,
 		&i.PlacedSupplied,
@@ -410,24 +410,24 @@ func (q *Queries) LatestApply(ctx context.Context, deploymentID uuid.UUID) (Oper
 }
 
 const latestApplyReachedUp = `-- name: LatestApplyReachedUp :one
-SELECT id, deployment_id, action, status, step, graph, plan_digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations
-WHERE deployment_id = $1 AND action = 'apply' AND step IN ('up', 'done')
+SELECT id, stack_id, action, status, step, graph, digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations
+WHERE stack_id = $1 AND action = 'apply' AND step IN ('up', 'done')
 ORDER BY started_at DESC, id DESC
 LIMIT 1
 `
 
 // the graph whose instances the state read expects
-func (q *Queries) LatestApplyReachedUp(ctx context.Context, deploymentID uuid.UUID) (Operation, error) {
-	row := q.db.QueryRow(ctx, latestApplyReachedUp, deploymentID)
+func (q *Queries) LatestApplyReachedUp(ctx context.Context, stackID uuid.UUID) (Operation, error) {
+	row := q.db.QueryRow(ctx, latestApplyReachedUp, stackID)
 	var i Operation
 	err := row.Scan(
 		&i.ID,
-		&i.DeploymentID,
+		&i.StackID,
 		&i.Action,
 		&i.Status,
 		&i.Step,
 		&i.Graph,
-		&i.PlanDigest,
+		&i.Digest,
 		&i.DeleteData,
 		&i.RollbackOf,
 		&i.PlacedSupplied,
@@ -444,24 +444,24 @@ func (q *Queries) LatestApplyReachedUp(ctx context.Context, deploymentID uuid.UU
 }
 
 const latestSucceededApply = `-- name: LatestSucceededApply :one
-SELECT id, deployment_id, action, status, step, graph, plan_digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations
-WHERE deployment_id = $1 AND action = 'apply' AND status = 'succeeded'
+SELECT id, stack_id, action, status, step, graph, digest, delete_data, rollback_of, placed_supplied, started_by_iss, started_by_sub, started_by_email, deployer_operation_id, deployer_boot_id, error, started_at, finished_at FROM operations
+WHERE stack_id = $1 AND action = 'apply' AND status = 'succeeded'
 ORDER BY started_at DESC, id DESC
 LIMIT 1
 `
 
-// the graph the deployment runs now
-func (q *Queries) LatestSucceededApply(ctx context.Context, deploymentID uuid.UUID) (Operation, error) {
-	row := q.db.QueryRow(ctx, latestSucceededApply, deploymentID)
+// the graph the stack runs now
+func (q *Queries) LatestSucceededApply(ctx context.Context, stackID uuid.UUID) (Operation, error) {
+	row := q.db.QueryRow(ctx, latestSucceededApply, stackID)
 	var i Operation
 	err := row.Scan(
 		&i.ID,
-		&i.DeploymentID,
+		&i.StackID,
 		&i.Action,
 		&i.Status,
 		&i.Step,
 		&i.Graph,
-		&i.PlanDigest,
+		&i.Digest,
 		&i.DeleteData,
 		&i.RollbackOf,
 		&i.PlacedSupplied,
@@ -478,30 +478,30 @@ func (q *Queries) LatestSucceededApply(ctx context.Context, deploymentID uuid.UU
 }
 
 const latestSucceededBefore = `-- name: LatestSucceededBefore :one
-SELECT o.id, o.deployment_id, o.action, o.status, o.step, o.graph, o.plan_digest, o.delete_data, o.rollback_of, o.placed_supplied, o.started_by_iss, o.started_by_sub, o.started_by_email, o.deployer_operation_id, o.deployer_boot_id, o.error, o.started_at, o.finished_at FROM operations o
-WHERE o.deployment_id = $1 AND o.status = 'succeeded'
+SELECT o.id, o.stack_id, o.action, o.status, o.step, o.graph, o.digest, o.delete_data, o.rollback_of, o.placed_supplied, o.started_by_iss, o.started_by_sub, o.started_by_email, o.deployer_operation_id, o.deployer_boot_id, o.error, o.started_at, o.finished_at FROM operations o
+WHERE o.stack_id = $1 AND o.status = 'succeeded'
   AND (o.started_at, o.id) < (SELECT f.started_at, f.id FROM operations f WHERE f.id = $2)
 ORDER BY o.started_at DESC, o.id DESC
 LIMIT 1
 `
 
 type LatestSucceededBeforeParams struct {
-	DeploymentID uuid.UUID
-	Failed       uuid.UUID
+	StackID uuid.UUID
+	Failed  uuid.UUID
 }
 
 // the version a rollback returns to: the newest succeeded operation before the failed apply
 func (q *Queries) LatestSucceededBefore(ctx context.Context, arg LatestSucceededBeforeParams) (Operation, error) {
-	row := q.db.QueryRow(ctx, latestSucceededBefore, arg.DeploymentID, arg.Failed)
+	row := q.db.QueryRow(ctx, latestSucceededBefore, arg.StackID, arg.Failed)
 	var i Operation
 	err := row.Scan(
 		&i.ID,
-		&i.DeploymentID,
+		&i.StackID,
 		&i.Action,
 		&i.Status,
 		&i.Step,
 		&i.Graph,
-		&i.PlanDigest,
+		&i.Digest,
 		&i.DeleteData,
 		&i.RollbackOf,
 		&i.PlacedSupplied,
@@ -517,48 +517,9 @@ func (q *Queries) LatestSucceededBefore(ctx context.Context, arg LatestSucceeded
 	return i, err
 }
 
-const listDeployments = `-- name: ListDeployments :many
-SELECT d.id, d.name, d.project, d.created_at, d.latest_operation_id
-FROM deployments d
-WHERE d.name > $1
-ORDER BY d.name
-LIMIT $2
-`
-
-type ListDeploymentsParams struct {
-	After   string
-	MaxRows int32
-}
-
-func (q *Queries) ListDeployments(ctx context.Context, arg ListDeploymentsParams) ([]Deployment, error) {
-	rows, err := q.db.Query(ctx, listDeployments, arg.After, arg.MaxRows)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Deployment
-	for rows.Next() {
-		var i Deployment
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Project,
-			&i.CreatedAt,
-			&i.LatestOperationID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listOperations = `-- name: ListOperations :many
-SELECT o.id, o.deployment_id, o.action, o.status, o.step, o.graph, o.plan_digest, o.delete_data, o.rollback_of, o.placed_supplied, o.started_by_iss, o.started_by_sub, o.started_by_email, o.deployer_operation_id, o.deployer_boot_id, o.error, o.started_at, o.finished_at FROM operations o
-WHERE o.deployment_id = $1
+SELECT o.id, o.stack_id, o.action, o.status, o.step, o.graph, o.digest, o.delete_data, o.rollback_of, o.placed_supplied, o.started_by_iss, o.started_by_sub, o.started_by_email, o.deployer_operation_id, o.deployer_boot_id, o.error, o.started_at, o.finished_at FROM operations o
+WHERE o.stack_id = $1
   AND ($2::uuid IS NULL
        OR (o.started_at, o.id) < (SELECT b.started_at, b.id FROM operations b WHERE b.id = $2::uuid))
 ORDER BY o.started_at DESC, o.id DESC
@@ -566,13 +527,13 @@ LIMIT $3
 `
 
 type ListOperationsParams struct {
-	DeploymentID uuid.UUID
-	Before       *uuid.UUID
-	MaxRows      int32
+	StackID uuid.UUID
+	Before  *uuid.UUID
+	MaxRows int32
 }
 
 func (q *Queries) ListOperations(ctx context.Context, arg ListOperationsParams) ([]Operation, error) {
-	rows, err := q.db.Query(ctx, listOperations, arg.DeploymentID, arg.Before, arg.MaxRows)
+	rows, err := q.db.Query(ctx, listOperations, arg.StackID, arg.Before, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}
@@ -582,12 +543,12 @@ func (q *Queries) ListOperations(ctx context.Context, arg ListOperationsParams) 
 		var i Operation
 		if err := rows.Scan(
 			&i.ID,
-			&i.DeploymentID,
+			&i.StackID,
 			&i.Action,
 			&i.Status,
 			&i.Step,
 			&i.Graph,
-			&i.PlanDigest,
+			&i.Digest,
 			&i.DeleteData,
 			&i.RollbackOf,
 			&i.PlacedSupplied,
@@ -610,11 +571,50 @@ func (q *Queries) ListOperations(ctx context.Context, arg ListOperationsParams) 
 	return items, nil
 }
 
-const lockLatestOperation = `-- name: LockLatestOperation :one
-SELECT latest_operation_id FROM deployments WHERE id = $1 FOR UPDATE
+const listStacks = `-- name: ListStacks :many
+SELECT d.id, d.name, d.compose_project, d.created_at, d.latest_operation_id
+FROM stacks d
+WHERE d.name > $1
+ORDER BY d.name
+LIMIT $2
 `
 
-// holds the deployment row, so its latest operation cannot change until the transaction ends
+type ListStacksParams struct {
+	After   string
+	MaxRows int32
+}
+
+func (q *Queries) ListStacks(ctx context.Context, arg ListStacksParams) ([]Stack, error) {
+	rows, err := q.db.Query(ctx, listStacks, arg.After, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Stack
+	for rows.Next() {
+		var i Stack
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ComposeProject,
+			&i.CreatedAt,
+			&i.LatestOperationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockLatestOperation = `-- name: LockLatestOperation :one
+SELECT latest_operation_id FROM stacks WHERE id = $1 FOR UPDATE
+`
+
+// holds the stack row, so its latest operation cannot change until the transaction ends
 func (q *Queries) LockLatestOperation(ctx context.Context, id uuid.UUID) (*uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, lockLatestOperation, id)
 	var latest_operation_id *uuid.UUID
@@ -640,35 +640,35 @@ func (q *Queries) ProgressOperation(ctx context.Context, arg ProgressOperationPa
 }
 
 const resetLatestOperation = `-- name: ResetLatestOperation :exec
-UPDATE deployments SET latest_operation_id = (
+UPDATE stacks SET latest_operation_id = (
     SELECT o.id FROM operations o
-    WHERE o.deployment_id = deployments.id AND o.id <> $1
+    WHERE o.stack_id = stacks.id AND o.id <> $1
     ORDER BY o.started_at DESC, o.id DESC LIMIT 1
-) WHERE deployments.id = $2
+) WHERE stacks.id = $2
 `
 
 type ResetLatestOperationParams struct {
-	Refused      uuid.UUID
-	DeploymentID uuid.UUID
+	Refused uuid.UUID
+	StackID uuid.UUID
 }
 
 // undoes SetLatestOperation for an operation the deployer refused
 func (q *Queries) ResetLatestOperation(ctx context.Context, arg ResetLatestOperationParams) error {
-	_, err := q.db.Exec(ctx, resetLatestOperation, arg.Refused, arg.DeploymentID)
+	_, err := q.db.Exec(ctx, resetLatestOperation, arg.Refused, arg.StackID)
 	return err
 }
 
 const runningOperations = `-- name: RunningOperations :many
-SELECT o.id, o.deployment_id, o.action, o.status, o.step, o.graph, o.plan_digest, o.delete_data, o.rollback_of, o.placed_supplied, o.started_by_iss, o.started_by_sub, o.started_by_email, o.deployer_operation_id, o.deployer_boot_id, o.error, o.started_at, o.finished_at, d.name AS deployment_name, d.project
-FROM operations o JOIN deployments d ON d.id = o.deployment_id
+SELECT o.id, o.stack_id, o.action, o.status, o.step, o.graph, o.digest, o.delete_data, o.rollback_of, o.placed_supplied, o.started_by_iss, o.started_by_sub, o.started_by_email, o.deployer_operation_id, o.deployer_boot_id, o.error, o.started_at, o.finished_at, d.name AS stack_name, d.compose_project
+FROM operations o JOIN stacks d ON d.id = o.stack_id
 WHERE o.status = 'running'
 ORDER BY o.started_at
 `
 
 type RunningOperationsRow struct {
 	Operation      Operation
-	DeploymentName string
-	Project        string
+	StackName      string
+	ComposeProject string
 }
 
 func (q *Queries) RunningOperations(ctx context.Context) ([]RunningOperationsRow, error) {
@@ -682,12 +682,12 @@ func (q *Queries) RunningOperations(ctx context.Context) ([]RunningOperationsRow
 		var i RunningOperationsRow
 		if err := rows.Scan(
 			&i.Operation.ID,
-			&i.Operation.DeploymentID,
+			&i.Operation.StackID,
 			&i.Operation.Action,
 			&i.Operation.Status,
 			&i.Operation.Step,
 			&i.Operation.Graph,
-			&i.Operation.PlanDigest,
+			&i.Operation.Digest,
 			&i.Operation.DeleteData,
 			&i.Operation.RollbackOf,
 			&i.Operation.PlacedSupplied,
@@ -699,8 +699,8 @@ func (q *Queries) RunningOperations(ctx context.Context) ([]RunningOperationsRow
 			&i.Operation.Error,
 			&i.Operation.StartedAt,
 			&i.Operation.FinishedAt,
-			&i.DeploymentName,
-			&i.Project,
+			&i.StackName,
+			&i.ComposeProject,
 		); err != nil {
 			return nil, err
 		}
@@ -713,7 +713,7 @@ func (q *Queries) RunningOperations(ctx context.Context) ([]RunningOperationsRow
 }
 
 const setLatestOperation = `-- name: SetLatestOperation :exec
-UPDATE deployments SET latest_operation_id = $2 WHERE id = $1
+UPDATE stacks SET latest_operation_id = $2 WHERE id = $1
 `
 
 type SetLatestOperationParams struct {

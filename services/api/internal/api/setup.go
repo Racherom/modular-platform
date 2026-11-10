@@ -119,13 +119,13 @@ func Setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 	sessions := signin.New(s.Config, st, idp, m.Log)
 	go sessions.Sweep(ctx)
 	hub := deploy.NewHub()
-	deployments := deploy.NewService(ctx, st, renderer, target, hub, m.Log)
-	if err := deployments.Resume(ctx); err != nil {
+	stacks := deploy.NewService(ctx, st, renderer, target, hub, m.Log)
+	if err := stacks.Resume(ctx); err != nil {
 		return nil, errors.Join(errors.New("resuming running operations"), err)
 	}
 	m.Log.InfoContext(ctx, "api starting", slog.String("public_origin", s.PublicOrigin), slog.String("base_path", s.BasePath))
 	return NewHandler(Options{
-		Signin: sessions, Deploy: deployments, Hub: hub, Renderer: renderer,
+		Signin: sessions, Deploy: stacks, Hub: hub, Renderer: renderer,
 		PublicOrigin: s.PublicOrigin, BasePath: s.BasePath, Idle: s.Idle, Log: m.Log,
 	}), nil
 }

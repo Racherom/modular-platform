@@ -40,10 +40,10 @@ services:
       timeout: 3s
     image: modular-platform/pair-consumer:test
     labels:
-      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
       io.github.racherom.modular-platform.graph: sdk-pair
       io.github.racherom.modular-platform.instance: consumer
       io.github.racherom.modular-platform.module: pair-consumer
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
     networks:
       internal:
         aliases:
@@ -79,10 +79,10 @@ services:
       timeout: 3s
     image: modular-platform/pair-provider:test
     labels:
-      io.github.racherom.modular-platform.deployment: 01960000-0000-7000-8000-000000000001
       io.github.racherom.modular-platform.graph: sdk-pair
       io.github.racherom.modular-platform.instance: provider
       io.github.racherom.modular-platform.module: pair-provider
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
     networks:
       internal:
         aliases:

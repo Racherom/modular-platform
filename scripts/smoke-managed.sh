@@ -24,12 +24,12 @@ cleanup() {
 		if [ -n "${SMOKE_LOGS:-}" ]; then
 			mkdir -p "$SMOKE_LOGS"
 			compose logs --no-color > "$SMOKE_LOGS/platform.log" 2>&1 || true
-			docker compose -p mp-whoami-postgres logs --no-color > "$SMOKE_LOGS/deployment.log" 2>&1 || true
+			docker compose -p mp-whoami-postgres logs --no-color > "$SMOKE_LOGS/stack.log" 2>&1 || true
 		fi
 		docker compose -p mp-whoami-postgres down --volumes >/dev/null 2>&1 || true
 		compose down --volumes >/dev/null 2>&1 || true
 	fi
-	# the deployer wrote the deployment folder as you, so it can go
+	# the deployer wrote the stack folder as you, so it can go
 	rm -rf "$work"
 	exit "$status"
 }
@@ -139,7 +139,7 @@ wait_healthy
 echo "== sign in, download the zip, deploy the sample, see it running"
 browser @deploy
 # Delete data too deletes these at the end; the log check still needs their values
-cp -R "$platform/deployments/mp-whoami-postgres/secrets" "$work/deployment-secrets"
+cp -R "$platform/stacks/mp-whoami-postgres/secrets" "$work/stack-secrets"
 
 if [ "${SMOKE_DOCKER_RESTART:-}" = 1 ]; then
 	echo "== restart Docker; restart: unless-stopped brings everything back"
@@ -155,8 +155,8 @@ if docker compose -p mp-whoami-postgres ps -a --format '{{.Name}}' | grep -q .; 
 	echo "containers of mp-whoami-postgres are left after the remove" >&2
 	exit 1
 fi
-if [ -d "$platform/deployments/mp-whoami-postgres/secrets" ]; then
-	echo "Delete data too left the deployment's secrets folder" >&2
+if [ -d "$platform/stacks/mp-whoami-postgres/secrets" ]; then
+	echo "Delete data too left the stack's secrets folder" >&2
 	exit 1
 fi
 
@@ -169,7 +169,7 @@ leaks=0
 # chance; a setup step writes public material with mode 0644 (spec 0013), and a certificate job
 # writes the certificate of a binding to a *_cert file with mode 0600 (spec 0014), beside its
 # *_key file, which stays checked
-for f in $(find "$platform/secrets" "$platform/deployments" "$work/deployment-secrets" -path '*secrets/*' -type f ! -name '*.crt' ! -name '*_cert' ! -perm -0044); do
+for f in $(find "$platform/secrets" "$platform/stacks" "$work/stack-secrets" -path '*secrets/*' -type f ! -name '*.crt' ! -name '*_cert' ! -perm -0044); do
 	# every line of 16 characters or more that is not a PEM armour line
 	grep -v -e '^-----' "$f" | while IFS= read -r line; do
 		[ "${#line}" -ge 16 ] || continue

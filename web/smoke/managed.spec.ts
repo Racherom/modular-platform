@@ -8,7 +8,7 @@ import { expect, type Page, test } from '@playwright/test'
 // the admin's credentials.
 const user = process.env.SMOKE_ADMIN_USER ?? 'admin'
 const password = process.env.SMOKE_ADMIN_PASSWORD ?? ''
-const deployment = 'whoami-postgres'
+const stack = 'whoami-postgres'
 const instances = ['postgres', 'whoami']
 
 async function signIn(page: Page) {
@@ -38,24 +38,24 @@ test('install, sign in, deploy the sample, see it running @deploy', async ({ pag
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download zip' }).click()
   const zip = await download
-  expect(zip.suggestedFilename()).toBe(`${deployment}.zip`)
-  await zip.saveAs(process.env.SMOKE_ZIP ?? `results/${deployment}-managed.zip`)
+  expect(zip.suggestedFilename()).toBe(`${stack}.zip`)
+  await zip.saveAs(process.env.SMOKE_ZIP ?? `results/${stack}-managed.zip`)
 
   await page.getByRole('button', { name: 'Deploy' }).click()
-  const review = page.getByRole('dialog', { name: `Deploy ${deployment}` })
+  const review = page.getByRole('dialog', { name: `Deploy ${stack}` })
   await expect(review.getByText('traefik/whoami:v1.12.0')).toBeVisible()
   await review.getByRole('button', { name: 'Deploy' }).click()
 
-  await expect(page).toHaveURL(new RegExp(`/deployments/${deployment}$`))
+  await expect(page).toHaveURL(new RegExp(`/stacks/${stack}$`))
   await expectRunning(page, 5 * 60_000)
-  await expect(page.getByRole('heading', { name: deployment })).toBeVisible()
+  await expect(page.getByRole('heading', { name: stack })).toBeVisible()
 })
 
 test('after a Docker restart it runs again without an apply, then remove it with its data @after-restart', async ({ page }) => {
   test.setTimeout(8 * 60_000)
   await signIn(page)
 
-  await page.goto(`/deployments/${deployment}`)
+  await page.goto(`/stacks/${stack}`)
   await expectRunning(page, 5 * 60_000)
   // the history still holds the one apply: nothing applied the stack again
   const history = page.getByRole('region', { name: 'History' }).getByRole('listitem')
@@ -63,9 +63,9 @@ test('after a Docker restart it runs again without an apply, then remove it with
   await expect(history.first()).toContainText('apply')
 
   await page.getByRole('button', { name: 'Remove', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: `Remove ${deployment}` })
+  const dialog = page.getByRole('dialog', { name: `Remove ${stack}` })
   await dialog.getByLabel('Delete data too').check()
-  await dialog.getByLabel(/to confirm/).fill(deployment)
+  await dialog.getByLabel(/to confirm/).fill(stack)
   await dialog.getByRole('button', { name: 'Remove and delete data' }).click()
-  await expect(page.getByTestId('deployment-state')).toHaveText('removed', { timeout: 5 * 60_000 })
+  await expect(page.getByTestId('stack-state')).toHaveText('removed', { timeout: 5 * 60_000 })
 })

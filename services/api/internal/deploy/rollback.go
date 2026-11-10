@@ -34,15 +34,15 @@ func (s *Service) afterFailure(op RunningOperation) {
 }
 
 // rollback applies the graph of the newest succeeded apply before failed, as an operation whose
-// rollback_of is failed and whose starter is failed's, provided latest is still the deployment's
+// rollback_of is failed and whose starter is failed's, provided latest is still the stack's
 // latest operation. The check result is checked again, only the digest compare is skipped, and no placed
 // value is sent: the existing files are reused. When no succeeded apply came before, nothing
 // happens.
 func (s *Service) rollback(at RunningOperation, failed Operation, latest uuid.UUID) {
 	ctx := callerCtx(s.ctx, failed.StartedBy)
-	good, ok, err := s.store.LatestSucceededBefore(ctx, failed.DeploymentID, failed.ID)
+	good, ok, err := s.store.LatestSucceededBefore(ctx, failed.StackID, failed.ID)
 	if err != nil {
-		s.log.ErrorContext(ctx, "finding the version to roll back to failed", slog.String("deployment", at.DeploymentName), slog.Any("error", err))
+		s.log.ErrorContext(ctx, "finding the version to roll back to failed", slog.String("stack", at.StackName), slog.Any("error", err))
 		return
 	}
 	if !ok || good.Action != ActionApply {
@@ -55,20 +55,20 @@ func (s *Service) rollback(at RunningOperation, failed Operation, latest uuid.UU
 	}
 	result, checkErr := s.renderer.Check(ctx, g)
 	op, started, err := s.store.StartOperationIfLatest(ctx, Operation{
-		DeploymentID: failed.DeploymentID, Action: ActionApply, Graph: good.Graph, Digest: result.Digest,
+		StackID: failed.StackID, Action: ActionApply, Graph: good.Graph, Digest: result.Digest,
 		RollbackOf: &failed.ID, StartedBy: failed.StartedBy,
 	}, latest)
 	if err != nil {
-		s.log.ErrorContext(ctx, "starting a rollback failed", slog.String("deployment", at.DeploymentName), slog.Any("error", err))
+		s.log.ErrorContext(ctx, "starting a rollback failed", slog.String("stack", at.StackName), slog.Any("error", err))
 		return
 	}
 	if !started {
 		return // an apply or remove came first
 	}
-	run := RunningOperation{Operation: op, DeploymentName: at.DeploymentName, Project: at.Project}
-	s.log.InfoContext(ctx, "rollback started", slog.String("deployment", run.DeploymentName), slog.String("operation", op.ID.String()),
+	run := RunningOperation{Operation: op, StackName: at.StackName, ComposeProject: at.ComposeProject}
+	s.log.InfoContext(ctx, "rollback started", slog.String("stack", run.StackName), slog.String("operation", op.ID.String()),
 		slog.String("rollback_of", failed.ID.String()), slog.String("caller", failed.StartedBy.Subject))
-	_, _ = s.publishOperation(ctx, run.DeploymentName, op.ID)
+	_, _ = s.publishOperation(ctx, run.StackName, op.ID)
 	if text := s.sendRollback(ctx, run, g, result, checkErr); text != "" {
 		s.finish(run, StatusFailed, StepPrepare, text)
 	}
@@ -83,13 +83,13 @@ func (s *Service) sendRollback(ctx context.Context, run RunningOperation, g cont
 	case !result.Ok:
 		return problemsText(result.Problems)
 	}
-	rendered, err := s.renderer.RenderManaged(ctx, g, run.DeploymentID)
+	rendered, err := s.renderer.RenderManaged(ctx, g, run.StackID)
 	if err != nil {
 		return failureText(err)
 	}
 	tctx, cancel := context.WithTimeout(ctx, targetTimeout)
 	defer cancel()
-	accepted, err := s.target.Apply(tctx, run.Project, applyRequest(run.DeploymentID, rendered))
+	accepted, err := s.target.Apply(tctx, run.ComposeProject, applyRequest(run.StackID, rendered))
 	if err != nil {
 		return failureText(err)
 	}
@@ -104,11 +104,11 @@ func (s *Service) sendRollback(ctx context.Context, run RunningOperation, g cont
 
 // retryLater starts a second rollback after retryAfter, unless two rollbacks of the same failed
 // apply exist already, or another operation became the latest meanwhile. An api restart drops
-// the timer; the deployment then stays failed.
+// the timer; the stack then stays failed.
 func (s *Service) retryLater(failedRollback RunningOperation) {
 	n, err := s.store.CountRollbacks(s.ctx, *failedRollback.RollbackOf)
 	if err != nil {
-		s.log.ErrorContext(s.ctx, "counting rollbacks failed", slog.String("deployment", failedRollback.DeploymentName), slog.Any("error", err))
+		s.log.ErrorContext(s.ctx, "counting rollbacks failed", slog.String("stack", failedRollback.StackName), slog.Any("error", err))
 		return
 	}
 	if n >= 2 {
@@ -141,7 +141,7 @@ func failureText(err error) string {
 	case errors.Is(err, ErrTargetUnavailable):
 		return "deployer_unavailable"
 	case errors.Is(err, ErrBusy):
-		return "busy: the deploy target still runs an operation of this deployment"
+		return "busy: the deploy target still runs an operation of this stack"
 	case errors.Is(err, ErrRenderer):
 		return "renderer_error"
 	case errors.Is(err, ErrTarget):

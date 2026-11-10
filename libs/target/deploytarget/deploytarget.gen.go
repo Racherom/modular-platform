@@ -85,24 +85,6 @@ func (e OperationStep) Valid() bool {
 	}
 }
 
-// Defines values for ProjectSecretKind.
-const (
-	Generated ProjectSecretKind = "generated"
-	Placed    ProjectSecretKind = "placed"
-)
-
-// Valid indicates whether the value is a known member of the ProjectSecretKind enum.
-func (e ProjectSecretKind) Valid() bool {
-	switch e {
-	case Generated:
-		return true
-	case Placed:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for ServiceStateState.
 const (
 	ServiceStateStateExited     ServiceStateState = "exited"
@@ -136,17 +118,36 @@ func (e ServiceStateState) Valid() bool {
 	}
 }
 
+// Defines values for StackSecretKind.
+const (
+	Generated StackSecretKind = "generated"
+	Placed    StackSecretKind = "placed"
+)
+
+// Valid indicates whether the value is a known member of the StackSecretKind enum.
+func (e StackSecretKind) Valid() bool {
+	switch e {
+	case Generated:
+		return true
+	case Placed:
+		return true
+	default:
+		return false
+	}
+}
+
 // ApplyRequest defines model for ApplyRequest.
 type ApplyRequest struct {
-	// Deployment Every service's `deployment` label must equal it.
-	Deployment openapi_types.UUID `json:"deployment"`
-	Files      []ProjectFile      `json:"files"`
+	Files []StackFile `json:"files"`
 
 	// Placed Values you supply for placed secrets; written once, replaced only with `replace`.
 	Placed []PlacedValue `json:"placed,omitempty,omitzero"`
 
-	// Secrets Every secret file the project mounts, as the managed render lists them.
-	Secrets []ProjectSecret `json:"secrets"`
+	// Secrets Every secret file the stack mounts, as the managed render lists them.
+	Secrets []StackSecret `json:"secrets"`
+
+	// Stack Every service's `stack` label must equal it.
+	Stack openapi_types.UUID `json:"stack"`
 }
 
 // Operation defines model for Operation.
@@ -157,7 +158,7 @@ type Operation struct {
 	Error      string          `json:"error,omitempty,omitzero"`
 	FinishedAt time.Time       `json:"finishedAt,omitempty,omitzero"`
 	Id         string          `json:"id"`
-	Project    string          `json:"project"`
+	Stack      string          `json:"stack"`
 	StartedAt  time.Time       `json:"startedAt"`
 	Status     OperationStatus `json:"status"`
 
@@ -185,38 +186,6 @@ type PlacedValue struct {
 // PresentSecrets defines model for PresentSecrets.
 type PresentSecrets struct {
 	Present []string `json:"present"`
-}
-
-// ProjectFile defines model for ProjectFile.
-type ProjectFile struct {
-	Data []byte `json:"data"`
-	Mode int    `json:"mode"`
-
-	// Path `docker-compose.yml`, `.env`, `graph.yaml`, `README.md`, `setup.sh`, `config/<instance>.env`, or a template output `config/<instance>/<file>`.
-	Path string `json:"path"`
-}
-
-// ProjectSecret defines model for ProjectSecret.
-type ProjectSecret struct {
-	Capability string `json:"capability,omitempty,omitzero"`
-
-	// Field The capability field the placed file holds.
-	Field    string            `json:"field,omitempty,omitzero"`
-	Instance string            `json:"instance"`
-	Kind     ProjectSecretKind `json:"kind"`
-
-	// Path `secrets/<instance>/<name>`.
-	Path string `json:"path"`
-}
-
-// ProjectSecretKind defines model for ProjectSecret.Kind.
-type ProjectSecretKind string
-
-// ProjectState defines model for ProjectState.
-type ProjectState struct {
-	// Present False when the project has neither containers nor a folder.
-	Present  bool           `json:"present"`
-	Services []ServiceState `json:"services"`
 }
 
 // RemoveRequest defines model for RemoveRequest.
@@ -248,8 +217,40 @@ type ServiceState struct {
 // ServiceStateState defines model for ServiceState.State.
 type ServiceStateState string
 
-// Project defines model for Project.
-type Project = string
+// StackFile defines model for StackFile.
+type StackFile struct {
+	Data []byte `json:"data"`
+	Mode int    `json:"mode"`
+
+	// Path `docker-compose.yml`, `.env`, `graph.yaml`, `README.md`, `setup.sh`, `config/<instance>.env`, or a template output `config/<instance>/<file>`.
+	Path string `json:"path"`
+}
+
+// StackSecret defines model for StackSecret.
+type StackSecret struct {
+	Capability string `json:"capability,omitempty,omitzero"`
+
+	// Field The capability field the placed file holds.
+	Field    string          `json:"field,omitempty,omitzero"`
+	Instance string          `json:"instance"`
+	Kind     StackSecretKind `json:"kind"`
+
+	// Path `secrets/<instance>/<name>`.
+	Path string `json:"path"`
+}
+
+// StackSecretKind defines model for StackSecret.Kind.
+type StackSecretKind string
+
+// StackState defines model for StackState.
+type StackState struct {
+	// Present False when the stack has neither containers nor a folder.
+	Present  bool           `json:"present"`
+	Services []ServiceState `json:"services"`
+}
+
+// Stack defines model for Stack.
+type Stack = string
 
 // BadRequest defines model for BadRequest.
 type BadRequest = externalRef0.ProblemList
@@ -260,11 +261,11 @@ type NotFound = externalRef0.ProblemList
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = externalRef0.ProblemList
 
-// ApplyProjectJSONRequestBody defines body for ApplyProject for application/json ContentType.
-type ApplyProjectJSONRequestBody = ApplyRequest
+// ApplyStackJSONRequestBody defines body for ApplyStack for application/json ContentType.
+type ApplyStackJSONRequestBody = ApplyRequest
 
-// RemoveProjectJSONRequestBody defines body for RemoveProject for application/json ContentType.
-type RemoveProjectJSONRequestBody = RemoveRequest
+// RemoveStackJSONRequestBody defines body for RemoveStack for application/json ContentType.
+type RemoveStackJSONRequestBody = RemoveRequest
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -345,55 +346,55 @@ type ClientInterface interface {
 	// Corresponds with GET /v1/operations/{id} (the `GetOperation` operationId).
 	GetOperation(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ApplyProjectWithBody Write the project's files and start it
+	// ApplyStackWithBody Write the stack's files and start it
 	//
 	// Answers at once with the running operation; poll `/v1/operations/{id}` for its outcome.
-	// One operation per project at a time; different projects run in parallel.
+	// One operation per stack at a time; different stacks run in parallel.
 	//
 	// Takes any type of body and a specified content type.
 	//
-	// Corresponds with POST /v1/projects/{project}/apply (the `ApplyProject` operationId).
-	ApplyProjectWithBody(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /v1/stacks/{stack}/apply (the `ApplyStack` operationId).
+	ApplyStackWithBody(ctx context.Context, stack Stack, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ApplyProject Write the project's files and start it
+	// ApplyStack Write the stack's files and start it
 	//
 	// Answers at once with the running operation; poll `/v1/operations/{id}` for its outcome.
-	// One operation per project at a time; different projects run in parallel.
+	// One operation per stack at a time; different stacks run in parallel.
 	//
 	// Takes a body of the `application/json` content type.
 	//
-	// Corresponds with POST /v1/projects/{project}/apply (the `ApplyProject` operationId).
-	ApplyProject(ctx context.Context, project Project, body ApplyProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /v1/stacks/{stack}/apply (the `ApplyStack` operationId).
+	ApplyStack(ctx context.Context, stack Stack, body ApplyStackJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// RemoveProjectWithBody Stop and remove the project's containers
+	// RemoveStackWithBody Stop and remove the stack's containers
 	//
-	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the stack's
 	// `secrets/` folder. The other files stay. Answers at once with the running operation.
 	//
 	// Takes any type of body and a specified content type.
 	//
-	// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
-	RemoveProjectWithBody(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /v1/stacks/{stack}/remove (the `RemoveStack` operationId).
+	RemoveStackWithBody(ctx context.Context, stack Stack, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// RemoveProject Stop and remove the project's containers
+	// RemoveStack Stop and remove the stack's containers
 	//
-	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the stack's
 	// `secrets/` folder. The other files stay. Answers at once with the running operation.
 	//
 	// Takes a body of the `application/json` content type.
 	//
-	// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
-	RemoveProject(ctx context.Context, project Project, body RemoveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with POST /v1/stacks/{stack}/remove (the `RemoveStack` operationId).
+	RemoveStack(ctx context.Context, stack Stack, body RemoveStackJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetProjectSecrets List the secret files of the project that exist, never their content
+	// GetStackSecrets List the secret files of the stack that exist, never their content
 	//
-	// Corresponds with GET /v1/projects/{project}/secrets (the `GetProjectSecrets` operationId).
-	GetProjectSecrets(ctx context.Context, project Project, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with GET /v1/stacks/{stack}/secrets (the `GetStackSecrets` operationId).
+	GetStackSecrets(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetProjectState Read the state of each container of the project
+	// GetStackState Read the state of each container of the stack
 	//
-	// Corresponds with GET /v1/projects/{project}/state (the `GetProjectState` operationId).
-	GetProjectState(ctx context.Context, project Project, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// Corresponds with GET /v1/stacks/{stack}/state (the `GetStackState` operationId).
+	GetStackState(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // GetOperation Read one operation
@@ -411,16 +412,16 @@ func (c *Client) GetOperation(ctx context.Context, id string, reqEditors ...Requ
 	return c.Client.Do(req)
 }
 
-// ApplyProjectWithBody Write the project's files and start it
+// ApplyStackWithBody Write the stack's files and start it
 //
 // Answers at once with the running operation; poll `/v1/operations/{id}` for its outcome.
-// One operation per project at a time; different projects run in parallel.
+// One operation per stack at a time; different stacks run in parallel.
 //
 // Takes any type of body and a specified content type.
 //
-// Corresponds with POST /v1/projects/{project}/apply (the `ApplyProject` operationId).
-func (c *Client) ApplyProjectWithBody(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewApplyProjectRequestWithBody(c.Server, project, contentType, body)
+// Corresponds with POST /v1/stacks/{stack}/apply (the `ApplyStack` operationId).
+func (c *Client) ApplyStackWithBody(ctx context.Context, stack Stack, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApplyStackRequestWithBody(c.Server, stack, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -431,16 +432,16 @@ func (c *Client) ApplyProjectWithBody(ctx context.Context, project Project, cont
 	return c.Client.Do(req)
 }
 
-// ApplyProject Write the project's files and start it
+// ApplyStack Write the stack's files and start it
 //
 // Answers at once with the running operation; poll `/v1/operations/{id}` for its outcome.
-// One operation per project at a time; different projects run in parallel.
+// One operation per stack at a time; different stacks run in parallel.
 //
 // Takes a body of the `application/json` content type.
 //
-// Corresponds with POST /v1/projects/{project}/apply (the `ApplyProject` operationId).
-func (c *Client) ApplyProject(ctx context.Context, project Project, body ApplyProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewApplyProjectRequest(c.Server, project, body)
+// Corresponds with POST /v1/stacks/{stack}/apply (the `ApplyStack` operationId).
+func (c *Client) ApplyStack(ctx context.Context, stack Stack, body ApplyStackJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApplyStackRequest(c.Server, stack, body)
 	if err != nil {
 		return nil, err
 	}
@@ -451,16 +452,16 @@ func (c *Client) ApplyProject(ctx context.Context, project Project, body ApplyPr
 	return c.Client.Do(req)
 }
 
-// RemoveProjectWithBody Stop and remove the project's containers
+// RemoveStackWithBody Stop and remove the stack's containers
 //
-// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the stack's
 // `secrets/` folder. The other files stay. Answers at once with the running operation.
 //
 // Takes any type of body and a specified content type.
 //
-// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
-func (c *Client) RemoveProjectWithBody(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRemoveProjectRequestWithBody(c.Server, project, contentType, body)
+// Corresponds with POST /v1/stacks/{stack}/remove (the `RemoveStack` operationId).
+func (c *Client) RemoveStackWithBody(ctx context.Context, stack Stack, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveStackRequestWithBody(c.Server, stack, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -471,16 +472,16 @@ func (c *Client) RemoveProjectWithBody(ctx context.Context, project Project, con
 	return c.Client.Do(req)
 }
 
-// RemoveProject Stop and remove the project's containers
+// RemoveStack Stop and remove the stack's containers
 //
-// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the stack's
 // `secrets/` folder. The other files stay. Answers at once with the running operation.
 //
 // Takes a body of the `application/json` content type.
 //
-// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
-func (c *Client) RemoveProject(ctx context.Context, project Project, body RemoveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRemoveProjectRequest(c.Server, project, body)
+// Corresponds with POST /v1/stacks/{stack}/remove (the `RemoveStack` operationId).
+func (c *Client) RemoveStack(ctx context.Context, stack Stack, body RemoveStackJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveStackRequest(c.Server, stack, body)
 	if err != nil {
 		return nil, err
 	}
@@ -491,11 +492,11 @@ func (c *Client) RemoveProject(ctx context.Context, project Project, body Remove
 	return c.Client.Do(req)
 }
 
-// GetProjectSecrets List the secret files of the project that exist, never their content
+// GetStackSecrets List the secret files of the stack that exist, never their content
 //
-// Corresponds with GET /v1/projects/{project}/secrets (the `GetProjectSecrets` operationId).
-func (c *Client) GetProjectSecrets(ctx context.Context, project Project, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetProjectSecretsRequest(c.Server, project)
+// Corresponds with GET /v1/stacks/{stack}/secrets (the `GetStackSecrets` operationId).
+func (c *Client) GetStackSecrets(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetStackSecretsRequest(c.Server, stack)
 	if err != nil {
 		return nil, err
 	}
@@ -506,11 +507,11 @@ func (c *Client) GetProjectSecrets(ctx context.Context, project Project, reqEdit
 	return c.Client.Do(req)
 }
 
-// GetProjectState Read the state of each container of the project
+// GetStackState Read the state of each container of the stack
 //
-// Corresponds with GET /v1/projects/{project}/state (the `GetProjectState` operationId).
-func (c *Client) GetProjectState(ctx context.Context, project Project, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetProjectStateRequest(c.Server, project)
+// Corresponds with GET /v1/stacks/{stack}/state (the `GetStackState` operationId).
+func (c *Client) GetStackState(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetStackStateRequest(c.Server, stack)
 	if err != nil {
 		return nil, err
 	}
@@ -555,24 +556,24 @@ func NewGetOperationRequest(server string, id string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewApplyProjectRequest calls the generic ApplyProject builder with application/json body
-func NewApplyProjectRequest(server string, project Project, body ApplyProjectJSONRequestBody) (*http.Request, error) {
+// NewApplyStackRequest calls the generic ApplyStack builder with application/json body
+func NewApplyStackRequest(server string, stack Stack, body ApplyStackJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewApplyProjectRequestWithBody(server, project, "application/json", bodyReader)
+	return NewApplyStackRequestWithBody(server, stack, "application/json", bodyReader)
 }
 
-// NewApplyProjectRequestWithBody constructs an http.Request for the ApplyProject method, with any body, and a specified content type
-func NewApplyProjectRequestWithBody(server string, project Project, contentType string, body io.Reader) (*http.Request, error) {
+// NewApplyStackRequestWithBody constructs an http.Request for the ApplyStack method, with any body, and a specified content type
+func NewApplyStackRequestWithBody(server string, stack Stack, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project", project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "stack", stack, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +583,7 @@ func NewApplyProjectRequestWithBody(server string, project Project, contentType 
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/v1/projects/%s/apply", pathParam0)
+	operationPath := fmt.Sprintf("/v1/stacks/%s/apply", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -602,24 +603,24 @@ func NewApplyProjectRequestWithBody(server string, project Project, contentType 
 	return req, nil
 }
 
-// NewRemoveProjectRequest calls the generic RemoveProject builder with application/json body
-func NewRemoveProjectRequest(server string, project Project, body RemoveProjectJSONRequestBody) (*http.Request, error) {
+// NewRemoveStackRequest calls the generic RemoveStack builder with application/json body
+func NewRemoveStackRequest(server string, stack Stack, body RemoveStackJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewRemoveProjectRequestWithBody(server, project, "application/json", bodyReader)
+	return NewRemoveStackRequestWithBody(server, stack, "application/json", bodyReader)
 }
 
-// NewRemoveProjectRequestWithBody constructs an http.Request for the RemoveProject method, with any body, and a specified content type
-func NewRemoveProjectRequestWithBody(server string, project Project, contentType string, body io.Reader) (*http.Request, error) {
+// NewRemoveStackRequestWithBody constructs an http.Request for the RemoveStack method, with any body, and a specified content type
+func NewRemoveStackRequestWithBody(server string, stack Stack, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project", project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "stack", stack, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -629,7 +630,7 @@ func NewRemoveProjectRequestWithBody(server string, project Project, contentType
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/v1/projects/%s/remove", pathParam0)
+	operationPath := fmt.Sprintf("/v1/stacks/%s/remove", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -649,13 +650,13 @@ func NewRemoveProjectRequestWithBody(server string, project Project, contentType
 	return req, nil
 }
 
-// NewGetProjectSecretsRequest constructs an http.Request for the GetProjectSecrets method
-func NewGetProjectSecretsRequest(server string, project Project) (*http.Request, error) {
+// NewGetStackSecretsRequest constructs an http.Request for the GetStackSecrets method
+func NewGetStackSecretsRequest(server string, stack Stack) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project", project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "stack", stack, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -665,7 +666,7 @@ func NewGetProjectSecretsRequest(server string, project Project) (*http.Request,
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/v1/projects/%s/secrets", pathParam0)
+	operationPath := fmt.Sprintf("/v1/stacks/%s/secrets", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -683,13 +684,13 @@ func NewGetProjectSecretsRequest(server string, project Project) (*http.Request,
 	return req, nil
 }
 
-// NewGetProjectStateRequest constructs an http.Request for the GetProjectState method
-func NewGetProjectStateRequest(server string, project Project) (*http.Request, error) {
+// NewGetStackStateRequest constructs an http.Request for the GetStackState method
+func NewGetStackStateRequest(server string, stack Stack) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "project", project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "stack", stack, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -699,7 +700,7 @@ func NewGetProjectStateRequest(server string, project Project) (*http.Request, e
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/v1/projects/%s/state", pathParam0)
+	operationPath := fmt.Sprintf("/v1/stacks/%s/state", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -768,59 +769,59 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /v1/operations/{id} (the `GetOperation` operationId).
 	GetOperationWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetOperationResponse, error)
 
-	// ApplyProjectWithBodyWithResponse Write the project's files and start it
+	// ApplyStackWithBodyWithResponse Write the stack's files and start it
 	//
 	// Answers at once with the running operation; poll `/v1/operations/{id}` for its outcome.
-	// One operation per project at a time; different projects run in parallel.
+	// One operation per stack at a time; different stacks run in parallel.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /v1/projects/{project}/apply (the `ApplyProject` operationId).
-	ApplyProjectWithBodyWithResponse(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApplyProjectResponse, error)
+	// Corresponds with POST /v1/stacks/{stack}/apply (the `ApplyStack` operationId).
+	ApplyStackWithBodyWithResponse(ctx context.Context, stack Stack, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApplyStackResponse, error)
 
-	// ApplyProjectWithResponse Write the project's files and start it
+	// ApplyStackWithResponse Write the stack's files and start it
 	//
 	// Answers at once with the running operation; poll `/v1/operations/{id}` for its outcome.
-	// One operation per project at a time; different projects run in parallel.
+	// One operation per stack at a time; different stacks run in parallel.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /v1/projects/{project}/apply (the `ApplyProject` operationId).
-	ApplyProjectWithResponse(ctx context.Context, project Project, body ApplyProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplyProjectResponse, error)
+	// Corresponds with POST /v1/stacks/{stack}/apply (the `ApplyStack` operationId).
+	ApplyStackWithResponse(ctx context.Context, stack Stack, body ApplyStackJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplyStackResponse, error)
 
-	// RemoveProjectWithBodyWithResponse Stop and remove the project's containers
+	// RemoveStackWithBodyWithResponse Stop and remove the stack's containers
 	//
-	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the stack's
 	// `secrets/` folder. The other files stay. Answers at once with the running operation.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
-	RemoveProjectWithBodyWithResponse(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveProjectResponse, error)
+	// Corresponds with POST /v1/stacks/{stack}/remove (the `RemoveStack` operationId).
+	RemoveStackWithBodyWithResponse(ctx context.Context, stack Stack, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveStackResponse, error)
 
-	// RemoveProjectWithResponse Stop and remove the project's containers
+	// RemoveStackWithResponse Stop and remove the stack's containers
 	//
-	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+	// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the stack's
 	// `secrets/` folder. The other files stay. Answers at once with the running operation.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
-	RemoveProjectWithResponse(ctx context.Context, project Project, body RemoveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveProjectResponse, error)
+	// Corresponds with POST /v1/stacks/{stack}/remove (the `RemoveStack` operationId).
+	RemoveStackWithResponse(ctx context.Context, stack Stack, body RemoveStackJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveStackResponse, error)
 
-	// GetProjectSecretsWithResponse List the secret files of the project that exist, never their content
+	// GetStackSecretsWithResponse List the secret files of the stack that exist, never their content
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with GET /v1/projects/{project}/secrets (the `GetProjectSecrets` operationId).
-	GetProjectSecretsWithResponse(ctx context.Context, project Project, reqEditors ...RequestEditorFn) (*GetProjectSecretsResponse, error)
+	// Corresponds with GET /v1/stacks/{stack}/secrets (the `GetStackSecrets` operationId).
+	GetStackSecretsWithResponse(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*GetStackSecretsResponse, error)
 
-	// GetProjectStateWithResponse Read the state of each container of the project
+	// GetStackStateWithResponse Read the state of each container of the stack
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with GET /v1/projects/{project}/state (the `GetProjectState` operationId).
-	GetProjectStateWithResponse(ctx context.Context, project Project, reqEditors ...RequestEditorFn) (*GetProjectStateResponse, error)
+	// Corresponds with GET /v1/stacks/{stack}/state (the `GetStackState` operationId).
+	GetStackStateWithResponse(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*GetStackStateResponse, error)
 }
 
 // GetOperationResponse200Headers the declared response headers of an HTTP 200 response for GetOperation
@@ -899,37 +900,37 @@ func (r GetOperationResponse) ContentType() string {
 	return ""
 }
 
-// ApplyProjectResponse202Headers the declared response headers of an HTTP 202 response for ApplyProject
-type ApplyProjectResponse202Headers struct {
+// ApplyStackResponse202Headers the declared response headers of an HTTP 202 response for ApplyStack
+type ApplyStackResponse202Headers struct {
 	MPBootId string
 }
 
-// ApplyProjectResponse400Headers the declared response headers of an HTTP 400 response for ApplyProject
-type ApplyProjectResponse400Headers struct {
+// ApplyStackResponse400Headers the declared response headers of an HTTP 400 response for ApplyStack
+type ApplyStackResponse400Headers struct {
 	MPBootId string
 }
 
-// ApplyProjectResponse401Headers the declared response headers of an HTTP 401 response for ApplyProject
-type ApplyProjectResponse401Headers struct {
+// ApplyStackResponse401Headers the declared response headers of an HTTP 401 response for ApplyStack
+type ApplyStackResponse401Headers struct {
 	MPBootId string
 }
 
-// ApplyProjectResponse409Headers the declared response headers of an HTTP 409 response for ApplyProject
-type ApplyProjectResponse409Headers struct {
+// ApplyStackResponse409Headers the declared response headers of an HTTP 409 response for ApplyStack
+type ApplyStackResponse409Headers struct {
 	MPBootId string
 }
 
-// ApplyProjectResponse413Headers the declared response headers of an HTTP 413 response for ApplyProject
-type ApplyProjectResponse413Headers struct {
+// ApplyStackResponse413Headers the declared response headers of an HTTP 413 response for ApplyStack
+type ApplyStackResponse413Headers struct {
 	MPBootId string
 }
 
-// ApplyProjectResponse422Headers the declared response headers of an HTTP 422 response for ApplyProject
-type ApplyProjectResponse422Headers struct {
+// ApplyStackResponse422Headers the declared response headers of an HTTP 422 response for ApplyStack
+type ApplyStackResponse422Headers struct {
 	MPBootId string
 }
 
-type ApplyProjectResponse struct {
+type ApplyStackResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON202 the response for an HTTP 202 `application/json` response
@@ -945,56 +946,56 @@ type ApplyProjectResponse struct {
 	// JSON422 the response for an HTTP 422 `application/json` response
 	JSON422 *externalRef0.ProblemList
 	// Headers202 the parsed response headers for an HTTP 202 response
-	Headers202 *ApplyProjectResponse202Headers
+	Headers202 *ApplyStackResponse202Headers
 	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *ApplyProjectResponse400Headers
+	Headers400 *ApplyStackResponse400Headers
 	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ApplyProjectResponse401Headers
+	Headers401 *ApplyStackResponse401Headers
 	// Headers409 the parsed response headers for an HTTP 409 response
-	Headers409 *ApplyProjectResponse409Headers
+	Headers409 *ApplyStackResponse409Headers
 	// Headers413 the parsed response headers for an HTTP 413 response
-	Headers413 *ApplyProjectResponse413Headers
+	Headers413 *ApplyStackResponse413Headers
 	// Headers422 the parsed response headers for an HTTP 422 response
-	Headers422 *ApplyProjectResponse422Headers
+	Headers422 *ApplyStackResponse422Headers
 }
 
 // GetJSON202 returns the response for an HTTP 202 `application/json` response
-func (r ApplyProjectResponse) GetJSON202() *Operation {
+func (r ApplyStackResponse) GetJSON202() *Operation {
 	return r.JSON202
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r ApplyProjectResponse) GetJSON400() *BadRequest {
+func (r ApplyStackResponse) GetJSON400() *BadRequest {
 	return r.JSON400
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
-func (r ApplyProjectResponse) GetJSON401() *Unauthorized {
+func (r ApplyStackResponse) GetJSON401() *Unauthorized {
 	return r.JSON401
 }
 
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r ApplyProjectResponse) GetJSON409() *externalRef0.ProblemList {
+func (r ApplyStackResponse) GetJSON409() *externalRef0.ProblemList {
 	return r.JSON409
 }
 
 // GetJSON413 returns the response for an HTTP 413 `application/json` response
-func (r ApplyProjectResponse) GetJSON413() *externalRef0.ProblemList {
+func (r ApplyStackResponse) GetJSON413() *externalRef0.ProblemList {
 	return r.JSON413
 }
 
 // GetJSON422 returns the response for an HTTP 422 `application/json` response
-func (r ApplyProjectResponse) GetJSON422() *externalRef0.ProblemList {
+func (r ApplyStackResponse) GetJSON422() *externalRef0.ProblemList {
 	return r.JSON422
 }
 
 // GetBody returns the raw response body bytes
-func (r ApplyProjectResponse) GetBody() []byte {
+func (r ApplyStackResponse) GetBody() []byte {
 	return r.Body
 }
 
 // Status returns HTTPResponse.Status
-func (r ApplyProjectResponse) Status() string {
+func (r ApplyStackResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1002,7 +1003,7 @@ func (r ApplyProjectResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r ApplyProjectResponse) StatusCode() int {
+func (r ApplyStackResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1010,44 +1011,44 @@ func (r ApplyProjectResponse) StatusCode() int {
 }
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ApplyProjectResponse) ContentType() string {
+func (r ApplyStackResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
 	return ""
 }
 
-// RemoveProjectResponse202Headers the declared response headers of an HTTP 202 response for RemoveProject
-type RemoveProjectResponse202Headers struct {
+// RemoveStackResponse202Headers the declared response headers of an HTTP 202 response for RemoveStack
+type RemoveStackResponse202Headers struct {
 	MPBootId string
 }
 
-// RemoveProjectResponse400Headers the declared response headers of an HTTP 400 response for RemoveProject
-type RemoveProjectResponse400Headers struct {
+// RemoveStackResponse400Headers the declared response headers of an HTTP 400 response for RemoveStack
+type RemoveStackResponse400Headers struct {
 	MPBootId string
 }
 
-// RemoveProjectResponse401Headers the declared response headers of an HTTP 401 response for RemoveProject
-type RemoveProjectResponse401Headers struct {
+// RemoveStackResponse401Headers the declared response headers of an HTTP 401 response for RemoveStack
+type RemoveStackResponse401Headers struct {
 	MPBootId string
 }
 
-// RemoveProjectResponse404Headers the declared response headers of an HTTP 404 response for RemoveProject
-type RemoveProjectResponse404Headers struct {
+// RemoveStackResponse404Headers the declared response headers of an HTTP 404 response for RemoveStack
+type RemoveStackResponse404Headers struct {
 	MPBootId string
 }
 
-// RemoveProjectResponse409Headers the declared response headers of an HTTP 409 response for RemoveProject
-type RemoveProjectResponse409Headers struct {
+// RemoveStackResponse409Headers the declared response headers of an HTTP 409 response for RemoveStack
+type RemoveStackResponse409Headers struct {
 	MPBootId string
 }
 
-// RemoveProjectResponse503Headers the declared response headers of an HTTP 503 response for RemoveProject
-type RemoveProjectResponse503Headers struct {
+// RemoveStackResponse503Headers the declared response headers of an HTTP 503 response for RemoveStack
+type RemoveStackResponse503Headers struct {
 	MPBootId string
 }
 
-type RemoveProjectResponse struct {
+type RemoveStackResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON202 the response for an HTTP 202 `application/json` response
@@ -1063,56 +1064,56 @@ type RemoveProjectResponse struct {
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *externalRef0.ProblemList
 	// Headers202 the parsed response headers for an HTTP 202 response
-	Headers202 *RemoveProjectResponse202Headers
+	Headers202 *RemoveStackResponse202Headers
 	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *RemoveProjectResponse400Headers
+	Headers400 *RemoveStackResponse400Headers
 	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *RemoveProjectResponse401Headers
+	Headers401 *RemoveStackResponse401Headers
 	// Headers404 the parsed response headers for an HTTP 404 response
-	Headers404 *RemoveProjectResponse404Headers
+	Headers404 *RemoveStackResponse404Headers
 	// Headers409 the parsed response headers for an HTTP 409 response
-	Headers409 *RemoveProjectResponse409Headers
+	Headers409 *RemoveStackResponse409Headers
 	// Headers503 the parsed response headers for an HTTP 503 response
-	Headers503 *RemoveProjectResponse503Headers
+	Headers503 *RemoveStackResponse503Headers
 }
 
 // GetJSON202 returns the response for an HTTP 202 `application/json` response
-func (r RemoveProjectResponse) GetJSON202() *Operation {
+func (r RemoveStackResponse) GetJSON202() *Operation {
 	return r.JSON202
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r RemoveProjectResponse) GetJSON400() *BadRequest {
+func (r RemoveStackResponse) GetJSON400() *BadRequest {
 	return r.JSON400
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
-func (r RemoveProjectResponse) GetJSON401() *Unauthorized {
+func (r RemoveStackResponse) GetJSON401() *Unauthorized {
 	return r.JSON401
 }
 
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
-func (r RemoveProjectResponse) GetJSON404() *externalRef0.ProblemList {
+func (r RemoveStackResponse) GetJSON404() *externalRef0.ProblemList {
 	return r.JSON404
 }
 
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r RemoveProjectResponse) GetJSON409() *externalRef0.ProblemList {
+func (r RemoveStackResponse) GetJSON409() *externalRef0.ProblemList {
 	return r.JSON409
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
-func (r RemoveProjectResponse) GetJSON503() *externalRef0.ProblemList {
+func (r RemoveStackResponse) GetJSON503() *externalRef0.ProblemList {
 	return r.JSON503
 }
 
 // GetBody returns the raw response body bytes
-func (r RemoveProjectResponse) GetBody() []byte {
+func (r RemoveStackResponse) GetBody() []byte {
 	return r.Body
 }
 
 // Status returns HTTPResponse.Status
-func (r RemoveProjectResponse) Status() string {
+func (r RemoveStackResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1120,7 +1121,7 @@ func (r RemoveProjectResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r RemoveProjectResponse) StatusCode() int {
+func (r RemoveStackResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1128,29 +1129,29 @@ func (r RemoveProjectResponse) StatusCode() int {
 }
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r RemoveProjectResponse) ContentType() string {
+func (r RemoveStackResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
 	return ""
 }
 
-// GetProjectSecretsResponse200Headers the declared response headers of an HTTP 200 response for GetProjectSecrets
-type GetProjectSecretsResponse200Headers struct {
+// GetStackSecretsResponse200Headers the declared response headers of an HTTP 200 response for GetStackSecrets
+type GetStackSecretsResponse200Headers struct {
 	MPBootId string
 }
 
-// GetProjectSecretsResponse400Headers the declared response headers of an HTTP 400 response for GetProjectSecrets
-type GetProjectSecretsResponse400Headers struct {
+// GetStackSecretsResponse400Headers the declared response headers of an HTTP 400 response for GetStackSecrets
+type GetStackSecretsResponse400Headers struct {
 	MPBootId string
 }
 
-// GetProjectSecretsResponse401Headers the declared response headers of an HTTP 401 response for GetProjectSecrets
-type GetProjectSecretsResponse401Headers struct {
+// GetStackSecretsResponse401Headers the declared response headers of an HTTP 401 response for GetStackSecrets
+type GetStackSecretsResponse401Headers struct {
 	MPBootId string
 }
 
-type GetProjectSecretsResponse struct {
+type GetStackSecretsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
@@ -1160,35 +1161,35 @@ type GetProjectSecretsResponse struct {
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *Unauthorized
 	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetProjectSecretsResponse200Headers
+	Headers200 *GetStackSecretsResponse200Headers
 	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetProjectSecretsResponse400Headers
+	Headers400 *GetStackSecretsResponse400Headers
 	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *GetProjectSecretsResponse401Headers
+	Headers401 *GetStackSecretsResponse401Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetProjectSecretsResponse) GetJSON200() *PresentSecrets {
+func (r GetStackSecretsResponse) GetJSON200() *PresentSecrets {
 	return r.JSON200
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r GetProjectSecretsResponse) GetJSON400() *BadRequest {
+func (r GetStackSecretsResponse) GetJSON400() *BadRequest {
 	return r.JSON400
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
-func (r GetProjectSecretsResponse) GetJSON401() *Unauthorized {
+func (r GetStackSecretsResponse) GetJSON401() *Unauthorized {
 	return r.JSON401
 }
 
 // GetBody returns the raw response body bytes
-func (r GetProjectSecretsResponse) GetBody() []byte {
+func (r GetStackSecretsResponse) GetBody() []byte {
 	return r.Body
 }
 
 // Status returns HTTPResponse.Status
-func (r GetProjectSecretsResponse) Status() string {
+func (r GetStackSecretsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1196,7 +1197,7 @@ func (r GetProjectSecretsResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetProjectSecretsResponse) StatusCode() int {
+func (r GetStackSecretsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1204,38 +1205,38 @@ func (r GetProjectSecretsResponse) StatusCode() int {
 }
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetProjectSecretsResponse) ContentType() string {
+func (r GetStackSecretsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
 	return ""
 }
 
-// GetProjectStateResponse200Headers the declared response headers of an HTTP 200 response for GetProjectState
-type GetProjectStateResponse200Headers struct {
+// GetStackStateResponse200Headers the declared response headers of an HTTP 200 response for GetStackState
+type GetStackStateResponse200Headers struct {
 	MPBootId string
 }
 
-// GetProjectStateResponse400Headers the declared response headers of an HTTP 400 response for GetProjectState
-type GetProjectStateResponse400Headers struct {
+// GetStackStateResponse400Headers the declared response headers of an HTTP 400 response for GetStackState
+type GetStackStateResponse400Headers struct {
 	MPBootId string
 }
 
-// GetProjectStateResponse401Headers the declared response headers of an HTTP 401 response for GetProjectState
-type GetProjectStateResponse401Headers struct {
+// GetStackStateResponse401Headers the declared response headers of an HTTP 401 response for GetStackState
+type GetStackStateResponse401Headers struct {
 	MPBootId string
 }
 
-// GetProjectStateResponse503Headers the declared response headers of an HTTP 503 response for GetProjectState
-type GetProjectStateResponse503Headers struct {
+// GetStackStateResponse503Headers the declared response headers of an HTTP 503 response for GetStackState
+type GetStackStateResponse503Headers struct {
 	MPBootId string
 }
 
-type GetProjectStateResponse struct {
+type GetStackStateResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *ProjectState
+	JSON200 *StackState
 	// JSON400 the response for an HTTP 400 `application/json` response
 	JSON400 *BadRequest
 	// JSON401 the response for an HTTP 401 `application/json` response
@@ -1243,42 +1244,42 @@ type GetProjectStateResponse struct {
 	// JSON503 the response for an HTTP 503 `application/json` response
 	JSON503 *externalRef0.ProblemList
 	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetProjectStateResponse200Headers
+	Headers200 *GetStackStateResponse200Headers
 	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetProjectStateResponse400Headers
+	Headers400 *GetStackStateResponse400Headers
 	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *GetProjectStateResponse401Headers
+	Headers401 *GetStackStateResponse401Headers
 	// Headers503 the parsed response headers for an HTTP 503 response
-	Headers503 *GetProjectStateResponse503Headers
+	Headers503 *GetStackStateResponse503Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetProjectStateResponse) GetJSON200() *ProjectState {
+func (r GetStackStateResponse) GetJSON200() *StackState {
 	return r.JSON200
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r GetProjectStateResponse) GetJSON400() *BadRequest {
+func (r GetStackStateResponse) GetJSON400() *BadRequest {
 	return r.JSON400
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
-func (r GetProjectStateResponse) GetJSON401() *Unauthorized {
+func (r GetStackStateResponse) GetJSON401() *Unauthorized {
 	return r.JSON401
 }
 
 // GetJSON503 returns the response for an HTTP 503 `application/json` response
-func (r GetProjectStateResponse) GetJSON503() *externalRef0.ProblemList {
+func (r GetStackStateResponse) GetJSON503() *externalRef0.ProblemList {
 	return r.JSON503
 }
 
 // GetBody returns the raw response body bytes
-func (r GetProjectStateResponse) GetBody() []byte {
+func (r GetStackStateResponse) GetBody() []byte {
 	return r.Body
 }
 
 // Status returns HTTPResponse.Status
-func (r GetProjectStateResponse) Status() string {
+func (r GetStackStateResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1286,7 +1287,7 @@ func (r GetProjectStateResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetProjectStateResponse) StatusCode() int {
+func (r GetStackStateResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1294,7 +1295,7 @@ func (r GetProjectStateResponse) StatusCode() int {
 }
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetProjectStateResponse) ContentType() string {
+func (r GetStackStateResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -1314,94 +1315,94 @@ func (c *ClientWithResponses) GetOperationWithResponse(ctx context.Context, id s
 	return ParseGetOperationResponse(rsp)
 }
 
-// ApplyProjectWithBodyWithResponse Write the project's files and start it
+// ApplyStackWithBodyWithResponse Write the stack's files and start it
 //
 // Answers at once with the running operation; poll `/v1/operations/{id}` for its outcome.
-// One operation per project at a time; different projects run in parallel.
+// One operation per stack at a time; different stacks run in parallel.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with POST /v1/projects/{project}/apply (the `ApplyProject` operationId).
-func (c *ClientWithResponses) ApplyProjectWithBodyWithResponse(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApplyProjectResponse, error) {
-	rsp, err := c.ApplyProjectWithBody(ctx, project, contentType, body, reqEditors...)
+// Corresponds with POST /v1/stacks/{stack}/apply (the `ApplyStack` operationId).
+func (c *ClientWithResponses) ApplyStackWithBodyWithResponse(ctx context.Context, stack Stack, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApplyStackResponse, error) {
+	rsp, err := c.ApplyStackWithBody(ctx, stack, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseApplyProjectResponse(rsp)
+	return ParseApplyStackResponse(rsp)
 }
 
-// ApplyProjectWithResponse Write the project's files and start it
+// ApplyStackWithResponse Write the stack's files and start it
 //
 // Answers at once with the running operation; poll `/v1/operations/{id}` for its outcome.
-// One operation per project at a time; different projects run in parallel.
+// One operation per stack at a time; different stacks run in parallel.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with POST /v1/projects/{project}/apply (the `ApplyProject` operationId).
-func (c *ClientWithResponses) ApplyProjectWithResponse(ctx context.Context, project Project, body ApplyProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplyProjectResponse, error) {
-	rsp, err := c.ApplyProject(ctx, project, body, reqEditors...)
+// Corresponds with POST /v1/stacks/{stack}/apply (the `ApplyStack` operationId).
+func (c *ClientWithResponses) ApplyStackWithResponse(ctx context.Context, stack Stack, body ApplyStackJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplyStackResponse, error) {
+	rsp, err := c.ApplyStack(ctx, stack, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseApplyProjectResponse(rsp)
+	return ParseApplyStackResponse(rsp)
 }
 
-// RemoveProjectWithBodyWithResponse Stop and remove the project's containers
+// RemoveStackWithBodyWithResponse Stop and remove the stack's containers
 //
-// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the stack's
 // `secrets/` folder. The other files stay. Answers at once with the running operation.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
-func (c *ClientWithResponses) RemoveProjectWithBodyWithResponse(ctx context.Context, project Project, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveProjectResponse, error) {
-	rsp, err := c.RemoveProjectWithBody(ctx, project, contentType, body, reqEditors...)
+// Corresponds with POST /v1/stacks/{stack}/remove (the `RemoveStack` operationId).
+func (c *ClientWithResponses) RemoveStackWithBodyWithResponse(ctx context.Context, stack Stack, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RemoveStackResponse, error) {
+	rsp, err := c.RemoveStackWithBody(ctx, stack, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseRemoveProjectResponse(rsp)
+	return ParseRemoveStackResponse(rsp)
 }
 
-// RemoveProjectWithResponse Stop and remove the project's containers
+// RemoveStackWithResponse Stop and remove the stack's containers
 //
-// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+// Runs `docker compose down`; with `deleteData` also its volumes, and deletes the stack's
 // `secrets/` folder. The other files stay. Answers at once with the running operation.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Corresponds with POST /v1/projects/{project}/remove (the `RemoveProject` operationId).
-func (c *ClientWithResponses) RemoveProjectWithResponse(ctx context.Context, project Project, body RemoveProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveProjectResponse, error) {
-	rsp, err := c.RemoveProject(ctx, project, body, reqEditors...)
+// Corresponds with POST /v1/stacks/{stack}/remove (the `RemoveStack` operationId).
+func (c *ClientWithResponses) RemoveStackWithResponse(ctx context.Context, stack Stack, body RemoveStackJSONRequestBody, reqEditors ...RequestEditorFn) (*RemoveStackResponse, error) {
+	rsp, err := c.RemoveStack(ctx, stack, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseRemoveProjectResponse(rsp)
+	return ParseRemoveStackResponse(rsp)
 }
 
-// GetProjectSecretsWithResponse List the secret files of the project that exist, never their content
+// GetStackSecretsWithResponse List the secret files of the stack that exist, never their content
 //
 // Returns a wrapper object for the known response body format(s).
 //
-// Corresponds with GET /v1/projects/{project}/secrets (the `GetProjectSecrets` operationId).
-func (c *ClientWithResponses) GetProjectSecretsWithResponse(ctx context.Context, project Project, reqEditors ...RequestEditorFn) (*GetProjectSecretsResponse, error) {
-	rsp, err := c.GetProjectSecrets(ctx, project, reqEditors...)
+// Corresponds with GET /v1/stacks/{stack}/secrets (the `GetStackSecrets` operationId).
+func (c *ClientWithResponses) GetStackSecretsWithResponse(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*GetStackSecretsResponse, error) {
+	rsp, err := c.GetStackSecrets(ctx, stack, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetProjectSecretsResponse(rsp)
+	return ParseGetStackSecretsResponse(rsp)
 }
 
-// GetProjectStateWithResponse Read the state of each container of the project
+// GetStackStateWithResponse Read the state of each container of the stack
 //
 // Returns a wrapper object for the known response body format(s).
 //
-// Corresponds with GET /v1/projects/{project}/state (the `GetProjectState` operationId).
-func (c *ClientWithResponses) GetProjectStateWithResponse(ctx context.Context, project Project, reqEditors ...RequestEditorFn) (*GetProjectStateResponse, error) {
-	rsp, err := c.GetProjectState(ctx, project, reqEditors...)
+// Corresponds with GET /v1/stacks/{stack}/state (the `GetStackState` operationId).
+func (c *ClientWithResponses) GetStackStateWithResponse(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*GetStackStateResponse, error) {
+	rsp, err := c.GetStackState(ctx, stack, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetProjectStateResponse(rsp)
+	return ParseGetStackStateResponse(rsp)
 }
 
 // ParseGetOperationResponse parses an HTTP response from a GetOperationWithResponse call
@@ -1477,15 +1478,15 @@ func ParseGetOperationResponse(rsp *http.Response) (*GetOperationResponse, error
 	return response, nil
 }
 
-// ParseApplyProjectResponse parses an HTTP response from a ApplyProjectWithResponse call
-func ParseApplyProjectResponse(rsp *http.Response) (*ApplyProjectResponse, error) {
+// ParseApplyStackResponse parses an HTTP response from a ApplyStackWithResponse call
+func ParseApplyStackResponse(rsp *http.Response) (*ApplyStackResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &ApplyProjectResponse{
+	response := &ApplyStackResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -1537,7 +1538,7 @@ func ParseApplyProjectResponse(rsp *http.Response) (*ApplyProjectResponse, error
 
 	switch {
 	case rsp.StatusCode == 202:
-		var headers ApplyProjectResponse202Headers
+		var headers ApplyStackResponse202Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1547,7 +1548,7 @@ func ParseApplyProjectResponse(rsp *http.Response) (*ApplyProjectResponse, error
 		}
 		response.Headers202 = &headers
 	case rsp.StatusCode == 400:
-		var headers ApplyProjectResponse400Headers
+		var headers ApplyStackResponse400Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1557,7 +1558,7 @@ func ParseApplyProjectResponse(rsp *http.Response) (*ApplyProjectResponse, error
 		}
 		response.Headers400 = &headers
 	case rsp.StatusCode == 401:
-		var headers ApplyProjectResponse401Headers
+		var headers ApplyStackResponse401Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1567,7 +1568,7 @@ func ParseApplyProjectResponse(rsp *http.Response) (*ApplyProjectResponse, error
 		}
 		response.Headers401 = &headers
 	case rsp.StatusCode == 409:
-		var headers ApplyProjectResponse409Headers
+		var headers ApplyStackResponse409Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1577,7 +1578,7 @@ func ParseApplyProjectResponse(rsp *http.Response) (*ApplyProjectResponse, error
 		}
 		response.Headers409 = &headers
 	case rsp.StatusCode == 413:
-		var headers ApplyProjectResponse413Headers
+		var headers ApplyStackResponse413Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1587,7 +1588,7 @@ func ParseApplyProjectResponse(rsp *http.Response) (*ApplyProjectResponse, error
 		}
 		response.Headers413 = &headers
 	case rsp.StatusCode == 422:
-		var headers ApplyProjectResponse422Headers
+		var headers ApplyStackResponse422Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1601,15 +1602,15 @@ func ParseApplyProjectResponse(rsp *http.Response) (*ApplyProjectResponse, error
 	return response, nil
 }
 
-// ParseRemoveProjectResponse parses an HTTP response from a RemoveProjectWithResponse call
-func ParseRemoveProjectResponse(rsp *http.Response) (*RemoveProjectResponse, error) {
+// ParseRemoveStackResponse parses an HTTP response from a RemoveStackWithResponse call
+func ParseRemoveStackResponse(rsp *http.Response) (*RemoveStackResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &RemoveProjectResponse{
+	response := &RemoveStackResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -1661,7 +1662,7 @@ func ParseRemoveProjectResponse(rsp *http.Response) (*RemoveProjectResponse, err
 
 	switch {
 	case rsp.StatusCode == 202:
-		var headers RemoveProjectResponse202Headers
+		var headers RemoveStackResponse202Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1671,7 +1672,7 @@ func ParseRemoveProjectResponse(rsp *http.Response) (*RemoveProjectResponse, err
 		}
 		response.Headers202 = &headers
 	case rsp.StatusCode == 400:
-		var headers RemoveProjectResponse400Headers
+		var headers RemoveStackResponse400Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1681,7 +1682,7 @@ func ParseRemoveProjectResponse(rsp *http.Response) (*RemoveProjectResponse, err
 		}
 		response.Headers400 = &headers
 	case rsp.StatusCode == 401:
-		var headers RemoveProjectResponse401Headers
+		var headers RemoveStackResponse401Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1691,7 +1692,7 @@ func ParseRemoveProjectResponse(rsp *http.Response) (*RemoveProjectResponse, err
 		}
 		response.Headers401 = &headers
 	case rsp.StatusCode == 404:
-		var headers RemoveProjectResponse404Headers
+		var headers RemoveStackResponse404Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1701,7 +1702,7 @@ func ParseRemoveProjectResponse(rsp *http.Response) (*RemoveProjectResponse, err
 		}
 		response.Headers404 = &headers
 	case rsp.StatusCode == 409:
-		var headers RemoveProjectResponse409Headers
+		var headers RemoveStackResponse409Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1711,7 +1712,7 @@ func ParseRemoveProjectResponse(rsp *http.Response) (*RemoveProjectResponse, err
 		}
 		response.Headers409 = &headers
 	case rsp.StatusCode == 503:
-		var headers RemoveProjectResponse503Headers
+		var headers RemoveStackResponse503Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1725,15 +1726,15 @@ func ParseRemoveProjectResponse(rsp *http.Response) (*RemoveProjectResponse, err
 	return response, nil
 }
 
-// ParseGetProjectSecretsResponse parses an HTTP response from a GetProjectSecretsWithResponse call
-func ParseGetProjectSecretsResponse(rsp *http.Response) (*GetProjectSecretsResponse, error) {
+// ParseGetStackSecretsResponse parses an HTTP response from a GetStackSecretsWithResponse call
+func ParseGetStackSecretsResponse(rsp *http.Response) (*GetStackSecretsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetProjectSecretsResponse{
+	response := &GetStackSecretsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -1764,7 +1765,7 @@ func ParseGetProjectSecretsResponse(rsp *http.Response) (*GetProjectSecretsRespo
 
 	switch {
 	case rsp.StatusCode == 200:
-		var headers GetProjectSecretsResponse200Headers
+		var headers GetStackSecretsResponse200Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1774,7 +1775,7 @@ func ParseGetProjectSecretsResponse(rsp *http.Response) (*GetProjectSecretsRespo
 		}
 		response.Headers200 = &headers
 	case rsp.StatusCode == 400:
-		var headers GetProjectSecretsResponse400Headers
+		var headers GetStackSecretsResponse400Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1784,7 +1785,7 @@ func ParseGetProjectSecretsResponse(rsp *http.Response) (*GetProjectSecretsRespo
 		}
 		response.Headers400 = &headers
 	case rsp.StatusCode == 401:
-		var headers GetProjectSecretsResponse401Headers
+		var headers GetStackSecretsResponse401Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1798,22 +1799,22 @@ func ParseGetProjectSecretsResponse(rsp *http.Response) (*GetProjectSecretsRespo
 	return response, nil
 }
 
-// ParseGetProjectStateResponse parses an HTTP response from a GetProjectStateWithResponse call
-func ParseGetProjectStateResponse(rsp *http.Response) (*GetProjectStateResponse, error) {
+// ParseGetStackStateResponse parses an HTTP response from a GetStackStateWithResponse call
+func ParseGetStackStateResponse(rsp *http.Response) (*GetStackStateResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetProjectStateResponse{
+	response := &GetStackStateResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ProjectState
+		var dest StackState
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1844,7 +1845,7 @@ func ParseGetProjectStateResponse(rsp *http.Response) (*GetProjectStateResponse,
 
 	switch {
 	case rsp.StatusCode == 200:
-		var headers GetProjectStateResponse200Headers
+		var headers GetStackStateResponse200Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1854,7 +1855,7 @@ func ParseGetProjectStateResponse(rsp *http.Response) (*GetProjectStateResponse,
 		}
 		response.Headers200 = &headers
 	case rsp.StatusCode == 400:
-		var headers GetProjectStateResponse400Headers
+		var headers GetStackStateResponse400Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1864,7 +1865,7 @@ func ParseGetProjectStateResponse(rsp *http.Response) (*GetProjectStateResponse,
 		}
 		response.Headers400 = &headers
 	case rsp.StatusCode == 401:
-		var headers GetProjectStateResponse401Headers
+		var headers GetStackStateResponse401Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -1874,7 +1875,7 @@ func ParseGetProjectStateResponse(rsp *http.Response) (*GetProjectStateResponse,
 		}
 		response.Headers401 = &headers
 	case rsp.StatusCode == 503:
-		var headers GetProjectStateResponse503Headers
+		var headers GetStackStateResponse503Headers
 		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {

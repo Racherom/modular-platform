@@ -1,7 +1,7 @@
-import type { DeploymentState, ModuleState } from '../api/platform'
+import type { ModuleState, StackState } from '../api/platform'
 import { StatusBadge, type StatusTone } from './ui/StatusBadge'
 
-const tones: Record<ModuleState['state'] | DeploymentState, StatusTone> = {
+const tones: Record<ModuleState['state'] | StackState, StatusTone> = {
   running: 'success',
   pending: 'info',
   starting: 'info',
@@ -40,7 +40,7 @@ export function restartLine(m: ModuleState): string {
  * A state as text plus a colored dot on StatusBadge, never color alone (AC-13). A module badge adds its restart count
  * and last exit code, and carries its image and health in its title.
  */
-export function StateBadge({ module, deployment }: { module?: ModuleState; deployment?: DeploymentState }) {
+export function StateBadge({ module, stack }: { module?: ModuleState; stack?: StackState }) {
   if (module) {
     const restarts = restartLine(module)
     const details = [module.image, module.health && `health ${module.health}`, `restarts ${module.restartCount}`].filter(Boolean).join(', ')
@@ -51,10 +51,10 @@ export function StateBadge({ module, deployment }: { module?: ModuleState; deplo
       </StatusBadge>
     )
   }
-  if (!deployment) return null
+  if (!stack) return null
   return (
-    <StatusBadge tone={tones[deployment]} data-testid="deployment-state">
-      {deployment}
+    <StatusBadge tone={tones[stack]} data-testid="stack-state">
+      {stack}
     </StatusBadge>
   )
 }

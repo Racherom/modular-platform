@@ -63,7 +63,7 @@ func (e *events) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer e.release(key)
-	filter := r.URL.Query().Get("deployment")
+	filter := r.URL.Query().Get("stack")
 
 	// subscribe before the snapshot, so nothing between the two is lost
 	updates, unsubscribe := e.hub.Subscribe()
@@ -109,7 +109,7 @@ func (e *events) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	check := time.NewTicker(sessionEvery)
 	defer check.Stop()
 	if filter != "" {
-		// one poller per deployment, shared by every stream watching it (task 17)
+		// one poller per stack, shared by every stream watching it (task 17)
 		by := deploy.Starter{Issuer: sess.Identity.Issuer, Subject: sess.Identity.Subject, Email: sess.Email}
 		defer e.deploy.Watch(filter, by)()
 	}
@@ -122,7 +122,7 @@ func (e *events) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if !open {
 				return // fell behind; the reconnect gets a new snapshot
 			}
-			ok = filter != "" && ev.Deployment != filter || e.sendEvent(send, ev, filter != "")
+			ok = filter != "" && ev.Stack != filter || e.sendEvent(send, ev, filter != "")
 		case <-ping.C:
 			ok = send("", nil)
 		case <-check.C:
@@ -139,17 +139,17 @@ func (e *events) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// snapshot is the first event: every deployment without the filter, the full deployment with
+// snapshot is the first event: every stack without the filter, the full stack with
 // it.
 func (e *events) snapshot(r *http.Request, filter string) (any, error) {
 	if filter == "" {
-		items, err := e.deploy.Deployments(r.Context(), "", snapshotPage)
+		items, err := e.deploy.Stacks(r.Context(), "", snapshotPage)
 		if err != nil {
 			return nil, err
 		}
-		list := EventSnapshotList{Deployments: make([]DeploymentSummary, 0, len(items))}
+		list := EventSnapshotList{Stacks: make([]StackSummary, 0, len(items))}
 		for _, d := range items {
-			list.Deployments = append(list.Deployments, summary(d))
+			list.Stacks = append(list.Stacks, summary(d))
 		}
 		return list, nil
 	}
@@ -163,15 +163,15 @@ func (e *events) snapshot(r *http.Request, filter string) (any, error) {
 func (e *events) sendEvent(send func(string, any) bool, ev deploy.Event, filtered bool) bool {
 	switch {
 	case ev.Kind == deploy.EventOperation && ev.Operation != nil:
-		return send("operation", EventOperation{Deployment: ev.Deployment, Operation: operation(*ev.Operation)})
-	case ev.Kind == deploy.EventDeployment && ev.Summary != nil:
-		return send("deployment", summary(*ev.Summary))
+		return send("operation", EventOperation{Stack: ev.Stack, Operation: operation(*ev.Operation)})
+	case ev.Kind == deploy.EventStack && ev.Summary != nil:
+		return send("stack", summary(*ev.Summary))
 	case ev.Kind == deploy.EventModules:
-		// only a stream with the filter gets modules; the caller skipped other deployments
+		// only a stream with the filter gets modules; the caller skipped other stacks
 		if !filtered {
 			return true
 		}
-		return send("modules", EventModules{Deployment: ev.Deployment, Modules: moduleStates(ev.Modules)})
+		return send("modules", EventModules{Stack: ev.Stack, Modules: moduleStates(ev.Modules)})
 	}
 	return true
 }

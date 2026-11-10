@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import type { Graph } from '../api/client'
-import { ApiError, applyDeployment, isRefusal, type PlacedInput, reviewDeployment } from '../api/platform'
+import { ApiError, applyStack, isRefusal, type PlacedInput, reviewStack } from '../api/platform'
 import m from './Managed.module.css'
 import { ProblemList } from './ProblemList'
 import { Button } from './ui/Button'
@@ -19,15 +19,15 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
   const [values, setValues] = useState<Record<string, string>>({})
   const [replacing, setReplacing] = useState<Record<string, boolean>>({})
   const [notice, setNotice] = useState('')
-  const review = useQuery({ queryKey: ['review', graph], queryFn: () => reviewDeployment(graph), gcTime: 0 })
+  const review = useQuery({ queryKey: ['review', graph], queryFn: () => reviewStack(graph), gcTime: 0 })
   const apply = useMutation({
     mutationFn: () => {
       const placed: PlacedInput[] = (review.data?.placed ?? [])
         .filter((p) => !p.exists || replacing[p.path])
         .map((p) => ({ path: p.path, value: values[p.path] ?? '', replace: p.exists }))
-      return applyDeployment(graph, review.data?.check.digest ?? '', placed)
+      return applyStack(graph, review.data?.check.digest ?? '', placed)
     },
-    onSuccess: () => void navigate({ to: '/deployments/$name', params: { name: graph.name } }),
+    onSuccess: () => void navigate({ to: '/stacks/$name', params: { name: graph.name } }),
     onError: (error) => {
       if (error instanceof ApiError && error.code === 'graph_changed') {
         setNotice('The graph changed since you reviewed it, for example after a platform upgrade. Review it again below.')

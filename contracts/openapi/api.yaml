@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   summary: The managed platform's control plane, called by the editor.
   description: |
-    `api` keeps the record (sessions, deployments, an append only history), asks the renderer to
+    `api` keeps the record (sessions, stacks, an append only history), asks the renderer to
     check and render, and drives the deploy target (spec 0006). Paths sit under `<base>/api/v1`;
     the base is empty in thread 1.
 
@@ -179,10 +179,10 @@ paths:
                 $ref: "./renderer.yaml#/components/schemas/CheckResult"
         "502":
           $ref: "#/components/responses/RendererError"
-  /api/v1/deployments:
+  /api/v1/stacks:
     get:
-      operationId: listDeployments
-      summary: List the deployments, sorted by name
+      operationId: listStacks
+      summary: List the stacks, sorted by name
       parameters:
         - name: limit
           in: query
@@ -202,32 +202,32 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DeploymentPage"
+                $ref: "#/components/schemas/StackPage"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthenticated"
-  /api/v1/deployments/{name}:
+  /api/v1/stacks/{name}:
     get:
-      operationId: getDeployment
-      summary: Read a deployment with the live state of its modules
+      operationId: getStack
+      summary: Read a stack with the live state of its modules
       parameters:
         - $ref: "#/components/parameters/Name"
       responses:
         "200":
-          description: The deployment.
+          description: The stack.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Deployment"
+                $ref: "#/components/schemas/Stack"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "404":
           $ref: "#/components/responses/NotFound"
-  /api/v1/deployments/{name}/operations:
+  /api/v1/stacks/{name}/operations:
     get:
       operationId: listOperations
-      summary: The deployment's history, newest first
+      summary: The stack's history, newest first
       parameters:
         - $ref: "#/components/parameters/Name"
         - name: limit
@@ -255,9 +255,9 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "404":
           $ref: "#/components/responses/NotFound"
-  /api/v1/deployments/{name}/review:
+  /api/v1/stacks/{name}/review:
     post:
-      operationId: reviewDeployment
+      operationId: reviewStack
       summary: Show exactly what an apply of this graph would run
       description: Writes nothing and touches nothing on the host.
       parameters:
@@ -289,9 +289,9 @@ paths:
           $ref: "#/components/responses/RendererError"
         "503":
           $ref: "#/components/responses/DeployerUnavailable"
-  /api/v1/deployments/{name}/apply:
+  /api/v1/stacks/{name}/apply:
     post:
-      operationId: applyDeployment
+      operationId: applyStack
       summary: Deploy a reviewed graph
       parameters:
         - $ref: "#/components/parameters/Name"
@@ -317,7 +317,7 @@ paths:
         "403":
           $ref: "#/components/responses/BadOrigin"
         "409":
-          description: An operation of this deployment runs (`busy`), or the check result differs from the reviewed one (`graph_changed`).
+          description: An operation of this stack runs (`busy`), or the check result differs from the reviewed one (`graph_changed`).
           content:
             application/json:
               schema:
@@ -328,14 +328,14 @@ paths:
           $ref: "#/components/responses/Refused"
         "502":
           $ref: "#/components/responses/RendererError"
-  /api/v1/deployments/{name}/remove:
+  /api/v1/stacks/{name}/remove:
     post:
-      operationId: removeDeployment
-      summary: Stop and remove a deployment's containers
+      operationId: removeStack
+      summary: Stop and remove a stack's containers
       description: |
         Keeps volumes, secrets and the history, so a later apply brings the stack back with its
         data. With `deleteData` the volumes and secrets go too, and `confirmName` must equal the
-        name. A plain remove of a removed deployment answers 409 `already_removed`.
+        name. A plain remove of a removed stack answers 409 `already_removed`.
       parameters:
         - $ref: "#/components/parameters/Name"
       requestBody:
@@ -362,13 +362,13 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: An operation of this deployment runs (`busy`), or it is removed already (`already_removed`).
+          description: An operation of this stack runs (`busy`), or it is removed already (`already_removed`).
           content:
             application/json:
               schema:
                 $ref: "./renderer.yaml#/components/schemas/ProblemList"
         "422":
-          description: "`confirmName` is not the deployment's name (`confirm_mismatch`)."
+          description: "`confirmName` is not the stack's name (`confirm_mismatch`)."
           content:
             application/json:
               schema:
@@ -384,16 +384,16 @@ paths:
       operationId: events
       summary: Live updates as server sent events
       description: |
-        `snapshot` first, then `deployment`, `operation`, `modules` (only with the filter) and
+        `snapshot` first, then `stack`, `operation`, `modules` (only with the filter) and
         `signed-out`; a `: ping` comment every 15 seconds. Each `data:` line is one JSON object:
-        `snapshot` is `EventSnapshotList` without the filter and a `Deployment` with it,
-        `deployment` a `DeploymentSummary`, `operation` an `EventOperation`, `modules` an
+        `snapshot` is `EventSnapshotList` without the filter and a `Stack` with it,
+        `stack` a `StackSummary`, `operation` an `EventOperation`, `modules` an
         `EventModules`, `signed-out` an `EventSignedOut`. A reconnect gets a new `snapshot`;
         nothing is replayed.
       parameters:
-        - name: deployment
+        - name: stack
           in: query
-          description: Follow one deployment, with the live state of its modules.
+          description: Follow one stack, with the live state of its modules.
           schema:
             type: string
       responses:
@@ -425,7 +425,7 @@ components:
       name: name
       in: path
       required: true
-      description: The deployment name, equal to its graph's `name`.
+      description: The stack name, equal to its graph's `name`.
       schema:
         type: string
   responses:
@@ -448,7 +448,7 @@ components:
           schema:
             $ref: "./renderer.yaml#/components/schemas/ProblemList"
     NotFound:
-      description: No such deployment (`not_found`).
+      description: No such stack (`not_found`).
       content:
         application/json:
           schema:
@@ -501,10 +501,10 @@ components:
         idleExpiresAt:
           type: string
           format: date-time
-    DeploymentState:
+    StackState:
       type: string
       enum: [applying, rolling-back, removing, running, rolled-back, removed, failed, unknown]
-    DeploymentSummary:
+    StackSummary:
       type: object
       additionalProperties: false
       required: [name, state]
@@ -512,10 +512,10 @@ components:
         name:
           type: string
         state:
-          $ref: "#/components/schemas/DeploymentState"
+          $ref: "#/components/schemas/StackState"
         latestOperation:
           $ref: "#/components/schemas/Operation"
-    DeploymentPage:
+    StackPage:
       type: object
       additionalProperties: false
       required: [items]
@@ -523,22 +523,22 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/DeploymentSummary"
+            $ref: "#/components/schemas/StackSummary"
         next:
           type: string
           description: The cursor of the next page; absent on the last one.
-    Deployment:
+    Stack:
       type: object
       additionalProperties: false
-      required: [name, state, project, createdAt]
+      required: [name, state, composeProject, createdAt]
       properties:
         name:
           type: string
         state:
-          $ref: "#/components/schemas/DeploymentState"
+          $ref: "#/components/schemas/StackState"
         latestOperation:
           $ref: "#/components/schemas/Operation"
-        project:
+        composeProject:
           type: string
         createdAt:
           type: string
@@ -714,7 +714,7 @@ components:
           description: Also delete the volumes and secrets; the data is gone for good.
         confirmName:
           type: string
-          description: Required with `deleteData`; must equal the deployment's name.
+          description: Required with `deleteData`; must equal the stack's name.
     PlacedInput:
       type: object
       additionalProperties: false
@@ -731,27 +731,27 @@ components:
     EventSnapshotList:
       type: object
       additionalProperties: false
-      required: [deployments]
+      required: [stacks]
       properties:
-        deployments:
+        stacks:
           type: array
           items:
-            $ref: "#/components/schemas/DeploymentSummary"
+            $ref: "#/components/schemas/StackSummary"
     EventOperation:
       type: object
       additionalProperties: false
-      required: [deployment, operation]
+      required: [stack, operation]
       properties:
-        deployment:
+        stack:
           type: string
         operation:
           $ref: "#/components/schemas/Operation"
     EventModules:
       type: object
       additionalProperties: false
-      required: [deployment, modules]
+      required: [stack, modules]
       properties:
-        deployment:
+        stack:
           type: string
         modules:
           type: array

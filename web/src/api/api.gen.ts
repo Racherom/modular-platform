@@ -123,15 +123,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/deployments": {
+    "/api/v1/stacks": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List the deployments, sorted by name */
-        get: operations["listDeployments"];
+        /** List the stacks, sorted by name */
+        get: operations["listStacks"];
         put?: never;
         post?: never;
         delete?: never;
@@ -140,15 +140,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/deployments/{name}": {
+    "/api/v1/stacks/{name}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Read a deployment with the live state of its modules */
-        get: operations["getDeployment"];
+        /** Read a stack with the live state of its modules */
+        get: operations["getStack"];
         put?: never;
         post?: never;
         delete?: never;
@@ -157,14 +157,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/deployments/{name}/operations": {
+    "/api/v1/stacks/{name}/operations": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** The deployment's history, newest first */
+        /** The stack's history, newest first */
         get: operations["listOperations"];
         put?: never;
         post?: never;
@@ -174,7 +174,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/deployments/{name}/review": {
+    "/api/v1/stacks/{name}/review": {
         parameters: {
             query?: never;
             header?: never;
@@ -187,14 +187,14 @@ export interface paths {
          * Show exactly what an apply of this graph would run
          * @description Writes nothing and touches nothing on the host.
          */
-        post: operations["reviewDeployment"];
+        post: operations["reviewStack"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/deployments/{name}/apply": {
+    "/api/v1/stacks/{name}/apply": {
         parameters: {
             query?: never;
             header?: never;
@@ -204,14 +204,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Deploy a reviewed graph */
-        post: operations["applyDeployment"];
+        post: operations["applyStack"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/deployments/{name}/remove": {
+    "/api/v1/stacks/{name}/remove": {
         parameters: {
             query?: never;
             header?: never;
@@ -221,12 +221,12 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Stop and remove a deployment's containers
+         * Stop and remove a stack's containers
          * @description Keeps volumes, secrets and the history, so a later apply brings the stack back with its
          *     data. With `deleteData` the volumes and secrets go too, and `confirmName` must equal the
-         *     name. A plain remove of a removed deployment answers 409 `already_removed`.
+         *     name. A plain remove of a removed stack answers 409 `already_removed`.
          */
-        post: operations["removeDeployment"];
+        post: operations["removeStack"];
         delete?: never;
         options?: never;
         head?: never;
@@ -242,10 +242,10 @@ export interface paths {
         };
         /**
          * Live updates as server sent events
-         * @description `snapshot` first, then `deployment`, `operation`, `modules` (only with the filter) and
+         * @description `snapshot` first, then `stack`, `operation`, `modules` (only with the filter) and
          *     `signed-out`; a `: ping` comment every 15 seconds. Each `data:` line is one JSON object:
-         *     `snapshot` is `EventSnapshotList` without the filter and a `Deployment` with it,
-         *     `deployment` a `DeploymentSummary`, `operation` an `EventOperation`, `modules` an
+         *     `snapshot` is `EventSnapshotList` without the filter and a `Stack` with it,
+         *     `stack` a `StackSummary`, `operation` an `EventOperation`, `modules` an
          *     `EventModules`, `signed-out` an `EventSignedOut`. A reconnect gets a new `snapshot`;
          *     nothing is replayed.
          */
@@ -274,22 +274,22 @@ export interface components {
             idleExpiresAt: string;
         };
         /** @enum {string} */
-        DeploymentState: "applying" | "rolling-back" | "removing" | "running" | "rolled-back" | "removed" | "failed" | "unknown";
-        DeploymentSummary: {
+        StackState: "applying" | "rolling-back" | "removing" | "running" | "rolled-back" | "removed" | "failed" | "unknown";
+        StackSummary: {
             name: string;
-            state: components["schemas"]["DeploymentState"];
+            state: components["schemas"]["StackState"];
             latestOperation?: components["schemas"]["Operation"];
         };
-        DeploymentPage: {
-            items: components["schemas"]["DeploymentSummary"][];
+        StackPage: {
+            items: components["schemas"]["StackSummary"][];
             /** @description The cursor of the next page; absent on the last one. */
             next?: string;
         };
-        Deployment: {
+        Stack: {
             name: string;
-            state: components["schemas"]["DeploymentState"];
+            state: components["schemas"]["StackState"];
             latestOperation?: components["schemas"]["Operation"];
-            project: string;
+            composeProject: string;
             /** Format: date-time */
             createdAt: string;
             /** @description The graph of the latest succeeded apply. */
@@ -373,7 +373,7 @@ export interface components {
         RemoveRequest: {
             /** @description Also delete the volumes and secrets; the data is gone for good. */
             deleteData: boolean;
-            /** @description Required with `deleteData`; must equal the deployment's name. */
+            /** @description Required with `deleteData`; must equal the stack's name. */
             confirmName?: string;
         };
         PlacedInput: {
@@ -384,14 +384,14 @@ export interface components {
             replace: boolean;
         };
         EventSnapshotList: {
-            deployments: components["schemas"]["DeploymentSummary"][];
+            stacks: components["schemas"]["StackSummary"][];
         };
         EventOperation: {
-            deployment: string;
+            stack: string;
             operation: components["schemas"]["Operation"];
         };
         EventModules: {
-            deployment: string;
+            stack: string;
             modules: components["schemas"]["ModuleState"][];
         };
         EventSignedOut: {
@@ -835,7 +835,7 @@ export interface components {
             problems: components["schemas"]["Problem"][];
             /**
              * @description `sha256:<hex>` over the canonical graph, the bindings and the catalog entries the graph
-             *     uses; set only when `ok` is true. Equal digests mean the same project is rendered.
+             *     uses; set only when `ok` is true. Equal digests mean the same stack is rendered.
              */
             digest?: string;
         };
@@ -878,7 +878,7 @@ export interface components {
                 "application/json": components["schemas"]["ProblemList"];
             };
         };
-        /** @description No such deployment (`not_found`). */
+        /** @description No such stack (`not_found`). */
         NotFound: {
             headers: {
                 [name: string]: unknown;
@@ -928,7 +928,7 @@ export interface components {
         };
     };
     parameters: {
-        /** @description The deployment name, equal to its graph's `name`. */
+        /** @description The stack name, equal to its graph's `name`. */
         Name: string;
     };
     requestBodies: never;
@@ -1128,7 +1128,7 @@ export interface operations {
             502: components["responses"]["RendererError"];
         };
     };
-    listDeployments: {
+    listStacks: {
         parameters: {
             query?: {
                 limit?: number;
@@ -1147,32 +1147,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DeploymentPage"];
+                    "application/json": components["schemas"]["StackPage"];
                 };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
         };
     };
-    getDeployment: {
+    getStack: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The deployment name, equal to its graph's `name`. */
+                /** @description The stack name, equal to its graph's `name`. */
                 name: components["parameters"]["Name"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description The deployment. */
+            /** @description The stack. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Deployment"];
+                    "application/json": components["schemas"]["Stack"];
                 };
             };
             401: components["responses"]["Unauthenticated"];
@@ -1188,7 +1188,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description The deployment name, equal to its graph's `name`. */
+                /** @description The stack name, equal to its graph's `name`. */
                 name: components["parameters"]["Name"];
             };
             cookie?: never;
@@ -1209,12 +1209,12 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
-    reviewDeployment: {
+    reviewStack: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The deployment name, equal to its graph's `name`. */
+                /** @description The stack name, equal to its graph's `name`. */
                 name: components["parameters"]["Name"];
             };
             cookie?: never;
@@ -1243,12 +1243,12 @@ export interface operations {
             503: components["responses"]["DeployerUnavailable"];
         };
     };
-    applyDeployment: {
+    applyStack: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The deployment name, equal to its graph's `name`. */
+                /** @description The stack name, equal to its graph's `name`. */
                 name: components["parameters"]["Name"];
             };
             cookie?: never;
@@ -1274,7 +1274,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["BadOrigin"];
-            /** @description An operation of this deployment runs (`busy`), or the check result differs from the reviewed one (`graph_changed`). */
+            /** @description An operation of this stack runs (`busy`), or the check result differs from the reviewed one (`graph_changed`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1288,12 +1288,12 @@ export interface operations {
             502: components["responses"]["RendererError"];
         };
     };
-    removeDeployment: {
+    removeStack: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description The deployment name, equal to its graph's `name`. */
+                /** @description The stack name, equal to its graph's `name`. */
                 name: components["parameters"]["Name"];
             };
             cookie?: never;
@@ -1320,7 +1320,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["BadOrigin"];
             404: components["responses"]["NotFound"];
-            /** @description An operation of this deployment runs (`busy`), or it is removed already (`already_removed`). */
+            /** @description An operation of this stack runs (`busy`), or it is removed already (`already_removed`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1329,7 +1329,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemList"];
                 };
             };
-            /** @description `confirmName` is not the deployment's name (`confirm_mismatch`). */
+            /** @description `confirmName` is not the stack's name (`confirm_mismatch`). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1352,8 +1352,8 @@ export interface operations {
     events: {
         parameters: {
             query?: {
-                /** @description Follow one deployment, with the live state of its modules. */
-                deployment?: string;
+                /** @description Follow one stack, with the live state of its modules. */
+                stack?: string;
             };
             header?: never;
             path?: never;

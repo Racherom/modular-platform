@@ -36,7 +36,7 @@ type Container struct {
 // and destroy events of deployed containers.
 type Docker interface {
 	Containers(ctx context.Context, project string) ([]Container, error)
-	// Events streams the die and destroy events of containers carrying the deployment label,
+	// Events streams the die and destroy events of containers carrying the stack label,
 	// from since on, until ctx ends or the stream fails; then the error channel gets one error.
 	Events(ctx context.Context, since time.Time) (<-chan ExitEvent, <-chan error)
 }

@@ -103,22 +103,22 @@ func TestRenderPlatformFolder(t *testing.T) {
 		t.Errorf("project name = %q", compose.Name)
 	}
 	for name, svc := range compose.Services {
-		if svc.Labels[render.LabelDeployment] != render.PlatformDeployment || svc.Labels[render.LabelGraph] != "modular-platform" {
+		if svc.Labels[render.LabelStack] != render.PlatformStack || svc.Labels[render.LabelGraph] != "modular-platform" {
 			t.Errorf("%s labels = %v", name, svc.Labels)
 		}
 		if svc.Restart != "unless-stopped" && !strings.Contains(name, "_provision_") && !strings.Contains(name, "_revoke_") {
 			t.Errorf("%s restart = %q", name, svc.Restart)
 		}
 	}
-	deployments := "${MP_DIR}/deployments"
+	stacks := "${MP_DIR}/stacks"
 	if !slices.ContainsFunc(compose.Services["deployer-docker"].Volumes, func(v struct {
 		Source string `json:"source"`
 		Target string `json:"target"`
 	},
 	) bool {
-		return v.Source == deployments && v.Target == deployments
+		return v.Source == stacks && v.Target == stacks
 	}) {
-		t.Errorf("deployer-docker volumes = %+v, want %s at the same path", compose.Services["deployer-docker"].Volumes, deployments)
+		t.Errorf("deployer-docker volumes = %+v, want %s at the same path", compose.Services["deployer-docker"].Volumes, stacks)
 	}
 
 	// spec 0015's questions, in order: domain, origin, admin email, then the users step's two
@@ -176,7 +176,7 @@ func TestPlatformOnlyFeatures(t *testing.T) {
 		t.Errorf("static render: %v, want ErrNotRendered", err)
 	}
 	var refused *render.RefusedError
-	if _, err := render.Managed(result, catalog, templates, testDeployment); !errors.As(err, &refused) {
+	if _, err := render.Managed(result, catalog, templates, testStack); !errors.As(err, &refused) {
 		t.Fatalf("managed render: %v, want a RefusedError", err)
 	}
 	var got []string

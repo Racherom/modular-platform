@@ -527,7 +527,7 @@ type RenderManagedResponseObject interface {
 	VisitRenderManagedResponse(w http.ResponseWriter) error
 }
 
-type RenderManaged200JSONResponse RenderedProject
+type RenderManaged200JSONResponse RenderedStack
 
 func (response RenderManaged200JSONResponse) VisitRenderManagedResponse(w http.ResponseWriter) error {
 

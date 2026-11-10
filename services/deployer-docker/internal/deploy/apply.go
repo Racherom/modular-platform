@@ -66,7 +66,7 @@ func (e *RefusedError) Error() string {
 	return "deploy: refused: " + strings.Join(codes, ", ")
 }
 
-// ValidProject reports whether project is a managed project name, mp-<deployment name>.
+// ValidProject reports whether project is a managed project name, mp-<stack name>.
 func ValidProject(project string) bool { return projectPattern.MatchString(project) }
 
 // Apply checks req and starts its operation, which runs on after Apply returns. A refused
@@ -102,7 +102,7 @@ func (e *Engine) check(req ApplyRequest) []Problem {
 		problems = append(problems, Problem{Code: code, Path: path, Message: fmt.Sprintf(format, args...)})
 	}
 	if !ValidProject(req.Project) {
-		refuse(CodeInvalidProject, "project", "The project %q must be mp- followed by a deployment name.", req.Project)
+		refuse(CodeInvalidProject, "project", "The project %q must be mp- followed by a stack name.", req.Project)
 		return problems
 	}
 	for _, f := range req.Files {
@@ -178,7 +178,7 @@ func (e *Engine) guard(req ApplyRequest) []Problem {
 		return []Problem{{Code: CodeInvalidProject, Path: "files.docker-compose.yml", Message: err.Error()}}
 	}
 	var problems []Problem
-	for _, p := range append(render.Guard(project, e.cfg.ReservedPorts), render.CheckProject(project, req.Project, req.Deployment)...) {
+	for _, p := range append(render.Guard(project, e.cfg.ReservedPorts), render.CheckProject(project, req.Project, req.Stack)...) {
 		problems = append(problems, fromContract(p))
 	}
 	return problems

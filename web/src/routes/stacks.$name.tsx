@@ -2,7 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import type { Graph } from '../api/client'
-import { type Deployment, fetchDeployment, fetchOperations, type ModuleState, type Operation } from '../api/platform'
+import { fetchOperations, fetchStack, type ModuleState, type Operation, type Stack } from '../api/platform'
 import { useCatalog } from '../components/GraphScreen'
 import { GraphView } from '../components/GraphView'
 import m from '../components/Managed.module.css'
@@ -13,20 +13,20 @@ import { Button } from '../components/ui/Button'
 import { Failure } from '../components/ui/Failure'
 import { useEvents } from '../hooks/useEvents'
 import { mode } from '../lib/config'
-import { deploymentNotice } from '../lib/notice'
-import { OnlyManaged } from './deployments.index'
+import { stackNotice } from '../lib/notice'
+import { OnlyManaged } from './stacks.index'
 
-export const Route = createFileRoute('/deployments/$name')({ component: DeploymentRoute })
+export const Route = createFileRoute('/stacks/$name')({ component: StackRoute })
 
-function DeploymentRoute() {
+function StackRoute() {
   const { name } = Route.useParams()
   if (mode !== 'managed') return <OnlyManaged />
-  return <DeploymentScreen name={name} />
+  return <StackScreen name={name} />
 }
 
-/** One deployment: its graph with a live badge per module, the running step, and the history. */
-function DeploymentScreen({ name }: { name: string }) {
-  const deployment = useQuery({ queryKey: ['deployment', name], queryFn: () => fetchDeployment(name) })
+/** One stack: its graph with a live badge per module, the running step, and the history. */
+function StackScreen({ name }: { name: string }) {
+  const stack = useQuery({ queryKey: ['stack', name], queryFn: () => fetchStack(name) })
   const history = useInfiniteQuery({
     queryKey: ['operations', name],
     queryFn: ({ pageParam }) => fetchOperations(name, pageParam),
@@ -36,22 +36,22 @@ function DeploymentScreen({ name }: { name: string }) {
   const catalog = useCatalog()
   const [removing, setRemoving] = useState<{ deleteData: boolean }>()
   useEvents(name)
-  const states = useMemo(() => byInstance(deployment.data?.modules), [deployment.data?.modules])
+  const states = useMemo(() => byInstance(stack.data?.modules), [stack.data?.modules])
 
-  if (deployment.isError) return <Failure error={deployment.error} onRetry={() => void deployment.refetch()} />
-  if (!deployment.data || !catalog.data) return <p className={m.loading}>Loading {name}…</p>
-  const d = deployment.data
+  if (stack.isError) return <Failure error={stack.error} onRetry={() => void stack.refetch()} />
+  if (!stack.data || !catalog.data) return <p className={m.loading}>Loading {name}…</p>
+  const d = stack.data
   const running = d.latestOperation?.status === 'running'
   return (
     <div className={m.screen}>
       <div className={m.heading}>
         <h1>{d.name}</h1>
-        <StateBadge deployment={d.state} />
+        <StateBadge stack={d.state} />
         <Button size="sm" variant="danger" isDisabled={running} onPress={() => setRemoving({ deleteData: false })}>
           Remove
         </Button>
       </div>
-      <Progress deployment={d} onRemoveAgain={(deleteData) => setRemoving({ deleteData })} />
+      <Progress stack={d} onRemoveAgain={(deleteData) => setRemoving({ deleteData })} />
       {d.stateError && (
         <p role="alert" className={m.banner} data-tone="danger">
           The live state could not be read: {d.stateError}
@@ -105,19 +105,19 @@ function operationLabel(op: Operation): string {
  * The running operation's step in a live region, and the banner about the latest operation:
  * why it failed or was rolled back, with *Apply again* and *Remove again* where they help.
  */
-function Progress({ deployment: d, onRemoveAgain }: { deployment: Deployment; onRemoveAgain: (deleteData: boolean) => void }) {
+function Progress({ stack: d, onRemoveAgain }: { stack: Stack; onRemoveAgain: (deleteData: boolean) => void }) {
   const queryClient = useQueryClient()
   const [reviewing, setReviewing] = useState<Graph>()
   // Apply again reviews the newest apply's graph as it is now, never a copy another tab outdated
   const applyAgain = useMutation({
-    mutationFn: () => fetchDeployment(d.name),
+    mutationFn: () => fetchStack(d.name),
     onSuccess: (fresh) => {
-      queryClient.setQueryData(['deployment', d.name], fresh)
+      queryClient.setQueryData(['stack', d.name], fresh)
       if (fresh.latestApplyGraph) setReviewing(fresh.latestApplyGraph)
     },
   })
   const op = d.latestOperation
-  const notice = deploymentNotice(d)
+  const notice = stackNotice(d)
   let text = ''
   if (op?.status === 'running') {
     const doing = op.action === 'remove' ? 'Removing' : op.rollbackOf ? 'Returning to the last version that worked' : 'Applying'

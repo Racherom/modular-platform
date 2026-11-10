@@ -30,12 +30,12 @@ provides:
       token: MP_DEPLOY_TARGET_CLIENTS_DIR
       caller_key: MP_CALLER_KEYS_DIR
 config:
-  deployments-dir:
-    env: MP_DEPLOYMENTS_DIR
+  stacks-dir:
+    env: MP_DEPLOYER_STACKS_DIR
     type: string
     pattern: "/.+"
-    default: "{install}/deployments"
-    description: Absolute path of the deployments folder, the same path on the host and in the deployer.
+    default: "{install}/stacks"
+    description: Absolute path of the stacks folder, the same path on the host and in the deployer.
   platform-uid:
     env: MP_PLATFORM_UID
     type: int
@@ -64,14 +64,14 @@ host_mounts:
   - host: /var/run/docker.sock
     path: /var/run/docker.sock
     read_only: false
-  - host: {install: deployments}
-    path: {install: deployments}
+  - host: {install: stacks}
+    path: {install: stacks}
     read_only: false
     create: true
 hardening:
   # root: it holds the Docker socket, which is root equivalent anyway (spec 0001). Every other
   # capability stays dropped: CHOWN and FOWNER give each deployed file to the platform user, and
-  # DAC_OVERRIDE reads its secrets and writes the deployments folder, which that user owns
+  # DAC_OVERRIDE reads its secrets and writes the stacks folder, which that user owns
   user: root
   cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
   tmpfs: [/tmp]

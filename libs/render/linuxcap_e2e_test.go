@@ -18,7 +18,7 @@ import (
 func TestLinuxCapsEndToEnd(t *testing.T) {
 	catalog := loadCatalog(t, "testdata/linuxcap/catalog")
 	result := checkFile(t, "testdata/linuxcap/graph.yaml", catalog)
-	m, err := render.Managed(result, catalog, builtinTemplates(t), testDeployment)
+	m, err := render.Managed(result, catalog, builtinTemplates(t), testStack)
 	if err != nil {
 		t.Fatal(err)
 	}

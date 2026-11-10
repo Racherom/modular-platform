@@ -97,7 +97,7 @@ func newService(t *testing.T, idp *fakeIDP, st *memStore) (*signin.Service, *byt
 func signIn(t *testing.T, s *signin.Service, cookies []*http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
 	login := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/auth/login?return_to=/deployments", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/auth/login?return_to=/stacks", nil)
 	for _, c := range cookies {
 		req.AddCookie(c)
 	}
@@ -134,10 +134,10 @@ func TestAdminBinding(t *testing.T) {
 		session  bool
 		wantBind bool
 	}{
-		"first verified admin email binds": {nil, signin.Claims{Identity: first, Email: "admin@example.COM", EmailVerified: true}, "/deployments", true, true},
+		"first verified admin email binds": {nil, signin.Claims{Identity: first, Email: "admin@example.COM", EmailVerified: true}, "/stacks", true, true},
 		"unverified admin email":           {nil, signin.Claims{Identity: first, Email: admin}, "/?signed_out=email_unverified", false, false},
 		"another email":                    {nil, signin.Claims{Identity: first, Email: "x@example.com", EmailVerified: true}, "/?signed_out=not_admin", false, false},
-		"the bound admin":                  {&first, signin.Claims{Identity: first, Email: "changed@example.com"}, "/deployments", true, false},
+		"the bound admin":                  {&first, signin.Claims{Identity: first, Email: "changed@example.com"}, "/stacks", true, false},
 		"admin email, other subject":       {&first, signin.Claims{Identity: signin.Identity{Issuer: first.Issuer, Subject: "u2"}, Email: admin, EmailVerified: true}, "/?signed_out=not_admin", false, false},
 	} {
 		t.Run(name, func(t *testing.T) {

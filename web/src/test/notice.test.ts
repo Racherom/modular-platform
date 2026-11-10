@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { Deployment, Operation } from '../api/platform'
-import { deploymentNotice } from '../lib/notice'
+import type { Operation, Stack } from '../api/platform'
+import { stackNotice } from '../lib/notice'
 
-const graph = { apiVersion: 'modular-platform/v0alpha1', kind: 'Graph', name: 'sample', modules: {} } as Deployment['graph']
+const graph = { apiVersion: 'modular-platform/v0alpha1', kind: 'Graph', name: 'sample', modules: {} } as Stack['graph']
 
 function op(more: Partial<Operation>): Operation {
   return {
@@ -17,10 +17,10 @@ function op(more: Partial<Operation>): Operation {
   }
 }
 
-function deployment(state: Deployment['state'], latest: Partial<Operation>, more: Partial<Deployment> = {}): Deployment {
+function stack(state: Stack['state'], latest: Partial<Operation>, more: Partial<Stack> = {}): Stack {
   return {
     name: 'sample',
-    project: 'mp-sample',
+    composeProject: 'mp-sample',
     createdAt: '2026-11-03T09:00:00Z',
     state,
     latestOperation: op(latest),
@@ -29,29 +29,29 @@ function deployment(state: Deployment['state'], latest: Partial<Operation>, more
   }
 }
 
-describe('deploymentNotice', () => {
+describe('stackNotice', () => {
   it('says nothing while running or applying', () => {
-    expect(deploymentNotice(deployment('running', { status: 'succeeded' }))).toBeUndefined()
-    expect(deploymentNotice(deployment('applying', { status: 'running' }))).toBeUndefined()
+    expect(stackNotice(stack('running', { status: 'succeeded' }))).toBeUndefined()
+    expect(stackNotice(stack('applying', { status: 'running' }))).toBeUndefined()
   })
 
   it('keeps the previous version running after a failure before up', () => {
-    const n = deploymentNotice(deployment('failed', { step: 'pull' }))
+    const n = stackNotice(stack('failed', { step: 'pull' }))
     expect(n?.text).toContain('previous version keeps running')
     expect(n).toMatchObject({ tone: 'error', applyAgain: true, removeAgain: false })
   })
 
   it('says no earlier version exists after a failure at up without a rollback', () => {
-    expect(deploymentNotice(deployment('failed', { step: 'up' }))?.text).toContain('No earlier version exists')
+    expect(stackNotice(stack('failed', { step: 'up' }))?.text).toContain('No earlier version exists')
   })
 
   it('names a failed rollback', () => {
-    expect(deploymentNotice(deployment('failed', { step: 'up', rollbackOf: 'op-1' }))?.text).toContain('Returning to the last version')
+    expect(stackNotice(stack('failed', { step: 'up', rollbackOf: 'op-1' }))?.text).toContain('Returning to the last version')
   })
 
   it('offers Remove again beside Apply again after a failed or unknown remove', () => {
     for (const state of ['failed', 'unknown'] as const) {
-      expect(deploymentNotice(deployment(state, { action: 'remove', status: state, step: 'down' }))).toMatchObject({
+      expect(stackNotice(stack(state, { action: 'remove', status: state, step: 'down' }))).toMatchObject({
         applyAgain: true,
         removeAgain: true,
       })
@@ -59,12 +59,12 @@ describe('deploymentNotice', () => {
   })
 
   it('hides Apply again without a graph to review', () => {
-    expect(deploymentNotice(deployment('unknown', { status: 'unknown' }, { latestApplyGraph: undefined }))?.applyAgain).toBe(false)
+    expect(stackNotice(stack('unknown', { status: 'unknown' }, { latestApplyGraph: undefined }))?.applyAgain).toBe(false)
   })
 
   it('tells what failed when rolled back', () => {
-    const n = deploymentNotice(
-      deployment('rolled-back', { status: 'succeeded', rollbackOf: 'op-1' }, { rolledBackFrom: op({ id: 'op-1', step: 'up' }) }),
+    const n = stackNotice(
+      stack('rolled-back', { status: 'succeeded', rollbackOf: 'op-1' }, { rolledBackFrom: op({ id: 'op-1', step: 'up' }) }),
     )
     expect(n).toMatchObject({ tone: 'info', applyAgain: false })
     expect(n?.text).toContain('failed at step up')

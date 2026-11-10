@@ -2,10 +2,10 @@ openapi: 3.1.0
 info:
   title: Modular Platform deploy target
   version: 0.1.0
-  summary: Applies a rendered Compose project to one host and reports its state.
+  summary: Applies a rendered stack to one host and reports its state.
   description: |
     The deploy target holds the host's container engine, so it does as little as possible: it
-    takes a rendered project from `api`, checks it again, writes it into the deployment's folder,
+    takes a rendered stack from `api`, checks it again, writes it into the stack's folder,
     creates missing secrets and runs `docker compose` (spec 0006, child 0007). It keeps running
     operations in memory only; it never checks, never stores history and never decides a rollback.
 
@@ -23,15 +23,15 @@ servers:
 security:
   - bearerAuth: []
 paths:
-  /v1/projects/{project}/apply:
+  /v1/stacks/{stack}/apply:
     post:
-      operationId: applyProject
-      summary: Write the project's files and start it
+      operationId: applyStack
+      summary: Write the stack's files and start it
       description: |
         Answers at once with the running operation; poll `/v1/operations/{id}` for its outcome.
-        One operation per project at a time; different projects run in parallel.
+        One operation per stack at a time; different stacks run in parallel.
       parameters:
-        - $ref: "#/components/parameters/Project"
+        - $ref: "#/components/parameters/Stack"
       requestBody:
         required: true
         content:
@@ -53,7 +53,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "409":
-          description: An operation of this project is still running (`busy`).
+          description: An operation of this stack is still running (`busy`).
           headers:
             MP-Boot-Id:
               $ref: "#/components/headers/BootId"
@@ -72,7 +72,7 @@ paths:
                 $ref: "./renderer.yaml#/components/schemas/ProblemList"
         "422":
           description: |
-            The project is refused: `invalid_project`, `host_access`, `invalid_path`,
+            The stack is refused: `invalid_project`, `host_access`, `invalid_path`,
             `placed_missing` or `placed_invalid`, one problem per finding.
           headers:
             MP-Boot-Id:
@@ -81,15 +81,15 @@ paths:
             application/json:
               schema:
                 $ref: "./renderer.yaml#/components/schemas/ProblemList"
-  /v1/projects/{project}/remove:
+  /v1/stacks/{stack}/remove:
     post:
-      operationId: removeProject
-      summary: Stop and remove the project's containers
+      operationId: removeStack
+      summary: Stop and remove the stack's containers
       description: |
-        Runs `docker compose down`; with `deleteData` also its volumes, and deletes the project's
+        Runs `docker compose down`; with `deleteData` also its volumes, and deletes the stack's
         `secrets/` folder. The other files stay. Answers at once with the running operation.
       parameters:
-        - $ref: "#/components/parameters/Project"
+        - $ref: "#/components/parameters/Stack"
       requestBody:
         required: true
         content:
@@ -111,7 +111,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
-          description: The project has neither a folder nor a container (`not_found`).
+          description: The stack has neither a folder nor a container (`not_found`).
           headers:
             MP-Boot-Id:
               $ref: "#/components/headers/BootId"
@@ -120,7 +120,7 @@ paths:
               schema:
                 $ref: "./renderer.yaml#/components/schemas/ProblemList"
         "409":
-          description: An operation of this project is still running (`busy`).
+          description: An operation of this stack is still running (`busy`).
           headers:
             MP-Boot-Id:
               $ref: "#/components/headers/BootId"
@@ -161,22 +161,22 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
-  /v1/projects/{project}/state:
+  /v1/stacks/{stack}/state:
     get:
-      operationId: getProjectState
-      summary: Read the state of each container of the project
+      operationId: getStackState
+      summary: Read the state of each container of the stack
       parameters:
-        - $ref: "#/components/parameters/Project"
+        - $ref: "#/components/parameters/Stack"
       responses:
         "200":
-          description: The project's services, sorted by instance.
+          description: The stack's services, sorted by instance.
           headers:
             MP-Boot-Id:
               $ref: "#/components/headers/BootId"
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProjectState"
+                $ref: "#/components/schemas/StackState"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -190,12 +190,12 @@ paths:
             application/json:
               schema:
                 $ref: "./renderer.yaml#/components/schemas/ProblemList"
-  /v1/projects/{project}/secrets:
+  /v1/stacks/{stack}/secrets:
     get:
-      operationId: getProjectSecrets
-      summary: List the secret files of the project that exist, never their content
+      operationId: getStackSecrets
+      summary: List the secret files of the stack that exist, never their content
       parameters:
-        - $ref: "#/components/parameters/Project"
+        - $ref: "#/components/parameters/Stack"
       responses:
         "200":
           description: The paths, sorted.
@@ -217,11 +217,11 @@ components:
       scheme: bearer
       description: The consumer's binding token, one file per consumer in the deployer's clients directory (spec 0005).
   parameters:
-    Project:
-      name: project
+    Stack:
+      name: stack
       in: path
       required: true
-      description: The Compose project, `mp-<deployment name>`.
+      description: The stack, by its Compose project name `mp-<stack name>`.
       schema:
         type: string
         pattern: "^mp-[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
@@ -263,27 +263,27 @@ components:
     ApplyRequest:
       type: object
       additionalProperties: false
-      required: [deployment, files, secrets]
+      required: [stack, files, secrets]
       properties:
-        deployment:
+        stack:
           type: string
           format: uuid
-          description: Every service's `deployment` label must equal it.
+          description: Every service's `stack` label must equal it.
         files:
           type: array
           items:
-            $ref: "#/components/schemas/ProjectFile"
+            $ref: "#/components/schemas/StackFile"
         secrets:
           type: array
-          description: Every secret file the project mounts, as the managed render lists them.
+          description: Every secret file the stack mounts, as the managed render lists them.
           items:
-            $ref: "#/components/schemas/ProjectSecret"
+            $ref: "#/components/schemas/StackSecret"
         placed:
           type: array
           description: Values you supply for placed secrets; written once, replaced only with `replace`.
           items:
             $ref: "#/components/schemas/PlacedValue"
-    ProjectFile:
+    StackFile:
       type: object
       additionalProperties: false
       required: [path, mode, data]
@@ -296,7 +296,7 @@ components:
         data:
           type: string
           format: byte
-    ProjectSecret:
+    StackSecret:
       type: object
       additionalProperties: false
       required: [path, kind, instance]
@@ -339,11 +339,11 @@ components:
     Operation:
       type: object
       additionalProperties: false
-      required: [id, project, action, status, step, startedAt]
+      required: [id, stack, action, status, step, startedAt]
       properties:
         id:
           type: string
-        project:
+        stack:
           type: string
         action:
           type: string
@@ -364,14 +364,14 @@ components:
         finishedAt:
           type: string
           format: date-time
-    ProjectState:
+    StackState:
       type: object
       additionalProperties: false
       required: [present, services]
       properties:
         present:
           type: boolean
-          description: False when the project has neither containers nor a folder.
+          description: False when the stack has neither containers nor a folder.
         services:
           type: array
           items:

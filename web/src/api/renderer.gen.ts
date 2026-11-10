@@ -66,9 +66,9 @@ export interface paths {
         put?: never;
         /**
          * Render a graph as the files the managed deployer applies
-         * @description Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+         * @description Internal mode only; public mode answers 404. The Compose stack name is `mp-<graph name>`; every
          *     service carries the platform labels and `restart: unless-stopped`. The answer lists every
-         *     secret file the project needs, never a value.
+         *     secret file the stack needs, never a value.
          */
         post: operations["renderManaged"];
         delete?: never;
@@ -518,7 +518,7 @@ export interface components {
             problems: components["schemas"]["Problem"][];
             /**
              * @description `sha256:<hex>` over the canonical graph, the bindings and the catalog entries the graph
-             *     uses; set only when `ok` is true. Equal digests mean the same project is rendered.
+             *     uses; set only when `ok` is true. Equal digests mean the same stack is rendered.
              */
             digest?: string;
         };
@@ -526,21 +526,21 @@ export interface components {
             graph: components["schemas"]["Graph"];
             /**
              * Format: uuid
-             * @description The deployment id, written into every service's `deployment` label.
+             * @description The stack id, written into every service's `stack` label.
              */
-            deployment: string;
+            stack: string;
         };
-        RenderedProject: {
+        RenderedStack: {
             /** @description The Compose project name, `mp-<graph name>`. */
-            project: string;
+            composeProject: string;
             check: components["schemas"]["CheckResult"];
             /** @description One entry per instance, sorted by instance. */
             images: components["schemas"]["ModuleImage"][];
-            /** @description Host ports the project publishes; always empty for a deployed graph, which never publishes (spec 0013). */
+            /** @description Host ports the stack publishes; always empty for a deployed graph, which never publishes (spec 0013). */
             publishedPorts: components["schemas"]["PublishedPort"][];
-            /** @description Every secret file the project mounts, sorted by path. */
+            /** @description Every secret file the stack mounts, sorted by path. */
             secrets: components["schemas"]["RenderedSecret"][];
-            /** @description The project's files, sorted by path. */
+            /** @description The stack's files, sorted by path. */
             files: components["schemas"]["RenderedFile"][];
         };
         ModuleImage: {
@@ -554,7 +554,7 @@ export interface components {
             target: number;
         };
         RenderedSecret: {
-            /** @description `secrets/<instance>/<name>`, relative to the project folder. */
+            /** @description `secrets/<instance>/<name>`, relative to the stack's folder. */
             path: string;
             /**
              * @description `generated`: the deployer creates it as 32 random bytes in hex. `placed`: you supply it.
@@ -743,13 +743,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The rendered project. */
+            /** @description The rendered stack. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RenderedProject"];
+                    "application/json": components["schemas"]["RenderedStack"];
                 };
             };
             400: components["responses"]["BadGraph"];
@@ -769,7 +769,7 @@ export interface operations {
              *     deployed graph is refused with error `host_access` at `modules.<instance>` for each
              *     instance whose module publishes ports or mounts host paths, and with error
              *     `setup_required` for each instance that needs `setup.sh` (an asked value, an asked
-             *     secret or a setup step) until secrets handling (#9). A rendered project the guard
+             *     secret or a setup step) until secrets handling (#9). A rendered stack the guard
              *     refuses also answers here, with `host_access` at the offending Compose key.
              */
             422: {

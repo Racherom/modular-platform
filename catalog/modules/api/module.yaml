@@ -1,7 +1,7 @@
 apiVersion: modular-platform/v1
 kind: Module
 name: api
-description: The managed platform's control plane, with sign in, deployments and their history.
+description: The managed platform's control plane, with sign in, stacks and their history.
 # release-please bumps the version on this line
 image: ghcr.io/racherom/modular-platform/api:0.0.0 # x-release-please-version
 runtime: sdk

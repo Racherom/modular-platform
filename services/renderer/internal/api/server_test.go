@@ -436,8 +436,8 @@ uses:
 // TestRenderManaged covers spec 0006 AC-18: the managed render answers in internal mode only.
 func TestRenderManaged(t *testing.T) {
 	t.Parallel()
-	const deployment = "01960000-0000-7000-8000-000000000001"
-	body := `{"graph":` + sampleJSON + `,"deployment":"` + deployment + `"}`
+	const stack = "01960000-0000-7000-8000-000000000001"
+	body := `{"graph":` + sampleJSON + `,"stack":"` + stack + `"}`
 	token := strings.Repeat("a1", 16)
 	internal := start(t, map[string]string{
 		"MP_INSTANCE":             "renderer",
@@ -452,12 +452,12 @@ func TestRenderManaged(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d: %s", resp.StatusCode, data)
 	}
-	var got contract.RenderedProject
+	var got contract.RenderedStack
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Project != "mp-whoami-postgres" || !got.Check.Ok || got.Check.Digest == "" {
-		t.Errorf("project %q, ok %v, digest %q", got.Project, got.Check.Ok, got.Check.Digest)
+	if got.ComposeProject != "mp-whoami-postgres" || !got.Check.Ok || got.Check.Digest == "" {
+		t.Errorf("project %q, ok %v, digest %q", got.ComposeProject, got.Check.Ok, got.Check.Digest)
 	}
 	// the postgres password and the provisioned binding's password, both made by the deployer
 	if len(got.Images) != 2 || len(got.Secrets) != 2 || got.Secrets[0].Kind != contract.Generated || got.Secrets[1].Kind != contract.Generated {
@@ -469,8 +469,8 @@ func TestRenderManaged(t *testing.T) {
 			compose = string(f.Data)
 		}
 	}
-	if !strings.Contains(compose, "io.github.racherom.modular-platform.deployment: "+deployment) {
-		t.Errorf("docker-compose.yml lacks the deployment label:\n%s", compose)
+	if !strings.Contains(compose, "io.github.racherom.modular-platform.stack: "+stack) {
+		t.Errorf("docker-compose.yml lacks the stack label:\n%s", compose)
 	}
 
 	for name, tc := range map[string]struct {
@@ -478,10 +478,10 @@ func TestRenderManaged(t *testing.T) {
 		want int
 	}{
 		"bare graph":         {sampleJSON, http.StatusBadRequest},
-		"extra key":          {`{"graph":` + sampleJSON + `,"deployment":"` + deployment + `","x":1}`, http.StatusBadRequest},
-		"bad uuid":           {`{"graph":` + sampleJSON + `,"deployment":"nope"}`, http.StatusBadRequest},
-		"graph extra key":    {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{},"x":1},"deployment":"` + deployment + `"}`, http.StatusBadRequest},
-		"result with errors": {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{"w":{"module":"nope"}}},"deployment":"` + deployment + `"}`, http.StatusUnprocessableEntity},
+		"extra key":          {`{"graph":` + sampleJSON + `,"stack":"` + stack + `","x":1}`, http.StatusBadRequest},
+		"bad uuid":           {`{"graph":` + sampleJSON + `,"stack":"nope"}`, http.StatusBadRequest},
+		"graph extra key":    {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{},"x":1},"stack":"` + stack + `"}`, http.StatusBadRequest},
+		"result with errors": {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{"w":{"module":"nope"}}},"stack":"` + stack + `"}`, http.StatusUnprocessableEntity},
 	} {
 		if resp, data := internal.do(t, http.MethodPost, "/v1/render/managed", tc.body, auth); resp.StatusCode != tc.want {
 			t.Errorf("%s: status %d, want %d: %s", name, resp.StatusCode, tc.want, data)
@@ -565,7 +565,7 @@ config:
 		t.Errorf("result = %v, want %v", got, want)
 	}
 
-	resp, data = p.do(t, http.MethodPost, "/v1/render/managed", `{"graph":`+graph+`,"deployment":"01960000-0000-7000-8000-000000000001"}`, auth)
+	resp, data = p.do(t, http.MethodPost, "/v1/render/managed", `{"graph":`+graph+`,"stack":"01960000-0000-7000-8000-000000000001"}`, auth)
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("managed render: status %d, want 422: %s", resp.StatusCode, data)
 	}

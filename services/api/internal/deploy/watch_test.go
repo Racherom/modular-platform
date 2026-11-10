@@ -25,7 +25,7 @@ func TestWatchSharesOnePollerAndPublishesChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "running", func() bool {
-		d, _, _ := st.Deployment(t.Context(), "sample")
+		d, _, _ := st.Stack(t.Context(), "sample")
 		return d.State() == deploy.StateRunning
 	})
 
@@ -46,7 +46,7 @@ func TestWatchSharesOnePollerAndPublishesChanges(t *testing.T) {
 		for {
 			select {
 			case ev := <-events:
-				if ev.Kind == deploy.EventModules && ev.Deployment == "sample" {
+				if ev.Kind == deploy.EventModules && ev.Stack == "sample" {
 					return ev.Modules
 				}
 			case <-deadline:

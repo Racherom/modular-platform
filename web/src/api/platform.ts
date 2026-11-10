@@ -4,9 +4,9 @@ import type { components, paths } from './api.gen'
 import type { Graph, Problem } from './client'
 
 export type Session = components['schemas']['Session']
-export type Deployment = components['schemas']['Deployment']
-export type DeploymentSummary = components['schemas']['DeploymentSummary']
-export type DeploymentState = components['schemas']['DeploymentState']
+export type Stack = components['schemas']['Stack']
+export type StackSummary = components['schemas']['StackSummary']
+export type StackState = components['schemas']['StackState']
 export type Operation = components['schemas']['Operation']
 export type ModuleState = components['schemas']['ModuleState']
 export type Review = components['schemas']['Review']
@@ -68,35 +68,35 @@ export async function logout(): Promise<string> {
 /** One page of a list, and the cursor of the next one when there is more. */
 export type Page<T> = { items: T[]; next?: string }
 
-/** How many rows one page of the deployments list or a history holds. */
+/** How many rows one page of the stacks list or a history holds. */
 export const pageSize = 50
 
-/** One page of deployments sorted by name, after the name cursor. */
-export async function fetchDeployments(cursor?: string): Promise<Page<DeploymentSummary>> {
-  const { data, error, response } = await client.GET('/api/v1/deployments', {
+/** One page of stacks sorted by name, after the name cursor. */
+export async function fetchStacks(cursor?: string): Promise<Page<StackSummary>> {
+  const { data, error, response } = await client.GET('/api/v1/stacks', {
     params: { query: { limit: pageSize, ...(cursor ? { cursor } : {}) } },
   })
   if (!data) throw failure(response.status, error)
   return { items: data.items, ...(data.next ? { next: data.next } : {}) }
 }
 
-export async function fetchDeployment(name: string): Promise<Deployment> {
-  const { data, error, response } = await client.GET('/api/v1/deployments/{name}', { params: { path: { name } } })
+export async function fetchStack(name: string): Promise<Stack> {
+  const { data, error, response } = await client.GET('/api/v1/stacks/{name}', { params: { path: { name } } })
   if (!data) throw failure(response.status, error)
   return data
 }
 
-/** One page of a deployment's history, newest first, older than the operation cursor. */
+/** One page of a stack's history, newest first, older than the operation cursor. */
 export async function fetchOperations(name: string, cursor?: string): Promise<Page<Operation>> {
-  const { data, error, response } = await client.GET('/api/v1/deployments/{name}/operations', {
+  const { data, error, response } = await client.GET('/api/v1/stacks/{name}/operations', {
     params: { path: { name }, query: { limit: pageSize, ...(cursor ? { cursor } : {}) } },
   })
   if (!data) throw failure(response.status, error)
   return { items: data.items, ...(data.next ? { next: data.next } : {}) }
 }
 
-export async function reviewDeployment(graph: Graph): Promise<Review> {
-  const { data, error, response } = await client.POST('/api/v1/deployments/{name}/review', {
+export async function reviewStack(graph: Graph): Promise<Review> {
+  const { data, error, response } = await client.POST('/api/v1/stacks/{name}/review', {
     params: { path: { name: graph.name } },
     body: { graph },
   })
@@ -104,8 +104,8 @@ export async function reviewDeployment(graph: Graph): Promise<Review> {
   return data
 }
 
-export async function applyDeployment(graph: Graph, digest: string, placed: PlacedInput[]): Promise<Operation> {
-  const { data, error, response } = await client.POST('/api/v1/deployments/{name}/apply', {
+export async function applyStack(graph: Graph, digest: string, placed: PlacedInput[]): Promise<Operation> {
+  const { data, error, response } = await client.POST('/api/v1/stacks/{name}/apply', {
     params: { path: { name: graph.name } },
     body: { graph, digest, placed },
   })
@@ -113,9 +113,9 @@ export async function applyDeployment(graph: Graph, digest: string, placed: Plac
   return data
 }
 
-/** Removes a deployment's containers; with deleteData its volumes and secrets too, confirmed by its name. */
-export async function removeDeployment(name: string, deleteData: boolean, confirmName?: string): Promise<Operation> {
-  const { data, error, response } = await client.POST('/api/v1/deployments/{name}/remove', {
+/** Removes a stack's containers; with deleteData its volumes and secrets too, confirmed by its name. */
+export async function removeStack(name: string, deleteData: boolean, confirmName?: string): Promise<Operation> {
+  const { data, error, response } = await client.POST('/api/v1/stacks/{name}/remove', {
     params: { path: { name } },
     body: deleteData ? { deleteData, confirmName } : { deleteData },
   })
@@ -123,8 +123,8 @@ export async function removeDeployment(name: string, deleteData: boolean, confir
   return data
 }
 
-/** The event stream, for the whole list or one deployment. */
-export function eventsURL(deployment?: string): string {
-  const query = deployment ? `?deployment=${encodeURIComponent(deployment)}` : ''
+/** The event stream, for the whole list or one stack. */
+export function eventsURL(stack?: string): string {
+  const query = stack ? `?stack=${encodeURIComponent(stack)}` : ''
   return `${basePath}/api/v1/events${query}`
 }

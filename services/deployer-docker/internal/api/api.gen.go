@@ -22,18 +22,18 @@ type ServerInterface interface {
 	// GetOperation Read one operation
 	// (GET /v1/operations/{id})
 	GetOperation(w http.ResponseWriter, r *http.Request, id string)
-	// ApplyProject Write the project's files and start it
-	// (POST /v1/projects/{project}/apply)
-	ApplyProject(w http.ResponseWriter, r *http.Request, project Project)
-	// RemoveProject Stop and remove the project's containers
-	// (POST /v1/projects/{project}/remove)
-	RemoveProject(w http.ResponseWriter, r *http.Request, project Project)
-	// GetProjectSecrets List the secret files of the project that exist, never their content
-	// (GET /v1/projects/{project}/secrets)
-	GetProjectSecrets(w http.ResponseWriter, r *http.Request, project Project)
-	// GetProjectState Read the state of each container of the project
-	// (GET /v1/projects/{project}/state)
-	GetProjectState(w http.ResponseWriter, r *http.Request, project Project)
+	// ApplyStack Write the stack's files and start it
+	// (POST /v1/stacks/{stack}/apply)
+	ApplyStack(w http.ResponseWriter, r *http.Request, stack Stack)
+	// RemoveStack Stop and remove the stack's containers
+	// (POST /v1/stacks/{stack}/remove)
+	RemoveStack(w http.ResponseWriter, r *http.Request, stack Stack)
+	// GetStackSecrets List the secret files of the stack that exist, never their content
+	// (GET /v1/stacks/{stack}/secrets)
+	GetStackSecrets(w http.ResponseWriter, r *http.Request, stack Stack)
+	// GetStackState Read the state of each container of the stack
+	// (GET /v1/stacks/{stack}/state)
+	GetStackState(w http.ResponseWriter, r *http.Request, stack Stack)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -71,23 +71,23 @@ func (siw *ServerInterfaceWrapper) GetOperation(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
-// ApplyProject operation middleware
-func (siw *ServerInterfaceWrapper) ApplyProject(w http.ResponseWriter, r *http.Request) {
+// ApplyStack operation middleware
+func (siw *ServerInterfaceWrapper) ApplyStack(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "project" -------------
-	var project Project
+	// ------------- Path parameter "stack" -------------
+	var stack Stack
 
-	err = runtime.BindStyledParameterWithOptions("simple", "project", r.PathValue("project"), &project, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "stack", r.PathValue("stack"), &stack, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "stack", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ApplyProject(w, r, project)
+		siw.Handler.ApplyStack(w, r, stack)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -97,23 +97,23 @@ func (siw *ServerInterfaceWrapper) ApplyProject(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
-// RemoveProject operation middleware
-func (siw *ServerInterfaceWrapper) RemoveProject(w http.ResponseWriter, r *http.Request) {
+// RemoveStack operation middleware
+func (siw *ServerInterfaceWrapper) RemoveStack(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "project" -------------
-	var project Project
+	// ------------- Path parameter "stack" -------------
+	var stack Stack
 
-	err = runtime.BindStyledParameterWithOptions("simple", "project", r.PathValue("project"), &project, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "stack", r.PathValue("stack"), &stack, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "stack", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RemoveProject(w, r, project)
+		siw.Handler.RemoveStack(w, r, stack)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -123,23 +123,23 @@ func (siw *ServerInterfaceWrapper) RemoveProject(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
-// GetProjectSecrets operation middleware
-func (siw *ServerInterfaceWrapper) GetProjectSecrets(w http.ResponseWriter, r *http.Request) {
+// GetStackSecrets operation middleware
+func (siw *ServerInterfaceWrapper) GetStackSecrets(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "project" -------------
-	var project Project
+	// ------------- Path parameter "stack" -------------
+	var stack Stack
 
-	err = runtime.BindStyledParameterWithOptions("simple", "project", r.PathValue("project"), &project, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "stack", r.PathValue("stack"), &stack, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "stack", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetProjectSecrets(w, r, project)
+		siw.Handler.GetStackSecrets(w, r, stack)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -149,23 +149,23 @@ func (siw *ServerInterfaceWrapper) GetProjectSecrets(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
-// GetProjectState operation middleware
-func (siw *ServerInterfaceWrapper) GetProjectState(w http.ResponseWriter, r *http.Request) {
+// GetStackState operation middleware
+func (siw *ServerInterfaceWrapper) GetStackState(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
-	// ------------- Path parameter "project" -------------
-	var project Project
+	// ------------- Path parameter "stack" -------------
+	var stack Stack
 
-	err = runtime.BindStyledParameterWithOptions("simple", "project", r.PathValue("project"), &project, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	err = runtime.BindStyledParameterWithOptions("simple", "stack", r.PathValue("stack"), &stack, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
 	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "stack", Err: err})
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetProjectState(w, r, project)
+		siw.Handler.GetStackState(w, r, stack)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -295,11 +295,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/projects/{project}/apply", wrapper.ApplyProject)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/projects/{project}/remove", wrapper.RemoveProject)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/stacks/{stack}/apply", wrapper.ApplyStack)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/stacks/{stack}/remove", wrapper.RemoveStack)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/operations/{id}", wrapper.GetOperation)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/projects/{project}/state", wrapper.GetProjectState)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/projects/{project}/secrets", wrapper.GetProjectSecrets)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/stacks/{stack}/state", wrapper.GetStackState)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/stacks/{stack}/secrets", wrapper.GetStackSecrets)
 
 	return m
 }
@@ -391,25 +391,25 @@ func (response GetOperation404JSONResponse) VisitGetOperationResponse(w http.Res
 	return err
 }
 
-type ApplyProjectRequestObject struct {
-	Project Project `json:"project"`
-	Body    *ApplyProjectJSONRequestBody
+type ApplyStackRequestObject struct {
+	Stack Stack `json:"stack"`
+	Body  *ApplyStackJSONRequestBody
 }
 
-type ApplyProjectResponseObject interface {
-	VisitApplyProjectResponse(w http.ResponseWriter) error
+type ApplyStackResponseObject interface {
+	VisitApplyStackResponse(w http.ResponseWriter) error
 }
 
-type ApplyProject202ResponseHeaders struct {
+type ApplyStack202ResponseHeaders struct {
 	MPBootId string
 }
 
-type ApplyProject202JSONResponse struct {
+type ApplyStack202JSONResponse struct {
 	Body    Operation
-	Headers ApplyProject202ResponseHeaders
+	Headers ApplyStack202ResponseHeaders
 }
 
-func (response ApplyProject202JSONResponse) VisitApplyProjectResponse(w http.ResponseWriter) error {
+func (response ApplyStack202JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -422,9 +422,9 @@ func (response ApplyProject202JSONResponse) VisitApplyProjectResponse(w http.Res
 	return err
 }
 
-type ApplyProject400JSONResponse struct{ BadRequestJSONResponse }
+type ApplyStack400JSONResponse struct{ BadRequestJSONResponse }
 
-func (response ApplyProject400JSONResponse) VisitApplyProjectResponse(w http.ResponseWriter) error {
+func (response ApplyStack400JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -437,9 +437,9 @@ func (response ApplyProject400JSONResponse) VisitApplyProjectResponse(w http.Res
 	return err
 }
 
-type ApplyProject401JSONResponse struct{ UnauthorizedJSONResponse }
+type ApplyStack401JSONResponse struct{ UnauthorizedJSONResponse }
 
-func (response ApplyProject401JSONResponse) VisitApplyProjectResponse(w http.ResponseWriter) error {
+func (response ApplyStack401JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -452,16 +452,16 @@ func (response ApplyProject401JSONResponse) VisitApplyProjectResponse(w http.Res
 	return err
 }
 
-type ApplyProject409ResponseHeaders struct {
+type ApplyStack409ResponseHeaders struct {
 	MPBootId string
 }
 
-type ApplyProject409JSONResponse struct {
+type ApplyStack409JSONResponse struct {
 	Body    externalRef0.ProblemList
-	Headers ApplyProject409ResponseHeaders
+	Headers ApplyStack409ResponseHeaders
 }
 
-func (response ApplyProject409JSONResponse) VisitApplyProjectResponse(w http.ResponseWriter) error {
+func (response ApplyStack409JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -474,16 +474,16 @@ func (response ApplyProject409JSONResponse) VisitApplyProjectResponse(w http.Res
 	return err
 }
 
-type ApplyProject413ResponseHeaders struct {
+type ApplyStack413ResponseHeaders struct {
 	MPBootId string
 }
 
-type ApplyProject413JSONResponse struct {
+type ApplyStack413JSONResponse struct {
 	Body    externalRef0.ProblemList
-	Headers ApplyProject413ResponseHeaders
+	Headers ApplyStack413ResponseHeaders
 }
 
-func (response ApplyProject413JSONResponse) VisitApplyProjectResponse(w http.ResponseWriter) error {
+func (response ApplyStack413JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -496,16 +496,16 @@ func (response ApplyProject413JSONResponse) VisitApplyProjectResponse(w http.Res
 	return err
 }
 
-type ApplyProject422ResponseHeaders struct {
+type ApplyStack422ResponseHeaders struct {
 	MPBootId string
 }
 
-type ApplyProject422JSONResponse struct {
+type ApplyStack422JSONResponse struct {
 	Body    externalRef0.ProblemList
-	Headers ApplyProject422ResponseHeaders
+	Headers ApplyStack422ResponseHeaders
 }
 
-func (response ApplyProject422JSONResponse) VisitApplyProjectResponse(w http.ResponseWriter) error {
+func (response ApplyStack422JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -518,25 +518,25 @@ func (response ApplyProject422JSONResponse) VisitApplyProjectResponse(w http.Res
 	return err
 }
 
-type RemoveProjectRequestObject struct {
-	Project Project `json:"project"`
-	Body    *RemoveProjectJSONRequestBody
+type RemoveStackRequestObject struct {
+	Stack Stack `json:"stack"`
+	Body  *RemoveStackJSONRequestBody
 }
 
-type RemoveProjectResponseObject interface {
-	VisitRemoveProjectResponse(w http.ResponseWriter) error
+type RemoveStackResponseObject interface {
+	VisitRemoveStackResponse(w http.ResponseWriter) error
 }
 
-type RemoveProject202ResponseHeaders struct {
+type RemoveStack202ResponseHeaders struct {
 	MPBootId string
 }
 
-type RemoveProject202JSONResponse struct {
+type RemoveStack202JSONResponse struct {
 	Body    Operation
-	Headers RemoveProject202ResponseHeaders
+	Headers RemoveStack202ResponseHeaders
 }
 
-func (response RemoveProject202JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+func (response RemoveStack202JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -549,9 +549,9 @@ func (response RemoveProject202JSONResponse) VisitRemoveProjectResponse(w http.R
 	return err
 }
 
-type RemoveProject400JSONResponse struct{ BadRequestJSONResponse }
+type RemoveStack400JSONResponse struct{ BadRequestJSONResponse }
 
-func (response RemoveProject400JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+func (response RemoveStack400JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -564,9 +564,9 @@ func (response RemoveProject400JSONResponse) VisitRemoveProjectResponse(w http.R
 	return err
 }
 
-type RemoveProject401JSONResponse struct{ UnauthorizedJSONResponse }
+type RemoveStack401JSONResponse struct{ UnauthorizedJSONResponse }
 
-func (response RemoveProject401JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+func (response RemoveStack401JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -579,16 +579,16 @@ func (response RemoveProject401JSONResponse) VisitRemoveProjectResponse(w http.R
 	return err
 }
 
-type RemoveProject404ResponseHeaders struct {
+type RemoveStack404ResponseHeaders struct {
 	MPBootId string
 }
 
-type RemoveProject404JSONResponse struct {
+type RemoveStack404JSONResponse struct {
 	Body    externalRef0.ProblemList
-	Headers RemoveProject404ResponseHeaders
+	Headers RemoveStack404ResponseHeaders
 }
 
-func (response RemoveProject404JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+func (response RemoveStack404JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -601,16 +601,16 @@ func (response RemoveProject404JSONResponse) VisitRemoveProjectResponse(w http.R
 	return err
 }
 
-type RemoveProject409ResponseHeaders struct {
+type RemoveStack409ResponseHeaders struct {
 	MPBootId string
 }
 
-type RemoveProject409JSONResponse struct {
+type RemoveStack409JSONResponse struct {
 	Body    externalRef0.ProblemList
-	Headers RemoveProject409ResponseHeaders
+	Headers RemoveStack409ResponseHeaders
 }
 
-func (response RemoveProject409JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+func (response RemoveStack409JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -623,16 +623,16 @@ func (response RemoveProject409JSONResponse) VisitRemoveProjectResponse(w http.R
 	return err
 }
 
-type RemoveProject503ResponseHeaders struct {
+type RemoveStack503ResponseHeaders struct {
 	MPBootId string
 }
 
-type RemoveProject503JSONResponse struct {
+type RemoveStack503JSONResponse struct {
 	Body    externalRef0.ProblemList
-	Headers RemoveProject503ResponseHeaders
+	Headers RemoveStack503ResponseHeaders
 }
 
-func (response RemoveProject503JSONResponse) VisitRemoveProjectResponse(w http.ResponseWriter) error {
+func (response RemoveStack503JSONResponse) VisitRemoveStackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -645,24 +645,24 @@ func (response RemoveProject503JSONResponse) VisitRemoveProjectResponse(w http.R
 	return err
 }
 
-type GetProjectSecretsRequestObject struct {
-	Project Project `json:"project"`
+type GetStackSecretsRequestObject struct {
+	Stack Stack `json:"stack"`
 }
 
-type GetProjectSecretsResponseObject interface {
-	VisitGetProjectSecretsResponse(w http.ResponseWriter) error
+type GetStackSecretsResponseObject interface {
+	VisitGetStackSecretsResponse(w http.ResponseWriter) error
 }
 
-type GetProjectSecrets200ResponseHeaders struct {
+type GetStackSecrets200ResponseHeaders struct {
 	MPBootId string
 }
 
-type GetProjectSecrets200JSONResponse struct {
+type GetStackSecrets200JSONResponse struct {
 	Body    PresentSecrets
-	Headers GetProjectSecrets200ResponseHeaders
+	Headers GetStackSecrets200ResponseHeaders
 }
 
-func (response GetProjectSecrets200JSONResponse) VisitGetProjectSecretsResponse(w http.ResponseWriter) error {
+func (response GetStackSecrets200JSONResponse) VisitGetStackSecretsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -675,9 +675,9 @@ func (response GetProjectSecrets200JSONResponse) VisitGetProjectSecretsResponse(
 	return err
 }
 
-type GetProjectSecrets400JSONResponse struct{ BadRequestJSONResponse }
+type GetStackSecrets400JSONResponse struct{ BadRequestJSONResponse }
 
-func (response GetProjectSecrets400JSONResponse) VisitGetProjectSecretsResponse(w http.ResponseWriter) error {
+func (response GetStackSecrets400JSONResponse) VisitGetStackSecretsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -690,9 +690,9 @@ func (response GetProjectSecrets400JSONResponse) VisitGetProjectSecretsResponse(
 	return err
 }
 
-type GetProjectSecrets401JSONResponse struct{ UnauthorizedJSONResponse }
+type GetStackSecrets401JSONResponse struct{ UnauthorizedJSONResponse }
 
-func (response GetProjectSecrets401JSONResponse) VisitGetProjectSecretsResponse(w http.ResponseWriter) error {
+func (response GetStackSecrets401JSONResponse) VisitGetStackSecretsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -705,24 +705,24 @@ func (response GetProjectSecrets401JSONResponse) VisitGetProjectSecretsResponse(
 	return err
 }
 
-type GetProjectStateRequestObject struct {
-	Project Project `json:"project"`
+type GetStackStateRequestObject struct {
+	Stack Stack `json:"stack"`
 }
 
-type GetProjectStateResponseObject interface {
-	VisitGetProjectStateResponse(w http.ResponseWriter) error
+type GetStackStateResponseObject interface {
+	VisitGetStackStateResponse(w http.ResponseWriter) error
 }
 
-type GetProjectState200ResponseHeaders struct {
+type GetStackState200ResponseHeaders struct {
 	MPBootId string
 }
 
-type GetProjectState200JSONResponse struct {
-	Body    ProjectState
-	Headers GetProjectState200ResponseHeaders
+type GetStackState200JSONResponse struct {
+	Body    StackState
+	Headers GetStackState200ResponseHeaders
 }
 
-func (response GetProjectState200JSONResponse) VisitGetProjectStateResponse(w http.ResponseWriter) error {
+func (response GetStackState200JSONResponse) VisitGetStackStateResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -735,9 +735,9 @@ func (response GetProjectState200JSONResponse) VisitGetProjectStateResponse(w ht
 	return err
 }
 
-type GetProjectState400JSONResponse struct{ BadRequestJSONResponse }
+type GetStackState400JSONResponse struct{ BadRequestJSONResponse }
 
-func (response GetProjectState400JSONResponse) VisitGetProjectStateResponse(w http.ResponseWriter) error {
+func (response GetStackState400JSONResponse) VisitGetStackStateResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -750,9 +750,9 @@ func (response GetProjectState400JSONResponse) VisitGetProjectStateResponse(w ht
 	return err
 }
 
-type GetProjectState401JSONResponse struct{ UnauthorizedJSONResponse }
+type GetStackState401JSONResponse struct{ UnauthorizedJSONResponse }
 
-func (response GetProjectState401JSONResponse) VisitGetProjectStateResponse(w http.ResponseWriter) error {
+func (response GetStackState401JSONResponse) VisitGetStackStateResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -765,16 +765,16 @@ func (response GetProjectState401JSONResponse) VisitGetProjectStateResponse(w ht
 	return err
 }
 
-type GetProjectState503ResponseHeaders struct {
+type GetStackState503ResponseHeaders struct {
 	MPBootId string
 }
 
-type GetProjectState503JSONResponse struct {
+type GetStackState503JSONResponse struct {
 	Body    externalRef0.ProblemList
-	Headers GetProjectState503ResponseHeaders
+	Headers GetStackState503ResponseHeaders
 }
 
-func (response GetProjectState503JSONResponse) VisitGetProjectStateResponse(w http.ResponseWriter) error {
+func (response GetStackState503JSONResponse) VisitGetStackStateResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -792,18 +792,18 @@ type StrictServerInterface interface {
 	// GetOperation Read one operation
 	// (GET /v1/operations/{id})
 	GetOperation(ctx context.Context, request GetOperationRequestObject) (GetOperationResponseObject, error)
-	// ApplyProject Write the project's files and start it
-	// (POST /v1/projects/{project}/apply)
-	ApplyProject(ctx context.Context, request ApplyProjectRequestObject) (ApplyProjectResponseObject, error)
-	// RemoveProject Stop and remove the project's containers
-	// (POST /v1/projects/{project}/remove)
-	RemoveProject(ctx context.Context, request RemoveProjectRequestObject) (RemoveProjectResponseObject, error)
-	// GetProjectSecrets List the secret files of the project that exist, never their content
-	// (GET /v1/projects/{project}/secrets)
-	GetProjectSecrets(ctx context.Context, request GetProjectSecretsRequestObject) (GetProjectSecretsResponseObject, error)
-	// GetProjectState Read the state of each container of the project
-	// (GET /v1/projects/{project}/state)
-	GetProjectState(ctx context.Context, request GetProjectStateRequestObject) (GetProjectStateResponseObject, error)
+	// ApplyStack Write the stack's files and start it
+	// (POST /v1/stacks/{stack}/apply)
+	ApplyStack(ctx context.Context, request ApplyStackRequestObject) (ApplyStackResponseObject, error)
+	// RemoveStack Stop and remove the stack's containers
+	// (POST /v1/stacks/{stack}/remove)
+	RemoveStack(ctx context.Context, request RemoveStackRequestObject) (RemoveStackResponseObject, error)
+	// GetStackSecrets List the secret files of the stack that exist, never their content
+	// (GET /v1/stacks/{stack}/secrets)
+	GetStackSecrets(ctx context.Context, request GetStackSecretsRequestObject) (GetStackSecretsResponseObject, error)
+	// GetStackState Read the state of each container of the stack
+	// (GET /v1/stacks/{stack}/state)
+	GetStackState(ctx context.Context, request GetStackStateRequestObject) (GetStackStateResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -871,13 +871,13 @@ func (sh *strictHandler) GetOperation(w http.ResponseWriter, r *http.Request, id
 	}
 }
 
-// ApplyProject operation middleware
-func (sh *strictHandler) ApplyProject(w http.ResponseWriter, r *http.Request, project Project) {
-	var request ApplyProjectRequestObject
+// ApplyStack operation middleware
+func (sh *strictHandler) ApplyStack(w http.ResponseWriter, r *http.Request, stack Stack) {
+	var request ApplyStackRequestObject
 
-	request.Project = project
+	request.Stack = stack
 
-	var body ApplyProjectJSONRequestBody
+	var body ApplyStackJSONRequestBody
 	if err := runtime.BindJSONBody(r, &body); err != nil {
 		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
 		return
@@ -885,18 +885,18 @@ func (sh *strictHandler) ApplyProject(w http.ResponseWriter, r *http.Request, pr
 	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ApplyProject(ctx, request.(ApplyProjectRequestObject))
+		return sh.ssi.ApplyStack(ctx, request.(ApplyStackRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ApplyProject")
+		handler = middleware(handler, "ApplyStack")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ApplyProjectResponseObject); ok {
-		if err := validResponse.VisitApplyProjectResponse(w); err != nil {
+	} else if validResponse, ok := response.(ApplyStackResponseObject); ok {
+		if err := validResponse.VisitApplyStackResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -904,13 +904,13 @@ func (sh *strictHandler) ApplyProject(w http.ResponseWriter, r *http.Request, pr
 	}
 }
 
-// RemoveProject operation middleware
-func (sh *strictHandler) RemoveProject(w http.ResponseWriter, r *http.Request, project Project) {
-	var request RemoveProjectRequestObject
+// RemoveStack operation middleware
+func (sh *strictHandler) RemoveStack(w http.ResponseWriter, r *http.Request, stack Stack) {
+	var request RemoveStackRequestObject
 
-	request.Project = project
+	request.Stack = stack
 
-	var body RemoveProjectJSONRequestBody
+	var body RemoveStackJSONRequestBody
 	if err := runtime.BindJSONBody(r, &body); err != nil {
 		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
 		return
@@ -918,18 +918,18 @@ func (sh *strictHandler) RemoveProject(w http.ResponseWriter, r *http.Request, p
 	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.RemoveProject(ctx, request.(RemoveProjectRequestObject))
+		return sh.ssi.RemoveStack(ctx, request.(RemoveStackRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "RemoveProject")
+		handler = middleware(handler, "RemoveStack")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(RemoveProjectResponseObject); ok {
-		if err := validResponse.VisitRemoveProjectResponse(w); err != nil {
+	} else if validResponse, ok := response.(RemoveStackResponseObject); ok {
+		if err := validResponse.VisitRemoveStackResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -937,25 +937,25 @@ func (sh *strictHandler) RemoveProject(w http.ResponseWriter, r *http.Request, p
 	}
 }
 
-// GetProjectSecrets operation middleware
-func (sh *strictHandler) GetProjectSecrets(w http.ResponseWriter, r *http.Request, project Project) {
-	var request GetProjectSecretsRequestObject
+// GetStackSecrets operation middleware
+func (sh *strictHandler) GetStackSecrets(w http.ResponseWriter, r *http.Request, stack Stack) {
+	var request GetStackSecretsRequestObject
 
-	request.Project = project
+	request.Stack = stack
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetProjectSecrets(ctx, request.(GetProjectSecretsRequestObject))
+		return sh.ssi.GetStackSecrets(ctx, request.(GetStackSecretsRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetProjectSecrets")
+		handler = middleware(handler, "GetStackSecrets")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetProjectSecretsResponseObject); ok {
-		if err := validResponse.VisitGetProjectSecretsResponse(w); err != nil {
+	} else if validResponse, ok := response.(GetStackSecretsResponseObject); ok {
+		if err := validResponse.VisitGetStackSecretsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -963,25 +963,25 @@ func (sh *strictHandler) GetProjectSecrets(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-// GetProjectState operation middleware
-func (sh *strictHandler) GetProjectState(w http.ResponseWriter, r *http.Request, project Project) {
-	var request GetProjectStateRequestObject
+// GetStackState operation middleware
+func (sh *strictHandler) GetStackState(w http.ResponseWriter, r *http.Request, stack Stack) {
+	var request GetStackStateRequestObject
 
-	request.Project = project
+	request.Stack = stack
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetProjectState(ctx, request.(GetProjectStateRequestObject))
+		return sh.ssi.GetStackState(ctx, request.(GetStackStateRequestObject))
 	}
 	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetProjectState")
+		handler = middleware(handler, "GetStackState")
 	}
 
 	response, err := handler(r.Context(), w, r, request)
 
 	if err != nil {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetProjectStateResponseObject); ok {
-		if err := validResponse.VisitGetProjectStateResponse(w); err != nil {
+	} else if validResponse, ok := response.(GetStackStateResponseObject); ok {
+		if err := validResponse.VisitGetStackStateResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

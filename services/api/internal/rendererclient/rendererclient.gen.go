@@ -126,9 +126,9 @@ type ClientInterface interface {
 
 	// RenderManagedWithBody Render a graph as the files the managed deployer applies
 	//
-	// Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+	// Internal mode only; public mode answers 404. The Compose stack name is `mp-<graph name>`; every
 	// service carries the platform labels and `restart: unless-stopped`. The answer lists every
-	// secret file the project needs, never a value.
+	// secret file the stack needs, never a value.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -137,9 +137,9 @@ type ClientInterface interface {
 
 	// RenderManaged Render a graph as the files the managed deployer applies
 	//
-	// Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+	// Internal mode only; public mode answers 404. The Compose stack name is `mp-<graph name>`; every
 	// service carries the platform labels and `restart: unless-stopped`. The answer lists every
-	// secret file the project needs, never a value.
+	// secret file the stack needs, never a value.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -232,9 +232,9 @@ func (c *Client) Render(ctx context.Context, body RenderJSONRequestBody, reqEdit
 
 // RenderManagedWithBody Render a graph as the files the managed deployer applies
 //
-// Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+// Internal mode only; public mode answers 404. The Compose stack name is `mp-<graph name>`; every
 // service carries the platform labels and `restart: unless-stopped`. The answer lists every
-// secret file the project needs, never a value.
+// secret file the stack needs, never a value.
 //
 // Takes any type of body and a specified content type.
 //
@@ -253,9 +253,9 @@ func (c *Client) RenderManagedWithBody(ctx context.Context, contentType string, 
 
 // RenderManaged Render a graph as the files the managed deployer applies
 //
-// Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+// Internal mode only; public mode answers 404. The Compose stack name is `mp-<graph name>`; every
 // service carries the platform labels and `restart: unless-stopped`. The answer lists every
-// secret file the project needs, never a value.
+// secret file the stack needs, never a value.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -500,9 +500,9 @@ type ClientWithResponsesInterface interface {
 
 	// RenderManagedWithBodyWithResponse Render a graph as the files the managed deployer applies
 	//
-	// Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+	// Internal mode only; public mode answers 404. The Compose stack name is `mp-<graph name>`; every
 	// service carries the platform labels and `restart: unless-stopped`. The answer lists every
-	// secret file the project needs, never a value.
+	// secret file the stack needs, never a value.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -511,9 +511,9 @@ type ClientWithResponsesInterface interface {
 
 	// RenderManagedWithResponse Render a graph as the files the managed deployer applies
 	//
-	// Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+	// Internal mode only; public mode answers 404. The Compose stack name is `mp-<graph name>`; every
 	// service carries the platform labels and `restart: unless-stopped`. The answer lists every
-	// secret file the project needs, never a value.
+	// secret file the stack needs, never a value.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -767,7 +767,7 @@ type RenderManagedResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *RenderedProject
+	JSON200 *RenderedStack
 	// JSON400 the response for an HTTP 400 `application/json` response
 	JSON400 *BadGraph
 	// JSON401 the response for an HTTP 401 `application/json` response
@@ -783,7 +783,7 @@ type RenderManagedResponse struct {
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r RenderManagedResponse) GetJSON200() *RenderedProject {
+func (r RenderManagedResponse) GetJSON200() *RenderedStack {
 	return r.JSON200
 }
 
@@ -913,9 +913,9 @@ func (c *ClientWithResponses) RenderWithResponse(ctx context.Context, body Rende
 
 // RenderManagedWithBodyWithResponse Render a graph as the files the managed deployer applies
 //
-// Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+// Internal mode only; public mode answers 404. The Compose stack name is `mp-<graph name>`; every
 // service carries the platform labels and `restart: unless-stopped`. The answer lists every
-// secret file the project needs, never a value.
+// secret file the stack needs, never a value.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -930,9 +930,9 @@ func (c *ClientWithResponses) RenderManagedWithBodyWithResponse(ctx context.Cont
 
 // RenderManagedWithResponse Render a graph as the files the managed deployer applies
 //
-// Internal mode only; public mode answers 404. The project is `mp-<graph name>`; every
+// Internal mode only; public mode answers 404. The Compose stack name is `mp-<graph name>`; every
 // service carries the platform labels and `restart: unless-stopped`. The answer lists every
-// secret file the project needs, never a value.
+// secret file the stack needs, never a value.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -1178,7 +1178,7 @@ func ParseRenderManagedResponse(rsp *http.Response) (*RenderManagedResponse, err
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest RenderedProject
+		var dest RenderedStack
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -197,7 +197,7 @@ func TestManagedGraphAnswersSetup(t *testing.T) {
 		"apiVersion: modular-platform/v1\nkind: Graph\nmodules:\n  simple:\n    config:\n      domain: \"example.org\"\n    module: simple\nname: managed\n": false,
 		"apiVersion: modular-platform/v1\nkind: Graph\nmodules:\n  simple:\n    module: simple\nname: managed\n":                                             true,
 	} {
-		_, err := render.Managed(resultText(t, text, catalog), catalog, builtinTemplates(t), testDeployment)
+		_, err := render.Managed(resultText(t, text, catalog), catalog, builtinTemplates(t), testStack)
 		var r *render.RefusedError
 		if got := errors.As(err, &r); got != refused {
 			t.Errorf("graph\n%s refused = %v (%v), want %v", text, got, err, refused)

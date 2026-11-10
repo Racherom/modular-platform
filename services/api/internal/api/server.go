@@ -82,17 +82,17 @@ func (s *Server) Render(ctx context.Context, req RenderRequestObject) (RenderRes
 	}, nil
 }
 
-// ListDeployments lists one page of deployments by name.
-func (s *Server) ListDeployments(ctx context.Context, req ListDeploymentsRequestObject) (ListDeploymentsResponseObject, error) {
+// ListStacks lists one page of stacks by name.
+func (s *Server) ListStacks(ctx context.Context, req ListStacksRequestObject) (ListStacksResponseObject, error) {
 	limit, ok := pageSize(req.Params.Limit)
 	if !ok {
-		return ListDeployments400JSONResponse{BadRequestJSONResponse(badLimit())}, nil
+		return ListStacks400JSONResponse{BadRequestJSONResponse(badLimit())}, nil
 	}
-	items, err := s.deploy.Deployments(ctx, req.Params.Cursor, limit+1)
+	items, err := s.deploy.Stacks(ctx, req.Params.Cursor, limit+1)
 	if err != nil {
 		return nil, err
 	}
-	page := DeploymentPage{Items: make([]DeploymentSummary, 0, min(len(items), limit))}
+	page := StackPage{Items: make([]StackSummary, 0, min(len(items), limit))}
 	for i, d := range items {
 		if i == limit {
 			page.Next = items[i-1].Name
@@ -100,22 +100,22 @@ func (s *Server) ListDeployments(ctx context.Context, req ListDeploymentsRequest
 		}
 		page.Items = append(page.Items, summary(d))
 	}
-	return ListDeployments200JSONResponse(page), nil
+	return ListStacks200JSONResponse(page), nil
 }
 
-// GetDeployment reads a deployment with the live state of its modules.
-func (s *Server) GetDeployment(ctx context.Context, req GetDeploymentRequestObject) (GetDeploymentResponseObject, error) {
+// GetStack reads a stack with the live state of its modules.
+func (s *Server) GetStack(ctx context.Context, req GetStackRequestObject) (GetStackResponseObject, error) {
 	v, err := s.deploy.View(ctx, req.Name)
 	if errors.Is(err, deploy.ErrNotFound) {
-		return GetDeployment404JSONResponse{NotFoundJSONResponse(notFound(req.Name))}, nil
+		return GetStack404JSONResponse{NotFoundJSONResponse(notFound(req.Name))}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return GetDeployment200JSONResponse(view(v)), nil
+	return GetStack200JSONResponse(view(v)), nil
 }
 
-// ListOperations lists one page of a deployment's history, newest first.
+// ListOperations lists one page of a stack's history, newest first.
 func (s *Server) ListOperations(ctx context.Context, req ListOperationsRequestObject) (ListOperationsResponseObject, error) {
 	limit, ok := pageSize(req.Params.Limit)
 	if !ok {
@@ -143,18 +143,18 @@ func (s *Server) ListOperations(ctx context.Context, req ListOperationsRequestOb
 	return ListOperations200JSONResponse(page), nil
 }
 
-// ReviewDeployment shows what an apply of the graph would run.
-func (s *Server) ReviewDeployment(ctx context.Context, req ReviewDeploymentRequestObject) (ReviewDeploymentResponseObject, error) {
+// ReviewStack shows what an apply of the graph would run.
+func (s *Server) ReviewStack(ctx context.Context, req ReviewStackRequestObject) (ReviewStackResponseObject, error) {
 	r, err := s.deploy.Review(ctx, req.Name, req.Body.Graph)
 	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
-		return ReviewDeployment422JSONResponse{RefusedJSONResponse{Problems: refused.Problems}}, nil
+		return ReviewStack422JSONResponse{RefusedJSONResponse{Problems: refused.Problems}}, nil
 	}
 	switch {
 	case errors.Is(err, deploy.ErrRenderer):
-		return ReviewDeployment502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
+		return ReviewStack502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	case errors.Is(err, deploy.ErrTargetUnavailable), errors.Is(err, deploy.ErrTarget):
 		s.log.WarnContext(ctx, "deploy target failed at review", slog.Any("error", err))
-		return ReviewDeployment503JSONResponse{DeployerUnavailableJSONResponse(problems("deployer_unavailable", "", "The deployer did not answer; try again."))}, nil
+		return ReviewStack503JSONResponse{DeployerUnavailableJSONResponse(problems("deployer_unavailable", "", "The deployer did not answer; try again."))}, nil
 	case err != nil:
 		return nil, err
 	}
@@ -167,11 +167,11 @@ func (s *Server) ReviewDeployment(ctx context.Context, req ReviewDeploymentReque
 			Path: p.Path, Instance: p.Instance, Capability: p.Capability, Field: p.Field, Exists: p.Exists,
 		})
 	}
-	return ReviewDeployment200JSONResponse(out), nil
+	return ReviewStack200JSONResponse(out), nil
 }
 
-// ApplyDeployment deploys a reviewed graph.
-func (s *Server) ApplyDeployment(ctx context.Context, req ApplyDeploymentRequestObject) (ApplyDeploymentResponseObject, error) {
+// ApplyStack deploys a reviewed graph.
+func (s *Server) ApplyStack(ctx context.Context, req ApplyStackRequestObject) (ApplyStackResponseObject, error) {
 	sess := sessionFrom(ctx)
 	by := deploy.Starter{Issuer: sess.Identity.Issuer, Subject: sess.Identity.Subject, Email: sess.Email}
 	placed := make([]deploy.PlacedInput, 0, len(req.Body.Placed))
@@ -180,45 +180,45 @@ func (s *Server) ApplyDeployment(ctx context.Context, req ApplyDeploymentRequest
 	}
 	op, err := s.deploy.Apply(ctx, by, req.Name, req.Body.Graph, req.Body.Digest, placed)
 	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
-		return ApplyDeployment422JSONResponse{RefusedJSONResponse{Problems: refused.Problems}}, nil
+		return ApplyStack422JSONResponse{RefusedJSONResponse{Problems: refused.Problems}}, nil
 	}
 	switch {
 	case errors.Is(err, deploy.ErrBusy):
-		return ApplyDeployment409JSONResponse(problems("busy", "", "An operation of this deployment is still running.")), nil
+		return ApplyStack409JSONResponse(problems("busy", "", "An operation of this stack is still running.")), nil
 	case errors.Is(err, deploy.ErrGraphChanged):
-		return ApplyDeployment409JSONResponse(problems("graph_changed", "digest",
+		return ApplyStack409JSONResponse(problems("graph_changed", "digest",
 			"The graph changed since you reviewed it, for example after a platform upgrade; review it again.")), nil
 	case errors.Is(err, deploy.ErrRenderer):
-		return ApplyDeployment502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
+		return ApplyStack502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	case errors.Is(err, deploy.ErrTarget):
-		return ApplyDeployment502JSONResponse{RendererErrorJSONResponse(problems("deployer_error", "", "The deployer refused api's call; see api's log."))}, nil
+		return ApplyStack502JSONResponse{RendererErrorJSONResponse(problems("deployer_error", "", "The deployer refused api's call; see api's log."))}, nil
 	case err != nil:
 		return nil, err
 	}
-	return ApplyDeployment202JSONResponse(operation(op)), nil
+	return ApplyStack202JSONResponse(operation(op)), nil
 }
 
-// RemoveDeployment removes a deployment's containers, and with deleteData its data too.
-func (s *Server) RemoveDeployment(ctx context.Context, req RemoveDeploymentRequestObject) (RemoveDeploymentResponseObject, error) {
+// RemoveStack removes a stack's containers, and with deleteData its data too.
+func (s *Server) RemoveStack(ctx context.Context, req RemoveStackRequestObject) (RemoveStackResponseObject, error) {
 	sess := sessionFrom(ctx)
 	by := deploy.Starter{Issuer: sess.Identity.Issuer, Subject: sess.Identity.Subject, Email: sess.Email}
 	op, err := s.deploy.Remove(ctx, by, req.Name, req.Body.DeleteData, req.Body.ConfirmName)
 	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
-		return RemoveDeployment422JSONResponse{Problems: refused.Problems}, nil
+		return RemoveStack422JSONResponse{Problems: refused.Problems}, nil
 	}
 	switch {
 	case errors.Is(err, deploy.ErrNotFound):
-		return RemoveDeployment404JSONResponse{NotFoundJSONResponse(notFound(req.Name))}, nil
+		return RemoveStack404JSONResponse{NotFoundJSONResponse(notFound(req.Name))}, nil
 	case errors.Is(err, deploy.ErrBusy):
-		return RemoveDeployment409JSONResponse(problems("busy", "", "An operation of this deployment is still running.")), nil
+		return RemoveStack409JSONResponse(problems("busy", "", "An operation of this stack is still running.")), nil
 	case errors.Is(err, deploy.ErrAlreadyRemoved):
-		return RemoveDeployment409JSONResponse(problems("already_removed", "", "The deployment is removed already; choose Delete data too to delete its data.")), nil
+		return RemoveStack409JSONResponse(problems("already_removed", "", "The stack is removed already; choose Delete data too to delete its data.")), nil
 	case errors.Is(err, deploy.ErrTarget):
-		return RemoveDeployment502JSONResponse(problems("deployer_error", "", "The deployer refused api's call; see api's log.")), nil
+		return RemoveStack502JSONResponse(problems("deployer_error", "", "The deployer refused api's call; see api's log.")), nil
 	case err != nil:
 		return nil, err
 	}
-	return RemoveDeployment202JSONResponse(operation(op)), nil
+	return RemoveStack202JSONResponse(operation(op)), nil
 }
 
 func (s *Server) rendererProblem(ctx context.Context, err error) contract.ProblemList {
@@ -250,7 +250,7 @@ func badLimit() contract.ProblemList {
 }
 
 func notFound(name string) contract.ProblemList {
-	return problems("not_found", "name", fmt.Sprintf("No deployment is named %q.", name))
+	return problems("not_found", "name", fmt.Sprintf("No stack is named %q.", name))
 }
 
 func problems(code, path, message string) contract.ProblemList {
