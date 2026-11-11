@@ -35,8 +35,9 @@ var _ StrictServerInterface = (*Server)(nil)
 type Server struct {
 	catalog   contract.Catalog
 	templates contract.Templates
-	managed   bool  // internal mode: /v1/render/managed answers
-	reserved  []int // host ports of the platform's ingress, which no managed project may publish
+	managed   bool          // internal mode: /v1/render/managed answers
+	reserved  []int         // host ports of the platform's ingress, which no managed project may publish
+	source    render.Option // builds the unreleased platform images a zip names (spec 0030)
 }
 
 // GetCatalog lists the catalog: its modules and capabilities, each sorted by name.
@@ -59,7 +60,7 @@ func (s *Server) Render(ctx context.Context, req RenderRequestObject) (RenderRes
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	out, err := render.Render(result, s.catalog, s.templates)
+	out, err := render.Render(result, s.catalog, s.templates, s.source)
 	if err != nil {
 		return nil, err
 	}
@@ -176,6 +177,10 @@ func Setup(catalogFS fs.FS, sourceRef string) sdk.Setup[config.Config, config.Us
 		if err != nil {
 			return nil, fmt.Errorf("load the built in templates: %w", err)
 		}
+		dockerfiles, err := contract.LoadDockerfiles(catalogFS, entries)
+		if err != nil {
+			return nil, fmt.Errorf("load the built in Dockerfiles: %w", err)
+		}
 		mode, err := m.Config.RendererMode(ctx)
 		if err != nil {
 			return nil, err
@@ -208,7 +213,7 @@ func Setup(catalogFS fs.FS, sourceRef string) sdk.Setup[config.Config, config.Us
 			m.WithRateLimit(limiter, hops)
 		}
 		m.Log.InfoContext(ctx, "renderer starting", slog.String("mode", string(mode)), slog.Int("catalog_modules", len(entries.Modules)), slog.Int("catalog_capabilities", len(entries.Capabilities)), slog.String("source_ref", source.String()))
-		return newHandler(&Server{catalog: entries, templates: templates, managed: mode == config.RendererModeInternal, reserved: reserved}, m.Log), nil
+		return newHandler(&Server{catalog: entries, templates: templates, managed: mode == config.RendererModeInternal, reserved: reserved, source: render.WithSource(source, dockerfiles)}, m.Log), nil
 	}
 }
 

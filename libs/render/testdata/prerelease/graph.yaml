@@ -1,0 +1,10 @@
+apiVersion: modular-platform/v1
+kind: Graph
+name: prerelease
+modules:
+  renderer:
+    module: renderer
+  renderer-2:
+    module: renderer
+  postgres:
+    module: postgres

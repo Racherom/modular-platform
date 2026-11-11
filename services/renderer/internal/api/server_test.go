@@ -675,3 +675,60 @@ func TestSourceRef(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderBuildsUnreleasedImages covers spec 0030 AC-1 through the handler: a zip that places
+// the renderer, whose catalog image is unreleased, carries its catalog Dockerfile and builds it
+// in setup.sh from the renderer's own source ref; postgres, from a registry, builds nothing.
+func TestRenderBuildsUnreleasedImages(t *testing.T) {
+	t.Parallel()
+	const commit = "b5f34e9a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f"
+	h, logs, err := buildRef(t, publicEnv("60"), catalog.FS, commit)
+	if err != nil {
+		t.Fatalf("start refused: %v\n%s", err, logs)
+	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	graph := `{"apiVersion":"modular-platform/v1","kind":"Graph","name":"self",
+"modules":{"renderer":{"module":"renderer"},"postgres":{"module":"postgres"}}}`
+	resp, body := renderer{srv: srv, log: logs}.do(t, http.MethodPost, "/v1/render", graph, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{}
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[f.Name], err = io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := fs.ReadFile(catalog.FS, "modules/renderer/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(files["build/renderer/Dockerfile"], want) {
+		t.Error("the zip's build/renderer/Dockerfile is not the catalog's")
+	}
+	for name := range files {
+		if strings.HasPrefix(name, "build/") && name != "build/renderer/Dockerfile" {
+			t.Errorf("the zip holds %s", name)
+		}
+	}
+	setup := string(files["setup.sh"])
+	for _, want := range []string{"source_ref='" + commit + "'\n", "\nbuild_image 'ghcr.io/racherom/modular-platform/renderer:0.0.0' 'renderer'\n"} {
+		if !strings.Contains(setup, want) {
+			t.Errorf("setup.sh lacks %q", want)
+		}
+	}
+	if bytes.Contains(files["docker-compose.yml"], []byte("build:")) {
+		t.Error("docker-compose.yml has a build section")
+	}
+}

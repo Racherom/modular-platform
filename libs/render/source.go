@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -50,4 +51,90 @@ func (r SourceRef) String() string {
 // move, so a later build of the same zip may build different code.
 func (r SourceRef) Commit() bool {
 	return fullCommit.MatchString(r.ref)
+}
+
+const (
+	// PlatformImages starts the images of the platform's own modules.
+	PlatformImages = "ghcr.io/racherom/modular-platform/"
+	// UnreleasedTag is the tag the platform's own catalog entries carry until the first release
+	// rewrites it; no registry holds an image with it.
+	UnreleasedTag = "0.0.0"
+)
+
+// Unreleased reports whether image is one of the platform's own images that no registry holds
+// yet: it starts with PlatformImages and carries exactly UnreleasedTag. A zip that names one
+// builds it on the host instead of pulling it (spec 0030).
+func Unreleased(image string) bool {
+	name, ok := strings.CutPrefix(image, PlatformImages)
+	if !ok {
+		return false
+	}
+	_, tag, _ := strings.Cut(name, ":")
+	return tag == UnreleasedTag
+}
+
+// options are the settings of one render.
+type options struct {
+	source      SourceRef
+	dockerfiles map[string][]byte // module name to its Dockerfile; nil without WithSource
+}
+
+// Option changes one render.
+type Option func(*options)
+
+// WithSource lets a render build the unreleased platform images it names (spec 0030): each such
+// module's Dockerfile, from dockerfiles by module name, goes into the zip as
+// build/<module>/Dockerfile, and setup.sh builds the image from this repository at ref before
+// anything else. Without it a render names those images and builds nothing. A placed module whose
+// image is unreleased and that has no entry in dockerfiles fails the render.
+func WithSource(ref SourceRef, dockerfiles map[string][]byte) Option {
+	return func(o *options) {
+		o.source = ref
+		o.dockerfiles = dockerfiles
+	}
+}
+
+// imageBuild is one image setup.sh builds before anything else.
+type imageBuild struct {
+	Module string // the module name, which names its folder under build/
+	Image  string // the catalog image, the tag the build gets
+}
+
+// Dockerfile is the path of the build's Dockerfile inside the zip.
+func (b imageBuild) Dockerfile() string { return "build/" + b.Module + "/Dockerfile" }
+
+// imageBuilds collects, once per module, the unreleased platform images of the placed modules,
+// sorted by module name, and the Dockerfile file of each. It returns nothing without WithSource.
+func (r *renderer) imageBuilds(opts []Option) ([]File, error) {
+	var o options
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	if o.dockerfiles == nil {
+		return nil, nil
+	}
+	seen := map[string]bool{}
+	var files []File
+	for _, gm := range r.g.Modules {
+		m := r.modules[gm.Module]
+		if gm.External != nil || seen[m.Name] || !Unreleased(m.Image) {
+			continue
+		}
+		seen[m.Name] = true
+		data, ok := o.dockerfiles[m.Name]
+		if !ok {
+			return nil, fmt.Errorf("render: module %s names the unreleased image %s and has no Dockerfile", m.Name, m.Image)
+		}
+		b := imageBuild{Module: m.Name, Image: m.Image}
+		r.data.Builds = append(r.data.Builds, b)
+		files = append(files, File{Path: b.Dockerfile(), Mode: 0o644, Data: data})
+	}
+	slices.SortFunc(r.data.Builds, func(a, b imageBuild) int { return strings.Compare(a.Module, b.Module) })
+	if len(r.data.Builds) > 0 {
+		r.data.SourceRef = o.source.String()
+		r.data.SourceMoves = !o.source.Commit()
+	}
+	return files, nil
 }
