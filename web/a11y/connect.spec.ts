@@ -1,15 +1,21 @@
-import { expect, test } from '@playwright/test'
+import { expect, type Page, test } from '@playwright/test'
 import { drag, handle, openGraph } from './helpers'
 import { type CheckReply, mockRenderer } from './mock-renderer'
 
 const edges = '.react-flow__edge'
+
+/** A node's position in the graph (React Flow's transform on the node), not on the page, so a
+ * header that wraps to another height or a canvas that resizes does not count as a move. */
+function graphPosition(page: Page, instance: string) {
+  return page.locator(`.react-flow__node[data-id="${instance}"]`).evaluate((n) => (n as HTMLElement).style.transform)
+}
 
 test('dragging a need to an offer binds it through one check call, and it survives a reload (AC-9, AC-12, AC-16)', async ({ page }) => {
   const { checks } = await mockRenderer(page)
   await openGraph(page)
   await expect(page.locator(edges)).toHaveCount(0)
   expect(checks).toHaveLength(1) // the open
-  const box = await page.getByTestId('node-postgres').boundingBox()
+  const position = await graphPosition(page, 'postgres')
 
   await drag(page, handle(page, 'whoami', 'uses:postgresql'), handle(page, 'postgres', 'provides:postgresql'), async () => {
     // valid targets highlighted, the rest dimmed
@@ -23,7 +29,7 @@ test('dragging a need to an offer binds it through one check call, and it surviv
   await expect.poll(() => checks.length).toBe(2)
   expect(checks[1]?.modules.whoami?.uses).toEqual({ postgresql: 'postgres' })
   // positions stay where they are
-  expect(await page.getByTestId('node-postgres').boundingBox()).toEqual(box)
+  expect(await graphPosition(page, 'postgres')).toBe(position)
   await expect(page.getByRole('status').filter({ hasText: 'Checking' })).toHaveCount(0)
 
   await page.reload()
