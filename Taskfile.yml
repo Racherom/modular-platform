@@ -6,6 +6,9 @@ vars:
   GO_PACKAGES: ./catalog/... ./libs/... ./sdk/... ./services/renderer/... ./services/api/... ./services/deployer-docker/...
   IMAGE_PREFIX: ghcr.io/racherom/modular-platform
   IMAGE_TAG: dev
+  # the commit an image build names as its source (spec 0030), also with local changes
+  SOURCE_REF:
+    sh: git rev-parse HEAD
   GOLANGCI_LINT_VERSION: v2.15.0
   LEFTHOOK_VERSION: v2.2.2
   SKILLS_VERSION: 1.7.6
@@ -60,10 +63,10 @@ tasks:
   images:
     desc: Build the web, renderer, api and deployer-docker images, tagged {{.IMAGE_TAG}}
     cmds:
-      - docker build -f services/renderer/Dockerfile -t {{.IMAGE_PREFIX}}/renderer:{{.IMAGE_TAG}} .
-      - docker build -f services/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:{{.IMAGE_TAG}} .
-      - docker build -f services/deployer-docker/Dockerfile -t {{.IMAGE_PREFIX}}/deployer-docker:{{.IMAGE_TAG}} .
-      - docker build -f web/Dockerfile -t {{.IMAGE_PREFIX}}/web:{{.IMAGE_TAG}} .
+      - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/renderer/Dockerfile -t {{.IMAGE_PREFIX}}/renderer:{{.IMAGE_TAG}} .
+      - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:{{.IMAGE_TAG}} .
+      - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/deployer-docker/Dockerfile -t {{.IMAGE_PREFIX}}/deployer-docker:{{.IMAGE_TAG}} .
+      - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/web/Dockerfile -t {{.IMAGE_PREFIX}}/web:{{.IMAGE_TAG}} .
 
   test:
     desc: Run the Go and editor tests
@@ -185,7 +188,7 @@ tasks:
       - mkdir -p .dev/managed
       - cp -R build/managed/. .dev/managed/
       # setup.sh runs api's caller-key step in the api image, before up builds it
-      - docker build -q -f services/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:dev . >/dev/null
+      - docker build -q --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:dev . >/dev/null
       - |
         if [ -f .dev/managed/.env ] && [ -f .dev/managed/secrets/authelia/users ]; then
           sh .dev/managed/setup.sh </dev/null >/dev/null

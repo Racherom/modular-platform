@@ -1,7 +1,7 @@
 # 0030. Pre release image source for the zip
 
 **Date**: 2026-11-11
-**Status**: Proposed
+**Status**: In Progress
 **Scope**: [#46 Pre release image source for the zip](../scope/scope.md)
 **Builds on**: [0015](0011-capability-module-contract/0015-platform-graph-managed-zip.md) (the platform graph and the managed zip), [0016](0016-platform-one-container/index.md) (setup.sh, the seed and the keeper)
 

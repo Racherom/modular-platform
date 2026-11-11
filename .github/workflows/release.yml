@@ -38,13 +38,13 @@ jobs:
       matrix:
         include:
           - service: renderer
-            dockerfile: services/renderer/Dockerfile
+            dockerfile: catalog/modules/renderer/Dockerfile
           - service: web
-            dockerfile: web/Dockerfile
+            dockerfile: catalog/modules/web/Dockerfile
           - service: api
-            dockerfile: services/api/Dockerfile
+            dockerfile: catalog/modules/api/Dockerfile
           - service: deployer-docker
-            dockerfile: services/deployer-docker/Dockerfile
+            dockerfile: catalog/modules/deployer-docker/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -58,6 +58,7 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
+          build-args: MP_SOURCE_REF=${{ github.sha }}
           platforms: linux/amd64,linux/arm64
           push: true
           provenance: mode=max

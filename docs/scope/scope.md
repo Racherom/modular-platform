@@ -243,7 +243,7 @@ Until the first release, the platform's own images (`api`, `renderer`, `web`, `d
 spec [0030](../specs/0030-prerelease-image-source-zip.md) · code in `catalog/modules/`, `libs/render/`, `services/renderer/`, `catalog/cmd/render-platform/`, `deploy/online/`, `.github/workflows/`, `Taskfile.yml`
 - [x] Design it (spec): `/architect pre release image source for the zip`
 - [ ] Build it: `/develop pre release image source for the zip`
-   - [ ] One Dockerfile per image beside its catalog entry, source chosen by build args, the renderer's source ref (AC-7, AC-10)
+   - [x] One Dockerfile per image beside its catalog entry, source chosen by build args, the renderer's source ref (AC-7, AC-10)
    - [ ] Static zip: Dockerfile in the zip, `setup.sh` builds first, README, e2e with `MP_SOURCE_PATH` (AC-1, AC-2, AC-3, AC-4, AC-5)
    - [ ] Managed zip: build before the seed, `pull_policy: never`, keeper restart check (AC-6)
    - [ ] Online editor overlay and release images pushed from the release pull request (AC-8, AC-9)

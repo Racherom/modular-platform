@@ -10,4 +10,8 @@ import (
 	"github.com/racherom/modular-platform/services/renderer/internal/config"
 )
 
-func main() { sdk.Run(config.Module, api.Setup(catalog.FS)) }
+// sourceRef is the git ref this build was made from, set by the Dockerfile with
+// `-ldflags -X main.sourceRef=...`; empty means main (spec 0030, AC-10).
+var sourceRef string
+
+func main() { sdk.Run(config.Module, api.Setup(catalog.FS, sourceRef)) }

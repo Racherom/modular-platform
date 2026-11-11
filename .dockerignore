@@ -9,3 +9,4 @@ web/smoke/results
 web/test-results
 web/playwright-report
 **/secrets
+build

@@ -17,4 +17,4 @@ services:
   renderer:
     build:
       context: ../..
-      dockerfile: services/renderer/Dockerfile
+      dockerfile: catalog/modules/renderer/Dockerfile

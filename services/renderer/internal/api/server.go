@@ -151,8 +151,20 @@ func renderedStack(result contract.CheckResult, m render.ManagedProject) contrac
 // that breaks a rule stops the start with one log line per problem (spec 0002, AC-11). Public mode
 // turns the token check off and limits each client; its sweeper stops with ctx. Internal mode
 // keeps the check, so it refuses to start without a consumer token in MP_RENDERER_CLIENTS_DIR.
-func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
+//
+// sourceRef is the git ref the renderer was built from, which its zips build unreleased platform
+// images from (spec 0030); a ref of the wrong form stops the start, and one that can move (any
+// ref but a full commit, empty meaning main) logs a warning.
+func Setup(catalogFS fs.FS, sourceRef string) sdk.Setup[config.Config, config.Uses] {
 	return func(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http.Handler, error) {
+		source, err := render.NewSourceRef(sourceRef)
+		if err != nil {
+			m.Log.ErrorContext(ctx, "the renderer's source ref: "+err.Error())
+			return nil, fmt.Errorf("%w: %w", err, sdk.ErrStart)
+		}
+		if !source.Commit() {
+			m.Log.WarnContext(ctx, "the renderer's source ref is a branch, not a commit: zips that build a platform image build whatever it holds then", slog.String("source_ref", source.String()))
+		}
 		entries, problems := contract.LoadCatalog(catalogFS)
 		if len(problems) > 0 {
 			for _, p := range problems {
@@ -195,7 +207,7 @@ func Setup(catalogFS fs.FS) sdk.Setup[config.Config, config.Uses] {
 			go limiter.SweepEvery(ctx, time.Minute, m.Log)
 			m.WithRateLimit(limiter, hops)
 		}
-		m.Log.InfoContext(ctx, "renderer starting", slog.String("mode", string(mode)), slog.Int("catalog_modules", len(entries.Modules)), slog.Int("catalog_capabilities", len(entries.Capabilities)))
+		m.Log.InfoContext(ctx, "renderer starting", slog.String("mode", string(mode)), slog.Int("catalog_modules", len(entries.Modules)), slog.Int("catalog_capabilities", len(entries.Capabilities)), slog.String("source_ref", source.String()))
 		return newHandler(&Server{catalog: entries, templates: templates, managed: mode == config.RendererModeInternal, reserved: reserved}, m.Log), nil
 	}
 }

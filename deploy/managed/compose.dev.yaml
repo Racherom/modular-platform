@@ -17,16 +17,16 @@ services:
     image: ghcr.io/racherom/modular-platform/api:dev
     build:
       context: ../..
-      dockerfile: services/api/Dockerfile
+      dockerfile: catalog/modules/api/Dockerfile
 
   renderer:
     image: ghcr.io/racherom/modular-platform/renderer:dev
     build:
       context: ../..
-      dockerfile: services/renderer/Dockerfile
+      dockerfile: catalog/modules/renderer/Dockerfile
 
   deployer-docker:
     image: ghcr.io/racherom/modular-platform/deployer-docker:dev
     build:
       context: ../..
-      dockerfile: services/deployer-docker/Dockerfile
+      dockerfile: catalog/modules/deployer-docker/Dockerfile
