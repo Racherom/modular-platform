@@ -1,0 +1,20 @@
+# While MP_VERSION is 0.0.0 no registry holds the platform's own images, so this overlay builds
+# web and renderer from GitHub at MP_SOURCE_REF (spec 0030); `task online:up` adds it and
+# --build only then. It needs no checkout: the build context is the repository at that ref.
+#   docker compose --env-file versions.env --env-file .env -f compose.yaml -f compose.prerelease.yaml up -d --build --wait
+# Pin MP_SOURCE_REF in versions.env to a commit for a fixed build; a branch builds what it holds
+# at each rebuild. The git context is fetched once for the Dockerfile and once more by its ADD.
+services:
+  web:
+    build:
+      context: https://github.com/racherom/modular-platform.git#${MP_SOURCE_REF:?set in versions.env}:catalog/modules/web
+      args:
+        MP_SOURCE: git
+        MP_SOURCE_REF: ${MP_SOURCE_REF:?set in versions.env}
+
+  renderer:
+    build:
+      context: https://github.com/racherom/modular-platform.git#${MP_SOURCE_REF:?set in versions.env}:catalog/modules/renderer
+      args:
+        MP_SOURCE: git
+        MP_SOURCE_REF: ${MP_SOURCE_REF:?set in versions.env}
