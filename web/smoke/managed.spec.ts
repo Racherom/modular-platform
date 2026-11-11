@@ -49,6 +49,8 @@ test('install, sign in, deploy the sample, see it running @deploy', async ({ pag
   await expect(page).toHaveURL(new RegExp(`/stacks/${stack}$`))
   await expectRunning(page, 5 * 60_000)
   await expect(page.getByRole('heading', { name: stack })).toBeVisible()
+  // the running stack is shown, not edited: no Add on this view (spec 0029, AC-1)
+  await expect(page.getByRole('button', { name: /^Add / })).toHaveCount(0)
 })
 
 test('after a Docker restart it runs again without an apply, then remove it with its data @after-restart', async ({ page }) => {
