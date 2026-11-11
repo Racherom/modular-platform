@@ -3,8 +3,11 @@ name: Release images
 # Pushes the four platform images for the version the release-please pull request names, while
 # that pull request is still open (spec 0030, AC-9). The merge then flips the catalog tags, the
 # managed zip and versions.env to images that already exist, so main never names a missing one.
-# Mark "Release images to GHCR" as a required check on main: on every other pull request the job
-# is skipped, which a required check counts as passed.
+# Mark "Release images to GHCR" as a required check on main. That name belongs to the gate job
+# below, not to the matrix: a matrix reports one check per image ("Release image (renderer)"),
+# so a required check on the matrix name would never report on the release pull request and
+# would block its merge. The gate passes when every image was pushed, or when the push was
+# skipped because the pull request is not the release one.
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -19,7 +22,7 @@ concurrency:
 
 jobs:
   images:
-    name: Release images to GHCR
+    name: Release image
     # the release-please branch of this repository only, never a fork
     if: startsWith(github.head_ref, 'release-please--') && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
@@ -61,3 +64,19 @@ jobs:
             org.opencontainers.image.licenses=Apache-2.0
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  gate:
+    name: Release images to GHCR
+    # the required check: runs on every pull request, even when the push was skipped
+    needs: images
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Every image was pushed, or the pull request is not the release one
+        env:
+          RESULT: ${{ needs.images.result }}
+        run: |
+          case "$RESULT" in
+            success | skipped) ;;
+            *) echo "::error::the release images were not all pushed (result: $RESULT)"; exit 1 ;;
+          esac
