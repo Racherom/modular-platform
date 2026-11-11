@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/compose-spec/compose-go/v2/types"
 )
 
 // DefaultSourceRef is the ref a build without one uses: the default branch, which moves.
@@ -104,7 +106,8 @@ type imageBuild struct {
 func (b imageBuild) Dockerfile() string { return "build/" + b.Module + "/Dockerfile" }
 
 // imageBuilds collects, once per module, the unreleased platform images of the placed modules,
-// sorted by module name, and the Dockerfile file of each. It returns nothing without WithSource.
+// sorted by module name, and the Dockerfile file of each; in the platform flavor each of their
+// services gets pull_policy: never. It does nothing without WithSource.
 func (r *renderer) imageBuilds(opts []Option) ([]File, error) {
 	var o options
 	for _, opt := range opts {
@@ -117,9 +120,17 @@ func (r *renderer) imageBuilds(opts []Option) ([]File, error) {
 	}
 	seen := map[string]bool{}
 	var files []File
-	for _, gm := range r.g.Modules {
+	for i, gm := range r.g.Modules {
 		m := r.modules[gm.Module]
-		if gm.External != nil || seen[m.Name] || !Unreleased(m.Image) {
+		if gm.External != nil || !Unreleased(m.Image) {
+			continue
+		}
+		if r.flavor == flavorPlatform {
+			svc := r.project.Services[i]
+			svc.PullPolicy = types.PullPolicyNever
+			r.project.Services[i] = svc
+		}
+		if seen[m.Name] {
 			continue
 		}
 		seen[m.Name] = true

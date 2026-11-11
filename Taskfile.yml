@@ -205,7 +205,7 @@ tasks:
       # empty for a release: every image tag from the catalog; dev and ci for a local or CI run
       MANAGED_IMAGE_TAG: '{{.MANAGED_IMAGE_TAG | default ""}}'
     cmds:
-      - go run ./catalog/cmd/render-platform -graph deploy/managed/graph.yaml -out build/managed{{if .MANAGED_IMAGE_TAG}} -image-tag {{.MANAGED_IMAGE_TAG}}{{end}}
+      - go run ./catalog/cmd/render-platform -graph deploy/managed/graph.yaml -out build/managed -source-ref {{.SOURCE_REF}}{{if .MANAGED_IMAGE_TAG}} -image-tag {{.MANAGED_IMAGE_TAG}}{{end}}
 
   managed:zip:
     desc: Pack the rendered build/managed into dist/modular-platform-<version>.zip; the same version gives the same bytes
