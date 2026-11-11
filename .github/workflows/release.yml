@@ -26,60 +26,39 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  images:
-    name: Images to GHCR
+  managed-zip:
+    name: Managed zip on the release
+    # the images were pushed from the release pull request (release-images.yml, spec 0030);
+    # the check below fails the job rather than ship a zip that names a missing image
     needs: release-please
     if: needs.release-please.outputs.created == 'true'
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        include:
-          - service: renderer
-            dockerfile: catalog/modules/renderer/Dockerfile
-          - service: web
-            dockerfile: catalog/modules/web/Dockerfile
-          - service: api
-            dockerfile: catalog/modules/api/Dockerfile
-          - service: deployer-docker
-            dockerfile: catalog/modules/deployer-docker/Dockerfile
+      contents: write
+      packages: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          build-args: MP_SOURCE_REF=${{ github.sha }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          provenance: mode=max
-          sbom: true
-          tags: ghcr.io/racherom/modular-platform/${{ matrix.service }}:${{ needs.release-please.outputs.version }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/racherom/modular-platform
-            org.opencontainers.image.version=${{ needs.release-please.outputs.version }}
-            org.opencontainers.image.licenses=Apache-2.0
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
-
-  managed-zip:
-    name: Managed zip on the release
-    # after the images, so the zip never names a tag that is not pushed yet
-    needs: [release-please, images]
-    if: needs.release-please.outputs.created == 'true'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
+      - name: Every platform image of the release is in GHCR for amd64 and arm64
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          for service in renderer web api deployer-docker; do
+            image="ghcr.io/racherom/modular-platform/$service:$VERSION"
+            manifest=$(docker buildx imagetools inspect "$image") || {
+              echo "::error::$image is not in GHCR; did the release pull request push it?"
+              exit 1
+            }
+            for platform in linux/amd64 linux/arm64; do
+              printf '%s\n' "$manifest" | grep -Eq "Platform: +$platform\$" || {
+                echo "::error::$image has no $platform image"
+                exit 1
+              }
+            done
+          done
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
