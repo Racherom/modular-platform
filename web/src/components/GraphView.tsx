@@ -10,6 +10,7 @@ import {
   type OnConnectStart,
   ReactFlow,
   useReactFlow,
+  useStore,
 } from '@xyflow/react'
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Catalog, Graph, Problem } from '../api/client'
@@ -50,16 +51,19 @@ const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion:
  * Centers the canvas on the node the store names (spec 0029, AC-8; the problems panel uses the
  * same path), at the current zoom (at least 1), without animation under reduced motion. It uses
  * the stored position and the node's known size, since a new node is not drawn yet. Renders
- * inside the canvas, where React Flow's own provider is.
+ * inside the canvas, where React Flow's own provider is. It waits until pan and zoom exist and the
+ * `fitView` on mount has run: on a canvas that just mounted (the sample handoff, spec 0029 AC-11)
+ * centering earlier is lost, then overwritten by that fit.
  */
 function CenterOnRequest({ nodes }: { nodes: ModuleFlowNode[] }) {
   const flow = useReactFlow()
+  const ready = useStore((s) => s.panZoom !== null && !s.fitViewQueued)
   const request = useEditor((s) => s.centerRequest)
   const { centered } = useEditor.getState()
   const latest = useRef(nodes)
   latest.current = nodes
   useEffect(() => {
-    if (!request) return
+    if (!request || !ready) return
     const frame = requestAnimationFrame(() => {
       const node = latest.current.find((n) => n.id === request)
       if (node) {
@@ -71,7 +75,7 @@ function CenterOnRequest({ nodes }: { nodes: ModuleFlowNode[] }) {
       centered()
     })
     return () => cancelAnimationFrame(frame)
-  }, [request, flow, centered])
+  }, [request, ready, flow, centered])
   return null
 }
 

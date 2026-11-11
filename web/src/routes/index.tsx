@@ -36,10 +36,14 @@ function Editor() {
       .catch(() => restore(null))
   }, [working, restore])
 
-  // the sample copy brings its selection along; focus follows a module so the keyboard is not lost
+  // the sample copy brings its selection along; focus follows a module so the keyboard is not lost.
+  // The ref keeps the taken handoff for a second run of this effect: StrictMode's test unmount
+  // makes the canvas drop the selection, and the remount must apply it again (spec 0029, AC-11)
+  const handoffRef = useRef<ReturnType<typeof useEditor.getState>['handoff']>(null)
   useEffect(() => {
     const { takeHandoff, showModule, select } = useEditor.getState()
-    const handoff = takeHandoff()
+    handoffRef.current ??= takeHandoff()
+    const handoff = handoffRef.current
     if (handoff?.kind === 'module') showModule(handoff.instance)
     else if (handoff) select(handoff)
   }, [])

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useMemo } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CheckResult, Graph } from '../api/client'
 import { NODE_WIDTH, nodeHeight } from '../graph/flow'
@@ -12,6 +12,21 @@ import { testCatalog, testModule } from './fixtures'
 import { fetchHandler } from './setup'
 
 const flow = vi.hoisted(() => ({ setCenter: vi.fn(() => Promise.resolve(true)), zoom: 1 }))
+// whether the fitView on mount is still queued; a test flips it to see centering wait for the fit
+const fit = vi.hoisted(() => {
+  const listeners = new Set<() => void>()
+  return {
+    queued: false,
+    set(queued: boolean) {
+      fit.queued = queued
+      for (const l of listeners) l()
+    },
+    subscribe(l: () => void) {
+      listeners.add(l)
+      return () => listeners.delete(l)
+    },
+  }
+})
 vi.mock('@xyflow/react', async (actual) => {
   const real = await actual<typeof import('@xyflow/react')>()
   return {
@@ -21,6 +36,12 @@ vi.mock('@xyflow/react', async (actual) => {
       const instance = real.useReactFlow(...args)
       return useMemo(() => ({ ...instance, setCenter: flow.setCenter, getZoom: () => flow.zoom }), [instance])
     },
+    // jsdom never measures nodes, so the fitView on mount never runs; report it done like a browser
+    // would, unless a test holds it queued with fit.set(true)
+    useStore: ((selector, equality) => {
+      const queued = useSyncExternalStore(fit.subscribe, () => fit.queued)
+      return real.useStore((s) => selector({ ...s, fitViewQueued: queued }), equality)
+    }) as typeof real.useStore,
   }
 })
 vi.mock('../lib/storage', async (actual) => ({
@@ -65,6 +86,7 @@ function reduceMotion(on: boolean) {
 }
 
 beforeEach(() => {
+  fit.queued = false
   flow.setCenter.mockClear()
   flow.zoom = 1
   useEditor.setState({
@@ -193,6 +215,20 @@ describe('centering on the new node (AC-8)', () => {
     act(() => s().redo())
     await new Promise((r) => setTimeout(r, 50))
     expect(flow.setCenter).not.toHaveBeenCalled()
+  })
+
+  it('waits while the fitView on mount is queued, then centers once it has run', async () => {
+    renderEditor()
+    await screen.findByRole('button', { name: 'Add postgres' })
+    act(() => fit.set(true))
+    await add('postgres')
+    await new Promise((r) => setTimeout(r, 50))
+    expect(flow.setCenter).not.toHaveBeenCalled()
+    expect(s().centerRequest).toBe('postgres')
+    act(() => fit.set(false))
+    await waitFor(() => expect(flow.setCenter).toHaveBeenCalledTimes(1))
+    expect(flow.setCenter).toHaveBeenCalledWith(NODE_WIDTH / 2, nodeHeight(1, 0) / 2, { zoom: 1, duration: 200 })
+    await waitFor(() => expect(s().centerRequest).toBeNull())
   })
 
   it('a request for a node that is gone is cleared and centers nothing', async () => {
