@@ -2,7 +2,7 @@
 
 ## Overview
 
-Turns a plan into the files of a runnable Compose project: `docker-compose.yml`, `graph.yaml`, `setup.sh`, `.env`, `README.md`, and a `config/<instance>.env` per module built on the sdk. The zip download and the managed deploy both go through it, so they cannot drift (spec 0002 render rules, spec 0005 render additions). Pure domain: no network, disk, clock or env.
+Turns a resolved graph into the files of a runnable Compose project: `docker-compose.yml`, `graph.yaml`, `setup.sh`, `.env`, `README.md`, and a `config/<instance>.env` per module built on the sdk. The zip download and the managed deploy both go through it, so they cannot drift (spec 0002 render rules, spec 0005 render additions). Pure domain: no network, disk, clock or env.
 
 ## Key files
 
@@ -28,9 +28,9 @@ go test -race -tags e2e ./libs/render/  # build the sdkpair images, render, comp
 
 ## Conventions
 
-- Output must be deterministic: the same plan gives the same bytes (files, instances and secrets sorted by path, the 1980 zip time). A golden diff you did not intend is a bug, not a file to update.
+- Output must be deterministic: the same resolved graph gives the same bytes (files, instances and secrets sorted by path, the 1980 zip time). A golden diff you did not intend is a bug, not a file to update.
 - Review the golden diff in your commit like code; it is the render's contract.
-- A plan that is not ok is never rendered (`ErrPlanHasErrors`).
+- A check result that is not ok is never rendered (`ErrGraphHasErrors`).
 
 ## Gotchas
 

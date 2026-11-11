@@ -1,29 +1,29 @@
 # Modular Platform
 
-Builds a microservice stack from exchangeable modules. A graph planner checks that every capability a module uses has a provider, then renders the stack as a Compose zip (static mode) or deploys it (managed mode).
+Builds a microservice stack from exchangeable modules. The checks make sure every capability a module uses has a provider, then the renderer renders the stack as a Compose zip (static mode) or deploys it (managed mode).
 
 ## Stack
 
 - **Language / Runtime**: Go 1.26 or newer (`go.work` pins toolchain go1.27.3); TypeScript (strict) on Node 26
 - **Framework**: Go standard library `net/http` ServeMux, no framework; React single page app built by Vite (see [web/AGENTS.md](web/AGENTS.md))
 - **Key dependencies**: `compose-spec/compose-go` v2 (render), `oapi-codegen` and `openapi-typescript` from one OpenAPI 3.1 contract, `golang.org/x/time/rate`; from managed mode (#16): `pgx` v5 + `sqlc` + `goose`, Authelia (OIDC), Caddy, NATS later
-- **Package manager**: Go modules in a `go.work` workspace (`catalog`, `libs`, `sdk`, `services/planner`); pnpm 12 in `web/`; Task for cross language tasks
+- **Package manager**: Go modules in a `go.work` workspace (`catalog`, `libs`, `sdk`, `services/api`, `services/deployer-docker`, `services/renderer`); pnpm 12 in `web/`; Task for cross language tasks
 - **Images and releases**: distroless static nonroot for Go services, multi stage builds from the repo root; release-please
 - Source of truth: [docs/specs/0001-platform-stack-architecture](docs/specs/0001-platform-stack-architecture/index.md)
 
 ## Build approach
 
-**Tracer Bullet**: each slice runs end to end through catalog, planner, editor and deploy; every later slice thickens one strand of a thread that already works.
+**Tracer Bullet**: each slice runs end to end through catalog, checks, renderer, editor and deploy; every later slice thickens one strand of a thread that already works.
 
 ## Commands
 
 ```bash
 task generate   # Go and TS code from contracts/openapi, sdk getters from catalog entries (output committed; CI fails on a diff)
-task dev        # online tool on https://platform.localhost, editor with hot reload (binds 80 and 443)
-task build      # Go, the editor, and the web and planner images
+task dev        # online editor on https://platform.localhost, editor with hot reload (binds 80 and 443)
+task build      # Go, the editor, and the web and renderer images
 task test       # go test -race and vitest (installs web deps itself)
 task test:integration  # the Docker tests (build tags integration and e2e)
-task lint       # golangci-lint (gofumpt), Biome, tsc
+task lint       # golangci-lint (gofumpt), Biome, tsc, and the retired word check (task lint:vocabulary)
 task fmt        # gofumpt, goimports and Biome, applying safe fixes
 task hooks      # install lefthook and the pre commit hook (once per clone)
 task skills     # restore the agent skills in skills-lock.json, workflow skills included (once per clone)
@@ -37,10 +37,10 @@ Stored in `docs/specs/`, one folder per spec: `docs/specs/NNNN-title/index.md`, 
 
 ## Rules
 
-- **Domain Driven Design, one package per bounded context**: `libs/contract` (module, capability, graph and catalog formats; the shared kernel), `libs/planner` (match uses to provides), `libs/render` (plan to Compose project and zip), `libs/target` (deploy targets), and each `services/<name>`. A context owns its model; others reach it only through its exported API. Follow the existing folder layout; service code lives in `services/<name>/internal/`.
-- **Ubiquitous language**: name things with the domain's words: module, capability, provides, uses, binding, graph, catalog, plan, render, target, fragment, provisioner. No synonyms such as plugin or dependency for these.
+- **Domain Driven Design, one package per bounded context**: `libs/contract` (module, capability, graph and catalog formats; the shared kernel), `libs/check` (the checks: match uses to provides, recommend a provider for a left out use), `libs/render` (resolved graph to Compose project and zip), `libs/target` (deploy targets), and each `services/<name>`. A context owns its model; others reach it only through its exported API. Follow the existing folder layout; service code lives in `services/<name>/internal/`.
+- **Ubiquitous language**: name things with the domain's words: module, capability, provides, uses, binding, recommendation, graph, resolved graph, catalog, check, stack, renderer, render, zip, apply, target, fragment, provisioner. No synonyms such as plugin or dependency for these. The glossary in spec 0001 lists each word once and maps the retired names; `scripts/vocabulary.txt` holds the retired words.
 - **Value objects and aggregates**: domain types are validated when built and then treated as immutable; the graph is the aggregate root, and other contexts refer to its modules and bindings by name. Domain events (once NATS lands) are past tense facts, like `StackDeployed`.
-- **Pure domain, I/O at the edges**: `libs/planner` and `libs/render` never touch network, disk, clock or env. Services are application services: parse input, call the domain, map to the contract; no domain logic in handlers. Persistence sits behind interfaces the domain defines; Docker, OIDC and compose-go types stay behind an adapter at the edge.
+- **Pure domain, I/O at the edges**: `libs/check` and `libs/render` never touch network, disk, clock or env. Services are application services: parse input, call the domain, map to the contract; no domain logic in handlers. Persistence sits behind interfaces the domain defines; Docker, OIDC and compose-go types stay behind an adapter at the edge.
 - **Contract first**: API changes start in `contracts/openapi/*.yaml`, then `task generate`. Never hand edit `*.gen.go`, `*.gen.ts` or `routeTree.gen.ts`. Wire errors use the contract's `Problem` and `ProblemList` schemas.
 - **Errors**: return errors, wrap with `fmt.Errorf("...: %w", err)`, use sentinel or typed errors where callers branch; no panics for expected failures.
 - **Config**: every `MP_*` setting is parsed and checked once at startup in `internal/config`; a bad value stops the service. Public origin from config only (principle 12).
@@ -97,7 +97,7 @@ Git tracks only `skills-lock.json` (each skill's source and hash), not the skill
 
 - [web/AGENTS.md](web/AGENTS.md) (the editor: React, Vite, base path handling, its tests and skills)
 - [sdk/AGENTS.md](sdk/AGENTS.md): the module SDK, its packages, `sdkgen`, and the config and secret rules
-- [libs/render/AGENTS.md](libs/render/AGENTS.md) (plan to Compose files: golden files, `-update`, the e2e sdk pair)
-- [deploy/online/AGENTS.md](deploy/online/AGENTS.md) (the online tool's Compose stack: overlays, pinned tags, hardening)
+- [libs/render/AGENTS.md](libs/render/AGENTS.md) (resolved graph to Compose files: golden files, `-update`, the e2e sdk pair)
+- [deploy/online/AGENTS.md](deploy/online/AGENTS.md) (the online editor's Compose stack: overlays, pinned tags, hardening)
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

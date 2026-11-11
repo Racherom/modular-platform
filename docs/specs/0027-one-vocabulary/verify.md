@@ -1,4 +1,4 @@
-# Verify: One vocabulary · spec 0027 · updated 2026-11-10
+# Verify: One vocabulary · spec 0027 · updated 2026-11-11
 
 _Steps derived from spec 0027 and child 0028 acceptance criteria. `/check verify` runs these; `/test` locks the durable ones._
 
@@ -16,20 +16,20 @@ _Steps derived from spec 0027 and child 0028 acceptance criteria. `/check verify
 
 ## Commands
 
-- [ ] `task lint:vocabulary report=1` → lists only Markdown in specs, the scope and `AGENTS.md` files until slice 6 lands; then `task lint:vocabulary` → "vocabulary: no retired words", exit 0 → AC-12
-- [ ] Add the word "planner" to any tracked file and run `sh scripts/vocabulary.sh` → it prints `file:line: "planner" is retired, use renderer ...` and exits 1; stage a file renamed to `deployments.md` → the path is reported too <!-- vocabulary: allow --> → AC-12
-- [ ] `grep -n '## Glossary' -A40 docs/specs/0001-platform-stack-architecture/index.md` → each glossary word once, and a Retired table mapping each retired name → AC-1
-- [ ] Start the renderer with only `MP_PLANNER_MODE` set → it stops at start because `MP_RENDERER_MODE` is missing; start `api` without `MP_RENDERER_URL` → it stops too <!-- vocabulary: allow --> → AC-6
+- [x] `task lint:vocabulary report=1` → lists only Markdown in specs, the scope and `AGENTS.md` files until slice 6 lands; then `task lint:vocabulary` → "vocabulary: no retired words", exit 0 → AC-12
+- [x] Add the word "planner" to any tracked file and run `sh scripts/vocabulary.sh` → it prints `file:line: "planner" is retired, use renderer ...` and exits 1; stage a file renamed to `deployments.md` → the path is reported too <!-- vocabulary: allow --> → AC-12
+- [x] `grep -n '## Glossary' -A40 docs/specs/0001-platform-stack-architecture/index.md` → each glossary word once, and a Retired table mapping each retired name → AC-1
+- [x] Start the renderer with only `MP_PLANNER_MODE` set → it stops at start because `MP_RENDERER_MODE` is missing; start `api` without `MP_RENDERER_URL` → it stops too <!-- vocabulary: allow --> → AC-6
 - [ ] `POST /v1/plan` on the renderer, `POST /api/v1/plan`, `GET /api/v1/deployments` on `api`, `POST /v1/projects/mp-x/apply` on the deployer → 404 each <!-- vocabulary: allow --> → AC-6
-- [ ] `POST <base>/planner/v1/check` through the online editor's ingress → 404 (it falls through to the web module now; check it is not the app shell or 405) <!-- vocabulary: allow --> → AC-6
-- [ ] `POST /v1/check` with `contracts/fixtures/graphs/required-one.yaml` → 200, `ok` false, one `binding_recommended` at `modules.app.uses.db` with candidates `["db"]`, `bindings` empty, and the graph has no `uses.db` → AC-7, AC-3
+- [ ] `POST <base>/planner/v1/check` through the online editor's ingress → 404 (the web module answers the app shell only to `GET` and `HEAD`, so a `POST` there is 404, not the app shell and not 405; `task smoke` runs this as `retired_route`, at the site root and under `/platform`); also `GET <base>/` still answers the app shell <!-- vocabulary: allow --> → AC-6
+- [x] `POST /v1/check` with a graph of two modules, `auth` (module `authelia`) and `db` (module `postgres`), no bindings (the built in catalog has no `app` or `db` module; `required-one.yaml` only works with the test modules in `libs/check/testdata/catalog`, so its recommendation is checked by the Go test below) → 200, `ok` false, a `binding_recommended` at `modules.auth.uses.db` with candidates `["db"]`, `bindings` empty, and the graph has no `uses.db`; the `unmet_need` for `modules.auth.uses.public` is expected, nothing provides `http-ingress` here → AC-7, AC-3
 - [ ] `POST /v1/render`, `POST /v1/render/managed` and `POST /api/v1/render` with that graph → 422 with the `CheckResult` → AC-8
-- [ ] `go test -race ./libs/check/ -run 'TestCheck|TestRecommendationIsNotABinding|TestCheckV0alpha1'` → ok → AC-7, AC-10, AC-11
-- [ ] `go test -race -tags integration ./services/api/internal/store/ -run TestMigrationStacks` → ok: two stacks seeded at `00001` keep every row, link and digest through `up`, and `down` brings back the old names → AC-5
-- [ ] `go test -race ./libs/render/ -update && git diff --stat libs/render/testdata` → no change → AC-11
-- [ ] `git log --format=%B main..HEAD | grep -c 'BREAKING CHANGE:'` → one per renaming slice; the stack slice names the folder move to `<install>/stacks` and the label refresh, the recommendation slice says to review again after `graph_changed` → AC-6
-- [ ] `sh scripts/vocabulary.sh | grep 'docs/specs'` → no line: every spec `index.md`, child spec and `verify.md` uses the glossary's words, and a line that names an old word on purpose carries the marker (rationale files are skipped) → AC-13
-- [ ] `task generate && git status --short` → no diff; `task lint`, `task test`, `task test:integration`, `task smoke` and `task smoke:managed` → pass → AC-14
+- [x] `go test -race ./libs/check/ -run 'TestCheck|TestRecommendationIsNotABinding|TestCheckV0alpha1'` → ok → AC-7, AC-10, AC-11
+- [x] `go test -race -tags integration ./services/api/internal/store/ -run TestMigrationStacks` → ok: two stacks seeded at `00001` keep every row, link and digest through `up`, and `down` brings back the old names → AC-5
+- [x] `go test -race ./libs/render/ -update && git diff --stat libs/render/testdata` → no change → AC-11
+- [x] `git log --format=%B main..HEAD | grep -c 'BREAKING CHANGE:'` → one per renaming slice; the stack slice names the folder move to `<install>/stacks` and the label refresh, the recommendation slice says to review again after `graph_changed` → AC-6
+- [x] `sh scripts/vocabulary.sh | grep 'docs/specs'` → no line: every spec `index.md`, child spec and `verify.md` uses the glossary's words, and a line that names an old word on purpose carries the marker (rationale files are skipped) → AC-13
+- [ ] Full gate, run in full and never skipped: `task generate && git status --short` → no diff; then `task lint`, `task test`, `task test:integration`, `task smoke` and `task smoke:managed`, each to the end with no filter and no skipped build tag → every one exits 0. A task that was skipped, cut short or only partly run is reported as a fail, not as passed, and this step stays unchecked until all six have passed in the same run. The focused Go test steps above do not stand in for it → AC-14
 
 ## Value sourcing
 
@@ -39,4 +39,4 @@ _Steps derived from spec 0027 and child 0028 acceptance criteria. `/check verify
 
 ## Acceptance-criteria coverage
 
-- AC-1: glossary step · AC-2: renderer start, online editor text, check script · AC-3: required-one check step · AC-4: managed mode navigation step, the 404 step · AC-5: migration test · AC-6: start refusals, 404s, commit footers · AC-7: required-one step and Go test · AC-8: render refusal step · AC-9: the UI steps · AC-10: ambiguous and optional steps · AC-11: golden diff and Go tests · AC-12: the two check script steps · AC-13: the spec text step (the READMEs, `/sync` for `AGENTS.md` and `/scope` for the scope rows are checked once they land) · AC-14: the full gate step
+- AC-1: glossary step · AC-2: renderer start, online editor text, check script · AC-3: required-one check step · AC-4: managed mode navigation step, the 404 step · AC-5: migration test · AC-6: start refusals, 404s, commit footers · AC-7: required-one step and Go test · AC-8: render refusal step · AC-9: the UI steps · AC-10: ambiguous and optional steps · AC-11: golden diff and Go tests · AC-12: the two check script steps · AC-13: the spec text step (the READMEs, `/sync` for `AGENTS.md` and `/scope` for the scope rows are checked once they land) · AC-14: the full gate step (a skipped test task fails the verify run, it is never a pass)
