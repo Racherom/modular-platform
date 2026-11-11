@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CheckResult, Graph } from '../api/client'
 import { nodeHeight } from '../graph/flow'
@@ -15,6 +16,14 @@ import { fetchHandler } from './setup'
 
 const stored = vi.hoisted(() => ({ current: undefined as unknown, loads: 0 }))
 const saveGraphFile = vi.hoisted(() => vi.fn())
+// jsdom never measures nodes, so the fitView on mount never runs; report it done like a browser would
+vi.mock('@xyflow/react', async (actual) => {
+  const real = await actual<typeof import('@xyflow/react')>()
+  return {
+    ...real,
+    useStore: ((selector, equality) => real.useStore((s) => selector({ ...s, fitViewQueued: false }), equality)) as typeof real.useStore,
+  }
+})
 vi.mock('../lib/storage', async (actual) => ({
   ...(await actual<typeof import('../lib/storage')>()),
   loadWorking: () => {
@@ -47,14 +56,16 @@ const edited = (): WorkingGraph => ({
   edited: true,
 })
 
-function renderAt(path: string) {
+function renderAt(path: string, { strict = false } = {}) {
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-  render(
+  const app = (
     <QueryClientProvider client={client}>
       <RouterProvider router={router} />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+  // main.tsx renders under StrictMode, which mounts every effect twice
+  render(strict ? <StrictMode>{app}</StrictMode> : app)
   return router
 }
 
@@ -149,6 +160,17 @@ describe('Add on the sample route (AC-11)', () => {
     await waitFor(() => expect(document.activeElement).toBe(document.querySelector('.react-flow__node[data-id="postgres-2"]')))
     expect(s().handoff).toBeNull()
     await waitFor(() => expect(s().centerRequest).toBeNull())
+  })
+
+  it('keeps the handoff across the StrictMode remount: the new node is still selected and focused (AC-11)', async () => {
+    const router = renderAt('/samples/whoami-postgres', { strict: true })
+    fireEvent.click(await addButton('postgres'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'))
+    const node = () => document.querySelector('.react-flow__node[data-id="postgres-2"]')
+    await waitFor(() => expect(node()).not.toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(node()))
+    expect(s().selection).toEqual({ kind: 'module', instance: 'postgres-2' })
+    expect(s().handoff).toBeNull()
   })
 
   describe('with an edited working graph', () => {

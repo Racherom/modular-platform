@@ -171,6 +171,38 @@ test('an edit on the sample asks first when the working graph is edited; Cancel 
   await expect(page.locator(edges)).toHaveCount(0)
 })
 
+test('Add on the sample lands in the editor with the new node selected, focused and centered (spec 0029, AC-11)', async ({ page }) => {
+  const { checks } = await mockRenderer(page)
+  await page.goto(SAMPLE)
+  await expect(node(page, 'whoami')).toBeVisible()
+  const calls = checks.length
+
+  await button(page, 'Add postgres').click()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(node(page, 'postgres-2')).toHaveClass(/\bselected\b/)
+  await expect(node(page, 'postgres-2')).toBeFocused()
+  await expect(page.getByRole('status').filter({ hasText: 'Added postgres-2' })).toBeVisible()
+  await expect.poll(() => checks.length).toBe(calls + 1)
+  expect(Object.keys(checks.at(-1)?.modules ?? {})).toContain('postgres-2')
+
+  // the canvas mounts fresh after the navigation; its fitView on mount must not win over the centering
+  const offCenter = async () => {
+    const pane = await page.locator('.react-flow').boundingBox()
+    const box = await node(page, 'postgres-2').boundingBox()
+    if (!pane || !box) return Number.POSITIVE_INFINITY
+    return Math.max(
+      Math.abs(pane.x + pane.width / 2 - (box.x + box.width / 2)),
+      Math.abs(pane.y + pane.height / 2 - (box.y + box.height / 2)),
+    )
+  }
+  await expect.poll(offCenter).toBeLessThan(30)
+
+  // one undo returns to the unedited copy
+  await button(page, 'Undo').click()
+  await expect(node(page, 'postgres-2')).toHaveCount(0)
+  await expect(button(page, 'Undo')).toBeDisabled()
+})
+
 test('Open file asks first when the working graph is edited, before any file is read (AC-18)', async ({ page }) => {
   await mockRenderer(page)
   await editedWorkingGraph(page)
