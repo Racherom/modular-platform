@@ -48,10 +48,16 @@ func start(t *testing.T, env map[string]string) renderer {
 
 func build(t *testing.T, env map[string]string, catalogFS fs.FS) (http.Handler, *bytes.Buffer, error) {
 	t.Helper()
+	return buildRef(t, env, catalogFS, "")
+}
+
+// buildRef is build for a renderer made from the git ref sourceRef.
+func buildRef(t *testing.T, env map[string]string, catalogFS fs.FS, sourceRef string) (http.Handler, *bytes.Buffer, error) {
+	t.Helper()
 	var logs bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	h, err := sdk.Build(ctx, config.Module, api.Setup(catalogFS),
+	h, err := sdk.Build(ctx, config.Module, api.Setup(catalogFS, sourceRef),
 		sdk.WithEnv(env), sdk.WithLogger(slog.New(slog.NewJSONHandler(&logs, nil))))
 	return h, &logs, err
 }
@@ -611,5 +617,61 @@ func TestRetiredRoutesAre404(t *testing.T) {
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("POST %s: status %d, want 404: %.200s", path, resp.StatusCode, body)
 		}
+	}
+}
+
+// TestSourceRef covers spec 0030 AC-10: the start logs the source ref, warns for a ref that can
+// move, and refuses one of the wrong form.
+func TestSourceRef(t *testing.T) {
+	t.Parallel()
+	const commit = "b5f34e9a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f"
+	for name, tc := range map[string]struct {
+		ref, logged string
+		warn        bool
+		refused     bool
+	}{
+		"full commit":  {ref: commit, logged: commit},
+		"empty":        {ref: "", logged: "main", warn: true},
+		"branch":       {ref: "main", logged: "main", warn: true},
+		"short commit": {ref: "b5f34e9", refused: true},
+		"space":        {ref: "a b", refused: true},
+		"quote":        {ref: "a'b", refused: true},
+		"hash":         {ref: "a#b", refused: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, logs, err := buildRef(t, publicEnv("60"), catalog.FS, tc.ref)
+			if tc.refused {
+				if !errors.Is(err, sdk.ErrStart) {
+					t.Fatalf("err = %v, want sdk.ErrStart", err)
+				}
+				if lines := errorLines(t, logs); len(lines) != 1 || !strings.Contains(lines[0], "source ref") {
+					t.Errorf("error lines %q, want one naming the source ref", lines)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("start refused: %v\n%s", err, logs)
+			}
+			var started, warned bool
+			for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+				var entry struct {
+					Level, Msg string
+					SourceRef  string `json:"source_ref"`
+				}
+				if err := json.Unmarshal([]byte(line), &entry); err != nil {
+					t.Fatal(err)
+				}
+				switch {
+				case entry.Msg == "renderer starting":
+					started = entry.SourceRef == tc.logged
+				case entry.Level == "WARN" && strings.Contains(entry.Msg, "source ref"):
+					warned = true
+				}
+			}
+			if !started || warned != tc.warn {
+				t.Errorf("started with source_ref %q: %v, warned %v (want %v):\n%s", tc.logged, started, warned, tc.warn, logs)
+			}
+		})
 	}
 }
