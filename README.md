@@ -39,7 +39,9 @@ task skills     # the agent skills from skills-lock.json, for AI coding agents (
 authority, so your browser warns about the certificate on first visit.
 
 `task online:up` pulls the release images named by `MP_VERSION` in `deploy/online/versions.env`.
-Until the first release exists (it reads `0.0.0`), run the images you built yourself instead:
+Until the first release exists (it reads `0.0.0`), it builds the web and renderer images from
+GitHub at `MP_SOURCE_REF` (also in `versions.env`, `main` by default) instead, which takes a few
+minutes. To run the images you built from your checkout:
 
 ```sh
 task images
@@ -71,8 +73,10 @@ deploying a stack, changing the admin, backups, and upgrades. Every file in that
 rendered from [deploy/managed/graph.yaml](deploy/managed/graph.yaml), the platform's own graph,
 with the built in catalog (`task managed:render` writes it into `build/managed/`).
 
-No release exists yet (the version still reads `0.0.0`), so for now you can start the platform from
-this checkout instead.
+No release exists yet (the version still reads `0.0.0`). A zip made now holds the Dockerfile of
+each platform image, and `setup.sh` builds them first from the commit that made the zip (it needs
+Docker 23 or newer with BuildKit, and GitHub access, or `MP_SOURCE_PATH` set to a checkout). You
+can also start the platform from this checkout instead.
 
 ### From this checkout
 
@@ -104,6 +108,12 @@ release-please opens the release pull request. A pull request opened with the de
 `GITHUB_TOKEN` starts no other workflow, so CI would not check it. Add a repository secret
 `RELEASE_PLEASE_TOKEN` (a fine grained token, or a GitHub App token, with contents and pull
 request write access) and the release workflow uses it, so CI runs on the release pull request too.
+
+The release pull request also pushes the four platform images for its version
+(`release-images.yml`), again on every update, before anything names them. Make its check
+*Release images to GHCR* required on `main`, so the pull request cannot merge before its images
+exist. After the merge, the release workflow checks that every image is in GHCR for amd64 and
+arm64, then attaches the managed zip.
 
 ## License
 
