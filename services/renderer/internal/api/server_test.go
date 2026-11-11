@@ -601,3 +601,15 @@ func TestRenderRefusesARecommendation(t *testing.T) {
 		t.Errorf("managed render: status %d body %s", resp.StatusCode, body)
 	}
 }
+
+// TestRetiredRoutesAre404 covers spec 0027 AC-6: the old check route is gone.
+func TestRetiredRoutesAre404(t *testing.T) {
+	t.Parallel()
+	r := start(t, public)
+	for _, path := range []string{"/v1/plan"} { // vocabulary: allow
+		resp, body := r.do(t, http.MethodPost, path, sampleJSON, nil)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("POST %s: status %d, want 404: %.200s", path, resp.StatusCode, body)
+		}
+	}
+}

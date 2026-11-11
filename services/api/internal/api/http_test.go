@@ -91,3 +91,25 @@ func TestCleanBody(t *testing.T) {
 		}
 	}
 }
+
+// TestRetiredRoutesAre404 covers spec 0027 AC-6: the old routes are not registered, so they
+// answer 404 before the session guard, which wraps only the routes that exist.
+func TestRetiredRoutesAre404(t *testing.T) {
+	t.Parallel()
+	h := testHandler(t)
+	for name, tc := range map[string]struct{ method, path string }{
+		"check route":      {http.MethodPost, "/api/v1/plan"},       // vocabulary: allow
+		"stacks, old name": {http.MethodGet, "/api/v1/deployments"}, // vocabulary: allow
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, strings.NewReader("{}"))
+			req.Header.Set("Origin", "https://platform.localhost")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("%s %s: status %d %s, want 404", tc.method, tc.path, rec.Code, rec.Body)
+			}
+		})
+	}
+}

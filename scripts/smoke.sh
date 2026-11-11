@@ -34,6 +34,19 @@ trap 'exit 130' INT TERM HUP
 
 [ -f "$online/.env" ] || cp "$online/.env.example" "$online/.env"
 
+# The old check route is gone (spec 0027, AC-6): through the ingress it must answer 404, not the
+# app shell and not 405. $1 is the base path.
+retired_route() {
+	domain=$(sed -n 's/^PLATFORM_DOMAIN=//p' "$online/.env")
+	port=$(sed -n 's/^PLATFORM_HTTPS_PORT=//p' "$online/.env")
+	code=$(curl -sk -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' \
+		--resolve "$domain:${port:-443}:127.0.0.1" "https://$domain:${port:-443}$1/planner/v1/check") # vocabulary: allow
+	[ "$code" = 404 ] || {
+		echo "smoke: POST $1/planner/v1/check answered $code, want 404" >&2 # vocabulary: allow
+		exit 1
+	}
+}
+
 echo "== the ingress config with a real certificate (acme), as in production"
 docker run --rm -v "$online/Caddyfile:/etc/caddy/Caddyfile:ro" \
 	-e PLATFORM_DOMAIN=example.com -e PLATFORM_TLS=acme -e PLATFORM_ACME_EMAIL= -e MP_BASE_PATH= \
@@ -42,6 +55,7 @@ docker run --rm -v "$online/Caddyfile:/etc/caddy/Caddyfile:ro" \
 echo "== online editor at the site root"
 online -f "$online/compose.yaml" up -d --wait --wait-timeout 120
 SMOKE_BASE='' SMOKE_ZIP="$work/sample.zip" pnpm --dir "$repo/web" run smoke:browser
+retired_route ''
 
 echo "== the downloaded zip (AC-3, AC-4)"
 mkdir "$work/stack"
@@ -49,7 +63,7 @@ cd "$work/stack"
 unzip -q "$work/sample.zip"
 # exactly these files and nothing else, so no secrets/ folder or stray file can slip in
 files=$(unzip -Z1 "$work/sample.zip" | LC_ALL=C sort | tr '\n' ' ')
-[ "$files" = ".env README.md docker-compose.yml graph.yaml setup.sh " ] || {
+[ "$files" = ".env README.md config/postgres/pg_hba.conf config/postgres/postgresql.conf docker-compose.yml graph.yaml setup.sh " ] || {
 	echo "smoke: unexpected zip contents: $files" >&2
 	exit 1
 }
@@ -81,5 +95,6 @@ cd "$repo"
 echo "== online editor under /platform (AC-7)"
 online -f "$online/compose.yaml" -f "$online/compose.subpath.yaml" up -d --wait --wait-timeout 120
 SMOKE_BASE=/platform pnpm --dir "$repo/web" run smoke:browser
+retired_route /platform
 
 echo "smoke: all checks passed"
