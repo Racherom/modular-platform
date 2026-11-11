@@ -129,15 +129,29 @@ test('everything stays under the base path (AC-7, AC-12)', async ({ page }) => {
   expect(new URL(bare.headers().location ?? '', 'https://x').pathname).toBe(`${base}/`)
 })
 
-/** Drags from one canvas handle to another with the mouse. */
+/** Drags from one canvas handle to another with the mouse, once both have stopped moving. */
 async function drag(page: Page, from: string, to: string) {
-  const a = await page.locator(from).boundingBox()
-  const b = await page.locator(to).boundingBox()
-  if (!a || !b) throw new Error('a handle is not on screen')
+  const a = await settledBox(page, from)
+  const b = await settledBox(page, to)
   await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
   await page.mouse.down()
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 12 })
   await page.mouse.up()
+}
+
+/**
+ * A handle's box once two reads 100 ms apart agree. After an edit the editor centers the canvas
+ * on the focused node with a short animation (spec 0029, AC-8), so a box read too early is stale.
+ */
+async function settledBox(page: Page, selector: string) {
+  let last = await page.locator(selector).boundingBox()
+  for (let tries = 0; tries < 50; tries++) {
+    await page.waitForTimeout(100)
+    const box = await page.locator(selector).boundingBox()
+    if (box && JSON.stringify(box) === JSON.stringify(last)) return box
+    last = box
+  }
+  throw new Error(`${selector} keeps moving or is not on screen`)
 }
 
 test('unbind and bind again on a sample copy, each checked by the renderer (spec 0010, AC-9, AC-10, AC-12, AC-18)', async ({ page }) => {
