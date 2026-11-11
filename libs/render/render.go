@@ -92,6 +92,10 @@ type templateData struct {
 	NeedDuration bool // setup.sh checks a duration
 	WaitAnchor   bool // the stack has the wait anchor mp_jobs (spec 0014, "Waiting")
 	Platform     bool // the platform flavor: setup.sh writes MP_DIR, .env.example holds the blocks
+
+	Builds      []imageBuild // unreleased platform images setup.sh builds first (spec 0030)
+	SourceRef   string       // the git ref those builds use
+	SourceMoves bool         // the ref is a branch, not a commit, so a later build may differ
 }
 
 // HasOutputs reports whether setup.sh makes a file a provision job writes.
@@ -101,8 +105,9 @@ func (d templateData) HasOutputs() bool {
 
 // Render renders the resolved graph of an ok check result. catalog must hold every module and
 // capability the graph uses, and templates the templates of those modules.
-func Render(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates) (Output, error) {
-	r, err := renderProject(result, catalog, templates, flavorStatic, nil)
+// WithSource makes the zip build the unreleased platform images it names (spec 0030).
+func Render(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates, opts ...Option) (Output, error) {
+	r, err := renderProject(result, catalog, templates, flavorStatic, nil, opts...)
 	if err != nil {
 		return Output{}, err
 	}
@@ -152,7 +157,7 @@ type renderer struct {
 // renderProject renders result in flavor f: the managed and platform flavors set restart:
 // unless-stopped on every long running service, and finish is called on the project before it
 // is written.
-func renderProject(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates, f flavor, finish func(*types.Project, map[string]job)) (rendered, error) {
+func renderProject(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates, f flavor, finish func(*types.Project, map[string]job), opts ...Option) (rendered, error) {
 	if !result.Ok {
 		return rendered{}, ErrGraphHasErrors
 	}
@@ -198,6 +203,10 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 		}
 		r.project.Services[i] = svc
 	}
+	builds, err := r.imageBuilds(opts)
+	if err != nil {
+		return rendered{}, err
+	}
 	for _, b := range deliveryOrder(instances, result.Bindings) {
 		if err := r.binding(b); err != nil {
 			return rendered{}, err
@@ -227,15 +236,7 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 	if r.egress {
 		r.project.Networks[networkEgress] = types.NetworkConfig{}
 	}
-	// module secrets first, then per binding files, each in path order (spec 0013, step 4)
-	slices.SortFunc(r.data.Secrets, func(a, b secret) int {
-		if a.PerBinding != b.PerBinding {
-			return map[bool]int{false: -1, true: 1}[a.PerBinding]
-		}
-		return strings.Compare(a.Path, b.Path)
-	})
-	slices.SortFunc(r.data.Placed, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
-	slices.Sort(r.data.Folders)
+	r.sortData()
 
 	if finish != nil {
 		finish(&r.project, r.jobs)
@@ -272,6 +273,7 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 		}
 	}
 	files = append(files, configs...)
+	files = append(files, builds...)
 	slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
 	return rendered{out: Output{Name: r.project.Name, Files: files}, data: r.data, jobs: r.jobs}, nil
 }
@@ -287,6 +289,19 @@ func (r *renderer) askInBindingOrder(instances []string, bindings []contract.Bin
 	byPlace := func(a, b askedValue) int { return place[a.instance] - place[b.instance] }
 	slices.SortStableFunc(r.data.Asked, byPlace)
 	slices.SortStableFunc(r.data.AskedSecrets, byPlace)
+}
+
+// sortData puts the module secrets first, then the per binding files, each in path order (spec
+// 0013, step 4), and the placed files and data folders in path order.
+func (r *renderer) sortData() {
+	slices.SortFunc(r.data.Secrets, func(a, b secret) int {
+		if a.PerBinding != b.PerBinding {
+			return map[bool]int{false: -1, true: 1}[a.PerBinding]
+		}
+		return strings.Compare(a.Path, b.Path)
+	})
+	slices.SortFunc(r.data.Placed, func(a, b secret) int { return strings.Compare(a.Path, b.Path) })
+	slices.Sort(r.data.Folders)
 }
 
 // envName is the file the .env blocks go to: .env, or .env.example in the platform flavor, whose

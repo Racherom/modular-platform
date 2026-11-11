@@ -49,6 +49,24 @@ Settings of the modules built on the module SDK. Fill every line marked `require
 {{- end}}
 {{end}}
 On Windows, run `setup.sh` in WSL or Git Bash.
+{{- if .Builds}}
+
+## Images built on this host
+
+These platform images are not released yet, so no registry holds them. `setup.sh` builds each one first, from Modular Platform at `{{.SourceRef}}`, with the Dockerfile in `build/<module>/`:
+{{range .Builds}}
+- `{{.Image}}`, from `{{.Dockerfile}}`
+{{- end}}
+
+The build needs Docker 23 or newer with BuildKit (`docker buildx`), access to GitHub and Docker Hub, and a few minutes. `docker compose up` then uses these images and pulls none of them.
+{{- if .SourceMoves}} `{{.SourceRef}}` is a branch, not a commit, so a later run of `setup.sh` builds whatever the branch holds then, which may not match this stack's files.{{end}}
+
+To build from a checkout of Modular Platform on this machine instead of GitHub (for a commit that is not pushed, or without network to GitHub), point `MP_SOURCE_PATH` at it:
+
+```sh
+MP_SOURCE_PATH=path/to/modular-platform sh setup.sh
+```
+{{- end}}
 
 ## Stop it
 

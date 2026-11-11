@@ -1,0 +1,8 @@
+apiVersion: modular-platform/v1
+kind: Graph
+name: prerelease-e2e
+modules:
+  renderer:
+    module: renderer
+    config:
+      renderer-mode: public

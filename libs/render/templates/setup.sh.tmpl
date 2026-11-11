@@ -3,8 +3,59 @@
 # it once before `docker compose up`. It never changes a file that already exists, so running it
 # again is safe.
 set -eu
+{{- if .Builds}}
+
+# MP_SOURCE_PATH, a checkout of Modular Platform to build the platform images from instead of
+# GitHub; resolved before the cd below, so a relative path starts where you ran setup.sh.
+source_path=
+if [ -n "${MP_SOURCE_PATH:-}" ]; then
+	source_path=$(cd "$MP_SOURCE_PATH" 2>/dev/null && pwd) || {
+		echo "setup.sh: MP_SOURCE_PATH=$MP_SOURCE_PATH is not a folder" >&2
+		exit 1
+	}
+	if [ ! -f "$source_path/go.work" ]; then
+		echo "setup.sh: MP_SOURCE_PATH=$source_path holds no go.work, so it is not a Modular Platform checkout" >&2
+		exit 1
+	fi
+fi
+{{- end}}
 cd "$(dirname "$0")"
 umask 077
+{{- if .Builds}}
+
+# The platform images this stack uses are not released yet, so no registry holds them: build
+# each from Modular Platform at source_ref before anything else is made. A rerun builds again;
+# the build cache makes that quick.
+source_ref='{{.SourceRef}}'
+build_images='{{range $i, $b := .Builds}}{{if $i}} {{end}}{{$b.Image}}{{end}}'
+# build_stop TEXT stops setup.sh before it makes any file, naming the builds and how to build
+# from a local checkout.
+build_stop() {
+	echo "setup.sh: $1" >&2
+	echo "setup.sh: this stack builds $build_images from Modular Platform at $source_ref; MP_SOURCE_PATH=<a checkout of it> builds from that folder instead of GitHub" >&2
+	exit 1
+}
+docker buildx version >/dev/null 2>&1 ||
+	build_stop "the platform images build with BuildKit, and docker buildx is not available; install Docker 23 or newer with the buildx plugin"
+docker_version=$(docker version --format '{{"{{"}}.Server.Version{{"}}"}}' 2>/dev/null) ||
+	build_stop "Docker does not answer; start it and run setup.sh again"
+[ "${docker_version%%.*}" -ge 23 ] 2>/dev/null ||
+	build_stop "the platform images need Docker 23 or newer, this host runs $docker_version"
+# build_image IMAGE MODULE builds IMAGE from build/MODULE/Dockerfile.
+build_image() {
+	echo "building $1 from Modular Platform at $source_ref${source_path:+ (local checkout $source_path)}"
+	if [ -n "$source_path" ]; then
+		docker buildx build --load -t "$1" --build-arg MP_SOURCE=local --build-arg MP_SOURCE_REF="$source_ref" \
+			-f "build/$2/Dockerfile" "$source_path"
+	else
+		docker buildx build --load -t "$1" --build-arg MP_SOURCE=git --build-arg MP_SOURCE_REF="$source_ref" \
+			-f "build/$2/Dockerfile" "build/$2"
+	fi || build_stop "could not build $1 at $source_ref; the build needs GitHub and Docker Hub, and the ref must be pushed"
+}
+{{- range .Builds}}
+build_image {{shellQuote .Image}} {{shellQuote .Module}}
+{{- end}}
+{{- end}}
 
 # Every module runs as you, so it can read its secret files and write its data folders.
 set_id() {
