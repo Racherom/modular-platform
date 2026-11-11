@@ -28,3 +28,6 @@ pre-commit:
             root: web/
             glob: "*.{ts,tsx}"
             run: pnpm run typecheck
+    # no glob and no {staged_files}: a rename must be caught wherever it lands (spec 0027)
+    - name: vocabulary
+      run: task lint:vocabulary

@@ -91,9 +91,7 @@ tasks:
     desc: Lint and check formatting of the Go code (golangci-lint) and the editor (Biome, tsc), and check for retired words
     deps: [web:install]
     cmds:
-      # report only while #41 renames the code (spec 0027); the last slice makes it fail the lint
       - task: lint:vocabulary
-        vars: {report: "1"}
       - task: lint:go
       - pnpm --dir web run lint
       - pnpm --dir web run typecheck
