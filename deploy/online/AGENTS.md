@@ -2,7 +2,7 @@
 
 ## Overview
 
-The online tool (static mode) as a Compose stack on your own host: `ingress` (Caddy) routes `<base>/renderer/*` to `renderer` and everything else under `<base>/` to `web`, all on one origin, so there is no CORS. It is the same shape as the managed platform (spec 0001, "Online tool").
+The online editor (static mode) as a Compose stack on your own host: `ingress` (Caddy) routes `<base>/renderer/*` to `renderer` and everything else under `<base>/` to `web`, all on one origin, so there is no CORS. It is the same shape as the managed platform (spec 0001, "Online editor").
 
 ## Key files
 
@@ -36,6 +36,6 @@ task online:down   # stop it
 
 ## Related specs
 
-- [0001 Platform stack and architecture](../../docs/specs/0001-platform-stack-architecture/index.md), the online tool and base path rows
+- [0001 Platform stack and architecture](../../docs/specs/0001-platform-stack-architecture/index.md), the online editor and base path rows
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
