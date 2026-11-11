@@ -41,10 +41,10 @@ test('install, sign in, deploy the sample, see it running @deploy', async ({ pag
   expect(zip.suggestedFilename()).toBe(`${stack}.zip`)
   await zip.saveAs(process.env.SMOKE_ZIP ?? `results/${stack}-managed.zip`)
 
-  await page.getByRole('button', { name: 'Deploy' }).click()
+  await page.getByRole('button', { name: 'Deploy', exact: true }).click()
   const review = page.getByRole('dialog', { name: `Deploy ${stack}` })
   await expect(review.getByText('traefik/whoami:v1.12.0')).toBeVisible()
-  await review.getByRole('button', { name: 'Deploy' }).click()
+  await review.getByRole('button', { name: 'Deploy', exact: true }).click()
 
   await expect(page).toHaveURL(new RegExp(`/stacks/${stack}$`))
   await expectRunning(page, 5 * 60_000)
