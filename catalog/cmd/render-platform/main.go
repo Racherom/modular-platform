@@ -11,6 +11,11 @@
 // for a local or CI run, such as the ci tag the smoke-managed job builds: setup.sh runs a setup
 // step in its module's image, which a Compose overlay cannot change. A release render leaves it
 // empty and takes every tag from the catalog entries.
+//
+// -source-ref is the git ref of this repository the platform images build from while they carry
+// the unreleased tag 0.0.0 (spec 0030): the folder then holds their Dockerfiles, and setup.sh
+// builds them first. Empty means main, with a warning; `task managed:render` passes the commit.
+// The retag comes first, so a dev or ci render builds nothing.
 package main
 
 import (
@@ -28,30 +33,35 @@ import (
 	"github.com/racherom/modular-platform/libs/render"
 )
 
-// platformImages starts the images of the platform's own services.
-const platformImages = "ghcr.io/racherom/modular-platform/"
-
 func main() {
 	graph := flag.String("graph", "deploy/managed/graph.yaml", "the platform graph")
 	out := flag.String("out", "build/managed", "the folder to write; replaced as a whole")
 	tag := flag.String("image-tag", "", "a tag for the platform's own images instead of the catalog's, for a local or CI run")
+	sourceRef := flag.String("source-ref", "", "the git ref unreleased platform images build from (a full commit or a branch); empty means main")
 	flag.Parse()
-	if err := run(*graph, *out, *tag, os.Stderr); err != nil {
+	if err := run(*graph, *out, *tag, *sourceRef, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "render-platform:", err)
 		os.Exit(1)
 	}
 }
 
-func run(graphPath, out, tag string, log io.Writer) error {
+func run(graphPath, out, tag, sourceRef string, log io.Writer) error {
+	source, err := render.NewSourceRef(sourceRef)
+	if err != nil {
+		return err
+	}
+	if !source.Commit() {
+		fmt.Fprintf(log, "warning: source ref %s is a branch, not a commit: a zip that builds a platform image builds whatever it holds then\n", source)
+	}
 	entries, problems := contract.LoadCatalog(catalog.FS)
 	if len(problems) > 0 {
 		return fmt.Errorf("the built in catalog has %d problems, the first: %v", len(problems), problems[0])
 	}
 	if tag != "" {
 		for i, m := range entries.Modules {
-			if name, ok := strings.CutPrefix(m.Image, platformImages); ok {
+			if name, ok := strings.CutPrefix(m.Image, render.PlatformImages); ok {
 				repo, _, _ := strings.Cut(name, ":")
-				entries.Modules[i].Image = platformImages + repo + ":" + tag
+				entries.Modules[i].Image = render.PlatformImages + repo + ":" + tag
 			}
 		}
 	}
@@ -74,7 +84,11 @@ func run(graphPath, out, tag string, log io.Writer) error {
 	if !result.Ok {
 		return errors.New("the platform graph does not pass its checks")
 	}
-	folder, err := render.Platform(result, entries, templates)
+	dockerfiles, err := contract.LoadDockerfiles(catalog.FS, entries)
+	if err != nil {
+		return err
+	}
+	folder, err := render.Platform(result, entries, templates, render.WithSource(source, dockerfiles))
 	if err != nil {
 		return err
 	}

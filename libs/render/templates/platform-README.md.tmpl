@@ -19,6 +19,20 @@ Every file here is rendered from `graph.yaml`, the platform's own graph: each pl
    It writes `.env` and creates every secret in `secrets/` and every data folder in `data/`. It never prints a secret. Running it again changes no file that exists and asks nothing it asked before. To answer without a terminal, pipe the answers in, one per line, in the order above.
 3. Run `docker compose up -d --wait`.
 4. Open the origin and sign in.
+{{- if .Builds}}
+
+### Images built on this host
+
+This version's platform images are not released yet, so no registry holds them. Before it asks anything, `setup.sh` builds each one from Modular Platform at `{{.SourceRef}}`, with the Dockerfile in `build/<module>/`:
+{{range .Builds}}
+- `{{.Image}}`, from `{{.Dockerfile}}`
+{{- end}}
+
+The build needs Docker 23 or newer with BuildKit (`docker buildx`), access to GitHub and Docker Hub, and a few minutes. These services carry `pull_policy: never`, so the platform never tries to pull them.
+{{- if .SourceMoves}} `{{.SourceRef}}` is a branch, not a commit, so a later run of `setup.sh` builds whatever the branch holds then.{{end}} When a rerun of `setup.sh` builds different code, the platform sees new images and hands over to them, as on an upgrade.
+
+To build from a checkout of Modular Platform on this machine instead of GitHub, point `MP_SOURCE_PATH` at it: `MP_SOURCE_PATH=path/to/modular-platform sh setup.sh`.
+{{- end}}
 
 The platform makes its own certificate authority for HTTPS (`MP_INGRESS__TLS_MODE=internal`), so your browser warns about the certificate the first time. For a public certificate, set `MP_INGRESS__TLS_MODE=acme` in `.env` (the domain must be public), run `sh setup.sh` again, which checks every value, then `docker compose up -d`.
 

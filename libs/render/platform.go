@@ -15,11 +15,13 @@ const PlatformStack = "platform"
 // graph.yaml. Unlike the managed flavor it renders publish, host_mounts and setup steps; unlike
 // the static one it sets restart: unless-stopped and the platform labels with stack
 // platform, renders {install} paths as ${MP_DIR}/<relative> (setup.sh writes MP_DIR) and asks
-// its values in binding order. The project is named after the graph.
-func Platform(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates) (Output, error) {
+// its values in binding order. The project is named after the graph. With WithSource it builds
+// the unreleased platform images as the static zip does, and gives their services pull_policy:
+// never, since the keeper's compose pull fails on an image only built on this host (spec 0030).
+func Platform(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates, opts ...Option) (Output, error) {
 	r, err := renderProject(result, catalog, templates, flavorPlatform, func(p *types.Project, jobs map[string]job) {
 		label(p, result.Graph, jobs, PlatformStack)
-	})
+	}, opts...)
 	if err != nil {
 		return Output{}, err
 	}
