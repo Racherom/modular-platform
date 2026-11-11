@@ -218,3 +218,12 @@ func TestRemove(t *testing.T) {
 		t.Errorf("remove: status %d: %s", resp.StatusCode, data)
 	}
 }
+
+// TestRetiredRoutesAre404 covers spec 0027 AC-6: the old project route is gone.
+func TestRetiredRoutesAre404(t *testing.T) {
+	t.Parallel()
+	srv, _ := serve(t, true)
+	if resp, data := do(t, srv, http.MethodPost, "/v1/projects/mp-x/apply", applyBody(t)); resp.StatusCode != http.StatusNotFound { // vocabulary: allow
+		t.Errorf("status %d, want 404: %.200s", resp.StatusCode, data)
+	}
+}

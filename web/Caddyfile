@@ -17,6 +17,11 @@
 
 	# route keeps these rules in the order written
 	route {
+		# the web module only reads: a POST or any other method gets 404, never the app shell or a 405,
+		# so a retired API route answers like an unknown one (spec 0027, AC-6)
+		@write not method GET HEAD
+		respond @write 404
+
 		# <base> without the trailing slash redirects to <base>/
 		@bare expression `{path} == "{$MP_BASE_PATH}" && "{$MP_BASE_PATH}" != ""`
 		redir @bare {$MP_BASE_PATH}/ 308
