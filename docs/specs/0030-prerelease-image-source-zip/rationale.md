@@ -73,3 +73,11 @@ The force that decides it is that the image must be built from the code whose ca
 The one Dockerfile with a build arg source (not a second copy, not a generated twin) is what makes Option 3 cheap to keep honest: the zip ships the very file CI and `task build` use, so the Go and Node versions and the build steps cannot drift. Moving it beside the catalog entry puts it where the catalog already describes the image, and where `go:embed` already reaches.
 
 Pushing images from the release pull request closes the second gap at its root: the merge, which flips the catalog tags, the managed zip and `versions.env`, becomes the last step, so main never names a missing image. The cost is that the release pull request needs CI (the `RELEASE_PLEASE_TOKEN` secret, as the README already notes) and that its version tag is overwritten while the pull request changes. Both are acceptable before anyone pulls that tag.
+
+### Release gate (AC-11, added 2026-11-12)
+
+After the merge of #46, every push to `main` failed in the Release workflow: `RELEASE_PLEASE_TOKEN` was not set, release-please fell back to `github.token`, and GitHub refused with "GitHub Actions is not permitted to create or approve pull requests". The only way to make that fallback work is the repository setting that lets Actions create and approve pull requests, and approving a pull request should stay with a person, not CI. No release is near, so the job should not run yet at all.
+
+- **Chosen: off until the repository variable `RELEASES_ENABLED` is `true`, no `github.token` fallback.** The run passes with skipped jobs until then; turning releases on is one variable, and from then on release-please runs on every push as before. A job's `if` can read `vars` but not `secrets`, which is why the switch is a variable and the token check is a step.
+- Runner up: start the Release workflow by hand only (`workflow_dispatch`). It never fails on a push, but release-please creates the GitHub release on the run after the merge, so each release needs two manual starts.
+- Rejected: skip quietly when the token is missing. No setting needed, but a missing token at release time would pass unnoticed.

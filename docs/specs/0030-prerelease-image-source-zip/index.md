@@ -27,6 +27,7 @@ Until the first release, the platform's own images (`api`, `renderer`, `web`, `d
 - **AC-8**: While `MP_VERSION` in `deploy/online/versions.env` is `0.0.0`, `task online:up` builds (`up --build`) web and renderer from GitHub at `MP_SOURCE_REF` (a new line in `versions.env`, default `main`) on a host that has only the `deploy/online/` folder, and zips from that renderer name that ref. Once `MP_VERSION` is a released version, `task online:up` pulls and builds nothing.
 - **AC-9**: On the release-please pull request, a job builds and pushes all four images as `:<version>` (amd64 and arm64, with provenance and SBOM), again on every update of that pull request. It runs only for the release-please branch of this repository, and it is a required check, so the pull request cannot merge before its images are pushed. After the merge, a zip, a managed zip and the online editor name `<version>`, carry no `build/` folder, and pull. The job that attaches the managed zip to the release first checks that all four images exist in GHCR and fails if one is missing.
 - **AC-10**: The renderer logs its source ref at startup (`source_ref`). A renderer built without `MP_SOURCE_REF` uses `main` and logs a warning that its zips build a moving branch; the zip README says so too. A ref that is neither a full 40 character commit nor a name matching `[A-Za-z0-9._/-]+` stops the renderer (and `render-platform`) at startup.
+- **AC-11**: release-please runs only while the repository variable `RELEASES_ENABLED` is `true`. Until then, a push to `main` shows the release-please and managed zip jobs as skipped and the Release workflow passes. release-please always uses the secret `RELEASE_PLEASE_TOKEN`, never `github.token`, so the repository setting "Allow GitHub Actions to create and approve pull requests" stays off. With the variable `true` and the secret missing, the job fails with a message that names the secret.
 
 ## Decision
 
@@ -89,7 +90,7 @@ The build block, per image: `docker buildx build --load -t <catalog image> --bui
 
 **Online editor**: `deploy/online/compose.prerelease.yaml` gives web and renderer `build: context: https://github.com/racherom/modular-platform.git#${MP_SOURCE_REF}:catalog/modules/<module>` with `args: {MP_SOURCE: git, MP_SOURCE_REF: ${MP_SOURCE_REF}}`. The overlay writes `${MP_SOURCE_REF:?set in versions.env}`. `task online:up` reads `MP_VERSION` from `versions.env` in its shell command, and only while it is `0.0.0` adds this overlay and `--build`. With `MP_SOURCE=git` the git context is cloned once for the Dockerfile and once more by `ADD`; that double fetch is accepted for a window that ends at the release. A test checks that the overlay names exactly the platform services of `compose.yaml`.
 
-**Release order**: a new workflow on `pull_request` (opened, synchronize, reopened) runs only when `github.head_ref` starts with `release-please--` and the head repository is this one. It reads the version from `.release-please-manifest.json` at the pull request head and pushes the four images like today's `images` job (moved, not copied), with `MP_SOURCE=local` from the checked out head and `MP_SOURCE_REF` set to the head commit. One concurrency group per pull request cancels a stale push, and `packages: write` is granted to that one job only. The required check makes a merge wait for the latest push. `release.yml` keeps release-please and the managed zip; the managed zip job first runs `docker buildx imagetools inspect` for each `:<version>` image and fails unless both `linux/amd64` and `linux/arm64` are listed. Two accepted edges: a release pull request closed without merging leaves an orphan `:<version>` tag (the next release overwrites it), and each image's revision label names the pull request head commit, not the squash commit on main (same tree, different hash).
+**Release order**: a new workflow on `pull_request` (opened, synchronize, reopened) runs only when `github.head_ref` starts with `release-please--` and the head repository is this one. It reads the version from `.release-please-manifest.json` at the pull request head and pushes the four images like today's `images` job (moved, not copied), with `MP_SOURCE=local` from the checked out head and `MP_SOURCE_REF` set to the head commit. One concurrency group per pull request cancels a stale push, and `packages: write` is granted to that one job only. The required check makes a merge wait for the latest push. `release.yml` keeps release-please and the managed zip. The release-please job carries `if: vars.RELEASES_ENABLED == 'true'`, a repository level variable (not a secret, because a job's `if` can read `vars` but not `secrets`; not an environment variable, which a job's `if` cannot see). Actions compares strings without regard to case, so `TRUE` also turns it on; anything else, or unset, skips. Its first step, a separate `run` step named *Release token is set*, gets `TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}` in `env` and runs `[ -n "$TOKEN" ] || { echo "::error::RELEASE_PLEASE_TOKEN is not set; set it before RELEASES_ENABLED (README, Releases)"; exit 1; }`. The action's `token:` becomes `${{ secrets.RELEASE_PLEASE_TOKEN }}` with no `||` fallback, and the job's `permissions` drop to `contents: read`, since the token carries the rights. The managed zip job keeps `needs: release-please` and its `if: needs.release-please.outputs.created == 'true'` with no `always()`, so it is skipped with release-please; skipped jobs do not fail the run, so the Release run passes. The managed zip job's `gh release upload` keeps `github.token` with `contents: write`: it uploads a file and opens no pull request, so the "never `github.token`" rule of AC-11 covers release-please only. The required check lives in `release-images.yml` on `pull_request` and does not read the variable; making it required before the variable turns on is safe, since every pull request then passes it as skipped. Turning the variable on starts no run: the first release pull request appears on the next push to `main` (or a rerun of the latest Release run). With no `bootstrap-sha` in `release-please-config.json`, that first pull request lists every commit since the repository began and releases `0.1.0`; that is accepted for a first release. Opening and approving a pull request stays with a person's token: CI never gets the right to approve one. The managed zip job first runs `docker buildx imagetools inspect` for each `:<version>` image and fails unless both `linux/amd64` and `linux/arm64` are listed. Two accepted edges: a release pull request closed without merging leaves an orphan `:<version>` tag (the next release overwrites it), and each image's revision label names the pull request head commit, not the squash commit on main (same tree, different hash).
 
 **Value sourcing**:
 | Action | Value produced | Source |
@@ -101,6 +102,8 @@ The build block, per image: `docker buildx build --load -t <catalog image> --bui
 | `task build` | `MP_SOURCE_REF` | `git rev-parse HEAD`, also with local changes (`MP_SOURCE_PATH` builds those) |
 | Release PR job | `MP_SOURCE_REF`, version | `github.event.pull_request.head.sha`, `.release-please-manifest.json` at the head |
 | Other CI image builds | `MP_SOURCE_REF` | `github.sha` |
+| Release workflow | whether release-please runs | repository variable `RELEASES_ENABLED`, set by the maintainer when a release is near; unset means skipped |
+| Release workflow | the token that opens the release pull request | repository secret `RELEASE_PLEASE_TOKEN` only |
 | Online editor | `MP_SOURCE_REF` | `deploy/online/versions.env`, default `main` |
 | Managed render | the ref | new `render-platform` flag `-source-ref`, default `main` with the AC-10 warning; `task managed:render` passes `git rev-parse HEAD` |
 | Managed render | which modules | every module of `deploy/managed/graph.yaml` the shared predicate matches (all four today) |
@@ -112,15 +115,16 @@ The build block, per image: `docker buildx build --load -t <catalog image> --bui
 - Every catalog module whose image starts with `ghcr.io/racherom/modular-platform/` has a `Dockerfile` beside its `module.yaml` (a catalog test). The catalog loader reads only `module.yaml` and the templates it declares, so the Dockerfile changes nothing the catalog API returns.
 - `libs/render` stays pure: the Dockerfile bytes and the ref come in as a render option (`render.WithSource`), which replaces `render.WithBuilds`; the render reads no file.
 - A render whose graph has no `0.0.0` platform module is byte identical to today's. `task managed:zip`'s "same version gives the same bytes" holds for released versions; at `0.0.0` the bytes also depend on the commit.
-- No zip, managed zip or online stack names a version whose images are not in GHCR once that version is on main.
+- No zip, managed zip or online stack names a version whose images are not in GHCR once that version is on main. While `RELEASES_ENABLED` is off this holds because no version changes on main; never bump the version or the catalog tags by hand in a pull request.
 
-**Security model**: the source is fetched over https from the public repository at a commit, which addresses its content exactly; no credentials reach a zip or `setup.sh`. The release images job gets `packages: write` only on the release-please branch of this repository, never for a fork. The `:<version>` tag is mutable until the merge; provenance records which commit each push came from.
+**Security model**: the source is fetched over https from the public repository at a commit, which addresses its content exactly; no credentials reach a zip or `setup.sh`. The release images job gets `packages: write` only on the release-please branch of this repository, never for a fork. `github.token` never opens or approves a pull request, so the repository setting that allows it stays off. The `:<version>` tag is mutable until the merge; provenance records which commit each push came from.
 
 **Configuration required**:
 - Build args `MP_SOURCE` (`local` or `git`, default `local`) and `MP_SOURCE_REF` (a full commit or a branch, default `main`) on all four Dockerfiles. These are build inputs, not runtime settings, so `internal/config` does not parse them.
 - `MP_SOURCE_REF` in `deploy/online/versions.env`, default `main`.
 - `MP_SOURCE_PATH` read by `setup.sh` only, optional.
-- The repo secret `RELEASE_PLEASE_TOKEN` must be set, or the release pull request starts no CI and AC-9 cannot hold.
+- The repository variable `RELEASES_ENABLED`, unset until a release is near (AC-11).
+- The repository secret `RELEASE_PLEASE_TOKEN` (a fine grained token or a GitHub App token, contents and pull request write), set before `RELEASES_ENABLED` turns `true`; without it the release job fails (AC-11) and AC-9 cannot hold.
 
 **Critical test scenarios**:
 - Render golden: a graph with `renderer` and `postgres` gives `build/renderer/Dockerfile` equal to the catalog file, an unchanged `image:` line, and the build block in `setup.sh`; verifies **AC-1**, **AC-5**.
@@ -129,6 +133,7 @@ The build block, per image: `docker buildx build --load -t <catalog image> --bui
 - Ref check: a short commit, a ref with a space, `'` or `#`, and an empty build arg; the renderer refuses the first three at startup and uses `main` with a warning for the last; verifies **AC-10**.
 - Managed: `task managed:zip VERSION=0.0.0`, install on a clean host; every platform service healthy with no platform pull, also after a keeper restart (reconcile runs `compose pull`); verifies **AC-6**.
 - After the release: render the same graph with the catalog at a released version; no `build/` folder; verifies **AC-9**.
+- Release gate: a push to `main` with `RELEASES_ENABLED` unset gives a passing Release run with both jobs skipped; verifies **AC-11**.
 
 ## Build plan
 
@@ -140,6 +145,7 @@ Approach: Tracer Bullet. Task 2 runs the whole thread (catalog Dockerfile, rende
 3. Managed zip: `-source-ref` on `render-platform` (after the `-image-tag` retag), the same option in `render.Platform`, `pull_policy: never` on matched services, the build block before the state folder and the seed, `task managed:render` passing the ref; check that the keeper's reconcile and pull skip those services; a verify run with `VERSION=0.0.0` including a keeper restart, satisfies **AC-6**
 4. Online editor: `compose.prerelease.yaml`, `MP_SOURCE_REF` in `versions.env`, `task online:up` adding the overlay and `--build` while `MP_VERSION` is `0.0.0`, the overlay versus `compose.yaml` test, satisfies **AC-8**
 5. Release order: the release pull request images workflow (the `images` job moved out of `release.yml`), the image check for both platforms before the managed zip upload, the required check set on `main`, satisfies **AC-9**
+6. Release gate: `if: vars.RELEASES_ENABLED == 'true'` on the release-please job, the *Release token is set* step, the `github.token` fallback removed, the job's permissions down to `contents: read`; the README *Releases* section rewritten to say: set the secret `RELEASE_PLEASE_TOKEN` (required, no fallback), make *Release images to GHCR* required on `main`, then set the repository variable `RELEASES_ENABLED=true` and push or rerun the Release workflow; the setting that lets GitHub Actions create and approve pull requests stays off; the paragraph on the release images and the image check stays, satisfies **AC-11**
 
 ## Consequences
 
@@ -152,7 +158,8 @@ Approach: Tracer Bullet. Task 2 runs the whole thread (catalog Dockerfile, rende
 **Negative / tradeoffs**:
 - A first `setup.sh` takes minutes and needs BuildKit and GitHub access; an unpushed ref fails until you set `MP_SOURCE_PATH`.
 - The online editor at the default `MP_SOURCE_REF=main` builds whatever main is when it rebuilds; pin a commit in `versions.env` for a fixed one.
-- The release depends on `RELEASE_PLEASE_TOKEN`; without it the images are never pushed, and the managed zip job fails loudly instead of shipping a broken zip.
+- The release depends on `RELEASE_PLEASE_TOKEN`; once `RELEASES_ENABLED` is `true`, a missing token fails the release job loudly instead of falling back to `github.token`.
+- AC-9 can only be verified at the first release, since it needs a real release pull request and the required check; #46 closes on the other criteria and the AC-9 steps carry over as the release checklist in `verify.md`.
 - The `:<version>` tag can be overwritten until the release pull request merges.
 - `docker build -f services/<name>/Dockerfile` stops working; contributors use the new path.
 
@@ -165,7 +172,7 @@ Approach: Tracer Bullet. Task 2 runs the whole thread (catalog Dockerfile, rende
 **Strategy**: big bang, pre release; nothing outside this repository uses these paths.
 **Phases**:
 1. Tasks 1 to 5 land in order; the uncommitted `builds.go`, `WithBuilds` and their tests are replaced in task 2, not committed.
-2. Before the first release, merge task 5 and set `RELEASE_PLEASE_TOKEN`; then merging the release pull request is the last step.
+2. Before the first release, set `RELEASE_PLEASE_TOKEN`, make *Release images to GHCR* required on `main`, then set `RELEASES_ENABLED` to `true`; merging the release pull request is the last step.
 **Rollback**: revert the commits; images and zips go back to today's state.
 **Risks**: a moved Dockerfile path missed in some script (task 1 greps for the old paths); the first release pull request job failing on permissions (watch its first run).
 
