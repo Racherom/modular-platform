@@ -51,24 +51,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # the checkout comes first so the job can run the check script
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Every platform image of the release is in GHCR for amd64 and arm64
         env:
           VERSION: ${{ needs.release-please.outputs.version }}
-        run: |
-          for service in renderer web api deployer-docker; do
-            image="ghcr.io/racherom/modular-platform/$service:$VERSION"
-            manifest=$(docker buildx imagetools inspect "$image") || {
-              echo "::error::$image is not in GHCR; did the release pull request push it?"
-              exit 1
-            }
-            for platform in linux/amd64 linux/arm64; do
-              printf '%s\n' "$manifest" | grep -Eq "Platform: +$platform\$" || {
-                echo "::error::$image has no $platform image"
-                exit 1
-              }
-            done
-          done
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        run: scripts/release-images-check.sh "$VERSION"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27.3"
