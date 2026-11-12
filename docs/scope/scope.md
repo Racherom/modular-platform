@@ -247,7 +247,7 @@ spec [0030](../specs/0030-prerelease-image-source-zip/index.md) · code in `cata
    - [x] Static zip: Dockerfile in the zip, `setup.sh` builds first, README, e2e with `MP_SOURCE_PATH` (AC-1, AC-2, AC-3, AC-4, AC-5)
    - [x] Managed zip: build before the seed, `pull_policy: never`, keeper restart check (AC-6)
    - [x] Online editor overlay and release images pushed from the release pull request (AC-8, AC-9)
-   - [ ] Release gate: release-please off until `RELEASES_ENABLED`, no `github.token` fallback (AC-11)
+   - [x] Release gate: release-please off until `RELEASES_ENABLED`, no `github.token` fallback (AC-11)
 - [ ] Verify it: `/check verify pre release image source for the zip`
 - [ ] Test it: `/test pre release image source for the zip`
 - [ ] Review it (fresh model): `/check review pre release image source for the zip`
