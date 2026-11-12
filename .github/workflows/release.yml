@@ -9,20 +9,29 @@ permissions:
 
 jobs:
   release-please:
+    # off until a release is near: set the repository variable RELEASES_ENABLED to true
+    # after the secret RELEASE_PLEASE_TOKEN (README, Releases; spec 0030, AC-11). A job's
+    # `if` can read vars but not secrets, so the variable gates and the step below checks.
+    if: vars.RELEASES_ENABLED == 'true'
     runs-on: ubuntu-24.04
+    # the token carries the rights to push the branch and open the pull request
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     outputs:
       created: ${{ steps.release.outputs.release_created }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag_name }}
     steps:
+      - name: Release token is set
+        env:
+          TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: '[ -n "$TOKEN" ] || { echo "::error::RELEASE_PLEASE_TOKEN is not set; set it before RELEASES_ENABLED (README, Releases)"; exit 1; }'
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
-          # a pull request opened with the default token starts no CI; see README, Releases
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          # never github.token: Actions may not open or approve pull requests here, and a
+          # pull request opened with it starts no CI; see README, Releases
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 

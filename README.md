@@ -104,10 +104,22 @@ task smoke:managed
 
 ## Releases
 
-release-please opens the release pull request. A pull request opened with the default
-`GITHUB_TOKEN` starts no other workflow, so CI would not check it. Add a repository secret
-`RELEASE_PLEASE_TOKEN` (a fine grained token, or a GitHub App token, with contents and pull
-request write access) and the release workflow uses it, so CI runs on the release pull request too.
+release-please opens the release pull request, but it stays off until a release is near. While
+the repository variable `RELEASES_ENABLED` is unset, every push to `main` passes the Release
+workflow with its jobs skipped. When you want the first release, we recommend these steps, in
+this order:
+
+1. Add the repository secret `RELEASE_PLEASE_TOKEN`: a fine grained token, or a GitHub App
+   token, with contents and pull request write access. It is required, there is no fallback to
+   the default `GITHUB_TOKEN` (a pull request that token opens starts no CI).
+2. Make the check *Release images to GHCR* required on `main` (see below). Until a release pull
+   request exists, every pull request passes it as skipped.
+3. Set the repository variable `RELEASES_ENABLED` to `true`, then push to `main` or rerun the
+   latest Release run. The variable alone starts nothing.
+
+Leave the repository setting *Allow GitHub Actions to create and approve pull requests* off.
+Approving a pull request stays with a person. If the variable is `true` and the secret is
+missing, the step *Release token is set* fails and names the secret.
 
 The release pull request also pushes the four platform images for its version
 (`release-images.yml`), again on every update, before anything names them. Make its check
