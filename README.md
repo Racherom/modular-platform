@@ -112,20 +112,25 @@ this order:
 1. Add the repository secret `RELEASE_PLEASE_TOKEN`: a fine grained token, or a GitHub App
    token, with contents and pull request write access. It is required, there is no fallback to
    the default `GITHUB_TOKEN` (a pull request that token opens starts no CI).
-2. Make the check *Release images to GHCR* required on `main` (see below). Until a release pull
-   request exists, every pull request passes it as skipped.
-3. Set the repository variable `RELEASES_ENABLED` to `true`, then push to `main` or rerun the
+2. Set the repository variable `RELEASES_ENABLED` to `true`, then push to `main` or rerun the
    latest Release run. The variable alone starts nothing.
 
 Leave the repository setting *Allow GitHub Actions to create and approve pull requests* off.
 Approving a pull request stays with a person. If the variable is `true` and the secret is
 missing, the step *Release token is set* fails and names the secret.
 
-The release pull request also pushes the four platform images for its version
-(`release-images.yml`), again on every update, before anything names them. Make its check
-*Release images to GHCR* required on `main`, so the pull request cannot merge before its images
-exist. After the merge, the release workflow checks that every image is in GHCR for amd64 and
-arm64, then attaches the managed zip.
+Right after the release pull request merges, the Release workflow builds the four platform
+images from the release commit and pushes each as `:<version>`, for amd64 and arm64. For those
+few minutes, `main` and the release name images that are still being pushed, so a pull fails
+until the push ends. Once all four are in GHCR, the workflow checks them again and attaches the
+managed zip. A released image is never pushed again: each image job first checks GHCR and stops
+if the tag is there.
+
+If one image job fails, use *Re-run failed jobs*, not a full rerun: the images already pushed
+would fail their own check, and a full rerun makes release-please report no new release. If a
+push ended half done (the tag is in GHCR but its job failed), check it with
+`scripts/release-images-check.sh <version>`; when it is complete, rerun only the managed zip
+job, else delete the tag in GHCR and rerun the failed job.
 
 ## License
 

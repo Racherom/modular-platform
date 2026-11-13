@@ -20,8 +20,10 @@ type job struct {
 	If          string            `json:"if"`
 	Needs       any               `json:"needs"`
 	Permissions map[string]string `json:"permissions"`
+	Env         map[string]string `json:"env"`
 	Strategy    struct {
-		Matrix struct {
+		FailFast *bool `json:"fail-fast"`
+		Matrix   struct {
 			Service []string `json:"service"`
 		} `json:"matrix"`
 	} `json:"strategy"`
@@ -60,59 +62,80 @@ func stepIndex(j job, s string) int {
 	})
 }
 
-// TestReleaseImagesWorkflow covers spec 0030 AC-9 and the value sourcing of the release pull
-// request job without a release: the images are built from the pull request head commit, at the
-// version the manifest names there, for both platforms, pushed only from this repository's
-// release-please branch, and the required check passes on every other pull request.
-func TestReleaseImagesWorkflow(t *testing.T) {
+// TestReleaseImagesJob covers spec 0030 AC-9 and the value sourcing of the images job without a
+// release: it runs only when release-please created a release, builds the four images from the
+// release commit (github.sha) at the version release-please names (through env) for both
+// platforms, checks GHCR right before the push and stops when the tag is there, and holds the
+// only packages: write. The old release pull request workflow is gone.
+func TestReleaseImagesJob(t *testing.T) {
 	t.Parallel()
-	w, _ := readWorkflow(t, "release-images.yml")
+	if _, err := os.Stat("../../.github/workflows/release-images.yml"); !os.IsNotExist(err) {
+		t.Errorf("release-images.yml still exists (%v); the images are pushed after the merge", err)
+	}
+	w, _ := readWorkflow(t, "release.yml")
 	if w.Permissions["packages"] != "" {
 		t.Errorf("workflow permissions grant packages: %v; only the images job may", w.Permissions)
+	}
+	for name, j := range w.Jobs {
+		if name != "images" && j.Permissions["packages"] == "write" {
+			t.Errorf("job %s has packages: write; only the images job may", name)
+		}
 	}
 
 	images, ok := w.Jobs["images"]
 	if !ok {
 		t.Fatal("no images job")
 	}
-	for _, want := range []string{
-		"startsWith(github.head_ref, 'release-please--')",
-		"github.event.pull_request.head.repo.full_name == github.repository",
-	} {
-		if !strings.Contains(images.If, want) {
-			t.Errorf("images job if %q lacks %q", images.If, want)
-		}
+	if images.Needs != "release-please" || images.If != "needs.release-please.outputs.created == 'true'" {
+		t.Errorf("images job needs %v, if %q; want release-please and its created output", images.Needs, images.If)
 	}
-	if images.Permissions["packages"] != "write" {
-		t.Errorf("images job permissions %v, want packages: write", images.Permissions)
+	if images.Permissions["packages"] != "write" || images.Permissions["contents"] != "read" {
+		t.Errorf("images job permissions %v, want contents: read, packages: write", images.Permissions)
+	}
+	if images.Strategy.FailFast == nil || *images.Strategy.FailFast {
+		t.Error("images matrix must set fail-fast: false, so one failed image does not cancel the others")
 	}
 	services := slices.Sorted(slices.Values(images.Strategy.Matrix.Service))
 	if !slices.Equal(services, releaseImages) {
 		t.Errorf("images matrix %v, want %v", services, releaseImages)
 	}
-
-	const head = "${{ github.event.pull_request.head.sha }}"
-	checkout := stepIndex(images, "actions/checkout")
-	if checkout < 0 || images.Steps[checkout].With["ref"] != head {
-		t.Errorf("images job does not check out %s", head)
+	if images.Env["VERSION"] != "${{ needs.release-please.outputs.version }}" {
+		t.Errorf("images job env VERSION = %q, want the version release-please names", images.Env["VERSION"])
 	}
-	version := slices.IndexFunc(images.Steps, func(s step) bool { return s.ID == "version" })
-	if version < checkout || !strings.Contains(images.Steps[version].Run, ".release-please-manifest.json") {
-		t.Error("the version step must read .release-please-manifest.json after the checkout of the head")
+
+	const sha = "${{ github.sha }}"
+	checkout := stepIndex(images, "actions/checkout")
+	if checkout < 0 || images.Steps[checkout].With["ref"] != sha {
+		t.Errorf("images job does not check out %s", sha)
 	}
 	push := stepIndex(images, "docker/build-push-action")
-	if push < 0 {
-		t.Fatal("images job has no build-push step")
+	if push != len(images.Steps)-1 {
+		t.Fatalf("the build and push is step %d of %d; it must be the last", push, len(images.Steps))
 	}
-	released := stepIndex(images, `refs/tags/v$VERSION`)
-	if released < version || released > push || images.Steps[released].Env["VERSION"] != "${{ steps.version.outputs.version }}" ||
-		!strings.Contains(images.Steps[released].Run, "exit 1") {
-		t.Error("between the version and the push, a step must fail when the git tag v<version> already exists")
+	login := stepIndex(images, "docker/login-action")
+	guard := stepIndex(images, "docker buildx imagetools inspect")
+	if guard < 0 || guard < login || guard != push-1 {
+		t.Fatal("right before the push, after the GHCR login, a step must check GHCR for the tag")
 	}
+	run := images.Steps[guard].Run
+	for _, want := range []string{
+		`ghcr.io/racherom/modular-platform/$SERVICE:$VERSION`,
+		"is already in GHCR; a released image is never pushed again",
+		`*"not found"*)`,
+		"could not check whether",
+	} {
+		if !strings.Contains(run, want) {
+			t.Errorf("GHCR check lacks %q:\n%s", want, run)
+		}
+	}
+	if strings.Count(run, "exit 1") != 2 {
+		t.Errorf("GHCR check must stop when the tag exists and on any other failure:\n%s", run)
+	}
+
 	with := images.Steps[push].With
 	str := func(k string) string { v, _ := with[k].(string); return v }
 	args := strings.Split(strings.TrimSpace(str("build-args")), "\n")
-	for _, want := range []string{"MP_SOURCE=local", "MP_SOURCE_REF=" + head} {
+	for _, want := range []string{"MP_SOURCE=local", "MP_SOURCE_REF=" + sha} {
 		if !slices.Contains(args, want) {
 			t.Errorf("build-args %q lack %q", str("build-args"), want)
 		}
@@ -122,7 +145,7 @@ func TestReleaseImagesWorkflow(t *testing.T) {
 		"file":       "catalog/modules/${{ matrix.service }}/Dockerfile",
 		"platforms":  "linux/amd64,linux/arm64",
 		"provenance": "mode=max",
-		"tags":       "ghcr.io/racherom/modular-platform/${{ matrix.service }}:${{ steps.version.outputs.version }}",
+		"tags":       "ghcr.io/racherom/modular-platform/${{ matrix.service }}:${{ env.VERSION }}",
 	}
 	for k, want := range checks {
 		if got := str(k); got != want {
@@ -134,22 +157,12 @@ func TestReleaseImagesWorkflow(t *testing.T) {
 			t.Errorf("build-push %s = %v, want true", k, with[k])
 		}
 	}
-
-	gate, ok := w.Jobs["gate"]
-	if !ok {
-		t.Fatal("no gate job")
-	}
-	if gate.Name != "Release images to GHCR" || gate.Needs != "images" || gate.If != "always()" {
-		t.Errorf("gate job = name %q, needs %v, if %q; want the required check that always reports on images", gate.Name, gate.Needs, gate.If)
-	}
-	if run := gate.Steps[0].Run; !strings.Contains(run, "success | skipped) ;;") || !strings.Contains(run, "exit 1") {
-		t.Errorf("gate step must pass on success or skipped and fail otherwise:\n%s", run)
-	}
 }
 
 // TestReleaseWorkflow covers spec 0030 AC-11 and the managed zip part of AC-9 without a release:
 // release-please runs only with RELEASES_ENABLED, only with RELEASE_PLEASE_TOKEN (checked first),
-// never with github.token; the managed zip job is skipped with it and checks the images first.
+// never with github.token; the managed zip job waits for the images job, is skipped with
+// release-please, and checks the images first.
 func TestReleaseWorkflow(t *testing.T) {
 	t.Parallel()
 	w, _ := readWorkflow(t, "release.yml")
@@ -188,8 +201,9 @@ func TestReleaseWorkflow(t *testing.T) {
 	if !ok {
 		t.Fatal("no managed-zip job")
 	}
-	if mz.Needs != "release-please" || mz.If != "needs.release-please.outputs.created == 'true'" {
-		t.Errorf("managed-zip needs %v, if %q; it must be skipped with release-please (no always())", mz.Needs, mz.If)
+	needs, _ := mz.Needs.([]any)
+	if !slices.Equal(needs, []any{"release-please", "images"}) || mz.If != "needs.release-please.outputs.created == 'true'" {
+		t.Errorf("managed-zip needs %v, if %q; it must wait for the images and be skipped with release-please (no always())", mz.Needs, mz.If)
 	}
 	check, zip := stepIndex(mz, "scripts/release-images-check.sh"), stepIndex(mz, "task managed:zip")
 	if check < 0 || zip < check || stepIndex(mz, "actions/checkout") > check {
@@ -198,7 +212,7 @@ func TestReleaseWorkflow(t *testing.T) {
 }
 
 // TestReleaseImagesCheckScript covers the image list of the check the managed zip job runs: it
-// names the same four images the release pull request pushes.
+// names the same four images the images job pushes.
 func TestReleaseImagesCheckScript(t *testing.T) {
 	t.Parallel()
 	data, err := os.ReadFile("../../scripts/release-images-check.sh")
@@ -281,7 +295,7 @@ func TestCIImagesSourceRef(t *testing.T) {
 // into its script; values go through env, as the GitHub hardening guide asks.
 func TestReleaseRunSteps(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"release.yml", "release-images.yml"} {
+	for _, name := range []string{"release.yml"} {
 		w, _ := readWorkflow(t, name)
 		for jn, j := range w.Jobs {
 			for _, st := range j.Steps {
