@@ -66,7 +66,7 @@ One name for each thing (your answers of 2026-11-10). #41 brings code, contracts
 | 18 | Users, groups and permissions modules | Slice 13 | planned |
 | 29 | Sign in policy and tenant issuers | Slice 13 | planned |
 | 19 | Live graph changes | Slice 14 | planned |
-| 47 | Frozen image versions for apply and rollback | Slice 14 | planned |
+| 47 | Frozen image versions for apply and rollback | Slice 14 | in-progress |
 | 36 | Live health and binding statistics | Slice 14 | planned |
 | 20 | Scale modules | Slice 15 | planned |
 | 21 | Per user provider routing | Slice 16 | planned |
@@ -433,10 +433,19 @@ Change the running stack without a full redeploy: swap a provider, add a module 
 **Done when:** in managed mode a swap, an add and a remove each apply while the rest of the stack keeps running, a platform module (for example the ingress) can be swapped on a running platform, the stack editor shows the impact before you apply, no module runs while a provider it uses is down during an apply, and a failed change leaves the previous stack running.
 - [ ] Design it (spec): `/architect live graph changes`
 
-### 47. Frozen image versions for apply and rollback · needs a decision
+### 47. Frozen image versions for apply and rollback · in-progress
 A module names its image by tag, and a tag can move (a re pushed `postgres:18.6-alpine3.24`, or a platform image rebuilt from a new commit). Today an apply that pulls a newer, broken image fails, and the automatic rollback of #16 then pulls the same tag again and fails too. So each apply freezes versions: it resolves every image to the exact digest it runs and records it with the apply, and a rollback starts the digests of the last good apply, without pulling a tag again. Managed mode only: the static zip keeps its tags. It lands with #19, whose done line already says a failed change leaves the previous stack running. Its spec decides where the frozen digests live (the apply history of #16 and #35, or the deployer's files), how images built from source on the host (#46) are frozen, how long older images are kept on the host so a rollback needs no registry, and what an admin does to take a newer version on purpose.
 **Done when:** in managed mode an apply records the digest of every image it starts; when a tag moves to a broken image and that apply fails, the rollback starts the previous digests and the stack runs as before, even with the registry out of reach; applying the same graph again without asking for newer versions starts the same digests; and taking a newer version is a choice you make, shown before apply.
-- [ ] Design it (spec): `/architect frozen image versions for apply and rollback`
+spec [0031](../specs/0031-frozen-image-versions/index.md) · code in `libs/contract/`, `libs/render/`, `contracts/openapi/`, `services/deployer-docker/`, `services/api/internal/deploy/`, `catalog/modules/deployer-docker/`, `web/src/components/ReviewDialog.tsx`, `scripts/smoke-managed.sh`
+- [x] Design it (spec): `/architect frozen image versions for apply and rollback`
+- [ ] Build it: `/develop frozen image versions for apply and rollback`
+   - [ ] The thread: the spike, `ImageLock` and the freeze rule, the renderer's lock, the deployer's lock write and images and resolve endpoints, review, apply and offline rollback in api, the Images section, the e2e with a local registry (AC-1, AC-2, AC-3, AC-4, AC-5, AC-12, AC-13)
+   - [ ] Take newer on purpose: `checkNewer` and `update`, the tick boxes, `graph_changed` on a moved tag (AC-6, AC-7)
+   - [ ] Lifecycle: keep tags for two generations, adoption written before pull, `busy` reads, `present`, remove cleanup (AC-8, AC-9, AC-10, AC-11)
+- [ ] Verify it: `/check verify frozen image versions for apply and rollback`
+- [ ] Test it: `/test frozen image versions for apply and rollback`
+- [ ] Review it (fresh model): `/check review frozen image versions for apply and rollback`
+- [ ] Document it: `/document frozen image versions for apply and rollback`
 
 ### 36. Live health and binding statistics · needs a decision
 The graph shows how the running stack is doing: each module's health, and on each binding its request rate, the share of requests that fail, and how slow they are, updated while you watch. Modules wrap existing container images, so the numbers must come without changing those containers. It thickens the per module state #16 already shows, and replaces the deferred Observability idea for health and metrics (logs stay deferred). Managed mode only. Its spec decides where the numbers come from, how often they refresh, and how long they are kept.
@@ -496,7 +505,7 @@ Other deferred ideas, not yet numbered:
 - **Accessibility**: the graph editor works by keyboard and with screen readers (WCAG AA) · needs a decision
 - **Multiple languages**: translatable UI text · needs a decision
 - **Usage analytics**: opt in, anonymous counts of feature use · needs a decision
-- **Private registries for platform images**: registry credentials in the keeper, so setup steps and the keeper image can come from a private registry · from spec 0016 · needs a decision
+- **Private registries for platform images**: registry credentials in the keeper, so setup steps and the keeper image can come from a private registry; spec 0031 needs the same credentials to resolve and pull deployed stack images from a private registry · from spec 0016 and spec 0031 · needs a decision
 - **Renderer CPU protection**: a cap on requests in flight or a global limit for the renderer in public mode, against floods from many addresses; would add a 503 to the renderer contract · from spec 0003 · needs a decision
 
 ## Legend
