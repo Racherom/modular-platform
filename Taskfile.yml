@@ -6,9 +6,10 @@ vars:
   GO_PACKAGES: ./catalog/... ./libs/... ./sdk/... ./services/renderer/... ./services/api/... ./services/deployer-docker/...
   IMAGE_PREFIX: ghcr.io/racherom/modular-platform
   IMAGE_TAG: dev
-  # the commit an image build names as its source (spec 0030), also with local changes
+  # the commit an image build names as its source (spec 0030); local when the tree has changes,
+  # so no image or zip claims a commit its code does not come from (AC-12)
   SOURCE_REF:
-    sh: git rev-parse HEAD
+    sh: if [ -z "$(git status --porcelain)" ]; then git rev-parse HEAD; else echo local; fi
   GOLANGCI_LINT_VERSION: v2.15.0
   LEFTHOOK_VERSION: v2.2.2
   SKILLS_VERSION: 1.7.6
@@ -222,6 +223,10 @@ tasks:
           sed -n 's/.*"\.": "\(.*\)".*/\1/p' .release-please-manifest.json
     deps: [managed:render]
     cmds:
+      - |
+        if [ '{{.VERSION}}' = 0.0.0 ] && [ '{{.SOURCE_REF}}' = local ]; then
+          echo "managed:zip: the tree has uncommitted changes, so this zip builds only with MP_SOURCE_PATH; commit first for a zip that builds from GitHub" >&2
+        fi
       - mkdir -p dist
       - python3 scripts/managed_zip.py build/managed "modular-platform-{{.VERSION}}" "dist/modular-platform-{{.VERSION}}.zip"
 

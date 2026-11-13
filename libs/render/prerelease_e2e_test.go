@@ -56,9 +56,10 @@ func setupWith(t *testing.T, dir, from string, env ...string) (string, error) {
 	return string(out), err
 }
 
-// TestPrereleaseZipEndToEnd covers spec 0030 AC-2 and AC-3 for real: setup.sh builds the
-// renderer image from this checkout (MP_SOURCE_PATH, given relative to where setup.sh runs), and
-// docker compose up then starts it healthy without pulling. It needs Docker 23 or newer.
+// TestPrereleaseZipEndToEnd covers spec 0030 AC-2, AC-3 and AC-12 for real: setup.sh builds the
+// renderer image from this checkout (MP_SOURCE_PATH, given relative to where setup.sh runs) and
+// labels it local, never with the zip's commit, and docker compose up then starts it healthy
+// without pulling. It needs Docker 23 or newer.
 func TestPrereleaseZipEndToEnd(t *testing.T) {
 	head, err := exec.CommandContext(t.Context(), "git", "rev-parse", "HEAD").Output()
 	if err != nil {
@@ -69,12 +70,25 @@ func TestPrereleaseZipEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// setup.sh resolves MP_SOURCE_PATH with pwd -P, so the path it prints has no symlink
+	physical, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
 	out, err := setupWith(t, dir, repo, "MP_SOURCE_PATH=.")
 	if err != nil {
 		t.Fatalf("setup.sh: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "(local checkout "+repo+")") {
+	if !strings.Contains(out, "from the local checkout "+physical+"\n") {
 		t.Errorf("setup.sh did not build from the local checkout:\n%s", out)
+	}
+	label, err := exec.CommandContext(t.Context(), "docker", "image", "inspect", "--format",
+		`{{index .Config.Labels "org.opencontainers.image.revision"}}`, "ghcr.io/racherom/modular-platform/renderer:0.0.0").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(label)); got != render.LocalSourceRef {
+		t.Errorf("the image built from the checkout is labeled %q, want %q", got, render.LocalSourceRef)
 	}
 
 	project := "mp-prerelease-" + strings.ToLower(filepath.Base(dir))

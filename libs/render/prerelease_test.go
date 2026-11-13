@@ -3,6 +3,7 @@ package render_test
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -88,6 +89,52 @@ func TestRenderPrereleaseGolden(t *testing.T) {
 	}
 	if strings.Count(setup, "\nbuild_image ") != 1 {
 		t.Error("setup.sh builds the renderer image more than once")
+	}
+}
+
+// TestRenderPrereleaseLocal covers spec 0030 AC-12 for a zip rendered with the ref local: its
+// README and setup.sh (golden-local holds only these two, the files a local ref changes), and a
+// setup.sh run without MP_SOURCE_PATH, which stops before the BuildKit check and before it makes
+// any file, naming MP_SOURCE_PATH. It runs no Docker. Run with -update after an intended change.
+func TestRenderPrereleaseLocal(t *testing.T) {
+	out := prereleaseRender(t, render.LocalSourceRef)
+	var changed render.Output
+	for _, f := range out.Files {
+		if f.Path == "README.md" || f.Path == "setup.sh" {
+			changed.Files = append(changed.Files, f)
+		}
+	}
+	checkGolden(t, filepath.Join("testdata", "prerelease", "golden-local"), changed)
+
+	readme := string(file(out, "README.md"))
+	if !strings.Contains(readme, "source ref `local`") || strings.Contains(readme, "is a branch, not a commit") {
+		t.Errorf("README.md lacks the local text, or warns about a branch:\n%s", readme)
+	}
+	setup := string(file(out, "setup.sh"))
+	if stop, buildx := strings.Index(setup, "made by a renderer built from a local checkout"), strings.Index(setup, "docker buildx version"); stop < 0 || stop > buildx {
+		t.Errorf("setup.sh stops for local at %d, after the BuildKit check at %d", stop, buildx)
+	}
+
+	dir := t.TempDir()
+	writeOutput(t, dir, out)
+	cmd := exec.CommandContext(t.Context(), "sh", "setup.sh")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "MP_SOURCE_PATH=")
+	cmd.Stdin = strings.NewReader("")
+	stopped, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("setup.sh of a local zip ran without MP_SOURCE_PATH:\n%s", stopped)
+	}
+	if !strings.Contains(string(stopped), "set MP_SOURCE_PATH=<a checkout of Modular Platform>") {
+		t.Errorf("setup.sh stop does not name MP_SOURCE_PATH:\n%s", stopped)
+	}
+	if env, err := os.ReadFile(filepath.Join(dir, ".env")); err != nil || strings.Contains(string(env), "MP_UID=") {
+		t.Errorf("setup.sh wrote .env before it stopped (%v)", err)
+	}
+	for _, made := range []string{"secrets", "data"} {
+		if _, err := os.Stat(filepath.Join(dir, made)); err == nil {
+			t.Errorf("setup.sh made %s before it stopped", made)
+		}
 	}
 }
 
@@ -244,6 +291,18 @@ func TestRenderPlatformPrerelease(t *testing.T) {
 	}
 	if !strings.Contains(string(file(out, "README.md")), "### Images built on this host") {
 		t.Error("README.md has no section on the images built on this host")
+	}
+	// rendered from a checkout with changes, the README says so and setup.sh needs MP_SOURCE_PATH
+	local, _ := render.NewSourceRef(render.LocalSourceRef)
+	localOut, err := render.Platform(result, catalog, templates, render.WithSource(local, dockerfiles))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readme := string(file(localOut, "README.md")); !strings.Contains(readme, "source ref `local`") {
+		t.Errorf("README.md of a local render lacks the local text:\n%s", readme)
+	}
+	if setup := string(file(localOut, "setup.sh")); !strings.Contains(setup, "set MP_SOURCE_PATH=<a checkout of Modular Platform>") {
+		t.Error("setup.sh of a local render does not stop without MP_SOURCE_PATH")
 	}
 
 	// a render retagged dev or ci names no unreleased image, so nothing changes

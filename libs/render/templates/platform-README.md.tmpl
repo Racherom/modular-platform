@@ -22,7 +22,14 @@ Every file here is rendered from `graph.yaml`, the platform's own graph: each pl
 {{- if .Builds}}
 
 ### Images built on this host
+{{if .SourceLocal}}
+This version's platform images are not released yet, so no registry holds them. This folder was rendered from a local checkout of Modular Platform (source ref `local`), so no commit on GitHub holds its code. Before it asks anything, `setup.sh` builds each image from the checkout you name in `MP_SOURCE_PATH`, with the Dockerfile in `build/<module>/`:
+{{range .Builds}}
+- `{{.Image}}`, from `{{.Dockerfile}}`
+{{- end}}
 
+The build needs Docker 23 or newer with BuildKit (`docker buildx`), access to Docker Hub, and a few minutes. Without `MP_SOURCE_PATH`, `setup.sh` stops before it makes any file: run `MP_SOURCE_PATH=path/to/modular-platform sh setup.sh`. These services carry `pull_policy: never`, so the platform never tries to pull them. When a rerun of `setup.sh` builds different code, the platform sees new images and hands over to them, as on an upgrade.
+{{- else}}
 This version's platform images are not released yet, so no registry holds them. Before it asks anything, `setup.sh` builds each one from Modular Platform at `{{.SourceRef}}`, with the Dockerfile in `build/<module>/`:
 {{range .Builds}}
 - `{{.Image}}`, from `{{.Dockerfile}}`
@@ -32,6 +39,7 @@ The build needs Docker 23 or newer with BuildKit (`docker buildx`), access to Gi
 {{- if .SourceMoves}} `{{.SourceRef}}` is a branch, not a commit, so a later run of `setup.sh` builds whatever the branch holds then.{{end}} When a rerun of `setup.sh` builds different code, the platform sees new images and hands over to them, as on an upgrade.
 
 To build from a checkout of Modular Platform on this machine instead of GitHub, point `MP_SOURCE_PATH` at it: `MP_SOURCE_PATH=path/to/modular-platform sh setup.sh`.
+{{- end}}
 {{- end}}
 
 The platform makes its own certificate authority for HTTPS (`MP_INGRESS__TLS_MODE=internal`), so your browser warns about the certificate the first time. For a public certificate, set `MP_INGRESS__TLS_MODE=acme` in `.env` (the domain must be public), run `sh setup.sh` again, which checks every value, then `docker compose up -d`.

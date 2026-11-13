@@ -620,19 +620,22 @@ func TestRetiredRoutesAre404(t *testing.T) {
 	}
 }
 
-// TestSourceRef covers spec 0030 AC-10: the start logs the source ref, warns for a ref that can
-// move, and refuses one of the wrong form.
+// TestSourceRef covers spec 0030 AC-10 and AC-12: the start logs the source ref, warns once for a
+// ref that can move, warns once for local with the local text instead, and refuses one of the
+// wrong form.
 func TestSourceRef(t *testing.T) {
 	t.Parallel()
 	const commit = "b5f34e9a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f"
+	const branch, local = "is a branch", "MP_SOURCE_PATH"
 	for name, tc := range map[string]struct {
 		ref, logged string
-		warn        bool
+		warn        string // the one warning the start logs, by a part of its text; empty for none
 		refused     bool
 	}{
 		"full commit":  {ref: commit, logged: commit},
-		"empty":        {ref: "", logged: "main", warn: true},
-		"branch":       {ref: "main", logged: "main", warn: true},
+		"empty":        {ref: "", logged: "main", warn: branch},
+		"branch":       {ref: "main", logged: "main", warn: branch},
+		"local":        {ref: "local", logged: "local", warn: local},
 		"short commit": {ref: "b5f34e9", refused: true},
 		"space":        {ref: "a b", refused: true},
 		"quote":        {ref: "a'b", refused: true},
@@ -653,7 +656,8 @@ func TestSourceRef(t *testing.T) {
 			if err != nil {
 				t.Fatalf("start refused: %v\n%s", err, logs)
 			}
-			var started, warned bool
+			var started bool
+			var warnings []string
 			for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
 				var entry struct {
 					Level, Msg string
@@ -666,11 +670,17 @@ func TestSourceRef(t *testing.T) {
 				case entry.Msg == "renderer starting":
 					started = entry.SourceRef == tc.logged
 				case entry.Level == "WARN" && strings.Contains(entry.Msg, "source ref"):
-					warned = true
+					warnings = append(warnings, entry.Msg)
 				}
 			}
-			if !started || warned != tc.warn {
-				t.Errorf("started with source_ref %q: %v, warned %v (want %v):\n%s", tc.logged, started, warned, tc.warn, logs)
+			if !started {
+				t.Errorf("did not start with source_ref %q:\n%s", tc.logged, logs)
+			}
+			switch {
+			case tc.warn == "" && len(warnings) > 0:
+				t.Errorf("warnings %q, want none", warnings)
+			case tc.warn != "" && (len(warnings) != 1 || !strings.Contains(warnings[0], tc.warn)):
+				t.Errorf("warnings %q, want exactly one with %q", warnings, tc.warn)
 			}
 		})
 	}

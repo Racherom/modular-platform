@@ -52,7 +52,18 @@ On Windows, run `setup.sh` in WSL or Git Bash.
 {{- if .Builds}}
 
 ## Images built on this host
+{{if .SourceLocal}}
+These platform images are not released yet, so no registry holds them. This zip was made by a renderer built from a local checkout of Modular Platform (source ref `local`), so no commit on GitHub holds its code. `setup.sh` builds each image first, from the checkout you name in `MP_SOURCE_PATH`, with the Dockerfile in `build/<module>/`:
+{{range .Builds}}
+- `{{.Image}}`, from `{{.Dockerfile}}`
+{{- end}}
 
+The build needs Docker 23 or newer with BuildKit (`docker buildx`), access to Docker Hub, and a few minutes. Without `MP_SOURCE_PATH`, `setup.sh` stops before it makes any file. `docker compose up` then uses these images and pulls none of them.
+
+```sh
+MP_SOURCE_PATH=path/to/modular-platform sh setup.sh
+```
+{{- else}}
 These platform images are not released yet, so no registry holds them. `setup.sh` builds each one first, from Modular Platform at `{{.SourceRef}}`, with the Dockerfile in `build/<module>/`:
 {{range .Builds}}
 - `{{.Image}}`, from `{{.Dockerfile}}`
@@ -66,6 +77,7 @@ To build from a checkout of Modular Platform on this machine instead of GitHub (
 ```sh
 MP_SOURCE_PATH=path/to/modular-platform sh setup.sh
 ```
+{{- end}}
 {{- end}}
 
 ## Stop it

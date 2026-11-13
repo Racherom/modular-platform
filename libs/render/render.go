@@ -95,6 +95,7 @@ type templateData struct {
 
 	Builds      []imageBuild // unreleased platform images setup.sh builds first (spec 0030)
 	SourceRef   string       // the git ref those builds use
+	SourceLocal bool         // the ref is local: the code is in a local checkout, so setup.sh needs MP_SOURCE_PATH
 	SourceMoves bool         // the ref is a branch, not a commit, so a later build may differ
 }
 

@@ -154,8 +154,8 @@ func renderedStack(result contract.CheckResult, m render.ManagedProject) contrac
 // keeps the check, so it refuses to start without a consumer token in MP_RENDERER_CLIENTS_DIR.
 //
 // sourceRef is the git ref the renderer was built from, which its zips build unreleased platform
-// images from (spec 0030); a ref of the wrong form stops the start, and one that can move (any
-// ref but a full commit, empty meaning main) logs a warning.
+// images from (spec 0030); a ref of the wrong form stops the start, one that can move (a branch or
+// tag, empty meaning main) logs a warning, and so does local, whose zips need MP_SOURCE_PATH.
 func Setup(catalogFS fs.FS, sourceRef string) sdk.Setup[config.Config, config.Uses] {
 	return func(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http.Handler, error) {
 		source, err := render.NewSourceRef(sourceRef)
@@ -163,7 +163,10 @@ func Setup(catalogFS fs.FS, sourceRef string) sdk.Setup[config.Config, config.Us
 			m.Log.ErrorContext(ctx, "the renderer's source ref: "+err.Error())
 			return nil, fmt.Errorf("%w: %w", err, sdk.ErrStart)
 		}
-		if !source.Commit() {
+		switch {
+		case source.Local():
+			m.Log.WarnContext(ctx, "the renderer's source ref is local: it was built from a local checkout, and its zips build only with MP_SOURCE_PATH", slog.String("source_ref", source.String()))
+		case source.Moves():
 			m.Log.WarnContext(ctx, "the renderer's source ref is a branch, not a commit: zips that build a platform image build whatever it holds then", slog.String("source_ref", source.String()))
 		}
 		entries, problems := contract.LoadCatalog(catalogFS)

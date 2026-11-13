@@ -262,8 +262,9 @@ func TestCIImagesSourceRef(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref, _ := tf.Vars["SOURCE_REF"].(map[string]any)
-	if ref["sh"] != "git rev-parse HEAD" {
-		t.Errorf("Taskfile SOURCE_REF = %v, want sh: git rev-parse HEAD", tf.Vars["SOURCE_REF"])
+	// the commit on a clean tree, local with changes (spec 0030, AC-12)
+	if want := `if [ -z "$(git status --porcelain)" ]; then git rev-parse HEAD; else echo local; fi`; ref["sh"] != want {
+		t.Errorf("Taskfile SOURCE_REF = %v, want sh: %s", tf.Vars["SOURCE_REF"], want)
 	}
 	cmds := tf.Tasks["images"].Cmds
 	if len(cmds) != len(releaseImages) {
