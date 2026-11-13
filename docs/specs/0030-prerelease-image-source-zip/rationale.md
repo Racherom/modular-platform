@@ -42,7 +42,7 @@ CI pushes the four images on every push to main with a pre release tag (`0.0.0-m
 
 ### Option 3: The image's own Dockerfile in the zip, source by git at the renderer's commit
 
-One Dockerfile per image, beside its catalog entry, chooses its source with build args. The zip carries it, and `setup.sh` builds from GitHub at the renderer's commit, or from a local checkout. Images are pushed from the release pull request.
+One Dockerfile per image, beside its catalog entry, chooses its source with build args. The zip carries it, and `setup.sh` builds from GitHub at the renderer's commit, or from a local checkout. Images were first pushed from the release pull request; since 2026-11-13 they are pushed right after the release merge (see below).
 
 **Pros**:
 - The zip says exactly what it builds and from which commit; builds are reproducible from that ref.
@@ -72,7 +72,30 @@ The force that decides it is that the image must be built from the code whose ca
 
 The one Dockerfile with a build arg source (not a second copy, not a generated twin) is what makes Option 3 cheap to keep honest: the zip ships the very file CI and `task build` use, so the Go and Node versions and the build steps cannot drift. Moving it beside the catalog entry puts it where the catalog already describes the image, and where `go:embed` already reaches.
 
-Pushing images from the release pull request closes the second gap at its root: the merge, which flips the catalog tags, the managed zip and `versions.env`, becomes the last step, so main never names a missing image. The cost is that the release pull request needs CI (the `RELEASE_PLEASE_TOKEN` secret, as the README already notes) and that its version tag is overwritten while the pull request changes. Both are acceptable before anyone pulls that tag.
+The first design pushed the images from the release pull request, to close the second gap: the merge would be the last step, so main would never name a missing image. The review of 2026-11-13 showed that this builds the images from the pull request head, not from the release commit, and the push moved to after the merge (below). The second gap is now accepted for the few minutes of the build.
+
+### Release images after the merge (AC-9, revised 2026-11-13, review finding #2)
+
+The review found that the images were built from the release pull request head while the release is the merge commit on main. When the head is behind main (a commit lands on main and release-please has not updated its branch yet, or does not update it because the commit adds nothing to the changelog), the squash merge holds code the images do not.
+
+- **Chosen (by the engineer): build and push after the merge, from the release commit.** The mismatch cannot happen, since the image and the release come from one commit. `release-images.yml`, its required check and the overwrite risk of the open pull request all go away. The cost is the gap the first design closed: for the few minutes of the build, main names images that are not pushed yet. That gap is short and visible (a pull fails, a rerun works), and it is the order most projects use.
+- Recommended in the conversation: keep the push before the merge, turn on "Require branches to be up to date before merging" for `main`, and compare the merge commit's tree with the tree of the image label's commit before the managed zip upload. It keeps main from ever naming a missing image, but it rests on a repository setting that costs an "Update branch" on every pull request, and its tree check finds a mismatch only after the release exists. The engineer weighed this and chose the simpler order; it is a sound choice, and the gap is recorded in Consequences.
+- Rejected: the tree check alone. No setting to keep, but it only detects the mismatch after the tag and the release exist, and the repair is by hand.
+
+### The ref of a local build (AC-12, added 2026-11-13, review finding #4)
+
+With `MP_SOURCE_PATH`, `setup.sh` passed the zip's ref, so the label and a locally built renderer claimed a commit the checkout may not match; that renderer then wrote the claim into its own zips.
+
+- **Chosen: the reserved value `local`.** True in every case (uncommitted changes, unpushed commits, another branch), needs no git on the host, and a zip that carries it fails early with the one fix that works (`MP_SOURCE_PATH`) instead of a git fetch error. `task build` uses the same rule, keeping the commit when the tree is clean, so CI builds lose nothing.
+- Runner up: the checkout's `git rev-parse HEAD`. A real commit when the tree is clean, but it needs git on the host and still claims that commit when the tree has changes.
+- Rejected: keep the zip's ref. It is the finding.
+
+### Pinned build inputs and the online editor's commit (AC-8, AC-13, added 2026-11-13, review finding #5)
+
+A commit ref pins the repository, but the frontend and base images were tags, and the online editor built `main` by default, so two builds of one zip could differ and the editor's zips named a moving branch.
+
+- **Chosen: digests on every frontend and base image line, kept fresh by Renovate (dockerfile manager, digests only, the four catalog files only).** Renovate reads the `# syntax=` directive as well as `FROM`; tag bumps stay manual because the Go and Node versions are tied to `go.work`, CI and the lockfiles. Runner up: Dependabot, native to GitHub with nothing to install, but it leaves the frontend digest to hand updates. Rejected: pins by hand with no bot, which go stale silently and miss base image security fixes.
+- **Chosen: `task online:up` resolves a branch or tag to its commit with `git ls-remote` and builds that commit.** The images, their label and every zip the editor makes then name one fixed commit, and each start still picks up the newest main. Runner up: a commit in `versions.env`, bumped by hand; fully fixed, but it gets stale and needs edits. Rejected: keep `main`; the editor's zips would build whatever main holds when someone runs `setup.sh`.
 
 ### Release gate (AC-11, added 2026-11-12)
 
