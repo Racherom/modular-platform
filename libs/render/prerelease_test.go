@@ -149,6 +149,27 @@ func TestRenderPrereleaseRules(t *testing.T) {
 	})
 }
 
+// TestRenderMissingDockerfileStable checks that with several unreleased modules lacking a
+// Dockerfile, the render error names the same module every time (instances walked in name order).
+func TestRenderMissingDockerfileStable(t *testing.T) {
+	t.Parallel()
+	catalog, templates := loadCatalogTemplates(t, "../../catalog")
+	result := checkFile(t, "../../deploy/managed/graph.yaml", catalog)
+	ref, _ := render.NewSourceRef(prereleaseCommit)
+	var first string
+	for range 20 {
+		_, err := render.Platform(result, catalog, templates, render.WithSource(ref, map[string][]byte{}))
+		if err == nil {
+			t.Fatal("render without Dockerfiles succeeded")
+		}
+		if first == "" {
+			first = err.Error()
+		} else if err.Error() != first {
+			t.Fatalf("render errors differ between runs: %q and %q", first, err)
+		}
+	}
+}
+
 // TestUnreleased covers the one predicate of spec 0030: the platform prefix and exactly 0.0.0.
 func TestUnreleased(t *testing.T) {
 	t.Parallel()

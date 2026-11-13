@@ -207,6 +207,7 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 	if err != nil {
 		return rendered{}, err
 	}
+	r.neverPull()
 	for _, b := range deliveryOrder(instances, result.Bindings) {
 		if err := r.binding(b); err != nil {
 			return rendered{}, err
