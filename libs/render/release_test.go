@@ -104,6 +104,11 @@ func TestReleaseImagesWorkflow(t *testing.T) {
 	if push < 0 {
 		t.Fatal("images job has no build-push step")
 	}
+	released := stepIndex(images, `refs/tags/v$VERSION`)
+	if released < version || released > push || images.Steps[released].Env["VERSION"] != "${{ steps.version.outputs.version }}" ||
+		!strings.Contains(images.Steps[released].Run, "exit 1") {
+		t.Error("between the version and the push, a step must fail when the git tag v<version> already exists")
+	}
 	with := images.Steps[push].With
 	str := func(k string) string { v, _ := with[k].(string); return v }
 	args := strings.Split(strings.TrimSpace(str("build-args")), "\n")
@@ -267,6 +272,22 @@ func TestCIImagesSourceRef(t *testing.T) {
 	for _, c := range cmds {
 		if s, _ := c.(string); !strings.Contains(s, "--build-arg MP_SOURCE_REF={{.SOURCE_REF}}") {
 			t.Errorf("task images command %q does not pass MP_SOURCE_REF={{.SOURCE_REF}}", s)
+		}
+	}
+}
+
+// TestReleaseRunSteps checks that no run step of the release workflows writes an expression
+// into its script; values go through env, as the GitHub hardening guide asks.
+func TestReleaseRunSteps(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"release.yml", "release-images.yml"} {
+		w, _ := readWorkflow(t, name)
+		for jn, j := range w.Jobs {
+			for _, st := range j.Steps {
+				if strings.Contains(st.Run, "${{") {
+					t.Errorf("%s job %s step %q interpolates an expression into run; pass it through env", name, jn, st.Name+st.Run)
+				}
+			}
 		}
 	}
 }

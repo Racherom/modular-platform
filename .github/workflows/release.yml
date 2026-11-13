@@ -66,7 +66,11 @@ jobs:
           version: 3.54.0
       # release-please already wrote the version into the platform's catalog entries and the
       # manifest, so the render pins the images this release pushed (spec 0015)
-      - run: task managed:zip VERSION="${{ needs.release-please.outputs.version }}"
-      - run: gh release upload "${{ needs.release-please.outputs.tag }}" "dist/modular-platform-${{ needs.release-please.outputs.version }}.zip" --clobber
+      - run: task managed:zip VERSION="$VERSION"
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+      - run: gh release upload "$TAG" "dist/modular-platform-$VERSION.zip" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+          VERSION: ${{ needs.release-please.outputs.version }}

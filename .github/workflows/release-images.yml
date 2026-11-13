@@ -39,6 +39,18 @@ jobs:
       - id: version
         name: The version the pull request releases
         run: echo "version=$(jq -r '."."' .release-please-manifest.json)" >> "$GITHUB_OUTPUT"
+      # a released version's images are never pushed again: a stale or mistaken release branch
+      # that still names an old version stops here instead of replacing a shipped tag. An orphan
+      # image tag from a release pull request closed without merging has no git tag, so the next
+      # release pull request may still overwrite it (spec 0030).
+      - name: The version is not released yet
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
+            echo "::error::v$VERSION is already released; its images are not pushed again"
+            exit 1
+          fi
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
