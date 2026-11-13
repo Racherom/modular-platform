@@ -64,6 +64,18 @@ Resolving at review, not at apply, is what makes "shown before apply" true: the 
 
 Freezing per reference rather than per instance keeps the lock small and the rule obvious (one tag, one digest per stack), and it matches how Compose and Docker store images. The deployer accepts a Compose file with plain tags (the engineer's choice over a hard `image_not_frozen` refusal): the lock then still records the truth from `RepoDigests`, so freezing degrades to "recorded" rather than failing, at the cost that only the api enforces the freeze. Keeping two generations with keep tags gives a rollback its images offline, which is the case the scope names, without letting disk grow with the history.
 
+### Where the references come from (added 2026-11-13)
+
+The first draft took the stack's references from `RenderedStack.images`, which lists one entry per module instance. A managed Compose file also runs provision and revoke jobs, whose image is the provisioner capability's `yields.job.image`, and the wait anchor `mp_jobs`, which copies a job's image. Those services were left out of `Freeze`, so the lock render kept them on a tag, and AC-1 and AC-2 could not both hold: the deployer would lock a job image the review never froze, and a rollback would pull a moved job tag. Three ways to close the gap were weighed:
+
+- **A new `references` list built from the rendered services (chosen).** The renderer already holds every service with its final image, so a list built after `waitAnchor` is complete by construction, and any service kind added later is covered with no change. `images[]` keeps its one meaning (the module list the review shows). Con: one more field in the renderer contract and a regenerated `managed.json` golden.
+- **Add job entries to `images[]` with a kind.** Fewer schema changes, but `images[]` stops meaning "one per instance", and the review's module list has to filter jobs out again.
+- **The api reads `image:` lines from the rendered Compose file.** No contract change, but it puts Compose parsing into the api, against the rule that Compose types stay behind an adapter, and it loses which capability and consumer a job serves.
+
+The lock render now matches by service image rather than by catalog module, for the same reason: one rule reaches modules, jobs and `mp_jobs` alike. The review names a job by its capability, provider and consumer (the engineer's choice) rather than by Compose service names an admin never typed; `mp_jobs` is left out of the review because it only reuses a job's image.
+
+The cross check of this update (2026-11-13, a second model) found that a catalog image pinned as `repo:tag@sha256:…` would break the lock key rule ("a tag, never a digest") and make the lock render write a digest twice. The first draft handled it with a separate freeze rule ("frozen by the catalog"). No catalog file pins a digest. So the catalog check now refuses a digest (`image_digest`), and that freeze rule is gone: the lock is the one place a version is pinned, which keeps every rule about references simple.
+
 ## Spike results (task 1)
 
 _Filled in by `/develop` when task 1 runs: `--policy missing` behavior offline, `DistributionInspect` digest versus `RepoDigests` for an image built for several platforms, and whether a digest only image with a keep tag survives `docker image prune -f`._

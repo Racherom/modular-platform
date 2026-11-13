@@ -439,7 +439,7 @@ A module names its image by tag, and a tag can move (a re pushed `postgres:18.6-
 spec [0031](../specs/0031-frozen-image-versions/index.md) · code in `libs/contract/`, `libs/render/`, `contracts/openapi/`, `services/deployer-docker/`, `services/api/internal/deploy/`, `catalog/modules/deployer-docker/`, `web/src/components/ReviewDialog.tsx`, `scripts/smoke-managed.sh`
 - [x] Design it (spec): `/architect frozen image versions for apply and rollback`
 - [ ] Build it: `/develop frozen image versions for apply and rollback`
-   - [ ] The thread: the spike, `ImageLock` and the freeze rule, the renderer's lock, the deployer's lock write and images and resolve endpoints, review, apply and offline rollback in api, the Images section, the e2e with a local registry (AC-1, AC-2, AC-3, AC-4, AC-5, AC-12, AC-13)
+   - [ ] The thread: the spike, `ImageLock` and the freeze rule, `image_digest` in the catalog, the renderer's `references` (modules, jobs, `mp_jobs`) and lock, the deployer's lock write and images and resolve endpoints, review, apply and offline rollback in api, the Images section, the e2e with a local registry and a provisioner (AC-1, AC-2, AC-3, AC-4, AC-5, AC-12, AC-13, AC-14)
    - [ ] Take newer on purpose: `checkNewer` and `update`, the tick boxes, `graph_changed` on a moved tag (AC-6, AC-7)
    - [ ] Lifecycle: keep tags for two generations, adoption written before pull, `busy` reads, `present`, remove cleanup (AC-8, AC-9, AC-10, AC-11)
 - [ ] Verify it: `/check verify frozen image versions for apply and rollback`
