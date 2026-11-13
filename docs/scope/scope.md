@@ -66,6 +66,7 @@ One name for each thing (your answers of 2026-11-10). #41 brings code, contracts
 | 18 | Users, groups and permissions modules | Slice 13 | planned |
 | 29 | Sign in policy and tenant issuers | Slice 13 | planned |
 | 19 | Live graph changes | Slice 14 | planned |
+| 47 | Frozen image versions for apply and rollback | Slice 14 | planned |
 | 36 | Live health and binding statistics | Slice 14 | planned |
 | 20 | Scale modules | Slice 15 | planned |
 | 21 | Per user provider routing | Slice 16 | planned |
@@ -254,8 +255,8 @@ spec [0030](../specs/0030-prerelease-image-source-zip/index.md) · code in `cata
    - [x] Review findings: pinned build inputs with Renovate, the online editor at a resolved commit (AC-1, AC-8, AC-13)
    - [x] AC-8 before a push: `MP_SOURCE_PATH` for `task online:up` (`compose.checkout.yaml`, the script's checkout mode, a precondition stop), and an integration test that runs it on an unpushed commit, so no AC-8 step is marked **(after push)** (AC-8)
    - [x] No check waits for GitHub: `TestReleaseGateAct` and `TestRenovateDigests` (build tag `integration`), the pinned `act` and runner image, the verify steps moved (keeper step to spec 0016, settings and the Renovate App to the release checklist) (AC-6, AC-11, AC-13)
-- [ ] Verify it: `/check verify pre release image source for the zip`
-- [ ] Test it: `/test pre release image source for the zip`
+- [x] Verify it: `/check verify pre release image source for the zip`
+- [x] Test it: `/test pre release image source for the zip`
 - [x] Review it (fresh model): `/check review pre release image source for the zip`
 - [ ] Document it: `/document pre release image source for the zip`
 
@@ -432,6 +433,11 @@ Change the running stack without a full redeploy: swap a provider, add a module 
 **Done when:** in managed mode a swap, an add and a remove each apply while the rest of the stack keeps running, a platform module (for example the ingress) can be swapped on a running platform, the stack editor shows the impact before you apply, no module runs while a provider it uses is down during an apply, and a failed change leaves the previous stack running.
 - [ ] Design it (spec): `/architect live graph changes`
 
+### 47. Frozen image versions for apply and rollback · needs a decision
+A module names its image by tag, and a tag can move (a re pushed `postgres:18.6-alpine3.24`, or a platform image rebuilt from a new commit). Today an apply that pulls a newer, broken image fails, and the automatic rollback of #16 then pulls the same tag again and fails too. So each apply freezes versions: it resolves every image to the exact digest it runs and records it with the apply, and a rollback starts the digests of the last good apply, without pulling a tag again. Managed mode only: the static zip keeps its tags. It lands with #19, whose done line already says a failed change leaves the previous stack running. Its spec decides where the frozen digests live (the apply history of #16 and #35, or the deployer's files), how images built from source on the host (#46) are frozen, how long older images are kept on the host so a rollback needs no registry, and what an admin does to take a newer version on purpose.
+**Done when:** in managed mode an apply records the digest of every image it starts; when a tag moves to a broken image and that apply fails, the rollback starts the previous digests and the stack runs as before, even with the registry out of reach; applying the same graph again without asking for newer versions starts the same digests; and taking a newer version is a choice you make, shown before apply.
+- [ ] Design it (spec): `/architect frozen image versions for apply and rollback`
+
 ### 36. Live health and binding statistics · needs a decision
 The graph shows how the running stack is doing: each module's health, and on each binding its request rate, the share of requests that fail, and how slow they are, updated while you watch. Modules wrap existing container images, so the numbers must come without changing those containers. It thickens the per module state #16 already shows, and replaces the deferred Observability idea for health and metrics (logs stay deferred). Managed mode only. Its spec decides where the numbers come from, how often they refresh, and how long they are kept.
 **Done when:** in managed mode the graph shows each module's health and each binding's request rate, error share and latency, refreshing on its own; an unhealthy module or a binding with a high error share stands out without opening anything; the numbers stay visible on the running parts while the edit layer (#34) is on; and no module's container changed to report them.
@@ -536,6 +542,7 @@ Other deferred ideas, not yet numbered:
 - Your answers in the `/scope` pass (2026-11-10, second): one name per thing (the Words table); the running whole is a stack, network stays the Docker network; one editor in two modes, the online editor and the stack editor; the renderer turns a graph into a zip or the deployer's files; checks run at several stages and are not one component; "planner" retires as a name. A complete graph always gives a zip; an incomplete one gives a zip with a warning only when the core of its managed stack can start, so the rest is set in the stack editor (#40 updated). New #41 (foundation), #42 (slice 3, after #6) and #43 (slice 3, after #34); module by module apply folded into #19; #24, #12 and #22 renamed. <!-- vocabulary: allow -->
 - Your answers in the `/scope` replan (2026-11-10, third): #27 done; #32's done line follows Compose's rule (spec 0016); #40 and #42 carry spec 0027's follow up items; #44 gets its Alpha verify box; next is #41, before more #10 and #32 code, so the rename meets few open branches.
 - Spec 0029 follow up, applied by `/scope` replan (2026-11-11): #41's build milestones all ticked (the retired word check now fails `task lint` and the pre commit hook), so its next box is Verify; remove and rename of modules enrolled as #45 in slice 3 after #6; drag from the catalog onto the canvas stays an idea until testing shows a need.
+- Your answers in the `/scope` add pass (2026-11-13): an apply freezes image versions, so a rollback after an apply that pulled a broken newer image does not pull the same image again; managed apply only, the static zip keeps its tags; new #47 in slice 14, beside #19.
 
 **Practices & standards**
 - Vertical slices ship real value early (tracer bullet development)
