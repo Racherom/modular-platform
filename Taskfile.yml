@@ -13,8 +13,12 @@ vars:
   GOLANGCI_LINT_VERSION: v2.15.0
   LEFTHOOK_VERSION: v2.2.2
   SKILLS_VERSION: 1.7.6
-  # the renovate npm package, for its config validator (spec 0030, AC-13)
+  # the renovate npm package, for its config validator and the digest test (spec 0030, AC-13)
   RENOVATE_VERSION: 44.198.3
+  # act runs release.yml in local Docker for the release gate test (spec 0030, AC-11); the
+  # test reads both values from here and builds act with go install, so nothing is installed
+  ACT_VERSION: v0.2.92
+  ACT_RUNNER_IMAGE: debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
   # go run pkg@version builds with the toolchain the tool's module asks for; golangci-lint must be
   # built with at least the toolchain go.work pins, or it refuses the code
   GO_TOOLCHAIN:
@@ -89,8 +93,10 @@ tasks:
     # Two runs: testcontainers shares one session, and one reaper, across every package of a go
     # test run. The e2e test builds images for about 10 seconds before it reaches Docker, and by
     # then the reaper of packages that finished early prunes the session's containers.
+    # The integration run gets 30 minutes: the AC-8 checkout build, a cold act build and Renovate
+    # together pass the default 10 (spec 0030).
     cmds:
-      - go test -race -tags integration {{.GO_PACKAGES}}
+      - go test -race -timeout 30m -tags integration {{.GO_PACKAGES}}
       - go test -race -tags e2e {{.GO_PACKAGES}}
 
   lint:

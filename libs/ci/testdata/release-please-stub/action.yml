@@ -1,0 +1,30 @@
+# Stands in for googleapis/release-please-action in TestReleaseGateAct (spec 0030, AC-11). act
+# maps the SHA pinned uses: line of release.yml to this folder, so the test clones nothing from
+# GitHub and the real action never runs. It reports no release, so the later jobs stay skipped.
+name: release-please stub
+description: Prints whether it got a token and creates no release
+inputs:
+  token:
+    description: the token release.yml passes
+    required: false
+  config-file:
+    description: ignored
+    required: false
+  manifest-file:
+    description: ignored
+    required: false
+outputs:
+  release_created:
+    description: always empty, so no release was created
+    value: ${{ steps.stub.outputs.release_created }}
+runs:
+  using: composite
+  steps:
+    - id: stub
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.token }}
+      run: |
+        if [ -n "$TOKEN" ]; then set=yes; else set=no; fi
+        echo "release-please stub ran (token set: $set)"
+        echo "release_created=" >> "$GITHUB_OUTPUT"
