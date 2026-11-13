@@ -70,29 +70,29 @@ Steps marked **(after push)** need this branch on GitHub, because a git build ca
 ## Review findings (tasks 7 to 10) · added 2026-11-13
 
 ### The `local` ref (AC-3, AC-10, AC-12)
-- [ ] `go test -race ./libs/render/ -run 'TestNewSourceRef|TestRenderPrereleaseLocal|TestRenderPlatformPrerelease'` → passes: `local` is accepted and `Local()`, the `local` zip README says `source ref \`local\``, its `setup.sh` without `MP_SOURCE_PATH` exits non zero before the BuildKit check, writes no `MP_UID` to `.env` and makes no `secrets/` or `data/` → AC-12
-- [ ] `go test -race ./services/renderer/internal/api/ -run TestSourceRef` → `local` logs `source_ref=local` with exactly one warning, the one that names `MP_SOURCE_PATH`, and no branch warning → AC-10, AC-12
-- [ ] `go test -race -tags e2e ./libs/render/ -run TestPrerelease` (Docker 23 or newer) → `setup.sh` with `MP_SOURCE_PATH` prints `building … from the local checkout <path>` and the built renderer image has `org.opencontainers.image.revision=local` → AC-3, AC-12
-- [ ] On a tree with an uncommitted change, `task managed:zip VERSION=0.0.0` prints `managed:zip: the tree has uncommitted changes, so this zip builds only with MP_SOURCE_PATH …` to stderr and still writes the zip; `unzip -p dist/modular-platform-0.0.0.zip '*/setup.sh' | grep "source_ref='local'"` matches → AC-12
-- [ ] On a clean tree, the same `task managed:zip VERSION=0.0.0` prints no such warning and its `setup.sh` holds `source_ref='<git rev-parse HEAD>'` → AC-12 (value sourcing: `task build` and `task managed:render` ref)
+- [x] `go test -race ./libs/render/ -run 'TestNewSourceRef|TestRenderPrereleaseLocal|TestRenderPlatformPrerelease'` → passes: `local` is accepted and `Local()`, the `local` zip README says `source ref \`local\``, its `setup.sh` without `MP_SOURCE_PATH` exits non zero before the BuildKit check, writes no `MP_UID` to `.env` and makes no `secrets/` or `data/` → AC-12
+- [x] `go test -race ./services/renderer/internal/api/ -run TestSourceRef` → `local` logs `source_ref=local` with exactly one warning, the one that names `MP_SOURCE_PATH`, and no branch warning → AC-10, AC-12
+- [x] `go test -race -tags e2e ./libs/render/ -run TestPrerelease` (Docker 23 or newer) → `setup.sh` with `MP_SOURCE_PATH` prints `building … from the local checkout <path>` and the built renderer image has `org.opencontainers.image.revision=local` → AC-3, AC-12
+- [x] On a tree with an uncommitted change, `task managed:zip VERSION=0.0.0` prints `managed:zip: the tree has uncommitted changes, so this zip builds only with MP_SOURCE_PATH …` to stderr and still writes the zip; `unzip -p dist/modular-platform-0.0.0.zip '*/setup.sh' | grep "source_ref='local'"` matches → AC-12
+- [x] On a clean tree, the same `task managed:zip VERSION=0.0.0` prints no such warning and its `setup.sh` holds `source_ref='<git rev-parse HEAD>'` → AC-12 (value sourcing: `task build` and `task managed:render` ref)
 
 ### Release images after the merge (AC-9, AC-11)
-- [ ] `go test -race ./libs/render/ -run 'TestReleaseImagesJob|TestReleaseWorkflow|TestReleaseRunSteps'` → `release.yml` has the `images` job (needs release-please, the `created` condition, `fail-fast: false`, the only `packages: write`, checkout of `github.sha`, `VERSION` through `env:`, the GHCR check right before the push as the last step), `managed-zip` needs `[release-please, images]`, and `release-images.yml` is gone → AC-9
+- [x] `go test -race ./libs/render/ -run 'TestReleaseImagesJob|TestReleaseWorkflow|TestReleaseRunSteps'` → `release.yml` has the `images` job (needs release-please, the `created` condition, `fail-fast: false`, the only `packages: write`, checkout of `github.sha`, `VERSION` through `env:`, the GHCR check right before the push as the last step), `managed-zip` needs `[release-please, images]`, and `release-images.yml` is gone → AC-9
 - [ ] **(on GitHub)** In the repository settings of `main`, *Release images to GHCR* is not a required check (remove it if it was added) → AC-9, AC-11
 - [ ] **(at release)** After the release pull request merges, the `images` job runs four matrix jobs, each prints `<image> is not in GHCR yet`, then pushes; `scripts/release-images-check.sh <version>` passes; each image's `org.opencontainers.image.revision` is the merge commit; *Re-run failed jobs* on a finished image job stops with `is already in GHCR; a released image is never pushed again` → AC-9
 
 ### Pinned build inputs (AC-13, AC-1)
-- [ ] `go test -race ./catalog/ -run 'TestPlatformDockerfilesPinned|TestUnpinned'` → passes; change one `FROM` in `catalog/modules/web/Dockerfile` back to a bare tag and it fails, naming that line → AC-13
-- [ ] `task lint:renovate` → the validator accepts `renovate.json` → AC-13
-- [ ] Change one digest in `catalog/modules/renderer/Dockerfile`, run `go test -race ./libs/render/ -run TestRenderPrereleaseGolden` without `-update` → still passes (the zip's Dockerfile is compared with the catalog file, no stored copy) → AC-1, AC-13
-- [ ] `task images IMAGE_TAG=pincheck` → all four images build with the pinned frontend and bases → AC-13
+- [x] `go test -race ./catalog/ -run 'TestPlatformDockerfilesPinned|TestUnpinned'` → passes; change one `FROM` in `catalog/modules/web/Dockerfile` back to a bare tag and it fails, naming that line → AC-13
+- [x] `task lint:renovate` → the validator accepts `renovate.json` → AC-13
+- [x] Change one digest in `catalog/modules/renderer/Dockerfile`, run `go test -race ./libs/render/ -run TestRenderPrereleaseGolden` without `-update` → still passes (the zip's Dockerfile is compared with the catalog file, no stored copy) → AC-1, AC-13
+- [x] `task images IMAGE_TAG=pincheck` → all four images build with the pinned frontend and bases → AC-13
 - [ ] **(on GitHub)** Install the Renovate GitHub App once `renovate.json` is on `main`; its first grouped pull request *build image digests* touches only the four catalog Dockerfiles and includes the `# syntax=` line → AC-13
 
 ### The online editor at a commit (AC-8)
-- [ ] `go test -race ./libs/render/ -run TestOnlineSourceRef` → a full commit passes with no network, `main` resolves to its newest commit, a branch wins over a tag of the same name, an annotated tag resolves to its commit, and `local`, a short commit, a bad form, an unknown ref and an unreachable remote stop with their message → AC-8
-- [ ] `sh scripts/online-source-ref.sh` → prints the same commit as `git ls-remote https://github.com/racherom/modular-platform.git refs/heads/main` → AC-8 (value sourcing: the commit it builds)
+- [x] `go test -race ./libs/render/ -run TestOnlineSourceRef` → a full commit passes with no network, `main` resolves to its newest commit, a branch wins over a tag of the same name, an annotated tag resolves to its commit, and `local`, a short commit, a bad form, an unknown ref and an unreachable remote stop with their message → AC-8
+- [x] `sh scripts/online-source-ref.sh` → prints the same commit as `git ls-remote https://github.com/racherom/modular-platform.git refs/heads/main` → AC-8 (value sourcing: the commit it builds)
 - [ ] **(after push)** `task online:up` with `MP_VERSION=0.0.0` → prints `online:up: building web and renderer from GitHub at <commit>`, both images carry that commit as their revision label, the renderer logs it as `source_ref` with no moving branch warning, and a downloaded zip's `setup.sh` holds `source_ref='<commit>'`; `deploy/online/versions.env` is unchanged → AC-8
-- [ ] `MP_SOURCE_REF=nope task online:up` and `MP_SOURCE_REF=local task online:up` → stop before Compose runs, with a message that names the ref → AC-8
+- [x] `MP_SOURCE_REF=nope task online:up` and `MP_SOURCE_REF=local task online:up` → stop before Compose runs, with a message that names the ref → AC-8
 
 ### Coverage of the new steps
 - AC-8: online editor steps · AC-9: release images steps · AC-10: renderer `local` warning · AC-12: the `local` ref steps · AC-13: pinned build input steps · AC-1, AC-3: golden without a stored copy, e2e label
