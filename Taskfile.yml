@@ -158,21 +158,38 @@ tasks:
       - test -f deploy/online/.env
 
   online:up:
-    desc: Run the online editor from the images in versions.env (MP_VERSION=dev for your own task images); while MP_VERSION is 0.0.0 it builds them from GitHub at the commit MP_SOURCE_REF points to
-    deps: [online:env]
+    desc: Run the online editor from the images in versions.env (MP_VERSION=dev for your own task images); while MP_VERSION is 0.0.0 it builds them from GitHub at the commit MP_SOURCE_REF points to, or with MP_SOURCE_PATH=<checkout> from that checkout, on no remote
+    vars:
+      # the shell value wins over versions.env, as in the compose command below
+      ONLINE_VERSION:
+        sh: >-
+          echo "${MP_VERSION:-$(sed -n 's/^MP_VERSION=\([^ #]*\).*/\1/p' deploy/online/versions.env)}"
+    # a checkout build is only for the pre release images; checked before any command runs, so a
+    # stop writes no deploy/online/.env (Task runs deps before preconditions, so online:env is
+    # the first command, not a dep)
+    preconditions:
+      - sh: '[ -z "${MP_SOURCE_PATH:-}" ] || [ "{{.ONLINE_VERSION}}" = 0.0.0 ]'
+        msg: "online:up: MP_SOURCE_PATH builds only while MP_VERSION is 0.0.0 (it is {{.ONLINE_VERSION}}); use task dev for a renderer from your checkout and a hot reload editor"
     cmds:
-      # 0.0.0 is in no registry: build web and renderer from GitHub instead, at the commit
-      # MP_SOURCE_REF resolves to now; the shell value wins over versions.env, which stays as it
-      # is (spec 0030, AC-8)
+      - task: online:env
+      # 0.0.0 is in no registry: build web and renderer instead (spec 0030, AC-8). With
+      # MP_SOURCE_PATH, from that checkout at its commit (or local), reaching no remote;
+      # otherwise from GitHub at the commit MP_SOURCE_REF resolves to now. Both values go to the
+      # one compose command only, and versions.env stays as it is.
       - |
-        version=${MP_VERSION:-$(sed -n 's/^MP_VERSION=\([^ #]*\).*/\1/p' deploy/online/versions.env)}
-        if [ "$version" = 0.0.0 ]; then
+        if [ "{{.ONLINE_VERSION}}" != 0.0.0 ]; then
+          {{.ONLINE}} -f deploy/online/compose.yaml up -d --wait --wait-timeout 120
+        elif [ -n "${MP_SOURCE_PATH:-}" ]; then
+          ref=$(sh scripts/online-source-ref.sh) || exit 1
+          # absolute: --project-directory deploy/online would read a relative context against it
+          path=$(CDPATH='' cd "$MP_SOURCE_PATH" && pwd -P) || exit 1
+          echo "online:up: building web and renderer from the checkout $path at $ref"
+          MP_SOURCE_PATH="$path" MP_SOURCE_REF="$ref" {{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.checkout.yaml up -d --build --wait --wait-timeout 120
+        else
           MP_SOURCE_REF=$(sh scripts/online-source-ref.sh) || exit 1
           export MP_SOURCE_REF
           echo "online:up: building web and renderer from GitHub at $MP_SOURCE_REF"
           {{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.prerelease.yaml up -d --build --wait --wait-timeout 120
-        else
-          {{.ONLINE}} -f deploy/online/compose.yaml up -d --wait --wait-timeout 120
         fi
 
   online:down:

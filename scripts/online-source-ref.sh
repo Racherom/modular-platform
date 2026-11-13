@@ -9,17 +9,41 @@
 # the commit an annotated tag points to, then a lightweight tag. A rerun resolves again, so it
 # picks up the newest commit of a branch.
 #
+# Checkout mode: with MP_SOURCE_PATH set, it reads that folder instead and reaches no remote
+# (spec 0030, AC-8 before a push). It ignores MP_SOURCE_REF and MP_SOURCE_REMOTE, and prints the
+# checkout's HEAD when the folder is the top of a git repository with a clean tree and a commit,
+# else local (the AC-12 rule of task build). No folder, or no go.work in it, stops.
+#
 # Output: the commit on stdout, messages on stderr; exit 0, or 1 on any stop.
 set -eu
-
-remote=${MP_SOURCE_REMOTE:-https://github.com/racherom/modular-platform.git}
-versions=deploy/online/versions.env
-ref=${MP_SOURCE_REF:-$(sed -n 's/^MP_SOURCE_REF=\([^ #]*\).*/\1/p' "$versions" 2>/dev/null)}
 
 stop() {
 	echo "online-source-ref: $1" >&2
 	exit 1
 }
+
+# clean prints the commit of the checkout abs when abs is the top of a git repository whose tree
+# is clean and which has a commit; it fails in every other case (changes, untracked files, no git,
+# a folder inside another repository, no commit, any git error such as dubious ownership)
+clean() {
+	top=$(git -C "$abs" rev-parse --show-toplevel 2>/dev/null) || return 1
+	top=$(CDPATH='' cd "$top" 2>/dev/null && pwd -P) || return 1
+	[ "$top" = "$abs" ] || return 1
+	changes=$(git -C "$abs" status --porcelain 2>/dev/null) || return 1
+	[ -z "$changes" ] || return 1
+	git -C "$abs" rev-parse --verify --quiet HEAD 2>/dev/null
+}
+
+if [ -n "${MP_SOURCE_PATH:-}" ]; then
+	abs=$(CDPATH='' cd "$MP_SOURCE_PATH" 2>/dev/null && pwd -P) || stop "MP_SOURCE_PATH=$MP_SOURCE_PATH is not a folder"
+	[ -f "$abs/go.work" ] || stop "MP_SOURCE_PATH=$abs holds no go.work, so it is not a Modular Platform checkout"
+	clean || echo local
+	exit 0
+fi
+
+remote=${MP_SOURCE_REMOTE:-https://github.com/racherom/modular-platform.git}
+versions=deploy/online/versions.env
+ref=${MP_SOURCE_REF:-$(sed -n 's/^MP_SOURCE_REF=\([^ #]*\).*/\1/p' "$versions" 2>/dev/null)}
 
 [ -n "$ref" ] || stop "MP_SOURCE_REF is not set in the shell or in $versions"
 

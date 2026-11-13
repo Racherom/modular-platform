@@ -48,6 +48,14 @@ task images
 MP_VERSION=dev task online:up
 ```
 
+While it reads `0.0.0`, you can also build web and renderer from a checkout, with no push and no
+GitHub for the source. The images and the renderer's zips name the checkout's commit when its tree
+is clean, and `local` when it has changes:
+
+```sh
+MP_SOURCE_PATH=. task online:up
+```
+
 ## Start a managed platform
 
 In managed mode the platform runs on your own host. You sign in as the admin, plan a stack in the
