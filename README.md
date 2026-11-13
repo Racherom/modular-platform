@@ -117,15 +117,23 @@ the repository variable `RELEASES_ENABLED` is unset, every push to `main` passes
 workflow with its jobs skipped. When you want the first release, we recommend these steps, in
 this order:
 
-1. Add the repository secret `RELEASE_PLEASE_TOKEN`: a fine grained token, or a GitHub App
+1. Install the Renovate GitHub App on the repository. It reads `renovate.json` and keeps the
+   image digests of the four catalog Dockerfiles fresh; with that file present it opens no
+   onboarding pull request.
+2. Check two repository settings: *Allow GitHub Actions to create and approve pull requests*
+   is off, and *Release images to GHCR* is not a required check on `main` (remove it if it is
+   still there, or every pull request waits for a check that never reports).
+3. Add the repository secret `RELEASE_PLEASE_TOKEN`: a fine grained token, or a GitHub App
    token, with contents and pull request write access. It is required, there is no fallback to
    the default `GITHUB_TOKEN` (a pull request that token opens starts no CI).
-2. Set the repository variable `RELEASES_ENABLED` to `true`, then push to `main` or rerun the
+4. Set the repository variable `RELEASES_ENABLED` to `true`, then push to `main` or rerun the
    latest Release run. The variable alone starts nothing.
 
-Leave the repository setting *Allow GitHub Actions to create and approve pull requests* off.
-Approving a pull request stays with a person. If the variable is `true` and the secret is
-missing, the step *Release token is set* fails and names the secret.
+Approving a pull request stays with a person, so the setting in step 2 stays off. If the
+variable is `true` and the secret is missing, the step *Release token is set* fails and names
+the secret. You can see that gate work before any of these steps: `task test:integration` runs
+`release.yml` in local Docker with `act` (`TestReleaseGateAct`), and checks the Renovate rule
+with Renovate's local dry run (`TestRenovateDigests`).
 
 Right after the release pull request merges, the Release workflow builds the four platform
 images from the release commit and pushes each as `:<version>`, for amd64 and arm64. For those

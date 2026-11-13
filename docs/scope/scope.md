@@ -244,7 +244,7 @@ spec [0030](../specs/0030-prerelease-image-source-zip/index.md) · code in `cata
 - [x] Design it (spec): `/architect pre release image source for the zip`
    - [x] Decided: AC-8 without a push. `MP_SOURCE_PATH=<checkout> task online:up` builds from a local checkout, with no git remote and no network for the source (spec 0030, task 11)
    - [x] Decided: AC-6, AC-11 and AC-13 without GitHub. `act` runs `release.yml` locally with a stub release-please, Renovate's local dry run checks the digest rule, the keeper step moves to spec 0016, and the GitHub settings and the App install go to the release checklist (spec 0030, task 12)
-- [ ] Build it: `/develop pre release image source for the zip`
+- [x] Build it: `/develop pre release image source for the zip`
    - [x] One Dockerfile per image beside its catalog entry, source chosen by build args, the renderer's source ref (AC-7, AC-10)
    - [x] Static zip: Dockerfile in the zip, `setup.sh` builds first, README, e2e with `MP_SOURCE_PATH` (AC-1, AC-2, AC-3, AC-4, AC-5)
    - [x] Managed zip: build before the seed, `pull_policy: never`, keeper restart check (AC-6)
@@ -253,7 +253,7 @@ spec [0030](../specs/0030-prerelease-image-source-zip/index.md) · code in `cata
    - [x] Review findings: the `local` ref for checkout builds (AC-3, AC-10, AC-12), release images after the merge (AC-9, AC-11)
    - [x] Review findings: pinned build inputs with Renovate, the online editor at a resolved commit (AC-1, AC-8, AC-13)
    - [x] AC-8 before a push: `MP_SOURCE_PATH` for `task online:up` (`compose.checkout.yaml`, the script's checkout mode, a precondition stop), and an integration test that runs it on an unpushed commit, so no AC-8 step is marked **(after push)** (AC-8)
-   - [ ] No check waits for GitHub: `TestReleaseGateAct` and `TestRenovateDigests` (build tag `integration`), the pinned `act` and runner image, the verify steps moved (keeper step to spec 0016, settings and the Renovate App to the release checklist) (AC-6, AC-11, AC-13)
+   - [x] No check waits for GitHub: `TestReleaseGateAct` and `TestRenovateDigests` (build tag `integration`), the pinned `act` and runner image, the verify steps moved (keeper step to spec 0016, settings and the Renovate App to the release checklist) (AC-6, AC-11, AC-13)
 - [ ] Verify it: `/check verify pre release image source for the zip`
 - [ ] Test it: `/test pre release image source for the zip`
 - [x] Review it (fresh model): `/check review pre release image source for the zip`
