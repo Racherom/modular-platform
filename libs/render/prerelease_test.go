@@ -339,3 +339,99 @@ func platformCatalog(t *testing.T) contract.Catalog {
 	_, catalog, _ := platformResult(t)
 	return catalog
 }
+
+// fakeBuildDocker writes a docker program into a new folder and returns that folder, for a PATH that
+// puts it first. buildx says whether `docker buildx version` succeeds, version is what
+// `docker version` prints (empty: it fails, as when the daemon does not answer). Every other call
+// is appended to the calls file and fails, so a build never reaches a real Docker.
+func fakeBuildDocker(t *testing.T, buildx bool, version, calls string) string {
+	t.Helper()
+	bin := t.TempDir()
+	buildxExit := "1"
+	if buildx {
+		buildxExit = "0"
+	}
+	versionCmd := "exit 1"
+	if version != "" {
+		versionCmd = "echo '" + version + "'; exit 0"
+	}
+	fake := "#!/bin/sh\n" +
+		"if [ \"$1 $2\" = 'buildx version' ]; then exit " + buildxExit + "; fi\n" +
+		"if [ \"$1\" = version ]; then " + versionCmd + "; fi\n" +
+		"echo \"$*\" >> '" + calls + "'\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(fake), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+// TestPrereleaseSetupDockerChecks covers spec 0030 AC-4 without a real Docker: on a host without
+// buildx, with a daemon that does not answer, or with Docker older than 23, setup.sh of a zip
+// that builds stops before it writes .env or makes secrets/ or data/, names the image, the ref
+// and MP_SOURCE_PATH, and never starts a build. Docker 23 or newer passes the checks and builds
+// from GitHub at the zip's ref.
+func TestPrereleaseSetupDockerChecks(t *testing.T) {
+	t.Parallel()
+	out := prereleaseRender(t, prereleaseCommit)
+	const image = "ghcr.io/racherom/modular-platform/renderer:0.0.0"
+	for name, tc := range map[string]struct {
+		buildx  bool
+		version string
+		stop    string
+		builds  bool
+	}{
+		"no buildx": {
+			buildx: false, version: "27.3.1",
+			stop: "docker buildx is not available; install Docker 23 or newer with the buildx plugin",
+		},
+		"daemon does not answer": {
+			buildx: true, version: "",
+			stop: "Docker does not answer; start it and run setup.sh again",
+		},
+		"Docker 20": {
+			buildx: true, version: "20.10.24",
+			stop: "the platform images need Docker 23 or newer, this host runs 20.10.24",
+		},
+		"Docker 23 passes and builds from GitHub": {
+			buildx: true, version: "23.0.0", builds: true,
+			stop: "could not build " + image + " at " + prereleaseCommit,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			writeOutput(t, dir, out)
+			calls := filepath.Join(t.TempDir(), "docker-calls")
+			cmd := exec.CommandContext(t.Context(), "sh", "setup.sh")
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "MP_SOURCE_PATH=", "PATH="+fakeBuildDocker(t, tc.buildx, tc.version, calls)+string(os.PathListSeparator)+os.Getenv("PATH"))
+			cmd.Stdin = strings.NewReader("")
+			got, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("setup.sh went on:\n%s", got)
+			}
+			for _, want := range []string{tc.stop, image, prereleaseCommit, "MP_SOURCE_PATH="} {
+				if !strings.Contains(string(got), want) {
+					t.Errorf("setup.sh output lacks %q:\n%s", want, got)
+				}
+			}
+			build, _ := os.ReadFile(calls)
+			if tc.builds != strings.Contains(string(build), "buildx build") {
+				t.Errorf("docker calls %q, want a build: %v", build, tc.builds)
+			}
+			if tc.builds && !strings.Contains(string(build), "MP_SOURCE=git --build-arg MP_SOURCE_REF="+prereleaseCommit) {
+				t.Errorf("the build is not from GitHub at %s: %q", prereleaseCommit, build)
+			}
+			if _, err := os.Stat(filepath.Join(dir, ".env")); err == nil {
+				if env, _ := os.ReadFile(filepath.Join(dir, ".env")); strings.Contains(string(env), "MP_UID=") {
+					t.Error("setup.sh wrote MP_UID to .env before it stopped")
+				}
+			}
+			for _, made := range []string{"secrets", "data"} {
+				if _, err := os.Stat(filepath.Join(dir, made)); err == nil {
+					t.Errorf("setup.sh made %s before it stopped", made)
+				}
+			}
+		})
+	}
+}
