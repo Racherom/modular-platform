@@ -51,12 +51,20 @@ func file(out render.Output, path string) []byte {
 	return nil
 }
 
-// TestRenderPrereleaseGolden covers spec 0030 AC-1 and AC-5: the renderer's Dockerfile, once for
-// both instances, the build block first in setup.sh, the README section, and an unchanged image
-// line with no build section. Run with -update after an intended change.
+// TestRenderPrereleaseGolden covers spec 0030 AC-1, AC-5 and AC-13: the renderer's Dockerfile,
+// once for both instances, the build block first in setup.sh, the README section, and an
+// unchanged image line with no build section. The golden holds no copy of the Dockerfile: the
+// zip's is compared with the catalog file read now, so a digest update needs no -update. Run
+// with -update after an intended change.
 func TestRenderPrereleaseGolden(t *testing.T) {
 	out := prereleaseRender(t, prereleaseCommit)
-	checkGolden(t, filepath.Join("testdata", "prerelease", "golden"), out)
+	var stored render.Output
+	for _, f := range out.Files {
+		if !strings.HasPrefix(f.Path, "build/") {
+			stored.Files = append(stored.Files, f)
+		}
+	}
+	checkGolden(t, filepath.Join("testdata", "prerelease", "golden"), stored)
 
 	want, err := os.ReadFile("../../catalog/modules/renderer/Dockerfile")
 	if err != nil {

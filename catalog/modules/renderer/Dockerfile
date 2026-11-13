@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 # The renderer image (spec 0030). MP_SOURCE picks where its source comes from:
 #   local (default): the build context, the repository root:
 #     docker build -f catalog/modules/renderer/Dockerfile .
@@ -18,7 +18,7 @@ ADD https://github.com/racherom/modular-platform.git#${MP_SOURCE_REF} /
 
 FROM source-${MP_SOURCE} AS source
 
-FROM golang:1.27.3-alpine AS build
+FROM golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS build
 WORKDIR /repo
 ENV CGO_ENABLED=0 GOFLAGS=-trimpath
 COPY --from=source /go.work /go.work.sum* ./
@@ -33,7 +33,7 @@ ARG MP_SOURCE_REF
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     go build -ldflags="-s -w -X main.sourceRef=${MP_SOURCE_REF}" -o /out/renderer ./services/renderer/cmd/renderer
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 ARG MP_SOURCE_REF
 LABEL org.opencontainers.image.revision=${MP_SOURCE_REF}
 COPY --from=build /out/renderer /renderer

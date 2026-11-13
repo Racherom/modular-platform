@@ -13,6 +13,8 @@ vars:
   GOLANGCI_LINT_VERSION: v2.15.0
   LEFTHOOK_VERSION: v2.2.2
   SKILLS_VERSION: 1.7.6
+  # the renovate npm package, for its config validator (spec 0030, AC-13)
+  RENOVATE_VERSION: 44.198.3
   # go run pkg@version builds with the toolchain the tool's module asks for; golangci-lint must be
   # built with at least the toolchain go.work pins, or it refuses the code
   GO_TOOLCHAIN:
@@ -92,11 +94,12 @@ tasks:
       - go test -race -tags e2e {{.GO_PACKAGES}}
 
   lint:
-    desc: Lint and check formatting of the Go code (golangci-lint) and the editor (Biome, tsc), and check for retired words
+    desc: Lint and check formatting of the Go code (golangci-lint) and the editor (Biome, tsc), check renovate.json, and check for retired words
     deps: [web:install]
     cmds:
       - task: lint:vocabulary
       - task: lint:go
+      - task: lint:renovate
       - pnpm --dir web run lint
       - pnpm --dir web run typecheck
 
@@ -104,6 +107,11 @@ tasks:
     desc: Run golangci-lint on the Go code, formatters included (.golangci.yml)
     cmds:
       - "{{.GOLANGCI_LINT}} run {{.GO_PACKAGES}}"
+
+  lint:renovate:
+    desc: Check renovate.json with Renovate's own validator; a wrong key would otherwise fail silently
+    cmds:
+      - pnpm dlx --package renovate@{{.RENOVATE_VERSION}} renovate-config-validator --strict renovate.json
 
   lint:vocabulary:
     desc: Fail on a retired word (scripts/vocabulary.txt, spec 0027) in a tracked or staged file; report=1 only prints the hits and their count
