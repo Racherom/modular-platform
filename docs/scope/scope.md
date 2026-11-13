@@ -250,7 +250,7 @@ spec [0030](../specs/0030-prerelease-image-source-zip/index.md) · code in `cata
    - [x] Release gate: release-please off until `RELEASES_ENABLED`, no `github.token` fallback (AC-11)
 - [ ] Verify it: `/check verify pre release image source for the zip`
 - [ ] Test it: `/test pre release image source for the zip`
-- [ ] Review it (fresh model): `/check review pre release image source for the zip`
+- [x] Review it (fresh model): `/check review pre release image source for the zip`
 - [ ] Document it: `/document pre release image source for the zip`
 
 ### 42. Open a zip in the editor · needs a decision
