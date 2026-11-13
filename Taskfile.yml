@@ -110,8 +110,14 @@ tasks:
 
   lint:renovate:
     desc: Check renovate.json with Renovate's own validator; a wrong key would otherwise fail silently
+    # LOG_LEVEL=error hides the warning (and its long stack trace) that Renovate prints because
+    # pnpm dlx does not build its optional native re2 module; a bad config still prints its
+    # errors and fails. renovate.json holds no regex, so the RegExp fallback checks it fully.
+    env:
+      LOG_LEVEL: error
     cmds:
       - pnpm dlx --package renovate@{{.RENOVATE_VERSION}} renovate-config-validator --strict renovate.json
+      - 'echo "lint:renovate: renovate.json is valid"'
 
   lint:vocabulary:
     desc: Fail on a retired word (scripts/vocabulary.txt, spec 0027) in a tracked or staged file; report=1 only prints the hits and their count
