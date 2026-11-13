@@ -9,7 +9,7 @@ Steps marked **(after push)** need this branch on GitHub, because a git build ca
 - [x] In the same zip, `README.md` has the section *Images built on this host*, naming the image, the ref and `MP_SOURCE_PATH`, and no date or time → AC-5
 - [x] Download the sample zip (no platform module): no `build/` folder, `setup.sh` has no `build_image` line → AC-1
 - [x] **(after push)** On a host without the platform images, run `sh setup.sh` in that zip with no `MP_SOURCE_PATH`: it builds the renderer from GitHub at the renderer's commit before it prints `added   MP_UID`; then `docker compose up -d --wait --pull never` starts the stack healthy → AC-2
-- [x] **(after push)** Set `MP_SOURCE_REF` in `deploy/online/versions.env` to the pushed commit and run `task online:up` from a folder that holds only `deploy/online/` (or with the compose command in the overlay's header): web and renderer build from GitHub and start healthy; a zip from that editor names that commit in `setup.sh` → AC-8
+- [ ] With a clean tree, make an empty commit on your branch (not pushed), then run `MP_SOURCE_PATH=. task online:up`: it prints `online:up: building web and renderer from the checkout <abs path> at <that commit>`, both start healthy, and a zip you download from the editor holds `source_ref='<that commit>'` in `setup.sh`; with an untracked file in the tree the same run says `local` → AC-8 (replaces the old **(after push)** GitHub step, spec 0030 task 11)
 - [x] With `MP_VERSION=dev task online:up` (or any released version): no overlay, no build, the images are only pulled or used → AC-8
 
 ## Commands
@@ -62,7 +62,7 @@ Steps marked **(after push)** need this branch on GitHub, because a git build ca
 - AC-5: UI step 2, the render rules test
 - AC-6: the managed zip run, the retag step, the keeper step (after spec 0016)
 - AC-7: the two Dockerfile build steps
-- AC-8: UI steps 5 and 6, the overlay test, value sourcing (online editor ref)
+- AC-8: UI steps 5 and 6 (step 5 now from a checkout, no push), the overlay test, the checkout tests, value sourcing (online editor ref)
 - AC-9: `TestReleaseImagesWorkflow`, `TestReleaseWorkflow`, the local registry check and `TestUnreleased` now; the three remaining **(at release)** steps at the first release, which do not block #46
 - AC-10: the start log step, the two ref tests, the render-platform step
 - AC-11: `TestReleaseWorkflow` now; the three **(on GitHub)** steps after task 6 is on `main`
@@ -91,7 +91,8 @@ Steps marked **(after push)** need this branch on GitHub, because a git build ca
 ### The online editor at a commit (AC-8)
 - [x] `go test -race ./libs/ci/ -run TestOnlineSourceRef` → a full commit passes with no network, `main` resolves to its newest commit, a branch wins over a tag of the same name, an annotated tag resolves to its commit, and `local`, a short commit, a bad form, an unknown ref and an unreachable remote stop with their message → AC-8
 - [x] `sh scripts/online-source-ref.sh` → prints the same commit as `git ls-remote https://github.com/racherom/modular-platform.git refs/heads/main` → AC-8 (value sourcing: the commit it builds)
-- [ ] **(after push)** `task online:up` with `MP_VERSION=0.0.0` → prints `online:up: building web and renderer from GitHub at <commit>`, both images carry that commit as their revision label, the renderer logs it as `source_ref` with no moving branch warning, and a downloaded zip's `setup.sh` holds `source_ref='<commit>'`; `deploy/online/versions.env` is unchanged → AC-8
+- [ ] `go test -race -tags integration ./libs/ci/ -run TestOnlineUpCheckout` (no network needed for the source) → on a fresh empty commit that no remote holds, `task online:up` with `MP_SOURCE_PATH` prints the checkout line with that commit, both images carry it as their revision label, the renderer logs it as `source_ref` with no warning, a zip rendered through the ingress holds `source_ref='<commit>'`, and `deploy/online/versions.env` is unchanged → AC-8 (replaces the old **(after push)** step)
+- [ ] `go test -race ./libs/ci/ -run 'TestOnlineSourceRefCheckout|TestOnlineUpCheckoutStops|TestOnlinePrereleaseOverlay'` → a clean clone prints its HEAD, an untracked file or a folder with no git prints `local`, no folder and no `go.work` stop with their message, `MP_SOURCE_REF` and an unreachable `MP_SOURCE_REMOTE` change nothing; `MP_SOURCE_PATH=. MP_VERSION=dev task online:up` stops without calling `docker`; `compose.checkout.yaml` names the same services as `compose.prerelease.yaml` with `MP_SOURCE: local` → AC-8
 - [x] `MP_SOURCE_REF=nope task online:up` and `MP_SOURCE_REF=local task online:up` → stop before Compose runs, with a message that names the ref → AC-8
 
 ### Coverage of the new steps
