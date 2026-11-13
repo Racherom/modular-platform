@@ -239,11 +239,12 @@ Spec 0029 lets you add a module to an open graph (or to an empty one). The rest 
 
 ### 46. Pre release image source for the zip · in-progress · from spec 0030
 Until the first release, the platform's own images (`api`, `renderer`, `web`, `deployer-docker`) carry the tag `0.0.0`, which no registry holds, so a zip that uses one fails on `docker compose up`. Such a zip now carries the image's own Dockerfile, and `setup.sh` builds it first from the renderer's commit on GitHub (or a local checkout named by `MP_SOURCE_PATH`); the online editor builds the same way, from the commit its branch points to, and the release images are pushed from the release commit right after the merge.
-**Done when:** a static zip and a managed zip that use a `0.0.0` platform image start on a clean host with `setup.sh` and pull no platform image; the online editor starts from its folder alone; every AC-8 check passes on a commit that is not on GitHub yet (nothing waits for a push); and after the first release no zip carries a Dockerfile and every image named on main exists in GHCR.
+**Done when:** a static zip and a managed zip that use a `0.0.0` platform image start on a clean host with `setup.sh` and pull no platform image; the online editor starts from its folder alone; every AC-8 check passes on a commit that is not on GitHub yet (nothing waits for a push); no check of #46 waits for GitHub (the release gate and the Renovate rule run locally, the keeper step lives in spec 0016, and the GitHub settings and the Renovate App wait for the first release checklist); and after the first release no zip carries a Dockerfile and every image named on main exists in GHCR.
 spec [0030](../specs/0030-prerelease-image-source-zip/index.md) · code in `catalog/modules/`, `libs/render/`, `services/renderer/`, `catalog/cmd/render-platform/`, `deploy/online/`, `.github/workflows/`, `Taskfile.yml`
 - [x] Design it (spec): `/architect pre release image source for the zip`
    - [x] Decided: AC-8 without a push. `MP_SOURCE_PATH=<checkout> task online:up` builds from a local checkout, with no git remote and no network for the source (spec 0030, task 11)
-- [x] Build it: `/develop pre release image source for the zip`
+   - [x] Decided: AC-6, AC-11 and AC-13 without GitHub. `act` runs `release.yml` locally with a stub release-please, Renovate's local dry run checks the digest rule, the keeper step moves to spec 0016, and the GitHub settings and the App install go to the release checklist (spec 0030, task 12)
+- [ ] Build it: `/develop pre release image source for the zip`
    - [x] One Dockerfile per image beside its catalog entry, source chosen by build args, the renderer's source ref (AC-7, AC-10)
    - [x] Static zip: Dockerfile in the zip, `setup.sh` builds first, README, e2e with `MP_SOURCE_PATH` (AC-1, AC-2, AC-3, AC-4, AC-5)
    - [x] Managed zip: build before the seed, `pull_policy: never`, keeper restart check (AC-6)
@@ -252,6 +253,7 @@ spec [0030](../specs/0030-prerelease-image-source-zip/index.md) · code in `cata
    - [x] Review findings: the `local` ref for checkout builds (AC-3, AC-10, AC-12), release images after the merge (AC-9, AC-11)
    - [x] Review findings: pinned build inputs with Renovate, the online editor at a resolved commit (AC-1, AC-8, AC-13)
    - [x] AC-8 before a push: `MP_SOURCE_PATH` for `task online:up` (`compose.checkout.yaml`, the script's checkout mode, a precondition stop), and an integration test that runs it on an unpushed commit, so no AC-8 step is marked **(after push)** (AC-8)
+   - [ ] No check waits for GitHub: `TestReleaseGateAct` and `TestRenovateDigests` (build tag `integration`), the pinned `act` and runner image, the verify steps moved (keeper step to spec 0016, settings and the Renovate App to the release checklist) (AC-6, AC-11, AC-13)
 - [ ] Verify it: `/check verify pre release image source for the zip`
 - [ ] Test it: `/test pre release image source for the zip`
 - [x] Review it (fresh model): `/check review pre release image source for the zip`
