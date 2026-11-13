@@ -1,9 +1,12 @@
 # While MP_VERSION is 0.0.0 no registry holds the platform's own images, so this overlay builds
 # web and renderer from GitHub at MP_SOURCE_REF (spec 0030); `task online:up` adds it and
-# --build only then. It needs no checkout: the build context is the repository at that ref.
+# --build only then. It also resolves a branch or tag to its commit first
+# (scripts/online-source-ref.sh) and exports that, so both images and the renderer's zips name
+# a fixed commit. It needs no checkout: the build context is the repository at that ref.
 #   docker compose --env-file versions.env --env-file .env -f compose.yaml -f compose.prerelease.yaml up -d --build --wait
-# Pin MP_SOURCE_REF in versions.env to a commit for a fixed build; a branch builds what it holds
-# at each rebuild. The git context is fetched once for the Dockerfile and once more by its ADD.
+# This bare command builds whatever versions.env names, so put a full commit there for that
+# path; a branch builds what it holds at each rebuild, and its images and zips name the branch.
+# The git context is fetched once for the Dockerfile and once more by its ADD.
 services:
   web:
     build:

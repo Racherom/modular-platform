@@ -152,13 +152,18 @@ tasks:
       - test -f deploy/online/.env
 
   online:up:
-    desc: Run the online editor from the images in versions.env (MP_VERSION=dev for your own task images); while MP_VERSION is 0.0.0 it builds them from GitHub at MP_SOURCE_REF
+    desc: Run the online editor from the images in versions.env (MP_VERSION=dev for your own task images); while MP_VERSION is 0.0.0 it builds them from GitHub at the commit MP_SOURCE_REF points to
     deps: [online:env]
     cmds:
-      # 0.0.0 is in no registry: build web and renderer from GitHub instead (spec 0030, AC-8)
+      # 0.0.0 is in no registry: build web and renderer from GitHub instead, at the commit
+      # MP_SOURCE_REF resolves to now; the shell value wins over versions.env, which stays as it
+      # is (spec 0030, AC-8)
       - |
         version=${MP_VERSION:-$(sed -n 's/^MP_VERSION=\([^ #]*\).*/\1/p' deploy/online/versions.env)}
         if [ "$version" = 0.0.0 ]; then
+          MP_SOURCE_REF=$(sh scripts/online-source-ref.sh) || exit 1
+          export MP_SOURCE_REF
+          echo "online:up: building web and renderer from GitHub at $MP_SOURCE_REF"
           {{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.prerelease.yaml up -d --build --wait --wait-timeout 120
         else
           {{.ONLINE}} -f deploy/online/compose.yaml up -d --wait --wait-timeout 120
