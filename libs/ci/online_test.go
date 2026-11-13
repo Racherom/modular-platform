@@ -1,4 +1,4 @@
-package render_test
+package ci_test
 
 import (
 	"os"
@@ -102,7 +102,8 @@ func TestOnlineSourceRef(t *testing.T) {
 	git(t, work, "commit", "-q", "--allow-empty", "-m", "two")
 	second := git(t, work, "rev-parse", "HEAD")
 	git(t, work, "branch", "both", first)
-	git(t, work, "tag", "both", second) // a branch and a tag of one name: the branch wins
+	git(t, work, "tag", "both", second)   // a branch and a tag of one name: the branch wins
+	git(t, work, "branch", "CAFE", first) // uppercase hex is a name, as in render.NewSourceRef
 	git(t, work, "clone", "-q", "--bare", work, bare)
 
 	script, err := filepath.Abs("../../scripts/online-source-ref.sh")
@@ -122,7 +123,9 @@ func TestOnlineSourceRef(t *testing.T) {
 		"branch before tag":       {ref: "both", want: first},
 		"local":                   {ref: "local", stop: "MP_SOURCE_REF=local builds from a checkout"},
 		"short commit":            {ref: first[:7], stop: "MP_SOURCE_REF=" + first[:7] + " is neither a full commit nor a branch or tag name"},
-		"uppercase commit":        {ref: strings.ToUpper(commit), stop: "is neither a full commit"},
+		"uppercase hex branch":    {ref: "CAFE", want: first},
+		"uppercase commit":        {ref: strings.ToUpper(commit), stop: strings.ToUpper(commit) + " is no branch or tag of " + bare},
+		"lowercase hex name":      {ref: "cafe", stop: "MP_SOURCE_REF=cafe is neither a full commit"},
 		"bad form":                {ref: "a b", stop: "MP_SOURCE_REF=a b is neither a full commit"},
 		"unknown":                 {ref: "nope", stop: "nope is no branch or tag of " + bare},
 		"unreachable":             {ref: "main", remote: "/nonexistent/mp.git", stop: "could not reach /nonexistent/mp.git to resolve main"},
@@ -152,16 +155,21 @@ func TestOnlineSourceRef(t *testing.T) {
 		})
 	}
 
-	// with no MP_SOURCE_REF in the shell, the versions.env line is the input
+	// with no MP_SOURCE_REF in the shell, the versions.env line is the input: a fixture in the
+	// same form as deploy/online/versions.env, so the check runs whatever the real file names
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "deploy/online"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := "MP_VERSION=0.0.0\n# the ref the images build from\nMP_SOURCE_REF=both # a comment\n"
+	if err := os.WriteFile(filepath.Join(dir, "deploy/online/versions.env"), []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.CommandContext(t.Context(), "sh", script)
-	cmd.Dir = "../.."
+	cmd.Dir = dir
 	cmd.Env = append(slices.DeleteFunc(os.Environ(), func(e string) bool { return strings.HasPrefix(e, "MP_SOURCE_REF=") }), "MP_SOURCE_REMOTE="+bare)
 	out, err := cmd.Output()
-	versions, rerr := os.ReadFile("../../deploy/online/versions.env")
-	if rerr != nil {
-		t.Fatal(rerr)
-	}
-	if strings.Contains(string(versions), "\nMP_SOURCE_REF=main\n") && (err != nil || strings.TrimSpace(string(out)) != second) {
-		t.Errorf("with versions.env naming main: stdout %q (err %v), want %s", out, err, second)
+	if err != nil || strings.TrimSpace(string(out)) != first {
+		t.Errorf("with versions.env naming both: stdout %q (err %v), want %s", out, err, first)
 	}
 }

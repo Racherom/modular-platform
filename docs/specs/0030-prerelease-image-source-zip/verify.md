@@ -1,7 +1,7 @@
 # Verify: Pre release image source for the zip · spec 0030 · updated 2026-11-13
 _Steps derived from spec 0030 acceptance criteria and its Value sourcing table. `/check verify` runs these; `/test` locks the durable ones._
 
-Steps marked **(after push)** need this branch on GitHub, because a git build can only fetch a pushed commit. Steps marked **(on GitHub)** need GitHub. Steps marked **(at release)** need the release pull request and the repository settings of a real release, so they are a checklist for the first release: #46 can close without them, and they stay open here until then. Each of them has a check you can run now, without a release: `go test -race ./libs/render/ -run 'TestRelease|TestCIImages'` reads the workflow files, and `scripts/release-images-check.sh` runs against a local registry (the step below shows how). The AC-11 steps run against `main`, so they wait until task 6 is merged.
+Steps marked **(after push)** need this branch on GitHub, because a git build can only fetch a pushed commit. Steps marked **(on GitHub)** need GitHub. Steps marked **(at release)** need the release pull request and the repository settings of a real release, so they are a checklist for the first release: #46 can close without them, and they stay open here until then. Each of them has a check you can run now, without a release: `go test -race ./libs/ci/ -run 'TestRelease|TestCIImages'` reads the workflow files, and `scripts/release-images-check.sh` runs against a local registry (the step below shows how). The AC-11 steps run against `main`, so they wait until task 6 is merged.
 
 ## UI / manual
 
@@ -25,10 +25,10 @@ Steps marked **(after push)** need this branch on GitHub, because a git build ca
 - [x] `task managed:zip VERSION=0.0.0`, unzip into a new folder, `printf '<domain>\n\n<email>\n<user>\n<password>\n' | MP_SOURCE_PATH=<repo> sh setup.sh`, then `docker compose up -d --wait`: the zip holds four `build/*/Dockerfile`, four `pull_policy: never`; every platform service is healthy; `docker compose pull` prints `Skipped` for the four platform images → AC-6 (passed locally on 2026-11-11)
 - [x] `task managed:render MANAGED_IMAGE_TAG=dev` (and `ci`): `build/managed` has no `build/` folder and no `pull_policy` → AC-6
 - [ ] After spec 0016 lands: install the `0.0.0` managed zip through the seed and keeper, restart the keeper, and see no platform pull and every service healthy; rerun `setup.sh` with a new ref and see the keeper hand over → AC-6
-- [x] `go test -race ./libs/render/ -run TestOnlinePrereleaseOverlay`: the overlay builds exactly the platform services of `compose.yaml` → AC-8
+- [x] `go test -race ./libs/ci/ -run TestOnlinePrereleaseOverlay`: the overlay builds exactly the platform services of `compose.yaml` → AC-8
 - [ ] **(on GitHub)** With `RELEASES_ENABLED` unset, push to `main`: the Release run passes, *release-please* and *Managed zip on the release* show as skipped → AC-11
-- [x] `go test -race ./libs/render/ -run TestReleaseWorkflow`: release-please runs only with `RELEASES_ENABLED`, checks `RELEASE_PLEASE_TOKEN` first and names it, passes only that secret as its token, never `github.token`, and has only `contents: read`; the managed zip job is skipped with it (no `always()`) and runs `scripts/release-images-check.sh` before `task managed:zip` → AC-11, AC-9 (passed on 2026-11-12; breaking each of these in the file makes the test fail)
-- [x] `go test -race ./libs/render/ -run TestReleaseImagesWorkflow`: the images job runs only for this repository's `release-please--` branch, alone has `packages: write`, builds all four images from the head commit at the manifest's version for amd64 and arm64 with provenance and SBOM, and the gate *Release images to GHCR* passes when the images job succeeded or was skipped and fails otherwise → AC-9 (passed on 2026-11-12)
+- [x] `go test -race ./libs/ci/ -run TestReleaseWorkflow`: release-please runs only with `RELEASES_ENABLED`, checks `RELEASE_PLEASE_TOKEN` first and names it, passes only that secret as its token, never `github.token`, and has only `contents: read`; the managed zip job is skipped with it (no `always()`) and runs `scripts/release-images-check.sh` before `task managed:zip` → AC-11, AC-9 (passed on 2026-11-12; breaking each of these in the file makes the test fail)
+- [x] `go test -race ./libs/ci/ -run TestReleaseImagesWorkflow`: the images job runs only for this repository's `release-please--` branch, alone has `packages: write`, builds all four images from the head commit at the manifest's version for amd64 and arm64 with provenance and SBOM, and the gate *Release images to GHCR* passes when the images job succeeded or was skipped and fails otherwise → AC-9 (passed on 2026-11-12)
 - [x] Run a local registry (`docker run -d --rm -p 127.0.0.1:5055:5000 registry:2`), push an index per image with `docker buildx imagetools create`, then `scripts/release-images-check.sh <version> localhost:5055/<prefix>`: it passes with all four for amd64 and arm64 (also arm64 listed as `linux/arm64/v8`), and exits 1 naming the image when one is missing, has only amd64, or has `arm/v7` but no arm64 → AC-9 (passed on 2026-11-12; the run found that `linux/arm64/v8` failed the check, now fixed)
 - [ ] **(on GitHub)** The repository setting "Allow GitHub Actions to create and approve pull requests" is off (that `release.yml` names no `github.token` for release-please is covered by `TestReleaseWorkflow` above) → AC-11
 - [ ] **(on GitHub)** In a fork or test repository with Actions turned on, set `RELEASES_ENABLED=true` with no `RELEASE_PLEASE_TOKEN` and push: the step *Release token is set* fails with its own message naming the secret, and the release-please step never runs → AC-11
@@ -77,7 +77,7 @@ Steps marked **(after push)** need this branch on GitHub, because a git build ca
 - [x] On a clean tree, the same `task managed:zip VERSION=0.0.0` prints no such warning and its `setup.sh` holds `source_ref='<git rev-parse HEAD>'` → AC-12 (value sourcing: `task build` and `task managed:render` ref)
 
 ### Release images after the merge (AC-9, AC-11)
-- [x] `go test -race ./libs/render/ -run 'TestReleaseImagesJob|TestReleaseWorkflow|TestReleaseRunSteps'` → `release.yml` has the `images` job (needs release-please, the `created` condition, `fail-fast: false`, the only `packages: write`, checkout of `github.sha`, `VERSION` through `env:`, the GHCR check right before the push as the last step), `managed-zip` needs `[release-please, images]`, and `release-images.yml` is gone → AC-9
+- [x] `go test -race ./libs/ci/ -run 'TestReleaseImagesJob|TestReleaseWorkflow|TestReleaseRunSteps'` → `release.yml` has the `images` job (needs release-please, the `created` condition, `fail-fast: false`, the only `packages: write`, checkout of `github.sha`, `VERSION` through `env:`, the GHCR check right before the push as the last step), `managed-zip` needs `[release-please, images]`, and `release-images.yml` is gone → AC-9
 - [ ] **(on GitHub)** In the repository settings of `main`, *Release images to GHCR* is not a required check (remove it if it was added) → AC-9, AC-11
 - [ ] **(at release)** After the release pull request merges, the `images` job runs four matrix jobs, each prints `<image> is not in GHCR yet`, then pushes; `scripts/release-images-check.sh <version>` passes; each image's `org.opencontainers.image.revision` is the merge commit; *Re-run failed jobs* on a finished image job stops with `is already in GHCR; a released image is never pushed again` → AC-9
 
@@ -89,10 +89,26 @@ Steps marked **(after push)** need this branch on GitHub, because a git build ca
 - [ ] **(on GitHub)** Install the Renovate GitHub App once `renovate.json` is on `main`; its first grouped pull request *build image digests* touches only the four catalog Dockerfiles and includes the `# syntax=` line → AC-13
 
 ### The online editor at a commit (AC-8)
-- [x] `go test -race ./libs/render/ -run TestOnlineSourceRef` → a full commit passes with no network, `main` resolves to its newest commit, a branch wins over a tag of the same name, an annotated tag resolves to its commit, and `local`, a short commit, a bad form, an unknown ref and an unreachable remote stop with their message → AC-8
+- [x] `go test -race ./libs/ci/ -run TestOnlineSourceRef` → a full commit passes with no network, `main` resolves to its newest commit, a branch wins over a tag of the same name, an annotated tag resolves to its commit, and `local`, a short commit, a bad form, an unknown ref and an unreachable remote stop with their message → AC-8
 - [x] `sh scripts/online-source-ref.sh` → prints the same commit as `git ls-remote https://github.com/racherom/modular-platform.git refs/heads/main` → AC-8 (value sourcing: the commit it builds)
 - [ ] **(after push)** `task online:up` with `MP_VERSION=0.0.0` → prints `online:up: building web and renderer from GitHub at <commit>`, both images carry that commit as their revision label, the renderer logs it as `source_ref` with no moving branch warning, and a downloaded zip's `setup.sh` holds `source_ref='<commit>'`; `deploy/online/versions.env` is unchanged → AC-8
 - [x] `MP_SOURCE_REF=nope task online:up` and `MP_SOURCE_REF=local task online:up` → stop before Compose runs, with a message that names the ref → AC-8
 
 ### Coverage of the new steps
 - AC-8: online editor steps · AC-9: release images steps · AC-10: renderer `local` warning · AC-12: the `local` ref steps · AC-13: pinned build input steps · AC-1, AC-3: golden without a stored copy, e2e label
+
+## Second review findings · added 2026-11-13
+_From `docs/reviews/2026-11-13-feat-release-gate-2.md`. The tests of workflows and scripts moved from `libs/render` to `libs/ci`, so `libs/render` stays a pure domain; the steps above now name `./libs/ci/`._
+
+### The GHCR check (AC-9)
+- [x] `go test -race ./libs/ci/ -run 'TestReleaseImageAbsent|TestReleaseImagesJob'` → the images job runs `scripts/release-image-absent.sh` right before the push; with a fake `docker`, only `not found` exits 0, while a tag that exists, `denied`, a 403 and a network error exit 1 → AC-9 (a copy of the script that also passed `denied` fails the `denied` case)
+- [x] Without a login, `docker buildx imagetools inspect ghcr.io/racherom/modular-platform/no-such-package-xyz:9.9.9` prints `failed to fetch anonymous token: unexpected status ... 403 Forbidden`, not `not found` (checked 2026-11-13). So GHCR does not say `not found` to everyone; the script stops on this answer, which is safe → AC-9
+- [ ] **(on GitHub, before the first release)** With a token like the workflow's (`packages: write`; `echo $TOKEN | docker login ghcr.io -u <user> --password-stdin`), run `sh scripts/release-image-absent.sh ghcr.io/racherom/modular-platform/renderer:0.0.1` while no package exists → prints `... is not in GHCR yet` and exits 0. Keep the printed text here. If it stops with `could not check`, the first release would stop too: fix the `case` in the script on this branch before releasing → AC-9
+
+### One ref rule (AC-8, AC-10)
+- [x] `go test -race ./libs/render/ -run TestNewSourceRef` → `CAFE` is a name, `cafe` is refused → AC-10
+- [x] `go test -race ./libs/ci/ -run TestOnlineSourceRef` → `CAFE` resolves as a branch, `cafe` stops as a short commit, an uppercase 40 character value is looked up as a name (and stops as unknown), and with no `MP_SOURCE_REF` in the shell a `versions.env` fixture line with a trailing comment is the input → AC-8
+
+### Renovate lint output (AC-13)
+- [x] `task lint:renovate </dev/null` → no re2 warning or stack trace; prints `lint:renovate: renovate.json is valid`, exit 0 → AC-13
+- [x] The same validator with `LOG_LEVEL=error` on a scratch config with an unknown key prints `Invalid configuration option: bogusKey` and exits 1, so the quieter output still fails a bad config → AC-13

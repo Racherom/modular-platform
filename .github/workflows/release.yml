@@ -66,22 +66,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # a released image is never pushed again: success means the tag exists, "not found" means
-      # it does not yet, and any other failure (network, auth) stops the job, so an unknown
-      # state never leads to a push
+      # a released image is never pushed again: the script passes only on "not found" and stops
+      # when the tag exists or on any other answer (network, auth), so an unknown state never
+      # leads to a push
       - name: The image is not in GHCR yet
         env:
           SERVICE: ${{ matrix.service }}
-        run: |
-          image="ghcr.io/racherom/modular-platform/$SERVICE:$VERSION"
-          if out=$(docker buildx imagetools inspect "$image" 2>&1); then
-            echo "::error::$image is already in GHCR; a released image is never pushed again"
-            exit 1
-          fi
-          case $out in
-            *"not found"*) echo "$image is not in GHCR yet" ;;
-            *) printf '%s\n' "$out"; echo "::error::could not check whether $image is in GHCR"; exit 1 ;;
-          esac
+        run: sh scripts/release-image-absent.sh "ghcr.io/racherom/modular-platform/$SERVICE:$VERSION"
       # the last step, so nothing can fail after a successful push
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:

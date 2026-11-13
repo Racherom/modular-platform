@@ -1,8 +1,11 @@
-package render_test
+package ci_test
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -113,23 +116,16 @@ func TestReleaseImagesJob(t *testing.T) {
 		t.Fatalf("the build and push is step %d of %d; it must be the last", push, len(images.Steps))
 	}
 	login := stepIndex(images, "docker/login-action")
-	guard := stepIndex(images, "docker buildx imagetools inspect")
+	guard := stepIndex(images, "scripts/release-image-absent.sh")
 	if guard < 0 || guard < login || guard != push-1 {
 		t.Fatal("right before the push, after the GHCR login, a step must check GHCR for the tag")
 	}
-	run := images.Steps[guard].Run
-	for _, want := range []string{
-		`ghcr.io/racherom/modular-platform/$SERVICE:$VERSION`,
-		"is already in GHCR; a released image is never pushed again",
-		`*"not found"*)`,
-		"could not check whether",
-	} {
-		if !strings.Contains(run, want) {
-			t.Errorf("GHCR check lacks %q:\n%s", want, run)
-		}
+	// TestReleaseImageAbsent runs the script itself
+	if run, want := strings.TrimSpace(images.Steps[guard].Run), `sh scripts/release-image-absent.sh "ghcr.io/racherom/modular-platform/$SERVICE:$VERSION"`; run != want {
+		t.Errorf("GHCR check runs %q, want %q", run, want)
 	}
-	if strings.Count(run, "exit 1") != 2 {
-		t.Errorf("GHCR check must stop when the tag exists and on any other failure:\n%s", run)
+	if images.Steps[guard].Env["SERVICE"] != "${{ matrix.service }}" {
+		t.Errorf("GHCR check env SERVICE = %q, want the matrix service", images.Steps[guard].Env["SERVICE"])
 	}
 
 	with := images.Steps[push].With
@@ -211,6 +207,51 @@ func TestReleaseWorkflow(t *testing.T) {
 	}
 }
 
+// TestReleaseImageAbsent covers spec 0030 AC-9 for scripts/release-image-absent.sh, the GHCR
+// check of the images job, with a fake docker that answers as the registry would: only "not
+// found" lets the push go on; a tag that exists, "denied", a 403 (what GHCR answers without a
+// login, even for a package that does not exist) and a network error all stop it.
+func TestReleaseImageAbsent(t *testing.T) {
+	t.Parallel()
+	script, err := filepath.Abs("../../scripts/release-image-absent.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const image = "ghcr.io/racherom/modular-platform/renderer:1.2.3"
+	for name, tc := range map[string]struct {
+		out    string // what the fake docker prints
+		exit   int    // and its exit code
+		ok     bool
+		stdout string
+	}{
+		"not found":   {out: "ERROR: " + image + ": not found", exit: 1, ok: true, stdout: image + " is not in GHCR yet"},
+		"exists":      {out: "Name: " + image, exit: 0, stdout: "::error::" + image + " is already in GHCR; a released image is never pushed again"},
+		"denied":      {out: "ERROR: denied: denied", exit: 1, stdout: "::error::could not check whether " + image + " is in GHCR"},
+		"anonymous":   {out: "ERROR: failed to authorize: failed to fetch anonymous token: unexpected status from GET request to https://ghcr.io/token: 403 Forbidden", exit: 1, stdout: "could not check whether"},
+		"unreachable": {out: "ERROR: dial tcp: lookup ghcr.io: no such host", exit: 1, stdout: "could not check whether"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			bin := t.TempDir()
+			fake := "#!/bin/sh\n" +
+				`[ "$*" = "buildx imagetools inspect ` + image + `" ] || { echo "unexpected docker $*" >&2; exit 99; }` + "\n" +
+				"printf '%s\\n' \"$FAKE_OUT\" >&2\nexit " + strconv.Itoa(tc.exit) + "\n"
+			if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(fake), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.CommandContext(t.Context(), "sh", script, image)
+			cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "FAKE_OUT="+tc.out)
+			out, err := cmd.Output()
+			if ok := err == nil; ok != tc.ok || !strings.Contains(string(out), tc.stdout) {
+				t.Errorf("ok %v (err %v), stdout %q; want ok %v and %q", ok, err, out, tc.ok, tc.stdout)
+			}
+			if !tc.ok && cmd.ProcessState.ExitCode() != 1 {
+				t.Errorf("exit code %d, want 1", cmd.ProcessState.ExitCode())
+			}
+		})
+	}
+}
+
 // TestReleaseImagesCheckScript covers the image list of the check the managed zip job runs: it
 // names the same four images the images job pushes.
 func TestReleaseImagesCheckScript(t *testing.T) {
@@ -233,7 +274,8 @@ func TestReleaseImagesCheckScript(t *testing.T) {
 
 // TestCIImagesSourceRef covers the value sourcing of the other CI image builds: every CI job
 // that builds images through task checks out the event's own commit (no ref override) and lets
-// the Taskfile pass git rev-parse HEAD, so the images carry github.sha.
+// the Taskfile pass its SOURCE_REF: the commit on a clean tree, as in CI, so the images carry
+// github.sha, and local on a tree with changes (spec 0030, AC-12).
 func TestCIImagesSourceRef(t *testing.T) {
 	t.Parallel()
 	w, _ := readWorkflow(t, "ci.yml")

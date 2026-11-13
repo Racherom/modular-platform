@@ -34,6 +34,7 @@ func TestNewSourceRef(t *testing.T) {
 		"upper commit":  {in: "B5F34E9A1C2D3E4F5A6B7C8D9E0F1A2B3C4D5E6F", want: "B5F34E9A1C2D3E4F5A6B7C8D9E0F1A2B3C4D5E6F"},
 		"long hex name": {in: commit + "0", want: commit + "0"},
 		"hex name":      {in: "cafe", err: true},
+		"upper hex":     {in: "CAFE", want: "CAFE"},
 		"dot dot":       {in: "a..b", err: true},
 		"double slash":  {in: "a//b", err: true},
 		"lead slash":    {in: "/main", err: true},

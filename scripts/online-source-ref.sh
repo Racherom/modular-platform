@@ -30,9 +30,10 @@ if printf '%s\n' "$ref" | grep -Eqx '[0-9a-f]{40}'; then
 fi
 [ "$ref" != local ] ||
 	stop "MP_SOURCE_REF=local builds from a checkout, but the online editor builds from GitHub; set a commit, branch or tag"
-# a short or uppercase commit (or a name of hex digits only, which looks the same) and any value
-# outside the allowed form are refused, as the renderer refuses them
-if printf '%s\n' "$ref" | grep -Eqx '[0-9A-Fa-f]{4,40}' || ! printf '%s\n' "$ref" | grep -Eqx '[A-Za-z0-9._/-]+'; then
+# the renderer's rule (render.NewSourceRef): a short commit, and with it every name of 4 to 39
+# lowercase hex digits, which looks the same, is refused, and so is any value outside the allowed
+# form; uppercase hex is a branch or tag name, as git commits are written in lowercase
+if printf '%s\n' "$ref" | grep -Eqx '[0-9a-f]{4,39}' || ! printf '%s\n' "$ref" | grep -Eqx '[A-Za-z0-9._/-]+'; then
 	stop "MP_SOURCE_REF=$ref is neither a full commit nor a branch or tag name"
 fi
 
