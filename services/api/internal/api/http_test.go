@@ -75,8 +75,12 @@ func TestCleanBody(t *testing.T) {
 		"review":                   {"/api/v1/stacks/s/review", `{"graph":` + graph + `}`, ""},
 		"review, unknown key":      {"/api/v1/stacks/s/review", `{"graph":` + graph + `,"digest":"x"}`, "invalid_request"},
 		"apply":                    {"/api/v1/stacks/s/apply", `{"graph":` + graph + `,"digest":"x","placed":[]}`, ""},
-		"apply, bad graph":         {"/api/v1/stacks/s/apply", `{"graph":{"kind":"Graph"},"digest":"x"}`, "unsupported_version"},
-		"two objects":              {"/api/v1/stacks/s/apply", `{} {}`, "invalid_request"},
+		// spec 0031: review takes checkNewer and update, apply takes update only
+		"review, images":    {"/api/v1/stacks/s/review", `{"graph":` + graph + `,"checkNewer":true,"update":["a:1"]}`, ""},
+		"apply, update":     {"/api/v1/stacks/s/apply", `{"graph":` + graph + `,"digest":"x","update":["a:1"]}`, ""},
+		"apply, checkNewer": {"/api/v1/stacks/s/apply", `{"graph":` + graph + `,"digest":"x","checkNewer":true}`, "invalid_request"},
+		"apply, bad graph":  {"/api/v1/stacks/s/apply", `{"graph":{"kind":"Graph"},"digest":"x"}`, "unsupported_version"},
+		"two objects":       {"/api/v1/stacks/s/apply", `{} {}`, "invalid_request"},
 		// remove carries no graph, so its keys are not the graph envelope's
 		"remove":           {"/api/v1/stacks/s/remove", `{"deleteData":false}`, ""},
 		"remove with data": {"/api/v1/stacks/s/remove", `{"deleteData":true,"confirmName":"s"}`, ""},

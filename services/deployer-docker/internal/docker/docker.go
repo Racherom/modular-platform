@@ -4,12 +4,15 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
@@ -93,7 +96,7 @@ func (e *Engine) Containers(ctx context.Context, project string) ([]deploy.Conta
 }
 
 func toContainer(s container.Summary, in container.InspectResponse) deploy.Container {
-	c := deploy.Container{ID: s.ID, Labels: s.Labels, Image: s.Image, Status: string(s.State), RestartCount: in.RestartCount}
+	c := deploy.Container{ID: s.ID, Labels: s.Labels, Image: s.Image, ImageID: s.ImageID, Status: string(s.State), RestartCount: in.RestartCount}
 	if st := in.State; st != nil {
 		c.Status = string(st.Status)
 		c.ExitCode = st.ExitCode
@@ -153,4 +156,71 @@ func parseTime(s string) time.Time {
 		return time.Time{}
 	}
 	return t
+}
+
+// ImageInspect reads the image name names: a tag, reference@digest or an image ID.
+func (e *Engine) ImageInspect(ctx context.Context, name string) (deploy.Image, error) {
+	res, err := e.c.ImageInspect(ctx, name)
+	if cerrdefs.IsNotFound(err) {
+		return deploy.Image{}, errors.Join(deploy.ErrImageNotFound, err)
+	}
+	if err != nil {
+		return deploy.Image{}, err
+	}
+	return deploy.Image{ID: res.ID, RepoDigests: res.RepoDigests}, nil
+}
+
+// ImageTag adds the tag target to the image source names.
+func (e *Engine) ImageTag(ctx context.Context, source, target string) error {
+	_, err := e.c.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target})
+	return err
+}
+
+// ImageUntag removes tag. Docker deletes the image only when it was its last name and no
+// container uses it; the deployer never removes an image any other way.
+func (e *Engine) ImageUntag(ctx context.Context, tag string) error {
+	_, err := e.c.ImageRemove(ctx, tag, client.ImageRemoveOptions{})
+	if cerrdefs.IsNotFound(err) {
+		return errors.Join(deploy.ErrImageNotFound, err)
+	}
+	if cerrdefs.IsConflict(err) {
+		return nil // a container still uses the image: the tag stays until a later apply
+	}
+	return err
+}
+
+// ImageTags lists every tag repository:<tag> on the host.
+func (e *Engine) ImageTags(ctx context.Context, repository string) ([]string, error) {
+	res, err := e.c.ImageList(ctx, client.ImageListOptions{Filters: client.Filters{}.Add("reference", repository+":*")})
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, img := range res.Items {
+		for _, t := range img.RepoTags {
+			if strings.HasPrefix(t, repository+":") {
+				out = append(out, t)
+			}
+		}
+	}
+	return out, nil
+}
+
+// DistributionDigest asks the registry, through the daemon and its mirror and proxy settings,
+// which manifest digest ref names; for an image built for several platforms, the index digest.
+func (e *Engine) DistributionDigest(ctx context.Context, ref string) (string, error) {
+	res, err := e.c.DistributionInspect(ctx, ref, client.DistributionInspectOptions{})
+	if err == nil {
+		return res.Descriptor.Digest.String(), nil
+	}
+	kind := deploy.ResolveOther
+	switch {
+	case client.IsErrConnectionFailed(err):
+		kind = deploy.ResolveNoEngine
+	case cerrdefs.IsNotFound(err):
+		kind = deploy.ResolveNotFound
+	case cerrdefs.IsUnauthorized(err), cerrdefs.IsPermissionDenied(err):
+		kind = deploy.ResolveUnauthorized
+	}
+	return "", &deploy.ResolveError{Kind: kind, Err: err}
 }

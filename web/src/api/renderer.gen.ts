@@ -527,13 +527,30 @@ export interface components {
              * @description The stack id, written into every service's `stack` label.
              */
             stack: string;
+            /**
+             * @description The frozen image versions (spec 0031). Every service, of any kind, whose `image`
+             *     equals a `reference` gets `image: <reference>@<digest>`; a reference not listed keeps
+             *     its tag, and an entry the graph does not use is ignored. Each `reference` at most once.
+             */
+            lock?: components["schemas"]["ImagePin"][];
+        };
+        ImagePin: {
+            /** @description `repo:tag` with no digest, as the catalog writes it. */
+            reference: string;
+            /** @description `sha256:` and 64 lowercase hex. */
+            digest: string;
         };
         RenderedStack: {
             /** @description The Compose project name, `mp-<graph name>`. */
             composeProject: string;
             check: components["schemas"]["CheckResult"];
-            /** @description One entry per instance, sorted by instance. */
+            /** @description One entry per instance, sorted by instance; `image` is the value written, `reference@digest` with a lock. */
             images: components["schemas"]["ModuleImage"][];
+            /**
+             * @description Every distinct `image:` value of the rendered `docker-compose.yml` before the lock is
+             *     applied, sorted by reference, each with every service that runs it (spec 0031).
+             */
+            references: components["schemas"]["ImageReference"][];
             /** @description Host ports the stack publishes; always empty for a deployed graph, which never publishes (spec 0013). */
             publishedPorts: components["schemas"]["PublishedPort"][];
             /** @description Every secret file the stack mounts, sorted by path. */
@@ -545,6 +562,24 @@ export interface components {
             instance: string;
             module: string;
             image: string;
+        };
+        ImageReference: {
+            /** @description The image as the catalog writes it, the lock key. */
+            reference: string;
+            /** @description Sorted by service. */
+            usedBy: components["schemas"]["ImageUser"][];
+        };
+        ImageUser: {
+            /** @description The Compose service name. */
+            service: string;
+            /** @enum {string} */
+            kind: "module" | "provision" | "revoke" | "wait";
+            /** @description The module instance; for a job, the provider instance. Absent for `wait`. */
+            instance?: string;
+            /** @description Jobs only, the provisioner capability whose job it runs. */
+            capability?: string;
+            /** @description Provision jobs only, the binding's consumer. */
+            consumer?: string;
         };
         PublishedPort: {
             instance: string;
@@ -768,7 +803,8 @@ export interface operations {
              *     instance whose module publishes ports or mounts host paths, and with error
              *     `setup_required` for each instance that needs `setup.sh` (an asked value, an asked
              *     secret or a setup step) until secrets handling (#9). A rendered stack the guard
-             *     refuses also answers here, with `host_access` at the offending Compose key.
+             *     refuses also answers here, with `host_access` at the offending Compose key. A
+             *     malformed `lock` entry answers here with `invalid_lock` at `lock[<n>]` (spec 0031).
              */
             422: {
                 headers: {

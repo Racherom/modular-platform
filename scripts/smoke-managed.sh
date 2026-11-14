@@ -141,6 +141,27 @@ browser @deploy
 # Delete data too deletes these at the end; the log check still needs their values
 cp -R "$platform/stacks/mp-whoami-postgres/secrets" "$work/stack-secrets"
 
+echo "== the apply froze every image: reference@digest in the Compose file, one lock entry each (spec 0031)"
+stack="$platform/stacks/mp-whoami-postgres"
+if [ ! -f "$stack/images.lock" ]; then
+	echo "the apply wrote no images.lock" >&2
+	exit 1
+fi
+if grep -E '^ +image:' "$stack/docker-compose.yml" | grep -v '@sha256:'; then
+	echo "an image above is not frozen to a digest" >&2
+	exit 1
+fi
+for ref in $(sed -n 's/^ *image: \(.*\)@sha256:.*/\1/p' "$stack/docker-compose.yml" | sort -u); do
+	if ! grep -q "\"reference\": \"$ref\"" "$stack/images.lock"; then
+		echo "images.lock has no entry for $ref" >&2
+		exit 1
+	fi
+done
+if [ -z "$(docker image ls -q 'localhost/mp-keep/mp-whoami-postgres')" ]; then
+	echo "no keep tag holds the locked images" >&2
+	exit 1
+fi
+
 if [ "${SMOKE_DOCKER_RESTART:-}" = 1 ]; then
 	echo "== restart Docker; restart: unless-stopped brings everything back"
 	sudo systemctl restart docker

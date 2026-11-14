@@ -185,7 +185,9 @@ export interface paths {
         put?: never;
         /**
          * Show exactly what an apply of this graph would run
-         * @description Writes nothing and touches nothing on the host.
+         * @description Writes nothing and touches nothing on the host. Every image is frozen to a digest (spec
+         *     0031): a reference in the stack's current lock keeps its digest unless it is in `update`;
+         *     any other is resolved at the registry without pulling.
          */
         post: operations["reviewStack"];
         delete?: never;
@@ -348,13 +350,48 @@ export interface components {
         };
         ReviewRequest: {
             graph: components["schemas"]["Graph"];
+            /**
+             * @description Also ask the registry about every frozen reference and show `available` when it differs.
+             * @default false
+             */
+            checkNewer: boolean;
+            /** @description References to take at their newest digest instead of the frozen one. */
+            update?: string[];
         };
         Review: {
             check: components["schemas"]["CheckResult"];
+            /** @description The review digest, over `check.digest` and the frozen lock; apply sends it back. */
+            digest: string;
+            /** @description One row per image reference the stack runs, sorted by reference. */
+            images: components["schemas"]["ReviewImage"][];
             modules: components["schemas"]["ModuleImage"][];
             bindings: components["schemas"]["Binding"][];
             publishedPorts: components["schemas"]["PublishedPort"][];
             placed: components["schemas"]["PlacedCredential"][];
+        };
+        ReviewImage: {
+            reference: string;
+            usedBy: components["schemas"]["ReviewImageUser"][];
+            /** @description The digest the apply will run. */
+            digest: string;
+            /** @enum {string} */
+            change: "frozen" | "new" | "updated";
+            /** @description The frozen digest it replaces, for `updated`. */
+            previousDigest?: string;
+            /** @description With `checkNewer`, the registry's digest when it differs from `digest`. */
+            available?: string;
+            /** @description False when the image is not on the host; the apply pulls it by digest. */
+            present: boolean;
+        };
+        ReviewImageUser: {
+            /** @enum {string} */
+            kind: "module" | "provision" | "revoke";
+            /** @description The module instance; for a job, the provider instance. */
+            instance?: string;
+            /** @description Jobs only, the provisioner capability. */
+            capability?: string;
+            /** @description Provision jobs only, the binding's consumer. */
+            consumer?: string;
         };
         PlacedCredential: {
             path: string;
@@ -366,8 +403,10 @@ export interface components {
         };
         ApplyRequest: {
             graph: components["schemas"]["Graph"];
-            /** @description The `check.digest` of the review you confirmed. */
+            /** @description The `digest` of the review you confirmed. */
             digest: string;
+            /** @description The same `update` list the review used. */
+            update?: string[];
             placed?: components["schemas"]["PlacedInput"][];
         };
         RemoveRequest: {
@@ -896,7 +935,9 @@ export interface components {
         };
         /**
          * @description Nothing happened: `name_mismatch`, `reserved_name`, the check result's own problems,
-         *     `host_access`, `invalid_project`, `placed_missing` or `placed_invalid`.
+         *     `host_access`, `invalid_project`, `placed_missing`, `placed_invalid`, `invalid_update`
+         *     (an `update` entry the graph does not run), or `image_unresolved` (one per reference
+         *     the registry could not resolve, naming what uses it).
          */
         Refused: {
             headers: {
@@ -1235,6 +1276,15 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["BadOrigin"];
+            /** @description An operation of this stack runs, so its image versions cannot be read (`busy`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
             413: components["responses"]["TooLarge"];
             422: components["responses"]["Refused"];
             502: components["responses"]["RendererError"];
@@ -1272,7 +1322,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["BadOrigin"];
-            /** @description An operation of this stack runs (`busy`), or the check result differs from the reviewed one (`graph_changed`). */
+            /** @description An operation of this stack runs (`busy`), or the check result or an image version differs from the reviewed one (`graph_changed`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1284,6 +1334,7 @@ export interface operations {
             413: components["responses"]["TooLarge"];
             422: components["responses"]["Refused"];
             502: components["responses"]["RendererError"];
+            503: components["responses"]["DeployerUnavailable"];
         };
     };
     removeStack: {

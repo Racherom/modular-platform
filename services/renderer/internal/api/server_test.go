@@ -478,6 +478,42 @@ func TestRenderManaged(t *testing.T) {
 	if !strings.Contains(compose, "io.github.racherom.modular-platform.stack: "+stack) {
 		t.Errorf("docker-compose.yml lacks the stack label:\n%s", compose)
 	}
+	if len(got.References) == 0 {
+		t.Errorf("no references")
+	}
+
+	// spec 0031: a lock pins every service whose image it names, references keep the tag
+	var lock []string
+	for n, r := range got.References {
+		lock = append(lock, `{"reference":"`+r.Reference+`","digest":"sha256:`+strings.Repeat(string(rune('a'+n)), 64)+`"}`)
+	}
+	locked := `{"graph":` + sampleJSON + `,"stack":"` + stack + `","lock":[` + strings.Join(lock, ",") + `]}`
+	resp, data = internal.do(t, http.MethodPost, "/v1/render/managed", locked, auth)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("with lock: status %d: %s", resp.StatusCode, data)
+	}
+	var pinned contract.RenderedStack
+	if err := json.Unmarshal(data, &pinned); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range pinned.Files {
+		if f.Path != "docker-compose.yml" {
+			continue
+		}
+		for line := range strings.Lines(string(f.Data)) {
+			if strings.HasPrefix(strings.TrimSpace(line), "image:") && !strings.Contains(line, "@sha256:") {
+				t.Errorf("with lock, unpinned %s", line)
+			}
+		}
+	}
+	if len(pinned.References) != len(got.References) || pinned.References[0].Reference != got.References[0].Reference {
+		t.Errorf("references with lock = %+v", pinned.References)
+	}
+	badLock := `{"graph":` + sampleJSON + `,"stack":"` + stack + `","lock":[{"reference":"postgres:18.6","digest":"sha256:short"}]}`
+	resp, data = internal.do(t, http.MethodPost, "/v1/render/managed", badLock, auth)
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(string(data), `"invalid_lock"`) || !strings.Contains(string(data), `"lock[0]"`) {
+		t.Errorf("bad lock: status %d: %s", resp.StatusCode, data)
+	}
 
 	for name, tc := range map[string]struct {
 		body string
@@ -486,6 +522,8 @@ func TestRenderManaged(t *testing.T) {
 		"bare graph":         {sampleJSON, http.StatusBadRequest},
 		"extra key":          {`{"graph":` + sampleJSON + `,"stack":"` + stack + `","x":1}`, http.StatusBadRequest},
 		"bad uuid":           {`{"graph":` + sampleJSON + `,"stack":"nope"}`, http.StatusBadRequest},
+		"lock not a list":    {`{"graph":` + sampleJSON + `,"stack":"` + stack + `","lock":{}}`, http.StatusBadRequest},
+		"lock entry extra":   {`{"graph":` + sampleJSON + `,"stack":"` + stack + `","lock":[{"reference":"a:1","digest":"x","y":1}]}`, http.StatusBadRequest},
 		"graph extra key":    {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{},"x":1},"stack":"` + stack + `"}`, http.StatusBadRequest},
 		"result with errors": {`{"graph":{"apiVersion":"modular-platform/v1","kind":"Graph","name":"a","modules":{"w":{"module":"nope"}}},"stack":"` + stack + `"}`, http.StatusUnprocessableEntity},
 	} {

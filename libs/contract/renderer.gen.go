@@ -160,6 +160,30 @@ func (e HardeningUser) Valid() bool {
 	}
 }
 
+// Defines values for ImageUserKind.
+const (
+	ImageUserKindModule    ImageUserKind = "module"
+	ImageUserKindProvision ImageUserKind = "provision"
+	ImageUserKindRevoke    ImageUserKind = "revoke"
+	ImageUserKindWait      ImageUserKind = "wait"
+)
+
+// Valid indicates whether the value is a known member of the ImageUserKind enum.
+func (e ImageUserKind) Valid() bool {
+	switch e {
+	case ImageUserKindModule:
+		return true
+	case ImageUserKindProvision:
+		return true
+	case ImageUserKindRevoke:
+		return true
+	case ImageUserKindWait:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ModuleRuntime.
 const (
 	Sdk ModuleRuntime = "sdk"
@@ -558,6 +582,43 @@ type HostPath = HostPathRef
 // HostPort A host port number, or `{config: <int value>}`.
 type HostPort = HostPortRef
 
+// ImagePin defines model for ImagePin.
+type ImagePin struct {
+	// Digest `sha256:` and 64 lowercase hex.
+	Digest string `json:"digest"`
+
+	// Reference `repo:tag` with no digest, as the catalog writes it.
+	Reference string `json:"reference"`
+}
+
+// ImageReference defines model for ImageReference.
+type ImageReference struct {
+	// Reference The image as the catalog writes it, the lock key.
+	Reference string `json:"reference"`
+
+	// UsedBy Sorted by service.
+	UsedBy []ImageUser `json:"usedBy"`
+}
+
+// ImageUser defines model for ImageUser.
+type ImageUser struct {
+	// Capability Jobs only, the provisioner capability whose job it runs.
+	Capability string `json:"capability,omitempty"`
+
+	// Consumer Provision jobs only, the binding's consumer.
+	Consumer string `json:"consumer,omitempty"`
+
+	// Instance The module instance; for a job, the provider instance. Absent for `wait`.
+	Instance string        `json:"instance,omitempty"`
+	Kind     ImageUserKind `json:"kind"`
+
+	// Service The Compose service name.
+	Service string `json:"service"`
+}
+
+// ImageUserKind defines model for ImageUser.Kind.
+type ImageUserKind string
+
 // Job defines model for Job.
 type Job struct {
 	// Image A tagged image, never `latest`, with `/bin/sh`.
@@ -574,6 +635,11 @@ type Job struct {
 type ManagedRenderRequest struct {
 	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
 	Graph Graph `json:"graph"`
+
+	// Lock The frozen image versions (spec 0031). Every service, of any kind, whose `image`
+	// equals a `reference` gets `image: <reference>@<digest>`; a reference not listed keeps
+	// its tag, and an entry the graph does not use is ignored. Each `reference` at most once.
+	Lock []ImagePin `json:"lock,omitempty"`
 
 	// Stack The stack id, written into every service's `stack` label.
 	Stack openapi_types.UUID `json:"stack"`
@@ -747,11 +813,15 @@ type RenderedStack struct {
 	// Files The stack's files, sorted by path.
 	Files []RenderedFile `json:"files"`
 
-	// Images One entry per instance, sorted by instance.
+	// Images One entry per instance, sorted by instance; `image` is the value written, `reference@digest` with a lock.
 	Images []ModuleImage `json:"images"`
 
 	// PublishedPorts Host ports the stack publishes; always empty for a deployed graph, which never publishes (spec 0013).
 	PublishedPorts []PublishedPort `json:"publishedPorts"`
+
+	// References Every distinct `image:` value of the rendered `docker-compose.yml` before the lock is
+	// applied, sorted by reference, each with every service that runs it (spec 0031).
+	References []ImageReference `json:"references"`
 
 	// Secrets Every secret file the stack mounts, sorted by path.
 	Secrets []RenderedSecret `json:"secrets"`

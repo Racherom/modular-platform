@@ -263,12 +263,19 @@ func (p fakeRenderer) Check(_ context.Context, g contract.Graph) (contract.Check
 	return contract.CheckResult{Ok: true, Graph: g, Digest: p.digest}, nil
 }
 
-func (p fakeRenderer) RenderManaged(_ context.Context, g contract.Graph, _ uuid.UUID) (contract.RenderedStack, error) {
+func (p fakeRenderer) RenderManaged(_ context.Context, g contract.Graph, _ uuid.UUID, lock []contract.ImagePin) (contract.RenderedStack, error) {
+	image := whoamiRef
+	if i := slices.IndexFunc(lock, func(p contract.ImagePin) bool { return p.Reference == whoamiRef }); i >= 0 {
+		image = whoamiRef + "@" + lock[i].Digest
+	}
 	return contract.RenderedStack{
 		ComposeProject: "mp-" + g.Name, Check: contract.CheckResult{Ok: true, Graph: g, Digest: p.digest},
-		Images:  []contract.ModuleImage{{Instance: "web", Module: "whoami", Image: "traefik/whoami:v1.12.0"}},
+		Images: []contract.ModuleImage{{Instance: "web", Module: "whoami", Image: image}},
+		References: []contract.ImageReference{{Reference: whoamiRef, UsedBy: []contract.ImageUser{
+			{Service: "web", Kind: contract.ImageUserKindModule, Instance: "web"},
+		}}},
 		Secrets: []contract.RenderedSecret{{Path: "secrets/app/uses_db_password", Kind: contract.Placed, Instance: "app", Capability: "postgresql", Field: "password"}},
-		Files:   []contract.RenderedFile{{Path: "docker-compose.yml", Mode: 0o644, Data: []byte("name: x\n")}},
+		Files:   []contract.RenderedFile{{Path: "docker-compose.yml", Mode: 0o644, Data: []byte("name: x\nimage: " + image + "\n")}},
 	}, nil
 }
 
@@ -289,6 +296,52 @@ type fakeTarget struct {
 	services     []deploytarget.ServiceState
 	stateReads   int
 	stateCallers []string
+	// lock is the images read's current lock; imagesErr fails it. registry answers resolve,
+	// whoamiRef at whoamiDigest when nil; resolved records each call's references
+	lock      *deploytarget.ImageLock
+	imagesErr error
+	registry  map[string]string
+	resolved  [][]string
+}
+
+// whoamiRef is the one image the fake renderer's stack runs; whoamiDigest is the registry's digest
+// of it, and goodDigest the review digest of the fake's check result with it frozen there.
+const whoamiRef = "traefik/whoami:v1.12.0"
+
+var (
+	whoamiDigest = "sha256:" + strings.Repeat("a", 64)
+	goodDigest   = contract.ReviewDigest("sha256:abc", []contract.ImagePin{{Reference: whoamiRef, Digest: whoamiDigest}})
+)
+
+func (f *fakeTarget) Images(context.Context, string) (deploytarget.StackImages, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.imagesErr != nil {
+		return deploytarget.StackImages{}, f.imagesErr
+	}
+	return deploytarget.StackImages{Current: f.lock}, nil
+}
+
+func (f *fakeTarget) Resolve(_ context.Context, refs []string) (deploytarget.ResolveResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resolved = append(f.resolved, slices.Clone(refs))
+	registry := f.registry
+	if registry == nil {
+		registry = map[string]string{whoamiRef: whoamiDigest}
+	}
+	var out deploytarget.ResolveResult
+	for n, ref := range refs {
+		if d, ok := registry[ref]; ok {
+			out.Images = append(out.Images, deploytarget.ResolvedImage{Reference: ref, Digest: d})
+			continue
+		}
+		out.Problems = append(out.Problems, contract.Problem{
+			Severity: contract.Error, Code: "image_unresolved", Path: fmt.Sprintf("references[%d]", n),
+			Message: ref + ": the registry has no image with this tag.",
+		})
+	}
+	return out, nil
 }
 
 func (f *fakeTarget) Apply(ctx context.Context, _ string, req deploytarget.ApplyRequest) (deploy.TargetOperation, error) {
@@ -386,7 +439,7 @@ func TestApplyRunsToRunning(t *testing.T) {
 	st := newMem()
 	target := &fakeTarget{boot: "boot-1", polls: []deploytarget.OperationStatus{deploytarget.OperationStatusRunning, deploytarget.OperationStatusSucceeded}}
 	s := newService(t, st, target)
-	op, err := s.Apply(t.Context(), admin, "sample", sample, "sha256:abc", []deploy.PlacedInput{{Path: "secrets/app/uses_db_password", Value: "pw"}})
+	op, err := s.Apply(t.Context(), admin, "sample", sample, goodDigest, deploy.ImageOptions{}, []deploy.PlacedInput{{Path: "secrets/app/uses_db_password", Value: "pw"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,17 +485,17 @@ func TestApplyRefusals(t *testing.T) {
 		want         error
 		wantCode     string
 	}{
-		"name mismatch":     {"other", "sha256:abc", nil, nil, "name_mismatch"},
+		"name mismatch":     {"other", goodDigest, nil, nil, "name_mismatch"},
 		"graph changed":     {"sample", "sha256:old", nil, deploy.ErrGraphChanged, ""},
-		"deployer refuses":  {"sample", "sha256:abc", refusal, nil, "host_access"},
-		"deployer busy":     {"sample", "sha256:abc", deploy.ErrBusy, deploy.ErrBusy, ""},
-		"deployer miswired": {"sample", "sha256:abc", deploy.ErrTarget, deploy.ErrTarget, ""},
+		"deployer refuses":  {"sample", goodDigest, refusal, nil, "host_access"},
+		"deployer busy":     {"sample", goodDigest, deploy.ErrBusy, deploy.ErrBusy, ""},
+		"deployer miswired": {"sample", goodDigest, deploy.ErrTarget, deploy.ErrTarget, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			st := newMem()
 			s := newService(t, st, &fakeTarget{applyErr: tc.applyErr})
-			_, err := s.Apply(t.Context(), admin, tc.name, sample, tc.digest, nil)
+			_, err := s.Apply(t.Context(), admin, tc.name, sample, tc.digest, deploy.ImageOptions{}, nil)
 			if tc.want != nil && !errors.Is(err, tc.want) {
 				t.Errorf("err = %v, want %v", err, tc.want)
 			}
@@ -462,7 +515,7 @@ func TestApplyRefusals(t *testing.T) {
 		g := sample
 		g.Name = deploy.ReservedName
 		s := newService(t, newMem(), &fakeTarget{})
-		_, err := s.Apply(t.Context(), admin, deploy.ReservedName, g, "sha256:abc", nil)
+		_, err := s.Apply(t.Context(), admin, deploy.ReservedName, g, goodDigest, deploy.ImageOptions{}, nil)
 		if refused, ok := errors.AsType[*deploy.RefusedError](err); !ok || refused.Problems[0].Code != "reserved_name" {
 			t.Errorf("err = %v", err)
 		}
@@ -473,7 +526,7 @@ func TestApplyWithTheDeployerDown(t *testing.T) {
 	t.Parallel()
 	st := newMem()
 	s := newService(t, st, &fakeTarget{applyErr: deploy.ErrTargetUnavailable})
-	op, err := s.Apply(t.Context(), admin, "sample", sample, "sha256:abc", nil)
+	op, err := s.Apply(t.Context(), admin, "sample", sample, goodDigest, deploy.ImageOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +544,7 @@ func TestPollMarksUnknownOnANewBoot(t *testing.T) {
 	st := newMem()
 	target := &fakeTarget{boot: "boot-2"}
 	s := newService(t, st, target)
-	if _, err := s.Apply(t.Context(), admin, "sample", sample, "sha256:abc", nil); err != nil {
+	if _, err := s.Apply(t.Context(), admin, "sample", sample, goodDigest, deploy.ImageOptions{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "unknown", func() bool {
@@ -504,10 +557,10 @@ func TestApplyBusyInTheRecord(t *testing.T) {
 	t.Parallel()
 	st := newMem()
 	s := newService(t, st, &fakeTarget{boot: "boot-1"})
-	if _, err := s.Apply(t.Context(), admin, "sample", sample, "sha256:abc", nil); err != nil {
+	if _, err := s.Apply(t.Context(), admin, "sample", sample, goodDigest, deploy.ImageOptions{}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Apply(t.Context(), admin, "sample", sample, "sha256:abc", nil); !errors.Is(err, deploy.ErrBusy) {
+	if _, err := s.Apply(t.Context(), admin, "sample", sample, goodDigest, deploy.ImageOptions{}, nil); !errors.Is(err, deploy.ErrBusy) {
 		t.Errorf("second apply: %v, want ErrBusy", err)
 	}
 }
@@ -515,7 +568,7 @@ func TestApplyBusyInTheRecord(t *testing.T) {
 func TestReviewListsPlacedCredentials(t *testing.T) {
 	t.Parallel()
 	s := newService(t, newMem(), &fakeTarget{present: []string{"secrets/app/uses_db_password"}})
-	r, err := s.Review(t.Context(), "sample", sample)
+	r, err := s.Review(t.Context(), "sample", sample, deploy.ImageOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -569,7 +622,7 @@ func TestPlacedValuesNeverLeak(t *testing.T) {
 			t.Cleanup(func() { cancel(); s.Wait() })
 			deploy.SetPollEvery(s, 5*time.Millisecond)
 
-			op, err := s.Apply(t.Context(), admin, "sample", sample, "sha256:abc", placed)
+			op, err := s.Apply(t.Context(), admin, "sample", sample, goodDigest, deploy.ImageOptions{}, placed)
 			seen := []any{op, fmt.Sprint(err)}
 			if err == nil {
 				waitFor(t, "a final status", func() bool {

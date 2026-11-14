@@ -117,6 +117,94 @@ func (s *Server) GetStackState(ctx context.Context, req GetStackStateRequestObje
 	return GetStackState200JSONResponse{Body: out}, nil
 }
 
+// GetStackImages reads the project's frozen image versions (spec 0031). It needs an MP-Caller
+// token like apply.
+func (s *Server) GetStackImages(ctx context.Context, req GetStackImagesRequestObject) (GetStackImagesResponseObject, error) {
+	if _, ok := sdk.CallerFrom(ctx); !ok {
+		return GetStackImages401JSONResponse{UnauthorizedJSONResponse{Body: problems("invalid_token", "", "Reading the images needs an MP-Caller token.")}}, nil
+	}
+	if !deploy.ValidProject(req.Stack) {
+		return GetStackImages400JSONResponse{BadRequestJSONResponse{Body: badProject(req.Stack)}}, nil
+	}
+	images, err := s.engine.Images(ctx, req.Stack)
+	if invalid, ok := errors.AsType[*deploy.LockInvalidError](err); ok {
+		return GetStackImages500JSONResponse{Body: problems("lock_invalid", invalid.File, fmt.Sprintf("The lock file %s cannot be read: %v.", invalid.File, invalid.Err))}, nil
+	}
+	switch {
+	case errors.Is(err, deploy.ErrBusy):
+		return GetStackImages409JSONResponse{Body: problems("busy", "", "An operation of this project is still running.")}, nil
+	case errors.Is(err, deploy.ErrDocker):
+		return GetStackImages503JSONResponse{Body: problems("docker_unavailable", "", "Docker did not answer.")}, err
+	case err != nil:
+		return nil, err
+	}
+	return GetStackImages200JSONResponse{Body: deploytarget.StackImages{
+		Adopted: images.Adopted, Current: lockView(images.Current), Previous: lockView(images.Previous),
+	}}, nil
+}
+
+func lockView(v *deploy.LockView) *deploytarget.ImageLock {
+	if v == nil {
+		return nil
+	}
+	out := &deploytarget.ImageLock{
+		FormatVersion: v.Lock.FormatVersion, Stack: v.Lock.Stack, Operation: v.Lock.Operation,
+		WrittenAt: v.Lock.WrittenAt, Images: make([]deploytarget.LockedImage, 0, len(v.Lock.Images)),
+	}
+	for n, img := range v.Lock.Images {
+		out.Images = append(out.Images, deploytarget.LockedImage{
+			Reference: img.Reference, Source: deploytarget.LockedImageSource(img.Source), Digest: img.Digest,
+			ImageId: img.ImageID, Present: v.Present[n],
+		})
+	}
+	return out
+}
+
+// ResolveImages resolves image references to their registry digests without pulling (spec
+// 0031). It needs an MP-Caller token like apply.
+func (s *Server) ResolveImages(ctx context.Context, req ResolveImagesRequestObject) (ResolveImagesResponseObject, error) {
+	if _, ok := sdk.CallerFrom(ctx); !ok {
+		return ResolveImages401JSONResponse{UnauthorizedJSONResponse{Body: problems("invalid_token", "", "Resolve needs an MP-Caller token.")}}, nil
+	}
+	refs := req.Body.References
+	var bad contract.ProblemList
+	if len(refs) == 0 || len(refs) > 200 {
+		bad.Problems = append(bad.Problems, contract.Problem{Severity: contract.Error, Code: "invalid_request", Path: "references", Message: "Send 1 to 200 references."})
+	}
+	for n, ref := range refs {
+		if err := contract.CheckLockReference(ref); err != nil {
+			bad.Problems = append(bad.Problems, contract.Problem{
+				Severity: contract.Error, Code: "invalid_reference", Path: fmt.Sprintf("references[%d]", n),
+				Message: err.Error() + ".",
+			})
+		}
+	}
+	if len(bad.Problems) > 0 {
+		return ResolveImages400JSONResponse{Body: bad}, nil
+	}
+	res, err := s.engine.Resolve(ctx, refs)
+	if errors.Is(err, deploy.ErrDocker) {
+		return ResolveImages503JSONResponse{Body: problems("docker_unavailable", "", "Docker did not answer.")}, err
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := deploytarget.ResolveResult{
+		Images:   make([]deploytarget.ResolvedImage, 0, len(res.Images)),
+		Problems: make([]contract.Problem, 0, len(res.Unresolved)),
+	}
+	for _, img := range res.Images {
+		out.Images = append(out.Images, deploytarget.ResolvedImage{Reference: img.Reference, Digest: img.Digest})
+	}
+	for _, u := range res.Unresolved {
+		out.Problems = append(out.Problems, contract.Problem{
+			Severity: contract.Error, Code: "image_unresolved", Path: fmt.Sprintf("references[%d]", u.Index),
+			Message: fmt.Sprintf("%s: %s.", u.Reference, u.Reason),
+		})
+	}
+	return ResolveImages200JSONResponse{Body: out}, nil
+}
+
 // GetStackSecrets lists the project's secret files that exist.
 func (s *Server) GetStackSecrets(_ context.Context, req GetStackSecretsRequestObject) (GetStackSecretsResponseObject, error) {
 	if !deploy.ValidProject(req.Stack) {
@@ -170,6 +258,9 @@ func Setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 		return nil, err
 	}
 	if cfg.WaitTimeout, err = m.Config.WaitTimeout(ctx); err != nil {
+		return nil, err
+	}
+	if cfg.ResolveTimeout, err = m.Config.ResolveTimeout(ctx); err != nil {
 		return nil, err
 	}
 	ingress, err := m.Uses.Ingress(ctx)

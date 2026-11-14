@@ -142,6 +142,48 @@ func (e OperationStep) Valid() bool {
 	}
 }
 
+// Defines values for ReviewImageChange.
+const (
+	Frozen  ReviewImageChange = "frozen"
+	New     ReviewImageChange = "new"
+	Updated ReviewImageChange = "updated"
+)
+
+// Valid indicates whether the value is a known member of the ReviewImageChange enum.
+func (e ReviewImageChange) Valid() bool {
+	switch e {
+	case Frozen:
+		return true
+	case New:
+		return true
+	case Updated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReviewImageUserKind.
+const (
+	Module    ReviewImageUserKind = "module"
+	Provision ReviewImageUserKind = "provision"
+	Revoke    ReviewImageUserKind = "revoke"
+)
+
+// Valid indicates whether the value is a known member of the ReviewImageUserKind enum.
+func (e ReviewImageUserKind) Valid() bool {
+	switch e {
+	case Module:
+		return true
+	case Provision:
+		return true
+	case Revoke:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StackState.
 const (
 	StackStateApplying    StackState = "applying"
@@ -180,12 +222,15 @@ func (e StackState) Valid() bool {
 
 // ApplyRequest defines model for ApplyRequest.
 type ApplyRequest struct {
-	// Digest The `check.digest` of the review you confirmed.
+	// Digest The `digest` of the review you confirmed.
 	Digest string `json:"digest"`
 
 	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
 	Graph  externalRef0.Graph `json:"graph"`
 	Placed []PlacedInput      `json:"placed,omitempty,omitzero"`
+
+	// Update The same `update` list the review used.
+	Update []string `json:"update,omitempty,omitzero"`
 }
 
 // EventModules defines model for EventModules.
@@ -304,17 +349,66 @@ type RemoveRequest struct {
 
 // Review defines model for Review.
 type Review struct {
-	Bindings       []externalRef0.Binding       `json:"bindings"`
-	Check          externalRef0.CheckResult     `json:"check"`
+	Bindings []externalRef0.Binding   `json:"bindings"`
+	Check    externalRef0.CheckResult `json:"check"`
+
+	// Digest The review digest, over `check.digest` and the frozen lock; apply sends it back.
+	Digest string `json:"digest"`
+
+	// Images One row per image reference the stack runs, sorted by reference.
+	Images         []ReviewImage                `json:"images"`
 	Modules        []externalRef0.ModuleImage   `json:"modules"`
 	Placed         []PlacedCredential           `json:"placed"`
 	PublishedPorts []externalRef0.PublishedPort `json:"publishedPorts"`
 }
 
+// ReviewImage defines model for ReviewImage.
+type ReviewImage struct {
+	// Available With `checkNewer`, the registry's digest when it differs from `digest`.
+	Available string            `json:"available,omitempty,omitzero"`
+	Change    ReviewImageChange `json:"change"`
+
+	// Digest The digest the apply will run.
+	Digest string `json:"digest"`
+
+	// Present False when the image is not on the host; the apply pulls it by digest.
+	Present bool `json:"present"`
+
+	// PreviousDigest The frozen digest it replaces, for `updated`.
+	PreviousDigest string            `json:"previousDigest,omitempty,omitzero"`
+	Reference      string            `json:"reference"`
+	UsedBy         []ReviewImageUser `json:"usedBy"`
+}
+
+// ReviewImageChange defines model for ReviewImage.Change.
+type ReviewImageChange string
+
+// ReviewImageUser defines model for ReviewImageUser.
+type ReviewImageUser struct {
+	// Capability Jobs only, the provisioner capability.
+	Capability string `json:"capability,omitempty,omitzero"`
+
+	// Consumer Provision jobs only, the binding's consumer.
+	Consumer string `json:"consumer,omitempty,omitzero"`
+
+	// Instance The module instance; for a job, the provider instance.
+	Instance string              `json:"instance,omitempty,omitzero"`
+	Kind     ReviewImageUserKind `json:"kind"`
+}
+
+// ReviewImageUserKind defines model for ReviewImageUser.Kind.
+type ReviewImageUserKind string
+
 // ReviewRequest defines model for ReviewRequest.
 type ReviewRequest struct {
+	// CheckNewer Also ask the registry about every frozen reference and show `available` when it differs.
+	CheckNewer bool `json:"checkNewer,omitempty,omitzero"`
+
 	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
 	Graph externalRef0.Graph `json:"graph"`
+
+	// Update References to take at their newest digest instead of the frozen one.
+	Update []string `json:"update,omitempty,omitzero"`
 }
 
 // Session defines model for Session.
@@ -1394,6 +1488,22 @@ func (response ApplyStack502JSONResponse) VisitApplyStackResponse(w http.Respons
 	return err
 }
 
+type ApplyStack503JSONResponse struct {
+	DeployerUnavailableJSONResponse
+}
+
+func (response ApplyStack503JSONResponse) VisitApplyStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListOperationsRequestObject struct {
 	Name   Name `json:"name"`
 	Params ListOperationsParams
@@ -1641,6 +1751,20 @@ func (response ReviewStack403JSONResponse) VisitReviewStackResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReviewStack409JSONResponse externalRef0.ProblemList
+
+func (response ReviewStack409JSONResponse) VisitReviewStackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }

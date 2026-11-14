@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -33,11 +34,29 @@ func (noDocker) Events(context.Context, time.Time) (<-chan deploy.ExitEvent, <-c
 	return nil, make(chan error)
 }
 
+func (noDocker) ImageInspect(context.Context, string) (deploy.Image, error) {
+	return deploy.Image{}, deploy.ErrImageNotFound
+}
+
+func (noDocker) ImageTag(context.Context, string, string) error { return nil }
+
+func (noDocker) ImageUntag(context.Context, string) error { return nil }
+
+func (noDocker) ImageTags(context.Context, string) ([]string, error) { return nil, nil }
+
+// DistributionDigest knows every reference except those whose tag is missing.
+func (noDocker) DistributionDigest(_ context.Context, ref string) (string, error) {
+	if strings.HasSuffix(ref, ":missing") {
+		return "", &deploy.ResolveError{Kind: deploy.ResolveNotFound, Err: errors.New("manifest unknown")}
+	}
+	return "sha256:" + strings.Repeat("a", 64), nil
+}
+
 // serve runs the handler; withCaller stands in for a checked MP-Caller token.
 func serve(t *testing.T, withCaller bool) (*httptest.Server, *deploy.Engine) {
 	t.Helper()
 	e := deploy.New(t.Context(), deploy.Config{
-		Dir: t.TempDir(), UID: os.Getuid(), GID: os.Getgid(), PullTimeout: time.Minute, WaitTimeout: time.Minute,
+		Dir: t.TempDir(), UID: os.Getuid(), GID: os.Getgid(), PullTimeout: time.Minute, WaitTimeout: time.Minute, ResolveTimeout: 5 * time.Second,
 		ReservedPorts: []int{80, 443},
 	}, okCompose{}, noDocker{}, slog.New(slog.DiscardHandler))
 	t.Cleanup(e.Wait)
@@ -225,5 +244,66 @@ func TestRetiredRoutesAre404(t *testing.T) {
 	srv, _ := serve(t, true)
 	if resp, data := do(t, srv, http.MethodPost, "/v1/projects/mp-x/apply", applyBody(t)); resp.StatusCode != http.StatusNotFound { // vocabulary: allow
 		t.Errorf("status %d, want 404: %.200s", resp.StatusCode, data)
+	}
+}
+
+// TestImageEndpointsNeedACaller covers spec 0031: the images read and resolve need an MP-Caller
+// token like apply (401 invalid_token).
+func TestImageEndpointsNeedACaller(t *testing.T) {
+	t.Parallel()
+	srv, _ := serve(t, false)
+	for _, c := range []struct{ method, path, body string }{
+		{http.MethodGet, "/v1/stacks/mp-sample/images", ""},
+		{http.MethodPost, "/v1/images/resolve", `{"references":["postgres:18.6"]}`},
+	} {
+		resp, data := do(t, srv, c.method, c.path, c.body)
+		if resp.StatusCode != http.StatusUnauthorized || !strings.Contains(string(data), "invalid_token") {
+			t.Errorf("%s %s: %d %s", c.method, c.path, resp.StatusCode, data)
+		}
+	}
+}
+
+// TestGetStackImages answers no lock for a new project, and 400 for a bad project name.
+func TestGetStackImages(t *testing.T) {
+	t.Parallel()
+	srv, _ := serve(t, true)
+	resp, data := do(t, srv, http.MethodGet, "/v1/stacks/mp-sample/images", "")
+	if resp.StatusCode != http.StatusOK || strings.TrimSpace(string(data)) != `{"adopted":false}` {
+		t.Errorf("new project: %d %s", resp.StatusCode, data)
+	}
+	if resp.Header.Get("MP-Boot-Id") == "" {
+		t.Error("no boot id")
+	}
+	if resp, data := do(t, srv, http.MethodGet, "/v1/stacks/platform/images", ""); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("bad project: %d %s", resp.StatusCode, data)
+	}
+}
+
+// TestResolveImages covers AC-5 at the deployer: a found digest, image_unresolved per reference
+// that failed, and invalid_reference for a reference with no tag or with a digest.
+func TestResolveImages(t *testing.T) {
+	t.Parallel()
+	srv, _ := serve(t, true)
+	resp, data := do(t, srv, http.MethodPost, "/v1/images/resolve", `{"references":["postgres:18.6","example.test/x:missing"]}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, data)
+	}
+	var got deploytarget.ResolveResult
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Images) != 1 || got.Images[0].Reference != "postgres:18.6" || len(got.Problems) != 1 ||
+		got.Problems[0].Code != "image_unresolved" || got.Problems[0].Path != "references[1]" {
+		t.Errorf("result = %+v", got)
+	}
+	for _, body := range []string{
+		`{"references":["postgres"]}`,
+		`{"references":["postgres:18.6@sha256:` + strings.Repeat("a", 64) + `"]}`,
+		`{"references":[]}`,
+	} {
+		resp, data := do(t, srv, http.MethodPost, "/v1/images/resolve", body)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: %d %s", body, resp.StatusCode, data)
+		}
 	}
 }

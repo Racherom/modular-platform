@@ -24,6 +24,7 @@ const (
 	CodeInvalidImage        = "invalid_image"
 	CodeImageUntagged       = "image_untagged"
 	CodeImageLatest         = "image_latest"
+	CodeImageDigest         = "image_digest"
 	CodeInvalidPort         = "invalid_port"
 	CodeInvalidEnvName      = manifest.CodeInvalidEnvName
 	CodeDuplicateEnv        = manifest.CodeDuplicateEnv

@@ -11,6 +11,50 @@
       "Image": "example.test/notifier:2.1.0"
     }
   ],
+  "References": [
+    {
+      "reference": "example.test/app:1.0.0",
+      "usedBy": [
+        {
+          "instance": "app",
+          "kind": "module",
+          "service": "app"
+        }
+      ]
+    },
+    {
+      "reference": "example.test/notifier:2.1.0",
+      "usedBy": [
+        {
+          "instance": "notifier",
+          "kind": "module",
+          "service": "notifier"
+        }
+      ]
+    },
+    {
+      "reference": "postgres:18.6",
+      "usedBy": [
+        {
+          "kind": "wait",
+          "service": "mp_jobs"
+        },
+        {
+          "capability": "postgresql-provisioner",
+          "consumer": "app",
+          "instance": "shared",
+          "kind": "provision",
+          "service": "shared_provision_app_audit"
+        },
+        {
+          "capability": "postgresql-provisioner",
+          "instance": "shared",
+          "kind": "revoke",
+          "service": "shared_revoke_admin"
+        }
+      ]
+    }
+  ],
   "Secrets": [
     {
       "Path": "secrets/app/notify-key",

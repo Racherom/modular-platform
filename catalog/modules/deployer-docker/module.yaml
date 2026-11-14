@@ -60,6 +60,13 @@ config:
     default: 5m
     min: 10s
     description: Longest time an apply waits for every service to run and pass its healthcheck.
+  resolve-timeout:
+    env: MP_RESOLVE_TIMEOUT
+    type: duration
+    default: 30s
+    min: 5s
+    max: 50s
+    description: Longest time one call may spend asking registries which digest each image tag names.
 host_mounts:
   - host: /var/run/docker.sock
     path: /var/run/docker.sock

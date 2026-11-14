@@ -1,0 +1,268 @@
+name: mp-bindings
+networks:
+  egress: {}
+  internal:
+    internal: true
+secrets:
+  app_notify-key:
+    file: ./secrets/app/notify-key
+  app_uses_audit_password:
+    file: ./secrets/app/uses_audit_password
+  app_uses_db_password:
+    file: ./secrets/billing/db_password
+  app_uses_notify_key:
+    file: ./secrets/app/notify-key
+  app_uses_notify_token:
+    file: ./secrets/app/uses_notify_token
+  shared_admin_admin_admin_password:
+    file: ./secrets/shared/admin_admin_password
+services:
+  app:
+    cap_drop:
+    - ALL
+    depends_on:
+      notifier:
+        condition: service_started
+        required: true
+      shared_provision_app_audit:
+        condition: service_completed_successfully
+        required: true
+    environment:
+      APP_AUDIT_HOST: pg.example.test
+      APP_AUDIT_NAME: app_audit
+      APP_AUDIT_PASSWORD_FILE: /run/secrets/uses/audit/password
+      APP_AUDIT_USER: app_audit
+      APP_DB_DSN: postgres://billing@db.example.test:5432/billing?sslmode=verify-full
+      APP_DB_HOST: db.example.test
+      APP_DB_NAME: billing
+      APP_DB_PORT: "5432"
+      APP_DB_SSLMODE: verify-full
+      APP_DB_USER: billing
+      APP_NOTIFY_KEY_FILE: /run/secrets/app_notify-key
+      APP_NOTIFY_TOKEN_FILE: /run/secrets/uses/notify/token
+      APP_NOTIFY_URL: http://notifier.bindings.internal:9000
+      APP_PRICE: 5$$ a month
+      APP_REGION: region=
+      APP_RUN_AS: ${MP_UID}:${MP_GID}
+    image: example.test/app:1.0.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    labels:
+      io.github.racherom.modular-platform.graph: bindings
+      io.github.racherom.modular-platform.instance: app
+      io.github.racherom.modular-platform.module: app
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      egress:
+        aliases:
+        - app.bindings.internal
+      internal:
+        aliases:
+        - app.bindings.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: app_notify-key
+      target: /run/secrets/app_notify-key
+    - source: app_uses_audit_password
+      target: /run/secrets/uses/audit/password
+    - source: app_uses_db_password
+      target: /run/app/db-password
+    - source: app_uses_notify_token
+      target: /run/secrets/uses/notify/token
+    security_opt:
+    - no-new-privileges:true
+  mp_jobs:
+    cap_drop:
+    - ALL
+    depends_on:
+      shared_revoke_admin:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+    - sleep
+    - infinity
+    image: postgres:18.6@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    init: true
+    labels:
+      io.github.racherom.modular-platform.graph: bindings
+      io.github.racherom.modular-platform.job: wait
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    network_mode: none
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  notifier:
+    cap_add:
+    - NET_BIND_SERVICE
+    cap_drop:
+    - ALL
+    environment:
+      NOTIFY_KEYS_DIR: /run/secrets/clients/events/key
+      NOTIFY_PUBLIC_NAME: ${MP_NOTIFIER__PUBLIC_NAME:-notify.example.test}
+      NOTIFY_TOKENS_DIR: /run/secrets/clients/events/token
+    image: example.test/notifier:2.1.0@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    labels:
+      io.github.racherom.modular-platform.graph: bindings
+      io.github.racherom.modular-platform.instance: notifier
+      io.github.racherom.modular-platform.module: notifier
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      egress:
+        aliases:
+        - notifier.bindings.internal
+        - ${MP_NOTIFIER__PUBLIC_NAME:-notify.example.test}
+      internal:
+        aliases:
+        - notifier.bindings.internal
+        - ${MP_NOTIFIER__PUBLIC_NAME:-notify.example.test}
+    restart: unless-stopped
+    secrets:
+    - source: app_uses_notify_key
+      target: /run/secrets/clients/events/key/app
+    - source: app_uses_notify_token
+      target: /run/secrets/clients/events/token/app
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: "0:0"
+  shared_provision_app_audit:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      PGPASSWORD=$$(cat "$$MP_ADMIN_ADMIN_PASSWORD_FILE")
+      export PGPASSWORD PGHOST="$$MP_ADMIN_HOST" PGPORT="$$MP_ADMIN_PORT" PGUSER="$$MP_ADMIN_ADMIN_USER"
+      export PGDATABASE=postgres PGSSLMODE="$$MP_ADMIN_SSLMODE" PGCONNECT_TIMEOUT=10 PGAPPNAME=mp-provision
+      if [ -n "$${MP_ADMIN_CA_FILE:-}" ]; then export PGSSLROOTCERT="$$MP_ADMIN_CA_FILE"; fi
+      echo "provision: database $$MP_DATABASE and login $$MP_USER for $$MP_CONSUMER (slot $$MP_SLOT)"
+      psql -X -q -v ON_ERROR_STOP=1 -v marker="$$MP_MARKER" -v login="$$MP_USER" -v db="$$MP_DATABASE" <<'SQL'
+      \set pw `cat "$$MP_PASSWORD_FILE"`
+      SELECT pg_advisory_lock(hashtext('modular-platform provisioner')) \g /dev/null
+      SELECT format('CREATE ROLE %I NOLOGIN', :'marker')
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'marker') \gexec
+      SELECT CASE
+          WHEN r.oid IS NULL THEN 'create'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = r.oid AND g.rolname = :'marker') THEN 'update'
+          ELSE 'foreign' END AS role_state
+        FROM (SELECT CAST(:'login' AS name) AS n) x LEFT JOIN pg_roles r ON r.rolname = x.n \gset
+      SELECT format('CREATE ROLE %I LOGIN PASSWORD %L IN ROLE %I', :'login', :'pw', :'marker')
+        WHERE :'role_state' = 'create' \gexec
+      SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', :'login', :'pw')
+        WHERE :'role_state' = 'update' \gexec
+      SELECT format('DO $$mp$$ BEGIN RAISE EXCEPTION %L; END $$mp$$',
+                    format('role %s exists and was not made by the platform', :'login'))
+        WHERE :'role_state' = 'foreign' \gexec
+      SELECT CASE
+          WHEN d.oid IS NULL THEN 'create'
+          WHEN o.rolname = :'login' THEN 'keep'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = d.datdba AND g.rolname = :'marker') THEN 'reown'
+          ELSE 'foreign' END AS db_state
+        FROM (SELECT CAST(:'db' AS name) AS n) x
+        LEFT JOIN pg_database d ON d.datname = x.n LEFT JOIN pg_roles o ON o.oid = d.datdba \gset
+      SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'login') WHERE :'db_state' = 'create' \gexec
+      SELECT format('ALTER DATABASE %I OWNER TO %I', :'db', :'login') WHERE :'db_state' = 'reown' \gexec
+      SELECT format('DO $$mp$$ BEGIN RAISE EXCEPTION %L; END $$mp$$',
+                    format('database %s exists and its owner was not made by the platform', :'db'))
+        WHERE :'db_state' = 'foreign' \gexec
+      SELECT format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', :'db') \gexec
+      SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'db', :'login') \gexec
+      REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+      REVOKE CONNECT ON DATABASE template1 FROM PUBLIC;
+      SELECT pg_reload_conf() \g /dev/null
+      SQL
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
+      MP_ADMIN_ADMIN_USER: admin
+      MP_ADMIN_HOST: pg.example.test
+      MP_ADMIN_PORT: "5432"
+      MP_ADMIN_SSLMODE: verify-full
+      MP_ADMIN_URL: postgres://pg.example.test:5432
+      MP_CONSUMER: app
+      MP_CONSUMER_HOST: app.bindings.internal
+      MP_DATABASE: app_audit
+      MP_MARKER: mp_provisioned_1f7378b5
+      MP_PASSWORD_FILE: /run/secrets/bind/password
+      MP_SLOT: audit
+      MP_USER: app_audit
+    image: postgres:18.6@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    labels:
+      io.github.racherom.modular-platform.graph: bindings
+      io.github.racherom.modular-platform.instance: shared
+      io.github.racherom.modular-platform.job: provision
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      egress: {}
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: shared_admin_admin_admin_password
+      target: /run/secrets/admin/admin_password
+    - source: app_uses_audit_password
+      target: /run/secrets/bind/password
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  shared_revoke_admin:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      PGPASSWORD=$$(cat "$$MP_ADMIN_ADMIN_PASSWORD_FILE")
+      export PGPASSWORD PGHOST="$$MP_ADMIN_HOST" PGPORT="$$MP_ADMIN_PORT" PGUSER="$$MP_ADMIN_ADMIN_USER"
+      export PGDATABASE=postgres PGSSLMODE="$$MP_ADMIN_SSLMODE" PGCONNECT_TIMEOUT=10 PGAPPNAME=mp-revoke
+      if [ -n "$${MP_ADMIN_CA_FILE:-}" ]; then export PGSSLROOTCERT="$$MP_ADMIN_CA_FILE"; fi
+      echo "revoke: logins made by the platform that no binding keeps lose sign in"
+      psql -X -q -v ON_ERROR_STOP=1 -v marker="$$MP_MARKER" -v keep="$$MP_KEEP" <<'SQL'
+      SELECT pg_advisory_lock(hashtext('modular-platform provisioner')) \g /dev/null
+      SELECT format('ALTER ROLE %I NOLOGIN', r.rolname)
+        FROM pg_roles r JOIN pg_auth_members m ON m.member = r.oid JOIN pg_roles g ON g.oid = m.roleid
+        WHERE g.rolname = :'marker' AND r.rolcanlogin
+          AND NOT r.rolname = ANY (string_to_array(:'keep', ',')) \gexec
+      SELECT pg_terminate_backend(a.pid)
+        FROM pg_stat_activity a JOIN pg_roles r ON r.oid = a.usesysid
+        JOIN pg_auth_members m ON m.member = r.oid JOIN pg_roles g ON g.oid = m.roleid
+        WHERE g.rolname = :'marker' AND NOT r.rolcanlogin \g /dev/null
+      SQL
+    depends_on:
+      shared_provision_app_audit:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
+      MP_ADMIN_ADMIN_USER: admin
+      MP_ADMIN_HOST: pg.example.test
+      MP_ADMIN_PORT: "5432"
+      MP_ADMIN_SSLMODE: verify-full
+      MP_ADMIN_URL: postgres://pg.example.test:5432
+      MP_KEEP: app_audit
+      MP_MARKER: mp_provisioned_1f7378b5
+    image: postgres:18.6@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    labels:
+      io.github.racherom.modular-platform.graph: bindings
+      io.github.racherom.modular-platform.instance: shared
+      io.github.racherom.modular-platform.job: revoke
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      egress: {}
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: shared_admin_admin_admin_password
+      target: /run/secrets/admin/admin_password
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}

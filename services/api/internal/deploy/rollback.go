@@ -74,8 +74,9 @@ func (s *Service) rollback(at RunningOperation, failed Operation, latest uuid.UU
 	}
 }
 
-// sendRollback hands a started rollback to the deploy target and polls it. It returns why it
-// could not, as the operation's error text, or "" once polling runs.
+// sendRollback hands a started rollback to the deploy target, with every image frozen to the
+// stack's current lock, and polls it. It returns why it could not, as the operation's error
+// text, or "" once polling runs.
 func (s *Service) sendRollback(ctx context.Context, run RunningOperation, g contract.Graph, result contract.CheckResult, checkErr error) string {
 	switch {
 	case checkErr != nil:
@@ -83,7 +84,17 @@ func (s *Service) sendRollback(ctx context.Context, run RunningOperation, g cont
 	case !result.Ok:
 		return problemsText(result.Problems)
 	}
-	rendered, err := s.renderer.RenderManaged(ctx, g, run.StackID)
+	// the stack's current lock is the last good apply: a failed apply never wrote it (spec 0031)
+	f, err := s.freeze(ctx, g, run.StackID, ImageOptions{})
+	if err != nil {
+		return failureText(err)
+	}
+	for _, img := range f.images {
+		if img.Change != contract.ChangeFrozen {
+			s.log.WarnContext(ctx, "rollback resolved an image", slog.String("stack", run.StackName), slog.String("reference", img.Reference))
+		}
+	}
+	rendered, err := s.renderer.RenderManaged(ctx, g, run.StackID, f.pins())
 	if err != nil {
 		return failureText(err)
 	}
@@ -138,6 +149,8 @@ func failureText(err error) string {
 		return problemsText(r.Problems)
 	}
 	switch {
+	case errors.Is(err, ErrLockInvalid):
+		return "lock_invalid"
 	case errors.Is(err, ErrTargetUnavailable):
 		return "deployer_unavailable"
 	case errors.Is(err, ErrBusy):

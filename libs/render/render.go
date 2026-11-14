@@ -134,6 +134,8 @@ type rendered struct {
 // job is a one shot service of the project (spec 0014), or the wait anchor mp_jobs.
 type job struct {
 	instance, module, kind string // the provisioner instance and module (none on mp_jobs); provision, revoke or wait
+	capability             string // the provisioner capability whose yields.job it runs (none on mp_jobs)
+	consumer               string // the binding's consumer, provision jobs only
 }
 
 // renderer holds one render in progress.

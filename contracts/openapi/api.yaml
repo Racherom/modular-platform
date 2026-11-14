@@ -259,7 +259,10 @@ paths:
     post:
       operationId: reviewStack
       summary: Show exactly what an apply of this graph would run
-      description: Writes nothing and touches nothing on the host.
+      description: |
+        Writes nothing and touches nothing on the host. Every image is frozen to a digest (spec
+        0031): a reference in the stack's current lock keeps its digest unless it is in `update`;
+        any other is resolved at the registry without pulling.
       parameters:
         - $ref: "#/components/parameters/Name"
       requestBody:
@@ -283,6 +286,12 @@ paths:
           $ref: "#/components/responses/BadOrigin"
         "413":
           $ref: "#/components/responses/TooLarge"
+        "409":
+          description: An operation of this stack runs, so its image versions cannot be read (`busy`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
         "422":
           $ref: "#/components/responses/Refused"
         "502":
@@ -317,7 +326,7 @@ paths:
         "403":
           $ref: "#/components/responses/BadOrigin"
         "409":
-          description: An operation of this stack runs (`busy`), or the check result differs from the reviewed one (`graph_changed`).
+          description: An operation of this stack runs (`busy`), or the check result or an image version differs from the reviewed one (`graph_changed`).
           content:
             application/json:
               schema:
@@ -328,6 +337,8 @@ paths:
           $ref: "#/components/responses/Refused"
         "502":
           $ref: "#/components/responses/RendererError"
+        "503":
+          $ref: "#/components/responses/DeployerUnavailable"
   /api/v1/stacks/{name}/remove:
     post:
       operationId: removeStack
@@ -462,7 +473,9 @@ components:
     Refused:
       description: |
         Nothing happened: `name_mismatch`, `reserved_name`, the check result's own problems,
-        `host_access`, `invalid_project`, `placed_missing` or `placed_invalid`.
+        `host_access`, `invalid_project`, `placed_missing`, `placed_invalid`, `invalid_update`
+        (an `update` entry the graph does not run), or `image_unresolved` (one per reference
+        the registry could not resolve, naming what uses it).
       content:
         application/json:
           schema:
@@ -651,13 +664,30 @@ components:
       properties:
         graph:
           $ref: "./renderer.yaml#/components/schemas/Graph"
+        checkNewer:
+          type: boolean
+          default: false
+          description: Also ask the registry about every frozen reference and show `available` when it differs.
+        update:
+          type: array
+          description: References to take at their newest digest instead of the frozen one.
+          items:
+            type: string
     Review:
       type: object
       additionalProperties: false
-      required: [check, modules, bindings, publishedPorts, placed]
+      required: [check, digest, modules, images, bindings, publishedPorts, placed]
       properties:
         check:
           $ref: "./renderer.yaml#/components/schemas/CheckResult"
+        digest:
+          type: string
+          description: The review digest, over `check.digest` and the frozen lock; apply sends it back.
+        images:
+          type: array
+          description: One row per image reference the stack runs, sorted by reference.
+          items:
+            $ref: "#/components/schemas/ReviewImage"
         modules:
           type: array
           items:
@@ -674,6 +704,49 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PlacedCredential"
+    ReviewImage:
+      type: object
+      additionalProperties: false
+      required: [reference, usedBy, digest, change, present]
+      properties:
+        reference:
+          type: string
+        usedBy:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewImageUser"
+        digest:
+          type: string
+          description: The digest the apply will run.
+        change:
+          type: string
+          enum: [frozen, new, updated]
+        previousDigest:
+          type: string
+          description: The frozen digest it replaces, for `updated`.
+        available:
+          type: string
+          description: With `checkNewer`, the registry's digest when it differs from `digest`.
+        present:
+          type: boolean
+          description: False when the image is not on the host; the apply pulls it by digest.
+    ReviewImageUser:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [module, provision, revoke]
+        instance:
+          type: string
+          description: The module instance; for a job, the provider instance.
+        capability:
+          type: string
+          description: Jobs only, the provisioner capability.
+        consumer:
+          type: string
+          description: Provision jobs only, the binding's consumer.
     PlacedCredential:
       type: object
       additionalProperties: false
@@ -699,7 +772,12 @@ components:
           $ref: "./renderer.yaml#/components/schemas/Graph"
         digest:
           type: string
-          description: The `check.digest` of the review you confirmed.
+          description: The `digest` of the review you confirmed.
+        update:
+          type: array
+          description: The same `update` list the review used.
+          items:
+            type: string
         placed:
           type: array
           items:

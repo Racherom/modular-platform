@@ -254,7 +254,7 @@ func TestRenderManagedRefuses(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			result, catalog := c.result(t)
-			_, err := render.Managed(result, catalog, builtinTemplates(t), "d1")
+			_, err := render.Managed(result, catalog, builtinTemplates(t), "d1", nil)
 			var refused *render.RefusedError
 			if !errors.As(err, &refused) {
 				t.Fatalf("err = %v, want a *RefusedError", err)
@@ -278,7 +278,7 @@ func TestRenderManagedRefuses(t *testing.T) {
 func TestRenderManagedRefusesLinuxCap(t *testing.T) {
 	t.Parallel()
 	result, catalog := linuxCapResult(t)
-	_, err := render.Managed(result, catalog, builtinTemplates(t), "d1")
+	_, err := render.Managed(result, catalog, builtinTemplates(t), "d1", nil)
 	var refused *render.RefusedError
 	if !errors.As(err, &refused) || len(refused.Problems) != 1 {
 		t.Fatalf("err = %v, want one refusal", err)

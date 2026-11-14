@@ -95,7 +95,7 @@ func (s *Server) RenderManaged(ctx context.Context, req RenderManagedRequestObje
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	m, err := render.Managed(result, s.catalog, s.templates, req.Body.Stack.String())
+	m, err := render.Managed(result, s.catalog, s.templates, req.Body.Stack.String(), req.Body.Lock)
 	if refused, ok := errors.AsType[*render.RefusedError](err); ok {
 		return RenderManaged422JSONResponse(render.Refuse(result, refused.Problems)), nil
 	}
@@ -128,6 +128,7 @@ func renderedStack(result contract.CheckResult, m render.ManagedProject) contrac
 		ComposeProject: m.Name,
 		Check:          result,
 		Images:         make([]contract.ModuleImage, 0, len(m.Images)),
+		References:     m.References,
 		PublishedPorts: []contract.PublishedPort{},
 		Secrets:        make([]contract.RenderedSecret, 0, len(m.Secrets)),
 		Files:          make([]contract.RenderedFile, 0, len(m.Files)),
@@ -262,7 +263,7 @@ func strictGraphBody(next http.Handler) http.Handler {
 		if r.URL.Path == managedPath {
 			body, data = decodeManaged(data)
 			if data == nil {
-				httpkit.WriteProblem(w, http.StatusBadRequest, contract.CodeInvalidGraph, "The body must be an object with exactly graph and stack.")
+				httpkit.WriteProblem(w, http.StatusBadRequest, contract.CodeInvalidGraph, "The body must be an object with graph, stack and an optional lock.")
 				return
 			}
 		}
@@ -275,7 +276,11 @@ func strictGraphBody(next http.Handler) http.Handler {
 			return
 		}
 		if m, ok := body.(*managedBody); ok {
-			body = map[string]any{"graph": g, "stack": m.Stack}
+			envelope := map[string]any{"graph": g, "stack": m.Stack}
+			if m.Lock != nil {
+				envelope["lock"] = m.Lock
+			}
+			body = envelope
 		} else {
 			body = g
 		}
@@ -295,16 +300,26 @@ const managedPath = "/v1/render/managed"
 type managedBody struct {
 	Graph json.RawMessage `json:"graph"`
 	Stack string          `json:"stack"`
+	Lock  json.RawMessage `json:"lock,omitempty"` // checked by the generated code and render.Managed
 }
 
 // decodeManaged splits a managed render body into its envelope and the raw graph; a nil graph
-// means the envelope itself is wrong. The stack's format is checked by the generated code.
+// means the envelope itself is wrong, a lock entry with an unknown key included. The stack's
+// format is checked by the generated code, the lock's rules by render.Managed.
 func decodeManaged(data []byte) (*managedBody, []byte) {
 	var m managedBody
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&m); err != nil || len(m.Graph) == 0 || m.Stack == "" {
 		return nil, nil
+	}
+	if m.Lock != nil {
+		var pins []contract.ImagePin
+		lock := json.NewDecoder(bytes.NewReader(m.Lock))
+		lock.DisallowUnknownFields()
+		if err := lock.Decode(&pins); err != nil {
+			return nil, nil
+		}
 	}
 	return &m, m.Graph
 }

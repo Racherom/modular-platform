@@ -74,6 +74,12 @@ If a changed stack fails to start, the platform returns to the last version that
 
 Deployed stacks restart with Docker. After a host or Docker restart they come back without a new deploy.
 
+### Image versions
+
+Each deploy fixes every image of the stack to the exact version it runs (its digest), and writes that list to `stacks/mp-<stack>/images.lock`. Deploying the same graph again runs the same versions, even when an image's tag now names a newer one. The review shows each image with its version. Choose *Check for newer images* to see where a newer version exists, and tick the ones you want to take.
+
+The deployer keeps the images of the current and the previous deploy on the host, under tags named `localhost/mp-keep/mp-<stack>:<id>`. So a stack that fails after an update returns to the versions that ran before, even when the registry cannot be reached. `docker image prune` leaves these images alone, but `docker image prune -a` removes the ones no container uses at that moment. After that, returning to them needs the registry again.
+
 ## What the deployer can do on your host
 
 The `deployer-docker` service holds the Docker socket and runs as root. That gives it full control of the host, so it does as little as possible:

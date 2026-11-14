@@ -60,8 +60,9 @@ func (e *Engine) Remove(ctx context.Context, req RemoveRequest) (Operation, erro
 	return snapshot, nil
 }
 
-// remove runs down, with --volumes when data goes too, then deletes the secrets folder. The
-// rest of the folder stays: it shows what last ran.
+// remove runs down, with --volumes when data goes too, deletes the image lock files and the
+// project's keep tags (spec 0031), then the secrets folder when data goes. The rest of the
+// folder stays: it shows what last ran.
 func (e *Engine) remove(op *Operation, req RemoveRequest) error {
 	dir := e.projectDir(req.Project)
 	e.step(op, StepDown)
@@ -74,6 +75,9 @@ func (e *Engine) remove(op *Operation, req RemoveRequest) error {
 	out, err := e.compose.Run(ctx, dir, req.Project, args...)
 	if err != nil {
 		return composeError(codeDownFailed, out, err)
+	}
+	if err := e.removeLocks(dir, req.Project); err != nil {
+		return fmt.Errorf("%s\n%w", codeDownFailed, err)
 	}
 	if !req.DeleteData {
 		return nil

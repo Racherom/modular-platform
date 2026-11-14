@@ -57,8 +57,11 @@ type Image struct {
 // project named mp-<graph>, the images it runs and every secret file it needs.
 type ManagedProject struct {
 	Output
-	Images  []Image  // sorted by instance
-	Secrets []Secret // sorted by path
+	Images []Image // sorted by instance; Image is the value written, reference@digest with a lock
+	// References lists every distinct image of docker-compose.yml before the lock is applied,
+	// sorted by reference, with every service that runs it (spec 0031).
+	References []contract.ImageReference
+	Secrets    []Secret // sorted by path
 }
 
 // CodeSetupRequired refuses a deployed instance that needs setup.sh (spec 0013, Managed flavor).
@@ -148,29 +151,40 @@ func label(p *types.Project, g contract.Graph, jobs map[string]job, stack string
 // output plus the platform labels on every service (and the job label on each one shot job),
 // restart: unless-stopped on every long running service, and the project named mp-<graph>.
 // Host names stay <instance>.<graph>.internal. stack is the stack id written into the
-// stack label. A graph with an instance the managed flavor refuses returns a *RefusedError.
-func Managed(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates, stack string) (ManagedProject, error) {
+// stack label. lock freezes image versions (spec 0031): every service whose image equals a
+// pin's reference, jobs and mp_jobs included, runs reference@digest. A graph with an instance the
+// managed flavor refuses, or a malformed lock (invalid_lock), returns a *RefusedError.
+func Managed(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates, stack string, lock []contract.ImagePin) (ManagedProject, error) {
 	if !result.Ok {
 		return ManagedProject{}, ErrGraphHasErrors
 	}
-	if problems := refusals(result, catalog); len(problems) > 0 {
+	problems := refusals(result, catalog)
+	problems = append(problems, contract.ImagePinProblems(lock)...)
+	if len(problems) > 0 {
 		return ManagedProject{}, &RefusedError{Problems: problems}
 	}
+	pins := make(map[string]string, len(lock))
+	for _, p := range lock {
+		pins[p.Reference] = p.Digest
+	}
+	var refs []contract.ImageReference
 	r, err := renderProject(result, catalog, templates, flavorManaged, func(p *types.Project, jobs map[string]job) {
 		label(p, result.Graph, jobs, stack)
 		p.Name = ProjectPrefix + p.Name
+		refs = references(p, jobs)
+		pinImages(p, pins)
 	})
 	if err != nil {
 		return ManagedProject{}, err
 	}
-	m := ManagedProject{Output: r.out}
+	m := ManagedProject{Output: r.out, References: refs}
 	images := map[string]string{}
 	for _, e := range catalog.Modules {
 		images[e.Name] = e.Image
 	}
 	for _, i := range sortedKeys(result.Graph.Modules) {
 		if gm := result.Graph.Modules[i]; gm.External == nil {
-			m.Images = append(m.Images, Image{Instance: i, Module: gm.Module, Image: images[gm.Module]})
+			m.Images = append(m.Images, Image{Instance: i, Module: gm.Module, Image: pinned(images[gm.Module], pins)})
 		}
 	}
 	for _, s := range r.data.Secrets {
@@ -181,4 +195,46 @@ func Managed(result contract.CheckResult, catalog contract.Catalog, templates co
 	}
 	slices.SortFunc(m.Secrets, func(a, b Secret) int { return strings.Compare(a.Path, b.Path) })
 	return m, nil
+}
+
+// references lists the distinct images of p's services, sorted by reference, each with every
+// service that runs it sorted by service (spec 0031): a module instance, a provision or revoke
+// job with its provider instance and capability (and a provision job's consumer), or mp_jobs.
+func references(p *types.Project, jobs map[string]job) []contract.ImageReference {
+	users := map[string][]contract.ImageUser{}
+	for name, svc := range p.Services {
+		u := contract.ImageUser{Service: name, Kind: contract.ImageUserKindModule, Instance: name}
+		if j, ok := jobs[name]; ok {
+			u = contract.ImageUser{
+				Service: name, Kind: contract.ImageUserKind(j.kind),
+				Instance: j.instance, Capability: j.capability, Consumer: j.consumer,
+			}
+		}
+		users[svc.Image] = append(users[svc.Image], u)
+	}
+	out := make([]contract.ImageReference, 0, len(users))
+	for _, ref := range sortedKeys(users) {
+		used := users[ref]
+		slices.SortFunc(used, func(a, b contract.ImageUser) int { return strings.Compare(a.Service, b.Service) })
+		out = append(out, contract.ImageReference{Reference: ref, UsedBy: used})
+	}
+	return out
+}
+
+// pinImages writes reference@digest on every service of p whose image has a pin.
+func pinImages(p *types.Project, pins map[string]string) {
+	for name, svc := range p.Services {
+		if img := pinned(svc.Image, pins); img != svc.Image {
+			svc.Image = img
+			p.Services[name] = svc
+		}
+	}
+}
+
+// pinned is image frozen by pins: reference@digest, or image itself when it has no pin.
+func pinned(image string, pins map[string]string) string {
+	if d, ok := pins[image]; ok {
+		return image + "@" + d
+	}
+	return image
 }

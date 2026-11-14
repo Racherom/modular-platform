@@ -23,7 +23,8 @@ const (
 type Container struct {
 	ID           string
 	Labels       map[string]string
-	Image        string
+	Image        string // the image as the container was created with it, a tag or reference@digest
+	ImageID      string // the ID of the image it runs
 	Status       string // created, running, paused, restarting, removing, exited or dead
 	Health       string // starting, healthy, unhealthy; empty without a healthcheck
 	ExitCode     int
@@ -32,13 +33,25 @@ type Container struct {
 	FinishedAt   time.Time
 }
 
-// Docker lists the containers of a Compose project, stopped ones included, and follows the die
-// and destroy events of deployed containers.
+// Docker lists the containers of a Compose project, stopped ones included, follows the die and
+// destroy events of deployed containers, and reads, tags and resolves images (spec 0031).
 type Docker interface {
 	Containers(ctx context.Context, project string) ([]Container, error)
 	// Events streams the die and destroy events of containers carrying the stack label,
 	// from since on, until ctx ends or the stream fails; then the error channel gets one error.
 	Events(ctx context.Context, since time.Time) (<-chan ExitEvent, <-chan error)
+	// ImageInspect reads the image name names (a tag, reference@digest or an image ID), or
+	// returns ErrImageNotFound.
+	ImageInspect(ctx context.Context, name string) (Image, error)
+	// ImageTag adds the tag target to the image source names.
+	ImageTag(ctx context.Context, source, target string) error
+	// ImageUntag removes the tag; Docker frees the image when nothing else holds it.
+	ImageUntag(ctx context.Context, tag string) error
+	// ImageTags lists every tag repository:<tag> on the host.
+	ImageTags(ctx context.Context, repository string) ([]string, error)
+	// DistributionDigest asks the registry which manifest digest ref names, without pulling. A
+	// failure is a *ResolveError.
+	DistributionDigest(ctx context.Context, ref string) (string, error)
 }
 
 // ModuleState is a module's state as the editor shows it.

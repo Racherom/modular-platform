@@ -85,9 +85,10 @@ func (p *Renderer) Render(ctx context.Context, g contract.Graph) (zip []byte, di
 	return nil, "", nil, rendererError("render", resp.StatusCode(), resp.Body)
 }
 
-// RenderManaged renders g for the stack; a check result with errors is a refusal.
-func (p *Renderer) RenderManaged(ctx context.Context, g contract.Graph, stack uuid.UUID) (contract.RenderedStack, error) {
-	resp, err := p.c.RenderManagedWithResponse(ctx, contract.ManagedRenderRequest{Graph: g, Stack: stack})
+// RenderManaged renders g for the stack with its images frozen by lock; a check result with
+// errors, or a lock the renderer refuses, is a refusal.
+func (p *Renderer) RenderManaged(ctx context.Context, g contract.Graph, stack uuid.UUID, lock []contract.ImagePin) (contract.RenderedStack, error) {
+	resp, err := p.c.RenderManagedWithResponse(ctx, contract.ManagedRenderRequest{Graph: g, Stack: stack, Lock: lock})
 	if err != nil {
 		return contract.RenderedStack{}, errors.Join(deploy.ErrRenderer, err)
 	}
@@ -197,4 +198,42 @@ func (t *Target) Secrets(ctx context.Context, composeProject string) ([]string, 
 		return nil, targetError("secrets", resp.StatusCode(), resp.Body)
 	}
 	return resp.JSON200.Present, nil
+}
+
+// Images reads the stack's image locks.
+func (t *Target) Images(ctx context.Context, composeProject string) (deploytarget.StackImages, error) {
+	resp, err := t.c.GetStackImagesWithResponse(ctx, composeProject)
+	if err != nil {
+		return deploytarget.StackImages{}, errors.Join(deploy.ErrTargetUnavailable, err)
+	}
+	switch {
+	case resp.JSON200 != nil:
+		return *resp.JSON200, nil
+	case resp.JSON409 != nil:
+		return deploytarget.StackImages{}, deploy.ErrBusy
+	case resp.JSON500 != nil:
+		return deploytarget.StackImages{}, fmt.Errorf("%w: %.200s", deploy.ErrLockInvalid, resp.Body)
+	}
+	return deploytarget.StackImages{}, targetError("images", resp.StatusCode(), resp.Body)
+}
+
+// Resolve asks the deploy target for each reference's registry digest.
+func (t *Target) Resolve(ctx context.Context, references []string) (deploytarget.ResolveResult, error) {
+	resp, err := t.c.ResolveImagesWithResponse(ctx, deploytarget.ResolveRequest{References: references})
+	if err != nil {
+		return deploytarget.ResolveResult{}, errors.Join(deploy.ErrTargetUnavailable, err)
+	}
+	if resp.JSON200 != nil {
+		return *resp.JSON200, nil
+	}
+	if resp.JSON400 != nil {
+		// a reference the deploy target refuses cannot be resolved: image_unresolved per reference
+		out := deploytarget.ResolveResult{}
+		for _, p := range resp.JSON400.Problems {
+			p.Code = "image_unresolved"
+			out.Problems = append(out.Problems, p)
+		}
+		return out, nil
+	}
+	return deploytarget.ResolveResult{}, targetError("resolve", resp.StatusCode(), resp.Body)
 }

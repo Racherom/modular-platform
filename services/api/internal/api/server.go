@@ -145,11 +145,16 @@ func (s *Server) ListOperations(ctx context.Context, req ListOperationsRequestOb
 
 // ReviewStack shows what an apply of the graph would run.
 func (s *Server) ReviewStack(ctx context.Context, req ReviewStackRequestObject) (ReviewStackResponseObject, error) {
-	r, err := s.deploy.Review(ctx, req.Name, req.Body.Graph)
+	r, err := s.deploy.Review(ctx, req.Name, req.Body.Graph, deploy.ImageOptions{CheckNewer: req.Body.CheckNewer, Update: req.Body.Update})
 	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
 		return ReviewStack422JSONResponse{RefusedJSONResponse{Problems: refused.Problems}}, nil
 	}
 	switch {
+	case errors.Is(err, deploy.ErrBusy):
+		return ReviewStack409JSONResponse(problems("busy", "", "An operation of this stack is still running; review again when it ends.")), nil
+	case errors.Is(err, deploy.ErrLockInvalid):
+		s.log.ErrorContext(ctx, "deploy target cannot read a stack's image lock", slog.Any("error", err))
+		return ReviewStack503JSONResponse{DeployerUnavailableJSONResponse(problems("lock_invalid", "", "The deployer cannot read this stack's image lock; see its log."))}, nil
 	case errors.Is(err, deploy.ErrRenderer):
 		return ReviewStack502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	case errors.Is(err, deploy.ErrTargetUnavailable), errors.Is(err, deploy.ErrTarget):
@@ -158,7 +163,10 @@ func (s *Server) ReviewStack(ctx context.Context, req ReviewStackRequestObject) 
 	case err != nil:
 		return nil, err
 	}
-	out := Review{Check: r.Check, Modules: r.Modules, Bindings: r.Check.Bindings, PublishedPorts: r.PublishedPorts, Placed: []PlacedCredential{}}
+	out := Review{
+		Check: r.Check, Digest: r.Digest, Modules: r.Modules, Images: reviewImages(r.Images), Bindings: r.Check.Bindings,
+		PublishedPorts: r.PublishedPorts, Placed: []PlacedCredential{},
+	}
 	if out.PublishedPorts == nil {
 		out.PublishedPorts = []contract.PublishedPort{}
 	}
@@ -178,7 +186,7 @@ func (s *Server) ApplyStack(ctx context.Context, req ApplyStackRequestObject) (A
 	for _, p := range req.Body.Placed {
 		placed = append(placed, deploy.PlacedInput{Path: p.Path, Value: p.Value, Replace: p.Replace})
 	}
-	op, err := s.deploy.Apply(ctx, by, req.Name, req.Body.Graph, req.Body.Digest, placed)
+	op, err := s.deploy.Apply(ctx, by, req.Name, req.Body.Graph, req.Body.Digest, deploy.ImageOptions{Update: req.Body.Update}, placed)
 	if refused, ok := errors.AsType[*deploy.RefusedError](err); ok {
 		return ApplyStack422JSONResponse{RefusedJSONResponse{Problems: refused.Problems}}, nil
 	}
@@ -187,7 +195,13 @@ func (s *Server) ApplyStack(ctx context.Context, req ApplyStackRequestObject) (A
 		return ApplyStack409JSONResponse(problems("busy", "", "An operation of this stack is still running.")), nil
 	case errors.Is(err, deploy.ErrGraphChanged):
 		return ApplyStack409JSONResponse(problems("graph_changed", "digest",
-			"The graph changed since you reviewed it, for example after a platform upgrade; review it again.")), nil
+			"The graph or an image version changed since your review. Review again.")), nil
+	case errors.Is(err, deploy.ErrLockInvalid):
+		s.log.ErrorContext(ctx, "deploy target cannot read a stack's image lock", slog.Any("error", err))
+		return ApplyStack503JSONResponse{DeployerUnavailableJSONResponse(problems("lock_invalid", "", "The deployer cannot read this stack's image lock; see its log."))}, nil
+	case errors.Is(err, deploy.ErrTargetUnavailable):
+		s.log.WarnContext(ctx, "deploy target failed before apply", slog.Any("error", err))
+		return ApplyStack503JSONResponse{DeployerUnavailableJSONResponse(problems("deployer_unavailable", "", "The deployer did not answer; try again."))}, nil
 	case errors.Is(err, deploy.ErrRenderer):
 		return ApplyStack502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	case errors.Is(err, deploy.ErrTarget):
@@ -196,6 +210,24 @@ func (s *Server) ApplyStack(ctx context.Context, req ApplyStackRequestObject) (A
 		return nil, err
 	}
 	return ApplyStack202JSONResponse(operation(op)), nil
+}
+
+// reviewImages maps the review's Images section onto the contract.
+func reviewImages(images []deploy.ReviewImage) []ReviewImage {
+	out := make([]ReviewImage, 0, len(images))
+	for _, img := range images {
+		users := make([]ReviewImageUser, 0, len(img.UsedBy))
+		for _, u := range img.UsedBy {
+			users = append(users, ReviewImageUser{
+				Kind: ReviewImageUserKind(u.Kind), Instance: u.Instance, Capability: u.Capability, Consumer: u.Consumer,
+			})
+		}
+		out = append(out, ReviewImage{
+			Reference: img.Reference, UsedBy: users, Digest: img.Digest, Change: ReviewImageChange(img.Change),
+			PreviousDigest: img.PreviousDigest, Available: img.Available, Present: img.Present,
+		})
+	}
+	return out
 }
 
 // RemoveStack removes a stack's containers, and with deleteData its data too.

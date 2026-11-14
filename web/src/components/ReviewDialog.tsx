@@ -5,13 +5,15 @@ import type { Graph } from '../api/client'
 import { ApiError, applyStack, isRefusal, type PlacedInput, reviewStack } from '../api/platform'
 import m from './Managed.module.css'
 import { ProblemList } from './ProblemList'
+import { ReviewImages } from './ReviewImages'
 import { Button } from './ui/Button'
 import { Failure } from './ui/Failure'
 
 /**
  * The review (spec 0006): what an apply of graph would run, the modules with their images, the
- * bindings, the published ports and a field for each placed credential. Deploy applies exactly
- * the reviewed check result; when the check result changed since, the dialog reviews again.
+ * image versions frozen for the apply (spec 0031), the bindings, the published ports and a field
+ * for each placed credential. Deploy applies exactly the reviewed check result and image
+ * versions; when either changed since, the dialog reviews again.
  */
 export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -19,18 +21,25 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
   const [values, setValues] = useState<Record<string, string>>({})
   const [replacing, setReplacing] = useState<Record<string, boolean>>({})
   const [notice, setNotice] = useState('')
-  const review = useQuery({ queryKey: ['review', graph], queryFn: () => reviewStack(graph), gcTime: 0 })
+  const [checkNewer, setCheckNewer] = useState(false)
+  const [update, setUpdate] = useState<string[]>([])
+  const review = useQuery({
+    queryKey: ['review', graph, checkNewer, update],
+    queryFn: () => reviewStack(graph, { checkNewer, update }),
+    gcTime: 0,
+    placeholderData: (previous) => previous,
+  })
   const apply = useMutation({
     mutationFn: () => {
       const placed: PlacedInput[] = (review.data?.placed ?? [])
         .filter((p) => !p.exists || replacing[p.path])
         .map((p) => ({ path: p.path, value: values[p.path] ?? '', replace: p.exists }))
-      return applyStack(graph, review.data?.check.digest ?? '', placed)
+      return applyStack(graph, review.data?.digest ?? '', placed, update)
     },
     onSuccess: () => void navigate({ to: '/stacks/$name', params: { name: graph.name } }),
     onError: (error) => {
       if (error instanceof ApiError && error.code === 'graph_changed') {
-        setNotice('The graph changed since you reviewed it, for example after a platform upgrade. Review it again below.')
+        setNotice('The graph or an image version changed since your review. Review it again below.')
         void review.refetch()
       }
     },
@@ -76,6 +85,15 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
                 </li>
               ))}
             </ul>
+            <ReviewImages
+              images={review.data.images}
+              update={update}
+              checking={review.isFetching}
+              onCheckNewer={() => setCheckNewer(true)}
+              onToggle={(reference, take) =>
+                setUpdate((u) => (take ? [...u.filter((r) => r !== reference), reference].sort() : u.filter((r) => r !== reference)))
+              }
+            />
             <h3>Bindings</h3>
             {review.data.bindings.length === 0 ? (
               <p>None.</p>

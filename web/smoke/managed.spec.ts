@@ -43,7 +43,10 @@ test('install, sign in, deploy the sample, see it running @deploy', async ({ pag
 
   await page.getByRole('button', { name: 'Deploy', exact: true }).click()
   const review = page.getByRole('dialog', { name: `Deploy ${stack}` })
-  await expect(review.getByText('traefik/whoami:v1.12.0')).toBeVisible()
+  // spec 0031: each image row shows its reference, a new one frozen at review time
+  const images = review.getByRole('list', { name: 'Images' })
+  await expect(images.getByText('traefik/whoami:v1.12.0', { exact: true })).toBeVisible()
+  await expect(images.getByTestId('image-traefik/whoami:v1.12.0').getByText('new', { exact: true })).toBeVisible()
   await review.getByRole('button', { name: 'Deploy', exact: true }).click()
 
   await expect(page).toHaveURL(new RegExp(`/stacks/${stack}$`))

@@ -2,6 +2,7 @@ package render_test
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -34,7 +35,7 @@ func TestGuardAcceptsEveryRender(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			p, catalog, tmpls := c.result(t)
-			m, err := render.Managed(p, catalog, tmpls, testStack)
+			m, err := render.Managed(p, catalog, tmpls, testStack, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -286,4 +287,19 @@ func fileData(t *testing.T, out render.Output, path string) []byte {
 	}
 	t.Fatalf("no %s in %s", path, out.Name)
 	return nil
+}
+
+// TestServiceImages reads each service's image, a pinned one included.
+func TestServiceImages(t *testing.T) {
+	t.Parallel()
+	compose := "name: mp-a\nservices:\n  a:\n    image: example.test/a:1@sha256:" + strings.Repeat("a", 64) + "\n  b:\n    image: example.test/b:2\n"
+	p, err := render.LoadProject(t.Context(), []byte(compose), deployEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := render.ServiceImages(p)
+	want := map[string]string{"a": "example.test/a:1@sha256:" + strings.Repeat("a", 64), "b": "example.test/b:2"}
+	if !maps.Equal(got, want) {
+		t.Errorf("ServiceImages = %v, want %v", got, want)
+	}
 }
