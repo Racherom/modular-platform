@@ -78,4 +78,10 @@ The cross check of this update (2026-11-13, a second model) found that a catalog
 
 ## Spike results (task 1)
 
-_Filled in by `/develop` when task 1 runs: `--policy missing` behavior offline, `DistributionInspect` digest versus `RepoDigests` for an image built for several platforms, and whether a digest only image with a keep tag survives `docker image prune -f`._
+Run on 2026-11-14 inside `docker:29.9.2-cli` (Compose v5.6.1) against Docker Engine 29.9.2 with the classic `overlay2` image store, and a local `registry:3` holding `busybox:1.37.0` and then `busybox:1.36.1` copied as OCI indexes for several platforms under one tag. The plan holds; the pull step stays `docker compose pull --policy missing`.
+
+- **`--policy missing` offline**: with `image: <reference>@<digest>` on the host and the registry container stopped, `pull --policy missing` printed `Skipped Image is already present locally` and exited 0, and `up` started the container.
+- **`DistributionInspect` versus `RepoDigests`**: the descriptor digest (`application/vnd.oci.image.index.v1+json`) equals the `RepoDigests` entry after a pull, so the index digest is what both sides record.
+- **Moved tag**: after a new image was pushed and pulled under the same tag, the old image kept its `RepoDigests` entry (only its tag moved), `ImageInspect(<reference>@<old digest>)` still found it, and an offline `pull --policy missing` of the old `reference@digest` skipped it. This is the AC-4 path.
+- **Keep tag and prune**: an image whose only tag is `localhost/mp-keep/<project>:<hex>` survived `docker image prune -f`.
+- **`present` and the pull step agree**: removing the reference tag also dropped the image's repo digest on this store, while the keep tag kept the image. `ImageInspect(<reference>@<digest>)` then failed (`present: false`), and with the registry back `pull --policy missing` pulled it again by digest, after which the inspect succeeded.
