@@ -1,5 +1,5 @@
 # Verify: Frozen image versions for apply and rollback · spec 0031 · updated 2026-11-13
-_Steps derived from spec 0031 acceptance criteria and its Value sourcing table. `/check verify` runs these; `/test` locks the durable ones._
+_Steps derived from spec 0031 acceptance criteria and its Value sourcing table; the last three commands were added by /develop on 2026-11-14. `/check verify` runs these; `/test` locks the durable ones._
 
 Each step uses a local registry, so nothing waits for a public registry: `docker run -d --name mp-registry -p 5000:5000 registry:3`, a test catalog module `whoami-local` with image `localhost:5000/mp-test/whoami:v1`, and two images pushed under that tag in turn (a good one, and a broken one whose healthcheck always fails). "Registry off" means `docker stop mp-registry`.
 
@@ -28,3 +28,6 @@ Each step uses a local registry, so nothing waits for a public registry: `docker
 - [ ] `POST /v1/stacks/mp-<stack>/apply` straight to the deployer with `image: localhost:5000/mp-test/whoami:v1` (no digest): accepted; the lock entry carries the repo digest → AC-12
 - [ ] `go test -race ./libs/render/...` and `./libs/contract/...`: the Compose goldens without a lock are unchanged (only `managed.json` gains `References`), and `references` equals the set of `image:` values of each managed golden; the freeze rule and review digest table tests pass → AC-13, AC-7, AC-14
 - [ ] Without the caller key, `GET /v1/stacks/<stack>/images` and `POST /v1/images/resolve` answer 401 → AC-5, AC-9
+- [ ] Write `{` into `<MP_DIR>/mp-<stack>/images.previous.lock`, then `GET /v1/stacks/mp-<stack>/images` with the caller key: 500 `lock_invalid` naming that file; a review of the stack answers 503 `lock_invalid` → AC-1, AC-9
+- [ ] With `images.lock` broken, take a broken image with `update` and apply: the apply fails at `up`, and the rollback ends `failed` with error text starting `lock_invalid`, starting nothing on the host → AC-4
+- [ ] `POST /api/v1/stacks/<name>/review` with `"checkNewer":true,"update":[...]` and `POST …/apply` with `"update":[...]` pass the api's strict body check; `checkNewer` on apply answers 400 `invalid_request` → AC-6, AC-7
