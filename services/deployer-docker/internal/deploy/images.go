@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/distribution/reference"
 
@@ -286,12 +287,40 @@ func (e *Engine) writeLock(dir, name string, l contract.ImageLock) error {
 	return e.writeAtomic(dir, name, data)
 }
 
-func (e *Engine) writeAtomic(dir, name string, data []byte) error {
-	tmp := "." + name + ".tmp"
-	if err := e.writeFile(dir, tmp, data, 0o644, false); err != nil {
+// writeAtomic writes data as name in dir through a temp file it syncs before the rename, then
+// syncs dir, so a crash leaves either the old file or the whole new one, never a short one. A
+// failure removes the temp file.
+func (e *Engine) writeAtomic(dir, name string, data []byte) (err error) {
+	tmp := filepath.Join(dir, "."+name+".tmp")
+	defer func() {
+		if err != nil {
+			_ = os.Remove(tmp)
+		}
+	}()
+	if err := e.writeFile(dir, filepath.Base(tmp), data, 0o644, false); err != nil {
 		return err
 	}
-	return os.Rename(filepath.Join(dir, tmp), filepath.Join(dir, name))
+	if err := syncPath(tmp); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, filepath.Join(dir, name)); err != nil {
+		return err
+	}
+	return syncPath(dir)
+}
+
+// syncPath flushes the file or folder at path to disk; it refuses a link.
+func syncPath(path string) error {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0) //nolint:gosec // path is the lock's temp file or the project folder the caller already checked
+	if err != nil {
+		return fmt.Errorf("sync %s: %w", filepath.Base(path), err)
+	}
+	serr := f.Sync()
+	cerr := f.Close()
+	if err := errors.Join(serr, cerr); err != nil {
+		return fmt.Errorf("sync %s: %w", filepath.Base(path), err)
+	}
+	return nil
 }
 
 // lockStepError names the step of the lock bookkeeping that failed.
@@ -518,7 +547,7 @@ func (e *ResolveError) Unwrap() error { return e.Err }
 // timeout: a reference still open then is unresolved with reason timeout. It returns ErrDocker
 // when the container engine does not answer.
 func (e *Engine) Resolve(ctx context.Context, refs []string) (Resolved, error) {
-	ctx, cancel := context.WithTimeout(ctx, e.cfg.ResolveTimeout)
+	ctx, cancel := context.WithTimeoutCause(ctx, e.cfg.ResolveTimeout, errResolveTimeout)
 	defer cancel()
 	digests := make([]string, len(refs))
 	errs := make([]error, len(refs))
@@ -562,10 +591,17 @@ func (e *Engine) Resolve(ctx context.Context, refs []string) (Resolved, error) {
 	return out, nil
 }
 
-// resolveReason says in plain words why a lookup failed.
+// errResolveTimeout is the cause of Resolve's context when the resolve timeout ran out.
+var errResolveTimeout = errors.New("resolve timeout")
+
+// resolveReason says in plain words why a lookup failed. ctx is Resolve's own context: the
+// reason is timeout only when the resolve timeout ended it, not when the caller went away.
 func resolveReason(ctx context.Context, err error) string {
-	if errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+	switch {
+	case errors.Is(context.Cause(ctx), errResolveTimeout):
 		return "timeout: the registry did not answer within the resolve timeout"
+	case ctx.Err() != nil:
+		return "the request ended before the registry answered"
 	}
 	re, _ := errors.AsType[*ResolveError](err)
 	switch {

@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/racherom/modular-platform/libs/contract"
 	"github.com/racherom/modular-platform/services/deployer-docker/internal/deploy"
@@ -409,6 +413,145 @@ func TestResolve(t *testing.T) {
 	}
 	if len(got.Unresolved) != 1 || got.Unresolved[0].Index != 1 || !strings.Contains(got.Unresolved[0].Reason, "no image with this tag") {
 		t.Errorf("unresolved = %+v", got.Unresolved)
+	}
+}
+
+// resolveDocker is fakeDocker with a DistributionDigest the test scripts.
+type resolveDocker struct {
+	fakeDocker
+	digest func(ctx context.Context, ref string) (string, error)
+}
+
+func (d resolveDocker) DistributionDigest(ctx context.Context, ref string) (string, error) {
+	return d.digest(ctx, ref)
+}
+
+// newResolveEngine builds an engine whose registry lookups run digest, ending after timeout.
+func newResolveEngine(t *testing.T, timeout time.Duration, digest func(context.Context, string) (string, error)) *deploy.Engine {
+	t.Helper()
+	e := deploy.New(t.Context(), deploy.Config{
+		Dir: t.TempDir(), UID: os.Getuid(), GID: os.Getgid(), PullTimeout: time.Minute, WaitTimeout: 30 * time.Second,
+		ResolveTimeout: timeout, ReservedPorts: []int{80, 443},
+	}, &fakeCompose{}, resolveDocker{digest: digest}, slog.New(slog.DiscardHandler))
+	t.Cleanup(e.Wait)
+	return e
+}
+
+// TestResolveRunsFourAtOnce covers the resolve endpoint's limit (spec 0031): of eight blocked
+// lookups, four run at once and never more; once released, all eight are resolved.
+func TestResolveRunsFourAtOnce(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	running, most := 0, 0
+	reached := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	e := newResolveEngine(t, 10*time.Second, func(ctx context.Context, _ string) (string, error) {
+		mu.Lock()
+		running++
+		most = max(most, running)
+		if running == 4 {
+			once.Do(func() { close(reached) })
+		}
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			running--
+			mu.Unlock()
+		}()
+		select {
+		case <-release:
+			return sha("a"), nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	})
+	refs := make([]string, 8)
+	for n := range refs {
+		refs[n] = fmt.Sprintf("r.test/x:%d", n)
+	}
+	done := make(chan deploy.Resolved)
+	go func() {
+		got, err := e.Resolve(t.Context(), refs)
+		if err != nil {
+			t.Error(err)
+		}
+		done <- got
+	}()
+	select {
+	case <-reached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("four lookups never ran at once")
+	}
+	time.Sleep(50 * time.Millisecond) // a fifth lookup, if the limit were missing, would start now
+	close(release)
+	got := <-done
+	mu.Lock()
+	defer mu.Unlock()
+	if most != 4 {
+		t.Errorf("at most %d lookups ran at once, want 4", most)
+	}
+	if len(got.Images) != len(refs) || len(got.Unresolved) != 0 {
+		t.Errorf("resolved %d, unresolved %+v", len(got.Images), got.Unresolved)
+	}
+}
+
+// TestResolveTimeout covers MP_RESOLVE_TIMEOUT: lookups still open when it runs out are
+// unresolved with reason timeout, and the ones that answered are returned.
+func TestResolveTimeout(t *testing.T) {
+	t.Parallel()
+	e := newResolveEngine(t, 100*time.Millisecond, func(ctx context.Context, ref string) (string, error) {
+		if strings.HasPrefix(ref, "fast.test/") {
+			return sha("f"), nil
+		}
+		<-ctx.Done()
+		return "", &deploy.ResolveError{Kind: deploy.ResolveOther, Err: ctx.Err()}
+	})
+	got, err := e.Resolve(t.Context(), []string{"slow.test/x:1", "fast.test/x:1", "slow.test/x:2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []contract.ImagePin{{Reference: "fast.test/x:1", Digest: sha("f")}}; !slices.Equal(got.Images, want) {
+		t.Errorf("images = %+v", got.Images)
+	}
+	if len(got.Unresolved) != 2 {
+		t.Fatalf("unresolved = %+v", got.Unresolved)
+	}
+	for _, u := range got.Unresolved {
+		if !strings.HasPrefix(u.Reason, "timeout") {
+			t.Errorf("%s: reason = %q, want timeout", u.Reference, u.Reason)
+		}
+	}
+}
+
+// TestResolveCallerGone covers resolveReason: a caller that goes away is not reported as the
+// resolve timeout.
+func TestResolveCallerGone(t *testing.T) {
+	t.Parallel()
+	e := newResolveEngine(t, 10*time.Second, func(ctx context.Context, _ string) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	got, err := e.Resolve(ctx, []string{"slow.test/x:1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Unresolved) != 1 || strings.HasPrefix(got.Unresolved[0].Reason, "timeout") {
+		t.Errorf("unresolved = %+v, want a reason other than timeout", got.Unresolved)
+	}
+}
+
+// TestResolveNoEngine covers the resolve endpoint's 503: a container engine that does not answer
+// fails the whole call with ErrDocker instead of listing unresolved references.
+func TestResolveNoEngine(t *testing.T) {
+	t.Parallel()
+	e := newResolveEngine(t, 10*time.Second, func(context.Context, string) (string, error) {
+		return "", &deploy.ResolveError{Kind: deploy.ResolveNoEngine, Err: errors.New("connection refused")}
+	})
+	if _, err := e.Resolve(t.Context(), []string{"a.test/x:1"}); !errors.Is(err, deploy.ErrDocker) {
+		t.Errorf("err = %v, want ErrDocker", err)
 	}
 }
 
