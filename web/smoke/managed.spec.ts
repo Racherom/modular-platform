@@ -47,6 +47,8 @@ test('install, sign in, deploy the sample, see it running @deploy', async ({ pag
   const images = review.getByRole('list', { name: 'Images' })
   await expect(images.getByText('traefik/whoami:v1.12.0', { exact: true })).toBeVisible()
   await expect(images.getByTestId('image-traefik/whoami:v1.12.0').getByText('new', { exact: true })).toBeVisible()
+  // the full @sha256: digests wrap inside the dialog instead of running past its right edge
+  expect(await review.evaluate((d) => d.scrollWidth - d.clientWidth)).toBe(0)
   await review.getByRole('button', { name: 'Deploy', exact: true }).click()
 
   await expect(page).toHaveURL(new RegExp(`/stacks/${stack}$`))

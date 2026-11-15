@@ -187,6 +187,11 @@
   font-size: var(--text-sm);
 }
 
+/* an image with its full digest is one unbreakable word; without this it widens the form's grid track past the dialog */
+.dialog code {
+  overflow-wrap: anywhere;
+}
+
 .list {
   margin: 0;
   padding-left: var(--space-5);
