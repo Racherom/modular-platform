@@ -147,7 +147,8 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
               ))}
             <div className={m.actions}>
               <Button onPress={() => dialog.current?.close()}>Cancel</Button>
-              <Button type="submit" variant="primary" isDisabled={!complete || apply.isPending || review.isFetching}>
+              {/* a failed refresh keeps the last review on screen; its digest no longer matches the ticks, so no deploy from it */}
+              <Button type="submit" variant="primary" isDisabled={!complete || apply.isPending || review.isFetching || review.isError}>
                 {apply.isPending ? 'Deploying…' : 'Deploy'}
               </Button>
             </div>

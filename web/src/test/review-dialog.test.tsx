@@ -133,4 +133,27 @@ describe('ReviewDialog images (spec 0031)', () => {
     await waitFor(() => expect(reviews).toHaveLength(2))
     expect(navigate).not.toHaveBeenCalled()
   })
+
+  it('a failed refresh of the same review keeps it on screen with its problem, and Deploy stays disabled', async () => {
+    applyAnswer = () =>
+      Response.json({ problems: [{ severity: 'error', code: 'graph_changed', path: 'digest', message: 'Review again.' }] }, { status: 409 })
+    const answer = fetchHandler.current
+    fetchHandler.current = async (req) => {
+      const url = new URL(req.url)
+      if (req.method === 'POST' && url.pathname === '/api/v1/stacks/demo/review' && reviews.length > 0) {
+        reviews.push((await req.json()) as ReviewBody)
+        const message = 'An operation of this stack is still running; review again when it ends.'
+        return Response.json({ problems: [{ severity: 'error', code: 'busy', path: '', message }] }, { status: 409 })
+      }
+      return answer(req)
+    }
+    show()
+    await screen.findByText('frozen')
+    fireEvent.click(screen.getByRole('button', { name: 'Deploy' }))
+    await waitFor(() => expect(reviews).toHaveLength(2))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Deploy' }).hasAttribute('disabled')).toBe(true))
+    expect(screen.getByText('frozen')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Deploy' }))
+    expect(applies).toHaveLength(1)
+  })
 })
