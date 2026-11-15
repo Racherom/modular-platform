@@ -150,6 +150,9 @@ func failureText(err error) string {
 	}
 	switch {
 	case errors.Is(err, ErrLockInvalid):
+		if l, ok := errors.AsType[*LockInvalidError](err); ok && l.File != "" {
+			return "lock_invalid: the deploy target cannot read " + l.File
+		}
 		return "lock_invalid"
 	case errors.Is(err, ErrTargetUnavailable):
 		return "deployer_unavailable"

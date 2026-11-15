@@ -212,7 +212,13 @@ func (t *Target) Images(ctx context.Context, composeProject string) (deploytarge
 	case resp.JSON409 != nil:
 		return deploytarget.StackImages{}, deploy.ErrBusy
 	case resp.JSON500 != nil:
-		return deploytarget.StackImages{}, fmt.Errorf("%w: %.200s", deploy.ErrLockInvalid, resp.Body)
+		lerr := &deploy.LockInvalidError{Err: fmt.Errorf("%.200s", resp.Body)}
+		for _, p := range resp.JSON500.Problems {
+			if p.Path == deploy.LockFile || p.Path == deploy.PreviousLockFile {
+				lerr.File = p.Path
+			}
+		}
+		return deploytarget.StackImages{}, lerr
 	}
 	return deploytarget.StackImages{}, targetError("images", resp.StatusCode(), resp.Body)
 }

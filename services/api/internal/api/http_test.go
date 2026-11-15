@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/racherom/modular-platform/services/api/internal/deploy"
 	"github.com/racherom/modular-platform/services/api/internal/signin"
 )
 
@@ -115,5 +116,29 @@ func TestRetiredRoutesAre404(t *testing.T) {
 				t.Errorf("%s %s: status %d %s, want 404", tc.method, tc.path, rec.Code, rec.Body)
 			}
 		})
+	}
+}
+
+// TestLockInvalidProblem covers the 503 lock_invalid of review and apply (spec 0031): the
+// message names the broken file and how to recover, and falls back when no file is known.
+func TestLockInvalidProblem(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		err  error
+		want []string
+	}{
+		"current":  {&deploy.LockInvalidError{File: deploy.LockFile}, []string{"cannot read images.lock", "running containers"}},
+		"previous": {&deploy.LockInvalidError{File: deploy.PreviousLockFile}, []string{"cannot read images.previous.lock", "next apply"}},
+		"unknown":  {deploy.ErrLockInvalid, []string{"this stack's image lock", "deployer log names it"}},
+	} {
+		got := lockInvalidProblem(tc.err).Problems[0]
+		if got.Code != "lock_invalid" {
+			t.Errorf("%s: code = %q", name, got.Code)
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(got.Message, w) {
+				t.Errorf("%s: message %q lacks %q", name, got.Message, w)
+			}
+		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,6 +36,31 @@ var (
 	// ErrTarget reports a deploy target that answered outside its contract: a wiring fault.
 	ErrTarget = errors.New("deploy: the deploy target answered unexpectedly")
 )
+
+// The lock files of a stack on the deploy target (spec 0031).
+const (
+	LockFile         = "images.lock"
+	PreviousLockFile = "images.previous.lock"
+)
+
+// LockInvalidError is ErrLockInvalid naming the lock file the deploy target cannot read: File is
+// LockFile, PreviousLockFile, or empty when the target did not name a known file.
+type LockInvalidError struct {
+	File string
+	Err  error
+}
+
+func (e *LockInvalidError) Error() string {
+	if e.File == "" {
+		return fmt.Sprintf("%v: %v", ErrLockInvalid, e.Err)
+	}
+	return fmt.Sprintf("%v: %s: %v", ErrLockInvalid, e.File, e.Err)
+}
+
+// Is makes errors.Is(err, ErrLockInvalid) hold.
+func (e *LockInvalidError) Is(target error) bool { return target == ErrLockInvalid }
+
+func (e *LockInvalidError) Unwrap() error { return e.Err }
 
 // RefusedError lists why a review or apply was refused; nothing happened.
 type RefusedError struct {

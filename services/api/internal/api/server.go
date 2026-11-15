@@ -154,7 +154,7 @@ func (s *Server) ReviewStack(ctx context.Context, req ReviewStackRequestObject) 
 		return ReviewStack409JSONResponse(problems("busy", "", "An operation of this stack is still running; review again when it ends.")), nil
 	case errors.Is(err, deploy.ErrLockInvalid):
 		s.log.ErrorContext(ctx, "deploy target cannot read a stack's image lock", slog.Any("error", err))
-		return ReviewStack503JSONResponse{DeployerUnavailableJSONResponse(problems("lock_invalid", "", "The deployer cannot read this stack's image lock; see its log."))}, nil
+		return ReviewStack503JSONResponse{DeployerUnavailableJSONResponse(lockInvalidProblem(err))}, nil
 	case errors.Is(err, deploy.ErrRenderer):
 		return ReviewStack502JSONResponse{RendererErrorJSONResponse(s.rendererProblem(ctx, err))}, nil
 	case errors.Is(err, deploy.ErrTargetUnavailable), errors.Is(err, deploy.ErrTarget):
@@ -198,7 +198,7 @@ func (s *Server) ApplyStack(ctx context.Context, req ApplyStackRequestObject) (A
 			"The graph or an image version changed since your review. Review again.")), nil
 	case errors.Is(err, deploy.ErrLockInvalid):
 		s.log.ErrorContext(ctx, "deploy target cannot read a stack's image lock", slog.Any("error", err))
-		return ApplyStack503JSONResponse{DeployerUnavailableJSONResponse(problems("lock_invalid", "", "The deployer cannot read this stack's image lock; see its log."))}, nil
+		return ApplyStack503JSONResponse{DeployerUnavailableJSONResponse(lockInvalidProblem(err))}, nil
 	case errors.Is(err, deploy.ErrTargetUnavailable):
 		s.log.WarnContext(ctx, "deploy target failed before apply", slog.Any("error", err))
 		return ApplyStack503JSONResponse{DeployerUnavailableJSONResponse(problems("deployer_unavailable", "", "The deployer did not answer; try again."))}, nil
@@ -283,6 +283,25 @@ func badLimit() contract.ProblemList {
 
 func notFound(name string) contract.ProblemList {
 	return problems("not_found", "name", fmt.Sprintf("No stack is named %q.", name))
+}
+
+// lockInvalidProblem tells the admin which lock file the deployer cannot read and how to recover
+// (spec 0031): without images.lock the deployer reads the versions from the running containers
+// again; without images.previous.lock the next apply writes a new one.
+func lockInvalidProblem(err error) contract.ProblemList {
+	file := "this stack's image lock"
+	fix := "Delete the broken lock file in the stack's folder on the host; the deployer log names it."
+	if l, ok := errors.AsType[*deploy.LockInvalidError](err); ok {
+		switch l.File {
+		case deploy.LockFile:
+			file = deploy.LockFile
+			fix = "Delete it in the stack's folder on the host: the deployer then reads the image versions from the running containers again."
+		case deploy.PreviousLockFile:
+			file = deploy.PreviousLockFile
+			fix = "Delete it in the stack's folder on the host: a rollback then has no older versions to start until the next apply writes it again."
+		}
+	}
+	return problems("lock_invalid", "", fmt.Sprintf("The deployer cannot read %s. %s", file, fix))
 }
 
 func problems(code, path, message string) contract.ProblemList {

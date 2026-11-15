@@ -225,14 +225,14 @@ func TestRollbackLockUnreadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	target.mu.Lock()
-	target.imagesErr = deploy.ErrLockInvalid
+	target.imagesErr = &deploy.LockInvalidError{File: deploy.LockFile, Err: errors.New("unexpected end of JSON input")}
 	target.mu.Unlock()
 	waitFinal(t, st, op)
 	waitFor(t, "a failed rollback", func() bool {
 		ops := history(t, st)
 		return len(ops) == 3 && ops[2].Status == deploy.StatusFailed
 	})
-	if rb := history(t, st)[2]; rb.RollbackOf == nil || !strings.HasPrefix(rb.Error, "lock_invalid") {
+	if rb := history(t, st)[2]; rb.RollbackOf == nil || rb.Error != "lock_invalid: the deploy target cannot read images.lock" {
 		t.Errorf("rollback = %+v", rb)
 	}
 	target.mu.Lock()
