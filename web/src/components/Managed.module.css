@@ -198,6 +198,13 @@
   font-size: var(--text-sm);
 }
 
+.note {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
 .field {
   display: grid;
   gap: var(--space-1);

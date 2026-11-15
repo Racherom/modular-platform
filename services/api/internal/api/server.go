@@ -224,7 +224,7 @@ func reviewImages(images []deploy.ReviewImage) []ReviewImage {
 		}
 		out = append(out, ReviewImage{
 			Reference: img.Reference, UsedBy: users, Digest: img.Digest, Change: ReviewImageChange(img.Change),
-			PreviousDigest: img.PreviousDigest, Available: img.Available, Present: img.Present,
+			PreviousDigest: img.PreviousDigest, Available: img.Available, CheckFailed: img.CheckFailed, Present: img.Present,
 		})
 	}
 	return out

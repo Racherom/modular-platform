@@ -89,7 +89,8 @@ export function ReviewDialog({ graph, onClose }: { graph: Graph; onClose: () => 
               images={review.data.images}
               update={update}
               checking={review.isFetching}
-              onCheckNewer={() => setCheckNewer(true)}
+              // pressed again, the button asks the registry again (a failed check is retried)
+              onCheckNewer={() => (checkNewer ? void review.refetch() : setCheckNewer(true))}
               onToggle={(reference, take) =>
                 setUpdate((u) => (take ? [...u.filter((r) => r !== reference), reference].sort() : u.filter((r) => r !== reference)))
               }

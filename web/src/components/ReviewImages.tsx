@@ -40,6 +40,7 @@ function ImageBadge({ image }: { image: ReviewImage }) {
         <>
           <Badge>frozen</Badge>
           {image.available && <Badge tone="info">newer available</Badge>}
+          {image.checkFailed && <Badge tone="warning">check failed</Badge>}
           {!image.present && <Badge tone="warning">not on this host, pulled by digest at apply</Badge>}
         </>
       )
@@ -49,7 +50,8 @@ function ImageBadge({ image }: { image: ReviewImage }) {
 /**
  * The review's Images section (spec 0031): one row per image reference with what runs it, the
  * short digest the apply runs, and its badge. A row with a newer version (or one you already
- * took) has a tick box; ticking or unticking reviews again with the new update list.
+ * took) has a tick box; ticking or unticking reviews again with the new update list. A row whose
+ * lookup failed says why and has no tick box: a failed check never reads as "nothing newer".
  */
 export function ReviewImages({
   images,
@@ -73,12 +75,13 @@ export function ReviewImages({
           return (
             <li key={img.reference} data-testid={`image-${img.reference}`}>
               <code>{img.reference}</code> at <code title={img.digest}>{shortDigest(img.digest)}</code> <ImageBadge image={img} />
+              {img.checkFailed && <p className={m.note}>could not check for a newer version: {img.checkFailed}</p>}
               <ul className={m.list}>
                 {img.usedBy.map((u) => (
                   <li key={`${u.kind}.${u.instance}.${u.capability}.${u.consumer}`}>used by {usedByText(u)}</li>
                 ))}
               </ul>
-              {(img.available || ticked) && (
+              {!img.checkFailed && (img.available || ticked) && (
                 <label className={m.check}>
                   <input type="checkbox" checked={ticked} disabled={checking} onChange={(e) => onToggle(img.reference, e.target.checked)} />{' '}
                   Take the newer version of {img.reference}

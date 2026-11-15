@@ -727,6 +727,12 @@ components:
         available:
           type: string
           description: With `checkNewer`, the registry's digest when it differs from `digest`.
+        checkFailed:
+          type: string
+          description: >-
+            With `checkNewer`, on a `frozen` row not named in `update` whose registry lookup
+            failed: the reason alone in plain words. Never set together with `available`; a failed
+            lookup does not mean nothing newer exists.
         present:
           type: boolean
           description: False when the image is not on the host; the apply pulls it by digest.

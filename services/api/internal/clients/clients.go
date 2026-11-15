@@ -233,13 +233,8 @@ func (t *Target) Resolve(ctx context.Context, references []string) (deploytarget
 		return *resp.JSON200, nil
 	}
 	if resp.JSON400 != nil {
-		// a reference the deploy target refuses cannot be resolved: image_unresolved per reference
-		out := deploytarget.ResolveResult{}
-		for _, p := range resp.JSON400.Problems {
-			p.Code = "image_unresolved"
-			out.Problems = append(out.Problems, p)
-		}
-		return out, nil
+		// the call as a whole was refused; the review maps it to image_unresolved per reference
+		return deploytarget.ResolveResult{}, &deploy.ResolveRefusedError{Problems: resp.JSON400.Problems}
 	}
 	return deploytarget.ResolveResult{}, targetError("resolve", resp.StatusCode(), resp.Body)
 }

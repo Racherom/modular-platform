@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/racherom/modular-platform/libs/contract"
+	"github.com/racherom/modular-platform/libs/target/deploytarget"
 )
 
 // resolveTimeout is the longest api waits for one resolve call; the deploy target's own
@@ -25,13 +27,15 @@ const (
 
 // frozen is a graph's render with every image frozen: the render without a lock (its
 // references are the lock keys), the frozen digests, the current lock's entries and presence,
-// the registry's digest of each frozen reference checkNewer asked about, and the review digest.
+// the registry's digest of each frozen reference checkNewer asked about, the reason of each
+// such lookup that failed, and the review digest.
 type frozen struct {
-	plain     contract.RenderedStack
-	images    []contract.FrozenImage
-	present   map[string]bool
-	available map[string]string
-	digest    string
+	plain       contract.RenderedStack
+	images      []contract.FrozenImage
+	present     map[string]bool
+	available   map[string]string
+	checkFailed map[string]string
+	digest      string
 }
 
 // pins is the lock the managed render takes.
@@ -40,8 +44,10 @@ func (f frozen) pins() []contract.ImagePin { return contract.Pins(f.images) }
 // freeze renders g for stack and freezes each of its image references (spec 0031, "the freeze
 // rule"): a reference in the stack's current lock keeps its digest unless opts.Update names it;
 // any other is resolved at the registry. With opts.CheckNewer it also asks the registry about
-// every frozen reference. An update entry the graph does not run is invalid_update, a reference
-// the registry cannot resolve image_unresolved, both as a *RefusedError.
+// every frozen reference; a frozen reference whose lookup fails keeps its digest and carries the
+// reason as checkFailed. An update entry the graph does not run is invalid_update, a reference
+// that must be resolved and cannot be image_unresolved, both as a *RefusedError; a resolve call
+// the deploy target refuses as a whole refuses the review for every reference it asked about.
 func (s *Service) freeze(ctx context.Context, g contract.Graph, stack uuid.UUID, opts ImageOptions) (frozen, error) {
 	plain, err := s.renderer.RenderManaged(ctx, g, stack, nil)
 	if err != nil {
@@ -74,33 +80,45 @@ func (s *Service) freeze(ctx context.Context, g contract.Graph, stack uuid.UUID,
 	if opts.CheckNewer {
 		ask = slices.Compact(slices.Sorted(slices.Values(refs)))
 	}
-	resolved, failed, err := s.resolve(ctx, ask)
+	lk, err := s.resolve(ctx, ask)
 	if err != nil {
 		return frozen{}, err
 	}
-	for _, ref := range need {
-		if reason, ok := failed[ref]; ok {
+	refuse := need
+	if lk.refused {
+		refuse = ask
+	}
+	for _, ref := range refuse {
+		if reason, ok := lk.failed[ref]; ok {
 			bad = append(bad, unresolved(ref, users[ref], reason))
 		}
 	}
 	if len(bad) > 0 {
 		return frozen{}, &RefusedError{Problems: bad}
 	}
-	images, err := contract.Freeze(refs, current, resolved, opts.Update)
+	images, err := contract.Freeze(refs, current, lk.resolved, opts.Update)
 	if err != nil {
 		return frozen{}, fmt.Errorf("deploy: %w", err) // every reference of need resolved or was refused above
 	}
-	f := frozen{plain: plain, images: images, present: present, available: map[string]string{}}
+	f := frozen{plain: plain, images: images, present: present, available: map[string]string{}, checkFailed: map[string]string{}}
 	counts := map[contract.ImageChange]int{}
 	for _, img := range images {
 		counts[img.Change]++
-		if d, ok := resolved[img.Reference]; ok && opts.CheckNewer && d != img.Digest {
+		if !opts.CheckNewer {
+			continue
+		}
+		if d, ok := lk.resolved[img.Reference]; ok && d != img.Digest {
 			f.available[img.Reference] = d
+		}
+		// only a frozen reference not named in update gets here unresolved: need was refused above
+		if reason, ok := lk.failed[img.Reference]; ok && img.Change == contract.ChangeFrozen {
+			f.checkFailed[img.Reference] = strings.TrimPrefix(reason, img.Reference+": ")
 		}
 	}
 	f.digest = contract.ReviewDigest(plain.Check.Digest, f.pins())
 	s.log.InfoContext(ctx, "images resolved", slog.String("stack", g.Name), slog.Int("new", counts[contract.ChangeNew]),
-		slog.Int("updated", counts[contract.ChangeUpdated]), slog.Int("available", len(f.available)))
+		slog.Int("updated", counts[contract.ChangeUpdated]), slog.Int("available", len(f.available)),
+		slog.Int("check_failed", len(f.checkFailed)))
 	return f, nil
 }
 
@@ -126,19 +144,33 @@ func (s *Service) currentLock(ctx context.Context, composeProject string) ([]con
 	return current, present, nil
 }
 
-// resolve asks the deploy target for the digest of each of refs; the second map holds the
-// reason of each reference that failed.
-func (s *Service) resolve(ctx context.Context, refs []string) (map[string]string, map[string]string, error) {
-	resolved, failed := map[string]string{}, map[string]string{}
+// lookup is the answer of one resolve call: the digest of each reference the registry
+// resolved, the reason (`<reference>: <reason>`) of each that failed, and whether the deploy
+// target refused the call as a whole.
+type lookup struct {
+	resolved map[string]string
+	failed   map[string]string
+	refused  bool
+}
+
+// resolve asks the deploy target for the digest of each of refs. A call the deploy target
+// refuses as a whole (*ResolveRefusedError) is a lookup with refused set and every reference
+// failed; any other error ends the review.
+func (s *Service) resolve(ctx context.Context, refs []string) (lookup, error) {
+	lk := lookup{resolved: map[string]string{}, failed: map[string]string{}}
 	if len(refs) == 0 {
-		return resolved, failed, nil
+		return lk, nil
 	}
 	tctx, cancel := context.WithTimeout(ctx, resolveTimeout)
 	defer cancel()
 	res, err := s.target.Resolve(tctx, refs)
-	if err != nil {
-		return nil, nil, err
+	if rerr, ok := errors.AsType[*ResolveRefusedError](err); ok {
+		res, err, lk.refused = deploytarget.ResolveResult{Problems: rerr.Problems}, nil, true
 	}
+	if err != nil {
+		return lookup{}, err
+	}
+	resolved, failed := lk.resolved, lk.failed
 	for _, img := range res.Images {
 		resolved[img.Reference] = img.Digest
 	}
@@ -153,7 +185,7 @@ func (s *Service) resolve(ctx context.Context, refs []string) (map[string]string
 			failed[ref] = ref + ": the deployer gave no digest."
 		}
 	}
-	return resolved, failed, nil
+	return lk, nil
 }
 
 // unresolved is the image_unresolved problem of ref, naming what uses it.
@@ -205,6 +237,7 @@ func (f frozen) reviewImages() []ReviewImage {
 		out = append(out, ReviewImage{
 			Reference: img.Reference, UsedBy: reviewUsers(users[img.Reference]), Digest: img.Digest,
 			Change: img.Change, PreviousDigest: img.PreviousDigest, Available: f.available[img.Reference],
+			CheckFailed: f.checkFailed[img.Reference],
 			// a reference the lock does not hold is pulled at apply; only a frozen one can be missing
 			Present: !known || present || img.Change != contract.ChangeFrozen,
 		})

@@ -297,11 +297,15 @@ type fakeTarget struct {
 	stateReads   int
 	stateCallers []string
 	// lock is the images read's current lock; imagesErr fails it. registry answers resolve,
-	// whoamiRef at whoamiDigest when nil; resolved records each call's references
-	lock      *deploytarget.ImageLock
-	imagesErr error
-	registry  map[string]string
-	resolved  [][]string
+	// whoamiRef at whoamiDigest when nil; resolveErr fails the resolve call, and silent drops a
+	// reference the registry lacks instead of naming it in a problem; resolved records each
+	// call's references
+	lock       *deploytarget.ImageLock
+	imagesErr  error
+	registry   map[string]string
+	resolveErr error
+	silent     bool
+	resolved   [][]string
 }
 
 // whoamiRef is the one image the fake renderer's stack runs; whoamiDigest is the registry's digest
@@ -326,6 +330,9 @@ func (f *fakeTarget) Resolve(_ context.Context, refs []string) (deploytarget.Res
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.resolved = append(f.resolved, slices.Clone(refs))
+	if f.resolveErr != nil {
+		return deploytarget.ResolveResult{}, f.resolveErr
+	}
 	registry := f.registry
 	if registry == nil {
 		registry = map[string]string{whoamiRef: whoamiDigest}
@@ -334,6 +341,9 @@ func (f *fakeTarget) Resolve(_ context.Context, refs []string) (deploytarget.Res
 	for n, ref := range refs {
 		if d, ok := registry[ref]; ok {
 			out.Images = append(out.Images, deploytarget.ResolvedImage{Reference: ref, Digest: d})
+			continue
+		}
+		if f.silent {
 			continue
 		}
 		out.Problems = append(out.Problems, contract.Problem{

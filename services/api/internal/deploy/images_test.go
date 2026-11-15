@@ -151,6 +151,86 @@ func TestCheckNewerAndUpdate(t *testing.T) {
 	}
 }
 
+// TestCheckFailed covers AC-6: with checkNewer, a frozen reference whose lookup fails keeps its
+// digest and carries the reason alone as checkFailed, never available, and the review digest is
+// the one without checkNewer. A failed lookup of a reference named in update, and a resolve call
+// refused or failed as a whole, refuse the review instead.
+func TestCheckFailed(t *testing.T) {
+	t.Parallel()
+	wholeCall := &deploy.ResolveRefusedError{Problems: []contract.Problem{{
+		Severity: contract.Error, Code: "invalid_reference", Path: "references[0]", Message: whoamiRef + ": not a valid reference.",
+	}}}
+	for name, tc := range map[string]struct {
+		target     *fakeTarget
+		opts       deploy.ImageOptions
+		wantFailed string
+		wantCode   string
+		wantErr    error
+	}{
+		"unknown tag": {
+			target:     &fakeTarget{registry: map[string]string{}},
+			opts:       deploy.ImageOptions{CheckNewer: true},
+			wantFailed: "the registry has no image with this tag.",
+		},
+		"no answer for the reference": {
+			target:     &fakeTarget{registry: map[string]string{}, silent: true},
+			opts:       deploy.ImageOptions{CheckNewer: true},
+			wantFailed: "the deployer gave no digest.",
+		},
+		"named in update": {
+			target:   &fakeTarget{registry: map[string]string{}},
+			opts:     deploy.ImageOptions{CheckNewer: true, Update: []string{whoamiRef}},
+			wantCode: "image_unresolved",
+		},
+		"call refused as a whole": {
+			target:   &fakeTarget{resolveErr: wholeCall},
+			opts:     deploy.ImageOptions{CheckNewer: true},
+			wantCode: "image_unresolved",
+		},
+		"call failed": {
+			target:  &fakeTarget{resolveErr: deploy.ErrTargetUnavailable},
+			opts:    deploy.ImageOptions{CheckNewer: true},
+			wantErr: deploy.ErrTargetUnavailable,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			tc.target.lock = lockWith(digestOf("b"), true)
+			s := newService(t, newMem(), tc.target)
+			r, err := s.Review(t.Context(), "sample", sample, tc.opts)
+			switch {
+			case tc.wantErr != nil:
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("err = %v, want %v", err, tc.wantErr)
+				}
+				return
+			case tc.wantCode != "":
+				refused, ok := errors.AsType[*deploy.RefusedError](err)
+				if !ok || refused.Problems[0].Code != tc.wantCode || !strings.Contains(refused.Problems[0].Message, "instance web") {
+					t.Fatalf("err = %v, want %s naming the instance", err, tc.wantCode)
+				}
+				return
+			case err != nil:
+				t.Fatal(err)
+			}
+			img := r.Images[0]
+			if img.Change != contract.ChangeFrozen || img.Digest != digestOf("b") || img.CheckFailed != tc.wantFailed || img.Available != "" {
+				t.Errorf("row = %+v, want frozen at b with checkFailed %q", img, tc.wantFailed)
+			}
+			plain, err := s.Review(t.Context(), "sample", sample, deploy.ImageOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.Digest != plain.Digest {
+				t.Errorf("review digest %s, want the one without checkNewer %s", r.Digest, plain.Digest)
+			}
+			if plain.Images[0].CheckFailed != "" {
+				t.Errorf("checkFailed without checkNewer: %q", plain.Images[0].CheckFailed)
+			}
+		})
+	}
+}
+
 // TestApplyRaceMovedTag covers AC-7: a tag that moves between review and apply is graph_changed
 // and nothing starts.
 func TestApplyRaceMovedTag(t *testing.T) {

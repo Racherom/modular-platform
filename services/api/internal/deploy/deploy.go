@@ -62,6 +62,17 @@ func (e *LockInvalidError) Is(target error) bool { return target == ErrLockInval
 
 func (e *LockInvalidError) Unwrap() error { return e.Err }
 
+// ResolveRefusedError is a resolve call the deploy target refused as a whole (400): Problems
+// holds one problem per reference it named, its path `references[n]`. Unlike a reference the
+// registry could not resolve, it refuses the review even for a frozen reference (spec 0031, AC-6).
+type ResolveRefusedError struct {
+	Problems []contract.Problem
+}
+
+func (e *ResolveRefusedError) Error() string {
+	return "deploy: the deploy target refused the resolve call"
+}
+
 // RefusedError lists why a review or apply was refused; nothing happened.
 type RefusedError struct {
 	Problems []contract.Problem
@@ -221,8 +232,9 @@ type Review struct {
 }
 
 // ReviewImage is one image reference the stack runs, frozen to the digest an apply runs.
-// Available is the registry's digest when checkNewer asked and it differs; Present is false
-// when the image is not on the host.
+// Available is the registry's digest when checkNewer asked and it differs; CheckFailed is the
+// reason when checkNewer asked and the lookup failed (never together with Available); Present
+// is false when the image is not on the host.
 type ReviewImage struct {
 	Reference      string
 	UsedBy         []contract.ImageUser // the render's users without mp_jobs
@@ -230,6 +242,7 @@ type ReviewImage struct {
 	Change         contract.ImageChange
 	PreviousDigest string
 	Available      string
+	CheckFailed    string
 	Present        bool
 }
 

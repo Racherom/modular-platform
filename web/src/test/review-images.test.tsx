@@ -33,6 +33,14 @@ const images: ReviewImage[] = [
     previousDigest: d('1'),
     present: true,
   },
+  {
+    reference: 'redis:8',
+    usedBy: [{ kind: 'module', instance: 'queue' }],
+    digest: d('9'),
+    change: 'frozen',
+    checkFailed: 'timeout: the registry did not answer within the resolve timeout.',
+    present: false,
+  },
 ]
 
 function show(update: string[] = []) {
@@ -66,6 +74,19 @@ describe('ReviewImages', () => {
     expect(within(screen.getByTestId('image-traefik/whoami:v1.12.0')).getByText('newer available')).toBeTruthy()
     expect(within(screen.getByTestId('image-valkey:8')).getByText('new')).toBeTruthy()
     expect(within(screen.getByTestId('image-nginx:1.29')).getByText(/updating 111111111111 → ffffffffffff/)).toBeTruthy()
+  })
+
+  it('shows a failed check with its reason and no tick box, beside not on this host (AC-6)', () => {
+    show()
+    const row = screen.getByTestId('image-redis:8')
+    expect(within(row).getByText('frozen')).toBeTruthy()
+    expect(within(row).getByText('check failed')).toBeTruthy()
+    expect(within(row).getByText('not on this host, pulled by digest at apply')).toBeTruthy()
+    expect(
+      within(row).getByText('could not check for a newer version: timeout: the registry did not answer within the resolve timeout.'),
+    ).toBeTruthy()
+    expect(within(row).queryByText('newer available')).toBeNull()
+    expect(within(row).queryByRole('checkbox')).toBeNull()
   })
 
   it('offers a tick box only where a newer version exists or was taken', () => {

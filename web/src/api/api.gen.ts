@@ -380,6 +380,8 @@ export interface components {
             previousDigest?: string;
             /** @description With `checkNewer`, the registry's digest when it differs from `digest`. */
             available?: string;
+            /** @description With `checkNewer`, on a `frozen` row not named in `update` whose registry lookup failed: the reason alone in plain words. Never set together with `available`; a failed lookup does not mean nothing newer exists. */
+            checkFailed?: string;
             /** @description False when the image is not on the host; the apply pulls it by digest. */
             present: boolean;
         };

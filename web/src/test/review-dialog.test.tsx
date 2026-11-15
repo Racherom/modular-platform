@@ -30,9 +30,13 @@ const graph: Graph = { apiVersion: 'modular-platform/v1', kind: 'Graph', name: '
 type ReviewBody = { checkNewer: boolean; update: string[] }
 type ApplyBody = { digest: string; update: string[] }
 
-/** The review the fake api answers: frozen at b, b newer with checkNewer, taken with update. */
+/**
+ * The review the fake api answers: frozen at b, b newer with checkNewer, taken with update. While
+ * lookupFails is set, checkNewer finds the registry unreachable instead.
+ */
 function reviewFor(body: ReviewBody): Review {
   const taken = body.update.includes(whoami)
+  const failed = body.checkNewer && !taken && lookupFails
   return {
     check: { ok: true, graph, bindings: [], problems: [], digest: 'sha256:check' },
     digest: taken ? 'review-updated' : body.checkNewer ? 'review-checked' : 'review-frozen',
@@ -44,7 +48,8 @@ function reviewFor(body: ReviewBody): Review {
         digest: taken ? d('c') : d('b'),
         change: taken ? 'updated' : 'frozen',
         ...(taken ? { previousDigest: d('b') } : {}),
-        ...(body.checkNewer && !taken ? { available: d('c') } : {}),
+        ...(body.checkNewer && !taken && !failed ? { available: d('c') } : {}),
+        ...(failed ? { checkFailed: 'the registry could not be reached: connection refused.' } : {}),
         present: true,
       },
     ],
@@ -55,6 +60,7 @@ function reviewFor(body: ReviewBody): Review {
 }
 
 let reviews: ReviewBody[]
+let lookupFails: boolean
 let applies: ApplyBody[]
 let applyAnswer: () => Response
 
@@ -71,6 +77,7 @@ describe('ReviewDialog images (spec 0031)', () => {
   beforeEach(() => {
     reviews = []
     applies = []
+    lookupFails = false
     navigate.mockClear()
     applyAnswer = () =>
       Response.json({ id: 'op-1', action: 'apply', status: 'running', startedAt: '2026-11-15T00:00:00Z' }, { status: 202 })
@@ -106,6 +113,22 @@ describe('ReviewDialog images (spec 0031)', () => {
     expect(await screen.findByText('newer available')).toBeTruthy()
     expect(reviews.at(-1)).toMatchObject({ checkNewer: true, update: [] })
     expect(screen.getByRole('checkbox', { name: `Take the newer version of ${whoami}` })).toBeTruthy()
+  })
+
+  it('a failed check shows its reason with no tick box, and pressing the button again retries the lookup (AC-6)', async () => {
+    lookupFails = true
+    show()
+    await screen.findByText('frozen')
+    fireEvent.click(screen.getByRole('button', { name: 'Check for newer images' }))
+    expect(await screen.findByText('check failed')).toBeTruthy()
+    expect(screen.getByText('could not check for a newer version: the registry could not be reached: connection refused.')).toBeTruthy()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    lookupFails = false
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Check for newer images' })).toHaveProperty('disabled', false))
+    fireEvent.click(screen.getByRole('button', { name: 'Check for newer images' }))
+    expect(await screen.findByText('newer available')).toBeTruthy()
+    expect(reviews.filter((r) => r.checkNewer)).toHaveLength(2)
+    expect(screen.queryByText('check failed')).toBeNull()
   })
 
   it('a ticked newer version reviews with update, and Deploy sends that update and its digest (AC-6, AC-7)', async () => {

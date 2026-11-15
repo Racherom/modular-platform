@@ -368,6 +368,9 @@ type ReviewImage struct {
 	Available string            `json:"available,omitempty,omitzero"`
 	Change    ReviewImageChange `json:"change"`
 
+	// CheckFailed With `checkNewer`, on a `frozen` row not named in `update` whose registry lookup failed: the reason alone in plain words. Never set together with `available`; a failed lookup does not mean nothing newer exists.
+	CheckFailed string `json:"checkFailed,omitempty,omitzero"`
+
 	// Digest The digest the apply will run.
 	Digest string `json:"digest"`
 

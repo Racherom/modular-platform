@@ -627,3 +627,73 @@ func TestApplyReplacesABrokenLock(t *testing.T) {
 		t.Errorf("no lock invalid warning naming the file: %s", logs)
 	}
 }
+
+// TestApplyDropsABrokenPreviousLock covers AC-1 and AC-8 with a broken images.previous.lock: a
+// successful apply logs it as lock invalid and counts its entries as none, so the keep tags only
+// it named are removed. With equal entries the broken file stays on disk (no rotation); with new
+// entries the rotation overwrites it with the lock that was current.
+func TestApplyDropsABrokenPreviousLock(t *testing.T) {
+	t.Parallel()
+	keep := func(ids ...string) []string {
+		out := make([]string, 0, len(ids))
+		for _, id := range ids {
+			out = append(out, "localhost/mp-keep/mp-sample:"+strings.Repeat(id, 64))
+		}
+		return out
+	}
+	for name, tc := range map[string]struct {
+		next         func(h host) deploy.ApplyRequest
+		wantKeep     []string
+		wantPrevious string // the digest of whoami in images.previous.lock; empty when it stays broken
+	}{
+		"same graph": {
+			next:     func(host) deploy.ApplyRequest { return requestWith(whoamiRef+"@"+sha("c"), postgresRef) },
+			wantKeep: keep("2", "3"),
+		},
+		"new digest": {
+			next: func(h host) deploy.ApplyRequest {
+				h.put(whoamiRef, "traefik/whoami", "d", "4")
+				h.run(map[string]string{"app": whoamiRef + "=4", "postgres": postgresRef + "=2"})
+				return requestWith(whoamiRef+"@"+sha("d"), postgresRef)
+			},
+			wantKeep:     keep("2", "3", "4"),
+			wantPrevious: sha("c"),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			h := newHost()
+			h.run(map[string]string{"app": whoamiRef + "=1", "postgres": postgresRef + "=2"})
+			e, dir, logs := newEngine(t, &fakeCompose{}, fakeDocker{images: h.fakeImages})
+			placeSecret(t, dir)
+			applyOK(t, e, requestWith(whoamiRef, postgresRef))
+			h.put(whoamiRef, "traefik/whoami", "c", "3")
+			h.run(map[string]string{"app": whoamiRef + "=3", "postgres": postgresRef + "=2"})
+			applyOK(t, e, requestWith(whoamiRef+"@"+sha("c"), postgresRef))
+			if got := h.keepTags(); !slices.Equal(got, keep("1", "2", "3")) {
+				t.Fatalf("keep tags before = %v, want both generations", got)
+			}
+			previous := filepath.Join(dir, "mp-sample", "images.previous.lock")
+			if err := os.WriteFile(previous, []byte("{"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			applyOK(t, e, tc.next(h))
+			if got := h.keepTags(); !slices.Equal(got, tc.wantKeep) {
+				t.Errorf("keep tags = %v, want %v", got, tc.wantKeep)
+			}
+			if !strings.Contains(logs.String(), `"msg":"lock invalid"`) || !strings.Contains(logs.String(), `"file":"images.previous.lock"`) {
+				t.Errorf("no lock invalid warning naming images.previous.lock: %s", logs)
+			}
+			if tc.wantPrevious == "" {
+				if data, err := os.ReadFile(previous); err != nil || string(data) != "{" {
+					t.Errorf("images.previous.lock = %q, %v; want the broken file left as it was", data, err)
+				}
+				return
+			}
+			l, _ := readLockFile(t, dir, "images.previous.lock")
+			if got, _ := l.Find(whoamiRef); got.Digest != tc.wantPrevious {
+				t.Errorf("previous whoami = %+v, want digest %s", got, tc.wantPrevious)
+			}
+		})
+	}
+}

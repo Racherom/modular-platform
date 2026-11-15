@@ -45,3 +45,25 @@ func TestImagesLockInvalid(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveRefused covers AC-6: a resolve call the deploy target refuses as a whole (400) is a
+// *ResolveRefusedError carrying its problems, never a result with per reference problems.
+func TestResolveRefused(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"problems":[{"severity":"error","code":"invalid_reference","path":"references[0]","message":"bad"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	base, _ := url.Parse(srv.URL)
+	target, err := clients.NewTarget(httpclient.New(base, "key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = target.Resolve(t.Context(), []string{"traefik/whoami:v1"})
+	r, ok := errors.AsType[*deploy.ResolveRefusedError](err)
+	if !ok || len(r.Problems) != 1 || r.Problems[0].Path != "references[0]" {
+		t.Fatalf("err = %#v, want a ResolveRefusedError with the problem", err)
+	}
+}
