@@ -411,3 +411,76 @@ func TestResolve(t *testing.T) {
 		t.Errorf("unresolved = %+v", got.Unresolved)
 	}
 }
+
+// TestLockServiceWithoutContainer covers AC-1's fallback: a service with no container after up
+// takes its image ID from the image its reference@digest names.
+func TestLockServiceWithoutContainer(t *testing.T) {
+	t.Parallel()
+	h := newHost()
+	h.run(map[string]string{"app": whoamiRef + "=1"}) // postgres left no container
+	e, dir, _ := newEngine(t, &fakeCompose{}, fakeDocker{images: h.fakeImages})
+	placeSecret(t, dir)
+	applyOK(t, e, requestWith(whoamiRef, postgresRef+"@"+sha("b")))
+	l, _ := readLockFile(t, dir, "images.lock")
+	want := contract.LockedImage{Reference: postgresRef, Source: contract.ImageFromRegistry, Digest: sha("b"), ImageID: sha("2")}
+	if got, ok := l.Find(postgresRef); !ok || got != want {
+		t.Errorf("entry = %+v, want %+v", got, want)
+	}
+}
+
+// TestLockContainersDisagree covers the Risks note of spec 0031: when the containers of one
+// service run different image IDs (6 and 7), the entry takes the ID of the image its reference
+// names (1), not either container's.
+func TestLockContainersDisagree(t *testing.T) {
+	t.Parallel()
+	h := newHost()
+	h.mu.Lock()
+	labels := map[string]string{"com.docker.compose.service": "app", stackLabel: sampleStack}
+	h.running = []deploy.Container{
+		{ID: "c-app-1", Image: whoamiRef, ImageID: sha("6"), Status: "running", Labels: labels},
+		{ID: "c-app-2", Image: whoamiRef, ImageID: sha("7"), Status: "running", Labels: labels},
+		{ID: "c-postgres", Image: postgresRef, ImageID: sha("2"), Status: "running", Labels: map[string]string{"com.docker.compose.service": "postgres", stackLabel: sampleStack}},
+	}
+	h.mu.Unlock()
+	e, dir, _ := newEngine(t, &fakeCompose{}, fakeDocker{images: h.fakeImages})
+	placeSecret(t, dir)
+	applyOK(t, e, requestWith(whoamiRef, postgresRef))
+	l, _ := readLockFile(t, dir, "images.lock")
+	if got, _ := l.Find(whoamiRef); got.ImageID != sha("1") || got.Digest != sha("a") {
+		t.Errorf("whoami entry = %+v, want the image the tag names", got)
+	}
+}
+
+// TestApplyReplacesABrokenLock covers the bookkeeping order with a broken images.lock: a
+// successful apply writes its own lock, never rotates the broken file into
+// images.previous.lock, and keeps only its own keep tags.
+func TestApplyReplacesABrokenLock(t *testing.T) {
+	t.Parallel()
+	h := newHost()
+	h.run(map[string]string{"app": whoamiRef + "=1", "postgres": postgresRef + "=2"})
+	e, dir, logs := newEngine(t, &fakeCompose{}, fakeDocker{images: h.fakeImages})
+	placeSecret(t, dir)
+	applyOK(t, e, requestWith(whoamiRef, postgresRef))
+	if err := os.WriteFile(filepath.Join(dir, "mp-sample", "images.lock"), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.put(whoamiRef, "traefik/whoami", "c", "3")
+	h.run(map[string]string{"app": whoamiRef + "=3", "postgres": postgresRef + "=2"})
+	op := applyOK(t, e, requestWith(whoamiRef+"@"+sha("c"), postgresRef))
+	l, _ := readLockFile(t, dir, "images.lock")
+	if got, _ := l.Find(whoamiRef); l.Operation != op.ID || got.Digest != sha("c") || got.ImageID != sha("3") {
+		t.Errorf("lock = %+v", l)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "mp-sample", "images.previous.lock")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the broken lock was rotated into images.previous.lock: %v", err)
+	}
+	if got := h.keepTags(); !slices.Equal(got, []string{
+		"localhost/mp-keep/mp-sample:" + strings.Repeat("2", 64),
+		"localhost/mp-keep/mp-sample:" + strings.Repeat("3", 64),
+	}) {
+		t.Errorf("keep tags = %v, want this apply's only", got)
+	}
+	if !strings.Contains(logs.String(), `"msg":"lock invalid"`) || !strings.Contains(logs.String(), `"file":"images.lock"`) {
+		t.Errorf("no lock invalid warning naming the file: %s", logs)
+	}
+}

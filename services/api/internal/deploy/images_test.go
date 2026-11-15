@@ -1,10 +1,16 @@
 package deploy_test
 
 import (
+	"bytes"
+	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"github.com/racherom/modular-platform/libs/contract"
 	"github.com/racherom/modular-platform/libs/target/deploytarget"
@@ -233,5 +239,177 @@ func TestRollbackLockUnreadable(t *testing.T) {
 	defer target.mu.Unlock()
 	if len(target.applied) != 2 {
 		t.Errorf("the rollback reached the host: %d applies", len(target.applied))
+	}
+}
+
+// TestApplyOtherUpdateSameLock covers AC-7's last sentence: an update different from the
+// review's that moves no digest builds the same lock, so apply goes ahead; once the tag moved,
+// the same update is graph_changed and starts nothing.
+func TestApplyOtherUpdateSameLock(t *testing.T) {
+	t.Parallel()
+	t.Run("tag not moved", func(t *testing.T) {
+		t.Parallel()
+		target := &fakeTarget{lock: lockWith(digestOf("b"), true), registry: map[string]string{whoamiRef: digestOf("b")}}
+		s := newService(t, newMem(), target)
+		r, err := s.Review(t.Context(), "sample", sample, deploy.ImageOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Apply(t.Context(), admin, "sample", sample, r.Digest, deploy.ImageOptions{Update: []string{whoamiRef}}, nil); err != nil {
+			t.Fatalf("apply with an update that moves nothing: %v, want accepted", err)
+		}
+		target.mu.Lock()
+		defer target.mu.Unlock()
+		if compose := string(target.applied[0].Files[0].Data); !strings.Contains(compose, whoamiRef+"@"+digestOf("b")) {
+			t.Errorf("applied %s, want the frozen digest", compose)
+		}
+	})
+	t.Run("tag moved", func(t *testing.T) {
+		t.Parallel()
+		target := &fakeTarget{lock: lockWith(digestOf("b"), true), registry: map[string]string{whoamiRef: digestOf("c")}}
+		st := newMem()
+		s := newService(t, st, target)
+		r, err := s.Review(t.Context(), "sample", sample, deploy.ImageOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Apply(t.Context(), admin, "sample", sample, r.Digest, deploy.ImageOptions{Update: []string{whoamiRef}}, nil); !errors.Is(err, deploy.ErrGraphChanged) {
+			t.Fatalf("err = %v, want graph_changed", err)
+		}
+		if len(st.deps) != 0 || len(st.ops) != 0 {
+			t.Errorf("graph_changed left %d stacks and %d operations", len(st.deps), len(st.ops))
+		}
+	})
+}
+
+// jobRenderer renders the fake stack plus a provisioner whose job image postgresRef runs the
+// provision job, the revoke job and the mp_jobs wait anchor (spec 0031, AC-14).
+type jobRenderer struct{ fakeRenderer }
+
+const postgresRef = "postgres:18.6"
+
+func (p jobRenderer) RenderManaged(ctx context.Context, g contract.Graph, stack uuid.UUID, lock []contract.ImagePin) (contract.RenderedStack, error) {
+	r, err := p.fakeRenderer.RenderManaged(ctx, g, stack, lock)
+	r.References = append(r.References, contract.ImageReference{Reference: postgresRef, UsedBy: []contract.ImageUser{
+		{Service: "db_provision_app_postgresql", Kind: contract.ImageUserKindProvision, Instance: "db", Capability: "postgresql-provisioner", Consumer: "app"},
+		{Service: "db_revoke_postgresql", Kind: contract.ImageUserKindRevoke, Instance: "db", Capability: "postgresql-provisioner"},
+		{Service: "mp_jobs", Kind: contract.ImageUserKindWait},
+	}})
+	return r, err
+}
+
+func newJobService(t *testing.T, target *fakeTarget) *deploy.Service {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	s := deploy.NewService(ctx, newMem(), jobRenderer{fakeRenderer{digest: "sha256:abc"}}, target, deploy.NewHub(), slog.New(slog.DiscardHandler))
+	t.Cleanup(func() { cancel(); s.Wait() })
+	return s
+}
+
+// TestUnresolvedNamesTheJobs covers AC-5 and AC-14: a job image that cannot be resolved names
+// the provision and revoke jobs by capability, provider and consumer, and never mp_jobs.
+func TestUnresolvedNamesTheJobs(t *testing.T) {
+	t.Parallel()
+	s := newJobService(t, &fakeTarget{registry: map[string]string{whoamiRef: whoamiDigest}})
+	_, err := s.Review(t.Context(), "sample", sample, deploy.ImageOptions{})
+	refused, ok := errors.AsType[*deploy.RefusedError](err)
+	if !ok || len(refused.Problems) != 1 {
+		t.Fatalf("err = %v, want one image_unresolved", err)
+	}
+	p := refused.Problems[0]
+	if p.Code != "image_unresolved" || p.Path != "images."+postgresRef {
+		t.Errorf("problem = %+v", p)
+	}
+	// exactly the two jobs: a wait anchor would add "; instance " before the comma
+	want := "The image " + postgresRef + ", used by provision job of postgresql-provisioner on db for app; revoke job of postgresql-provisioner on db, cannot be resolved"
+	if !strings.HasPrefix(p.Message, want) {
+		t.Errorf("message %q, want it to start %q", p.Message, want)
+	}
+}
+
+// TestReviewListsJobImages covers AC-14: the review lists the job image with its provision and
+// revoke jobs, its own badge and digest, and leaves the wait anchor out.
+func TestReviewListsJobImages(t *testing.T) {
+	t.Parallel()
+	s := newJobService(t, &fakeTarget{registry: map[string]string{whoamiRef: whoamiDigest, postgresRef: digestOf("d")}})
+	r, err := s.Review(t.Context(), "sample", sample, deploy.ImageOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(r.Images, func(img deploy.ReviewImage) bool { return img.Reference == postgresRef })
+	if i < 0 {
+		t.Fatalf("no %s row in %+v", postgresRef, r.Images)
+	}
+	img := r.Images[i]
+	if img.Change != contract.ChangeNew || img.Digest != digestOf("d") {
+		t.Errorf("job image row = %+v", img)
+	}
+	var kinds []contract.ImageUserKind
+	for _, u := range img.UsedBy {
+		kinds = append(kinds, u.Kind)
+	}
+	if !slices.Equal(kinds, []contract.ImageUserKind{contract.ImageUserKindProvision, contract.ImageUserKindRevoke}) {
+		t.Errorf("used by kinds = %v, want provision and revoke only", kinds)
+	}
+	want := contract.ReviewDigest("sha256:abc", []contract.ImagePin{{Reference: postgresRef, Digest: digestOf("d")}, {Reference: whoamiRef, Digest: whoamiDigest}})
+	if r.Digest != want {
+		t.Errorf("review digest %s does not cover the job image", r.Digest)
+	}
+}
+
+// lockedLog is a log sink the polling goroutines and the test may use at once.
+type lockedLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *lockedLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *lockedLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
+}
+
+// TestRollbackResolvesAMissingReference covers the rollback row of spec 0031's value sourcing
+// table: a reference missing from the current lock is resolved at the registry instead of
+// failing the rollback, and api logs "rollback resolved an image" at warn level.
+func TestRollbackResolvesAMissingReference(t *testing.T) {
+	t.Parallel()
+	st := newMem()
+	target := &fakeTarget{boot: "boot-1", polls: []deploytarget.OperationStatus{
+		deploytarget.OperationStatusSucceeded, deploytarget.OperationStatusFailed, deploytarget.OperationStatusSucceeded,
+	}}
+	logs := &lockedLog{}
+	ctx, cancel := context.WithCancel(t.Context())
+	s := deploy.NewService(ctx, st, fakeRenderer{digest: "sha256:abc"}, target, deploy.NewHub(), slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { cancel(); s.Wait() })
+	applyAndWait(t, s, st, sample)
+	// the deployer holds no lock (the first apply's write failed), and the tag moved
+	target.mu.Lock()
+	target.registry = map[string]string{whoamiRef: digestOf("e")}
+	target.mu.Unlock()
+	moved := contract.ReviewDigest("sha256:abc", []contract.ImagePin{{Reference: whoamiRef, Digest: digestOf("e")}})
+	op, err := s.Apply(t.Context(), admin, "sample", changed, moved, deploy.ImageOptions{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := len(target.resolveCalls())
+	waitFinal(t, st, op)
+	waitFor(t, "rolled-back", func() bool { return stateOf(t, st) == deploy.StateRolledBack })
+	if calls := target.resolveCalls(); len(calls) == before {
+		t.Error("the rollback did not resolve the reference the lock lacks")
+	}
+	if !strings.Contains(logs.String(), `"level":"WARN","msg":"rollback resolved an image"`) || !strings.Contains(logs.String(), `"reference":"`+whoamiRef+`"`) {
+		t.Errorf("no warn log naming the reference: %s", logs)
+	}
+	target.mu.Lock()
+	defer target.mu.Unlock()
+	if len(target.applied) != 3 {
+		t.Fatalf("%d applies, want apply, failed apply and rollback", len(target.applied))
 	}
 }
