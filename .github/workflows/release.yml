@@ -134,3 +134,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.tag }}
           VERSION: ${{ needs.release-please.outputs.version }}
+
+  back-merge:
+    name: Back merge into dev
+    # carries the release commit back into dev, so dev never falls behind main (spec 0032, AC-5).
+    # It runs only when release-please created a release, which needs RELEASES_ENABLED, so it is
+    # off with the rest of the flow. The script opens a pull request and nothing more: merge it
+    # with a merge commit, never a squash. Independent of the images job, so a failed image does
+    # not hold the back merge.
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      # only the script is read, so the default checkout (the pushed commit) is enough
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # the release token writes the branch and the pull request; the default token would open a
+      # pull request that starts no CI. The version and the commit are not user input.
+      - name: Open the back merge pull request
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: sh scripts/release-back-merge.sh "$VERSION" "$RELEASE_SHA"

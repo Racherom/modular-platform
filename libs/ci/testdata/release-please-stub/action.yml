@@ -2,7 +2,7 @@
 # maps the SHA pinned uses: line of release.yml to this folder, so the test clones nothing from
 # GitHub and the real action never runs. It reports no release, so the later jobs stay skipped.
 name: release-please stub
-description: Prints whether it got a token and creates no release
+description: Prints whether it got a token and creates a release only when the test says so
 inputs:
   token:
     description: the token release.yml passes
@@ -15,8 +15,14 @@ inputs:
     required: false
 outputs:
   release_created:
-    description: always empty, so no release was created
+    description: empty unless the test sets STUB_RELEASE_CREATED
     value: ${{ steps.stub.outputs.release_created }}
+  version:
+    description: the version the test names
+    value: ${{ steps.stub.outputs.version }}
+  tag_name:
+    description: the tag the test names
+    value: ${{ steps.stub.outputs.tag_name }}
 runs:
   using: composite
   steps:
@@ -27,4 +33,6 @@ runs:
       run: |
         if [ -n "$TOKEN" ]; then set=yes; else set=no; fi
         echo "release-please stub ran (token set: $set)"
-        echo "release_created=" >> "$GITHUB_OUTPUT"
+        echo "release_created=${STUB_RELEASE_CREATED:-}" >> "$GITHUB_OUTPUT"
+        echo "version=${STUB_VERSION:-}" >> "$GITHUB_OUTPUT"
+        echo "tag_name=${STUB_TAG:-}" >> "$GITHUB_OUTPUT"
