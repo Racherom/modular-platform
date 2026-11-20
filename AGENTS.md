@@ -62,6 +62,7 @@ Installed and enforced:
 
 - integration: on
 - branch prefix: feat/
+- start of work: an agent always switches to the branch for the work (create `feat/<name>` from `dev`, or check out the existing one) before it edits anything, never works on `main` or `dev` directly
 - commit: per-milestone
 - branches (spec 0032): `main` holds only released code, `dev` holds the next release. Branch from `dev`, open the pull request into `dev` with a conventional commit title, and **squash** it (the title becomes the commit message release-please reads)
 - release: open a pull request `dev` into `main` and merge it with a **merge commit, never squash**; release-please then opens its release pull request on `main`, and merging that tags the release. A job then opens `back-merge/<version>` into `dev`: merge it with a merge commit, never a squash. On a conflict, merge `dev` into it locally and keep the release side for the version lines (`MP_VERSION`, the four catalog image lines, `web/package.json`, the manifest, `CHANGELOG.md`)
