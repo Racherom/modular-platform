@@ -4,8 +4,39 @@ Builds a microservice stack from exchangeable modules. Each module wraps an exis
 container image and declares the capabilities it provides and uses; the checks make sure every
 need has a provider, and the renderer turns the stack into a zip you run with `docker compose`.
 
-This is an early scaffold: the formats are provisional (`modular-platform/v0alpha1`). The
-architecture lives in [docs/specs/0001-platform-stack-architecture](docs/specs/0001-platform-stack-architecture/index.md).
+The project is young and the first release is still ahead, so the formats are provisional
+(`modular-platform/v0alpha1`) and may change. The architecture lives in [docs/specs/0001-platform-stack-architecture](docs/specs/0001-platform-stack-architecture/index.md).
+
+## Why use it
+
+**What you want from it**
+
+- **You want to find a gap before you run.** Hand wired Compose snippets show a missing database or
+  identity provider only at runtime. We want the checks to catch every unmet need first, and to
+  suggest a provider for the gap.
+- **You want one tool for a small and a big setup.** We want one graph to give you a zip you run
+  with plain `docker compose up` (static mode), or a platform that signs you in and deploys to your
+  host (managed mode).
+- **You want your secrets to stay yours.** We want `setup.sh` to create them on your own host, and
+  never to put one in a zip, a graph file or the renderer.
+- **You want to keep your choices.** We want every module the platform ships, down to its own
+  services, to be only a default you can replace.
+
+**What we want it to be**
+
+- **A platform that is itself a graph.** A third party module has the same standing as a shipped one.
+- **One renderer, two places.** A stack checked in the online editor renders the same files as one
+  the platform deploys.
+- **Capabilities, not image names.** A module declares what it provides and uses, so exchanging a
+  provider is a change the checks can follow.
+- **Standard protocols only.** REST, OIDC, PostgreSQL and NATS, no house protocol.
+- **A public renderer that keeps nothing.** No accounts, no database, no request bodies in logs.
+- **A stack editor that fits your site.** It runs on its own or under a path of a website you
+  already have.
+- **Open source** under Apache 2.0, for self hosters, platform teams and module authors.
+
+Some of this is still ahead: exchanging a provider, conformance checks and live changes to a
+running stack are planned, not built. [docs/scope/scope.md](docs/scope/scope.md) lists what is done.
 
 ## Layout
 
