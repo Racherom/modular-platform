@@ -1,0 +1,50 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  api:
+    module: api
+    uses:
+      acme: cert-issuer.acme
+      deploy-target: deployer-docker
+      main-db:
+        database: platform_api
+        provider: postgres
+        user: api
+      oidc: pocket-id.oidc
+      public: ingress
+      renderer: renderer
+  cert-issuer:
+    module: cert-issuer
+  deployer-docker:
+    module: deployer-docker
+    uses:
+      acme: cert-issuer.acme
+      ingress: ingress
+  ingress:
+    module: caddy
+    uses:
+      trust: cert-issuer.acme
+  pocket-id:
+    module: pocket-id
+    uses:
+      db:
+        database: pocket_id
+        provider: postgres
+        user: pocket_id
+      public: ingress
+  postgres:
+    module: postgres
+    uses:
+      tls: cert-issuer.certs
+  renderer:
+    config:
+      renderer-mode: "internal"
+    module: renderer
+    uses:
+      acme: cert-issuer.acme
+      ingress: ingress
+  web:
+    module: web
+    uses:
+      public: ingress
+name: modular-platform

@@ -16,13 +16,13 @@ import (
 	"github.com/racherom/modular-platform/libs/render"
 )
 
-// keeperDir holds the keeper render's goldens and, under catalog/, the task 4 shape of the
-// authelia and deployer-docker entries, which replace the real ones in keeperResult (spec 0016,
-// "Task 3 golden"). Task 4 moves the two entries into catalog/modules/ and removes this folder.
+// keeperDir holds the keeper render's goldens, the graph and, under catalog/, the pocket-id and
+// deployer-docker entries, which replace the real authelia and deployer-docker ones in
+// keeperResult (spec 0016, "Task 3 golden"; spec 0037, task 2). The cut over moves the entries
+// into catalog/modules/ and removes this folder.
 const keeperDir = "testdata/platform-keeper"
 
-// keeperResult checks deploy/managed/graph.yaml with the built in catalog and the two fixture
-// entries, the platform's own images tagged testTag as platformResult does.
+// keeperResult checks the fixture graph with the built in catalog and the two fixture entries, the platform's own images tagged testTag as platformResult does.
 func keeperResult(t *testing.T) (contract.CheckResult, contract.Catalog, contract.Templates) {
 	t.Helper()
 	catalog, templates := loadCatalogTemplates(t, "../../catalog", filepath.Join(keeperDir, "catalog"))
@@ -31,7 +31,7 @@ func keeperResult(t *testing.T) (contract.CheckResult, contract.Catalog, contrac
 			catalog.Modules[i].Image = platformImagePrefix + name[:strings.LastIndex(name, ":")] + ":" + testTag
 		}
 	}
-	return checkFile(t, "../../deploy/managed/graph.yaml", catalog), catalog, templates
+	return checkFile(t, filepath.Join(keeperDir, "graph.yaml"), catalog), catalog, templates
 }
 
 // keeperFiles renders the keeper output of the platform graph, path to text.
@@ -247,9 +247,9 @@ func TestPlatformKeeperMountsExist(t *testing.T) {
 	}
 }
 
-// TestPlatformKeeperSetup checks setup.json (spec 0016, AC-3, AC-10): the generated admin
-// password with its reader, the users step's asked email, the folders, the show list and the
-// keeper; and that it reads back with DecodeSetup.
+// TestPlatformKeeperSetup checks setup.json (spec 0016, AC-3, AC-10; spec 0037, AC-7): the
+// generated pocket-id secrets, no shown secret and no asked step, the folders and the keeper;
+// and that it reads back with DecodeSetup.
 func TestPlatformKeeperSetup(t *testing.T) {
 	t.Parallel()
 	files := keeperFiles(t)
@@ -265,13 +265,16 @@ func TestPlatformKeeperSetup(t *testing.T) {
 		t.Error("setup.json does not read back to the same bytes")
 	}
 
-	at := slices.IndexFunc(setup.Generate, func(g render.GenerateFile) bool { return g.Path == "secrets/authelia/admin-password" })
-	if at < 0 {
-		t.Fatal("setup.json does not generate the admin password")
-	}
-	pw := setup.Generate[at]
-	if pw.Format != render.GeneratePassword || !pw.Show || !slices.Equal(pw.Readers, []string{"secrets/authelia/users"}) {
-		t.Errorf("admin password = %+v", pw)
+	for _, name := range []string{"encryption-key", "static-api-key"} {
+		path := "secrets/pocket-id/" + name
+		at := slices.IndexFunc(setup.Generate, func(g render.GenerateFile) bool { return g.Path == path })
+		if at < 0 {
+			t.Errorf("setup.json does not generate %s", path)
+			continue
+		}
+		if g := setup.Generate[at]; g.Show || len(g.Readers) > 0 {
+			t.Errorf("%s = %+v, want a plain generated secret", path, g)
+		}
 	}
 	// module secrets, then per binding files, then empty job outputs
 	tier := 0
@@ -286,35 +289,16 @@ func TestPlatformKeeperSetup(t *testing.T) {
 		tier = max(tier, t2)
 	}
 
-	if want := []render.ShownSecret{{Path: "secrets/authelia/admin-password", Description: `Initial password of the admin user "admin"`}}; !slices.Equal(setup.Show, want) {
-		t.Errorf("show = %+v, want %+v", setup.Show, want)
+	if len(setup.Show) != 0 {
+		t.Errorf("show = %+v, want none: the bundled provider has no initial password", setup.Show)
 	}
-	users := slices.IndexFunc(setup.Steps, func(s render.SetupRun) bool { return s.Instance == "authelia" && s.Name == "users" })
-	if users < 0 {
-		t.Fatal("setup.json lacks the users step")
-	}
-	u := setup.Steps[users]
-	if u.AskEnv["MP_ASK_ADMIN_EMAIL"] != "MP_AUTHELIA__ADMIN_EMAIL" || u.Env["ADMIN_USER"] != "admin" {
-		t.Errorf("users step askEnv %v, env %v", u.AskEnv, u.Env)
-	}
-	if !slices.Equal(u.Reads, []render.SetupRead{{Path: "secrets/authelia/admin-password", Mount: "/in/admin-password"}}) {
-		t.Errorf("users step reads %+v", u.Reads)
-	}
-	digests := 0
 	for _, s := range setup.Steps {
-		if s.Name == "client-digest" {
-			digests++
-			if s.Client == "" || s.Env["CLIENT"] != s.Client || s.Writes[0].Name != "client-digests/"+s.Client {
-				t.Errorf("client-digest run %+v does not name its client", s)
-			}
+		if s.Instance == "pocket-id" || len(s.AskEnv) > 0 {
+			t.Errorf("step %s/%s runs at install time or asks; the platform keeper takes neither", s.Instance, s.Name)
 		}
 	}
-	if digests == 0 {
-		t.Error("the for_each step client-digest has no run")
-	}
-	if !slices.Contains(setup.Folders, render.SetupFolder{Path: "stacks", Mode: "0700"}) ||
-		!slices.Contains(setup.Folders, render.SetupFolder{Path: "secrets/authelia/client-digests", Mode: "0700"}) {
-		t.Errorf("folders = %+v, want stacks and the client digest folder", setup.Folders)
+	if !slices.Contains(setup.Folders, render.SetupFolder{Path: "stacks", Mode: "0700"}) {
+		t.Errorf("folders = %+v, want stacks", setup.Folders)
 	}
 	if setup.Keeper.Instance != "deployer-docker" || setup.Keeper.Module != "deployer-docker" || !slices.Equal(setup.Keeper.Command, []string{"seed"}) {
 		t.Errorf("keeper = %+v", setup.Keeper)
@@ -322,8 +306,8 @@ func TestPlatformKeeperSetup(t *testing.T) {
 }
 
 // TestPlatformKeeperScript checks the keeper's setup.sh (spec 0016, AC-1, AC-3): root first,
-// only the domain, origin and admin email asked, the fixed ids, no secret made, the seed with
-// its labels and command, and the password printed from its file.
+// only the domain and origin asked, the fixed ids, no secret made and none printed, and the seed
+// with its labels and command.
 func TestPlatformKeeperScript(t *testing.T) {
 	t.Parallel()
 	setup := keeperFiles(t)["setup.sh"]
@@ -335,7 +319,7 @@ func TestPlatformKeeperScript(t *testing.T) {
 	for _, a := range asks {
 		got = append(got, a[1]+" "+a[2])
 	}
-	if want := []string{"ask MP_INGRESS__DOMAIN", "ask MP_INGRESS__ORIGIN", "ask MP_AUTHELIA__ADMIN_EMAIL"}; !slices.Equal(got, want) {
+	if want := []string{"ask MP_INGRESS__DOMAIN", "ask MP_INGRESS__ORIGIN"}; !slices.Equal(got, want) {
 		t.Errorf("setup.sh asks %q, want %q", got, want)
 	}
 	for _, never := range []string{"new_secret", "ask_secret", "step_ask", "docker compose up", "/dev/urandom", "$(id -u):"} {
@@ -350,7 +334,6 @@ func TestPlatformKeeperScript(t *testing.T) {
 		`-v /var/run/docker.sock:/var/run/docker.sock -v "$dir:$dir"`,
 		`"$image" 'seed' --state "$dir"`,
 		"image='" + platformImagePrefix + "deployer-docker:" + testTag + "'",
-		`printf '%s: %s\n' 'Initial password of the admin user "admin"' "$(cat secrets/authelia/admin-password)"`,
 		"echo \"Open $(env_get MP_INGRESS__ORIGIN) and sign in.\"",
 		"grep -q '^modular-platform-keeper-'",
 		"seed='modular-platform-seed'",
@@ -392,10 +375,9 @@ func TestPlatformKeeperRefusals(t *testing.T) {
 			m.Secrets = append(slices.Clone(m.Secrets), contract.Secret{Name: "key", From: contract.SecretFromAsk, Description: "A key."})
 		}, "modules.web", render.CodeSetupRequired, "secrets.key (from: ask)"},
 		"step asks": {func(c contract.Catalog) {
-			m := module(c, "authelia")
-			m.Setup = slices.Clone(m.Setup)
-			m.Setup[0].Asks = []contract.SetupAsk{{Name: "x", Description: "X"}}
-		}, "modules.authelia", render.CodeSetupRequired, "setup.users.asks"},
+			m := module(c, "pocket-id")
+			m.Setup = []contract.SetupStep{{Name: "users", Command: []string{"true"}, Asks: []contract.SetupAsk{{Name: "x", Description: "X"}}}}
+		}, "modules.pocket-id", render.CodeSetupRequired, "setup.users.asks"},
 		"asked secret config": {func(c contract.Catalog) {
 			m := module(c, "web")
 			cfg := map[string]contract.ConfigValue{}

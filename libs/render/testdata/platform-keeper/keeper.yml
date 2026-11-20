@@ -1,0 +1,82 @@
+configs:
+  deployer-docker_env:
+    file: ./config/deployer-docker.env
+networks:
+  internal:
+    external: true
+    name: modular-platform_internal
+secrets:
+  api_uses_deploy-target_caller_key:
+    file: ./secrets/api/caller-public-key
+  api_uses_deploy-target_token:
+    file: ./secrets/api/uses_deploy-target_token
+  deployer-docker_uses_acme_ca:
+    file: ./secrets/cert-issuer/root-ca
+services:
+  deployer-docker:
+    cap_add:
+    - CHOWN
+    - DAC_OVERRIDE
+    - FOWNER
+    cap_drop:
+    - ALL
+    configs:
+    - source: deployer-docker_env
+      target: /etc/modular-platform/module.env
+    environment:
+      MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
+      MP_CA_FILE: /run/secrets/uses/acme/ca
+      MP_CALLER_KEYS_DIR: /run/secrets/clients/deploy/caller_key
+      MP_DEPLOY_TARGET_CLIENTS_DIR: /run/secrets/clients/deploy/token
+      MP_DEPLOYER_STACKS_DIR: ${MP_DIR}/stacks
+      MP_DOMAIN: modular-platform.internal
+      MP_ENV_FILE: /etc/modular-platform/module.env
+      MP_INSTANCE: deployer-docker
+      MP_PLATFORM_GID: ${MP_GID}
+      MP_PLATFORM_HTTP_PORT: ${MP_INGRESS__HTTP_PORT:-80}
+      MP_PLATFORM_HTTPS_PORT: ${MP_INGRESS__HTTPS_PORT:-443}
+      MP_PLATFORM_UID: ${MP_UID}
+      MP_STATE_DIR: ${MP_DIR}
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 5m0s
+      test:
+      - CMD
+      - /deployer-docker
+      - healthcheck
+      timeout: 3s
+    image: ${MP_KEEPER_IMAGE:-ghcr.io/racherom/modular-platform/deployer-docker:0.0.0-test}
+    labels:
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: deployer-docker
+      io.github.racherom.modular-platform.module: deployer-docker
+      io.github.racherom.modular-platform.stack: platform
+    networks:
+      internal:
+        aliases:
+        - deployer-docker.modular-platform.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: deployer-docker_uses_acme_ca
+      target: /run/secrets/uses/acme/ca
+    - source: api_uses_deploy-target_caller_key
+      target: /run/secrets/clients/deploy/caller_key/api
+    - source: api_uses_deploy-target_token
+      target: /run/secrets/clients/deploy/token/api
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: "0:0"
+    volumes:
+    - source: /var/run/docker.sock
+      target: /var/run/docker.sock
+      type: bind
+    - source: ${MP_DIR}
+      target: ${MP_DIR}
+      type: bind
+    - source: ${MP_DIR}/stacks
+      target: ${MP_DIR}/stacks
+      type: bind

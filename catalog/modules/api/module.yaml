@@ -30,6 +30,8 @@ uses:
       server_name: {platform: host, provide: api}
       # the event stream
       stream: {value: "true"}
+      # answers the identity provider's gate question (spec 0037): 204 lets a request through
+      guard: {value: /v1/setup/gate}
   oidc:
     capability: oidc
     env:
