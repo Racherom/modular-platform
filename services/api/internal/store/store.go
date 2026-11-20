@@ -142,9 +142,20 @@ func (s *Store) ResetAdmin(ctx context.Context) error {
 }
 
 // EnsureStack returns the stack named name, creating it when missing.
+//
+// When another first deploy inserts the same name at the same moment, the query waits for its
+// commit and then finds no row: the statement reads a snapshot from before that commit. A new
+// statement takes a new snapshot, so the query runs again and then returns the winner's stack.
 func (s *Store) EnsureStack(ctx context.Context, name string) (uuid.UUID, string, bool, error) {
-	row, err := s.q.EnsureStack(ctx, name)
-	return row.ID, row.ComposeProject, row.Created, err
+	const attempts = 3
+	var err error
+	for range attempts {
+		var row queries.EnsureStackRow
+		if row, err = s.q.EnsureStack(ctx, name); !errors.Is(err, pgx.ErrNoRows) {
+			return row.ID, row.ComposeProject, row.Created, err
+		}
+	}
+	return uuid.UUID{}, "", false, fmt.Errorf("ensure stack %q: %w", name, err)
 }
 
 // DropNewStack deletes a stack without operations.

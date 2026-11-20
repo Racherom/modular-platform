@@ -170,6 +170,42 @@ func applyOp(id uuid.UUID) deploy.Operation {
 	}
 }
 
+// TestEnsureStackRace: first deploys of one new stack name at once all get the same stack, and
+// exactly one of them created it (only that one may drop it again). Each round uses a new name.
+func TestEnsureStackRace(t *testing.T) {
+	const rounds, contenders = 50, 8
+	st, _ := startStore(t)
+	ctx := t.Context()
+	for round := range rounds {
+		name := fmt.Sprintf("race-%d", round)
+		ids := make([]uuid.UUID, contenders)
+		created := make([]bool, contenders)
+		errs := make([]error, contenders)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := range contenders {
+			wg.Go(func() {
+				<-start
+				ids[i], _, created[i], errs[i] = st.EnsureStack(ctx, name)
+			})
+		}
+		close(start)
+		wg.Wait()
+
+		if err := errors.Join(errs...); err != nil {
+			t.Fatalf("round %d: a racing ensure failed: %v", round, err)
+		}
+		if n := len(slices.DeleteFunc(slices.Clone(created), func(c bool) bool { return !c })); n != 1 {
+			t.Fatalf("round %d: %d contenders created the stack, want 1", round, n)
+		}
+		for i, id := range ids {
+			if id != ids[0] {
+				t.Fatalf("round %d: contender %d got stack %v, contender 0 got %v", round, i, id, ids[0])
+			}
+		}
+	}
+}
+
 func TestOperations(t *testing.T) {
 	st, _ := startStore(t)
 	ctx := t.Context()
