@@ -99,4 +99,11 @@ The cross check asked about a lighter variant of Option 2: keep the deployer in 
 
 ## Spike results
 
-_Task 1 of the build plan writes its findings here: `COMPOSE_FILE` from the project `.env`, a second keeper project beside a running one, removing its own container, and Compose's handling of a changed `configs` file._
+Run on 2026-11-20 inside `docker:29.9.2-cli` (Docker Compose v5.6.1) against Docker Engine 29.9.2, with the state folder mounted at the same path as on the host.
+
+| Check | Result | What the build does with it |
+|---|---|---|
+| `COMPOSE_FILE` from `<dir>/.env`, no `-f` | Works, but only with the state folder as the working directory. Compose reads `.env` from `--project-directory`, yet resolves a relative `COMPOSE_FILE` entry against the working directory: from `/` it fails with `stat /docker-compose.yml`. | Reconcile and both handover commands set the command's working directory to the state folder, as the spec already says; a test pins it. |
+| A second keeper project beside a running one | Works. Two projects from one `keeper.yml`, on the external network `<platform>_internal` with the alias `keeper`, both run; the alias resolves to both containers (round robin) while both run. `up -d --remove-orphans` on the platform project leaves both keeper projects alone. | Nothing extra. During a handover a caller may reach either keeper; both serve the same API, and `api` already treats a new `bootId` as a restart. |
+| Removing its own container with `force` | Works. Events: `kill`, `die` (exit 137), `destroy`; `restart: unless-stopped` does not bring it back, and no line after the remove call runs. | The keeper logs `handover done` before it calls the remove; the process ends with exit 137 from the kill, never with its own exit. |
+| A `configs` file whose content changes | Compose does **not** recreate the service: the config hash and the container ID stay the same. With `file:` Compose bind mounts the file, so the container sees the new content at once, but its process is not restarted. | The managed README's drift note says that a changed config file reaches a module only when the module rereads it or its container is recreated for another reason. |
