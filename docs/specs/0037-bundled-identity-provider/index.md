@@ -130,15 +130,29 @@ Pocket ID's first admin page is the one risky window: it is open to any visitor 
 
 ## Build plan
 
-Tracer Bullet (the project default): one thread through the fixture first, then thicken.
+Tracer Bullet (the project default): one thread through the fixture first, then thicken. A check on 2026-11-20 found that the code of spec 0026 (the auth host) and spec 0033 (the setup session) does not exist yet: no `host` on a binding, Authelia still routed at `/auth`, no `libs/setupsession`, no `enroll` in the contract, no api setup routes. The gated route, the identity link and the client step have nothing to build on until those land, so they come first, and only the pieces this spec needs.
 
-1. **Spike** the gates above by hand, write the results into [rationale.md](rationale.md), and stop at a failed hard gate; satisfies **AC-11**
-2. **Fixture catalog entry** `pocket-id` in the `platform-keeper` fixture (`provides oidc` and `site` with `first_admin`, `uses` ingress and `postgresql`, config `signup`, the two secrets, healthcheck) and its render golden; satisfies **AC-1**, **AC-7**
-3. **Contract first**: `first_admin` on `oidc`, a route `gate` on `http-ingress`, a step `network`, in `libs/contract`, the manifest rules and the renderer; `contracts/openapi/api.yaml` for the three routes; `task generate`; satisfies **AC-9**
-4. **Api**: `identity-link`, `identity-enter` and `gate` on `libs/setupsession`, with the handoff token and the fail closed rule; satisfies **AC-2**, **AC-4**, **AC-5**
+**Order**: A (the auth host) and B (the setup session) do not depend on each other, so build them in either order. Task 2 onward waits for both.
+
+**A. The auth host, from spec 0026, trimmed to what this spec needs** (the spike of 0026 task 1 is replaced by our own spike, which already ran; the Authelia entry and template of 0026 task 3 leave the critical path):
+- A1. Contract and check: `graph: true` fields, the `host` field on a binding, `{field}` tokens, the `host` or `route` rule and its problems (0026 task 2); satisfies 0026 **AC-10**
+- A2. Render: token filling, one network alias per distinct host, the Caddy host site and `Caddyfile.tmpl` (0026 task 3, without the `authelia` entry); satisfies 0026 **AC-5**, **AC-6**, **AC-8**
+
+**B. The setup session, from spec 0033, only the pieces the handoff needs:**
+- B1. 0034 tasks 1 and 2: `lifetime: setup` and `libs/setupsession` (session key, cookie, the MAC check)
+- B2. 0036 tasks 1 and 2: migration `00003` and the api's setup package with the setup routes and the openapi contract
+- B3. 0035 task 1: `enroll` in the contract, so `first_admin` and "no `enroll` block" are decided against the real field
+
+Everything else of 0033 (the `setup` command pages, the keeper endpoints, the Authelia enroll) keeps its place in scope #37.
+
+**This spec, in order:**
+1. **Spike**: done 2026-11-20, results in [rationale.md](rationale.md); satisfies **AC-11**
+2. **Fixture catalog entry** `pocket-id` in the `platform-keeper` fixture (`provides oidc` and `site` with `first_admin`, `uses` ingress and `postgresql`, config `signup`, the two secrets, healthcheck), with its render golden. It replaces the fixture's `authelia` entry, which also removes the stale `admin-password` secret the keeper tests trip on today. Authelia's enroll tests (0035) move to a small second fixture so they keep running; satisfies **AC-1**, **AC-7**. Needs A1, A2.
+3. **Contract first** (partly done: `first_admin` and the step `network` exist): add the route `gate` on `http-ingress` in `libs/contract`, the manifest rules and the renderer, then the render that fills the gate fields; `contracts/openapi/api.yaml` for the three routes; `task generate`; satisfies **AC-9**. Needs A1, A2.
+4. **Api**: `identity-link`, `identity-enter` and `gate` on `libs/setupsession`, with the handoff token and the fail closed rule; satisfies **AC-2**, **AC-4**, **AC-5**. Needs B1, B2, and task 3.
 5. **Client step**: the one shot upsert on every `up`, `api` waits for it; satisfies **AC-8**
-6. **Editor setup page**: "Create your admin account", then "Sign in to finish the setup"; satisfies **AC-3**
-7. **Cut over**: the real `pocket-id` catalog entry, `deploy/managed/graph.yaml` switches to it, Authelia stays as an optional entry, goldens, the managed smoke with a virtual passkey device; satisfies **AC-1**, **AC-3**, **AC-9**
+6. **Editor setup page**: "Create your admin account", then "Sign in to finish the setup"; satisfies **AC-3**. Needs B2.
+7. **Cut over**: the real `pocket-id` catalog entry, `deploy/managed/graph.yaml` switches to it, Authelia stays as an optional entry (this is where 0026's `authelia` entry and template are finished), goldens, the managed smoke with a virtual passkey device; satisfies **AC-1**, **AC-3**, **AC-9**
 8. **Sign up config and docs**: the `signup` mapping and its refusal, the README text; satisfies **AC-6**, **AC-10**
 
 ## Migration plan
