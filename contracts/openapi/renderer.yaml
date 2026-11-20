@@ -409,10 +409,10 @@ components:
           $ref: "#/components/schemas/Job"
     YieldSource:
       x-go-type: YieldFieldSource
-      description: "`named`, `generate`, `output`, or `{admin: <field of the provisioner>}`."
+      description: "`named`, `generate`, `output`, `consumer` (a to_provider field the consumer gives; the job gets its value), or `{admin: <field of the provisioner>}`."
       oneOf:
         - type: string
-          enum: [named, generate, output]
+          enum: [named, generate, output, consumer]
         - type: object
           additionalProperties: false
           required: [admin]

@@ -10,7 +10,9 @@ modules:
         database: platform_api
         provider: postgres
         user: api
-      oidc: pocket-id.oidc
+      oidc:
+        client_id: api_oidc
+        provider: pocket-id.oidc
       public: ingress
       renderer: renderer
   cert-issuer:

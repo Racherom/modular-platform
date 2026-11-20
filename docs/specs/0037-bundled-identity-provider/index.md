@@ -2,12 +2,12 @@
 
 **Date**: 2026-11-20
 **Status**: In Progress
-**Amends**: the *Identity provider* row of [0001](../0001-platform-stack-architecture/index.md); the `authelia` rows of [0015](../0011-capability-module-contract/0015-platform-graph-managed-zip.md) and [0026](../0001-platform-stack-architecture/0026-identity-provider-own-host.md) (the auth host stays, the module behind it changes); [0033](../0033-first-run-web-setup/index.md) AC-2 and AC-4 (the smoke enrolls with the bundled module, and the "module without an enroll block" path now runs end to end here); [0036](../0033-first-run-web-setup/0036-first-admin-session.md) AC-31 (the page copy for that path); the `http-ingress` capability of [0012](../0011-capability-module-contract/0012-capabilities-versions-matching.md) and [0013](../0011-capability-module-contract/0013-module-manifest-v1.md) (a gated route); install steps of [0016](../0016-platform-one-container/index.md) (an optional `network`).
+**Amends**: the *Identity provider* row of [0001](../0001-platform-stack-architecture/index.md); the `authelia` rows of [0015](../0011-capability-module-contract/0015-platform-graph-managed-zip.md) and [0026](../0001-platform-stack-architecture/0026-identity-provider-own-host.md) (the auth host stays, the module behind it changes); [0033](../0033-first-run-web-setup/index.md) AC-2 and AC-4 (the smoke enrolls with the bundled module, and the "module without an enroll block" path now runs end to end here); [0036](../0033-first-run-web-setup/0036-first-admin-session.md) AC-31 (the page copy for that path); the `http-ingress` capability of [0012](../0011-capability-module-contract/0012-capabilities-versions-matching.md) and [0013](../0011-capability-module-contract/0013-module-manifest-v1.md) (a gated route); install steps of [0016](../0016-platform-one-container/index.md) (an optional `network`); [0014](../0011-capability-module-contract/0014-provisioners-jobs.md) (a provisioner may yield `oidc`, the job gets the consumer's `to_provider` values, and its revoke script may delete instead of disable; see the client step).
 **Part of**: scope #37 (web setup), whose Authelia enroll task stays for Authelia only.
 
 ## Summary
 
-The platform's bundled sign in service changes from Authelia to Pocket ID. Authelia keeps its users in a file you must edit, which is why the web setup needed a special `enroll` step. With Pocket ID the admin creates their own account on Pocket ID's first admin page and registers a passkey (a key stored on your device, no password); the platform only guards that page, so nobody else can claim it. The guard reuses the setup session you already have from the web setup. Because the research could not confirm every Pocket ID detail, the first build task is a spike with pass or fail gates, and a failed hard gate stops the build and returns to `/architect`. Authelia stays in the catalog as an optional module.
+The platform's bundled sign in service changes from Authelia to Pocket ID. Authelia keeps its users in a file you must edit, which is why the web setup needed a special `enroll` step. With Pocket ID the admin creates their own account on Pocket ID's first admin page and registers a passkey (a key stored on your device, no password); the platform only guards that page, so nobody else can claim it. The guard reuses the setup session you already have from the web setup. Because the research could not confirm every Pocket ID detail, the first build task is a spike with pass or fail gates, and a failed hard gate stops the build and returns to `/architect`. Authelia stays in the catalog as an optional module. The `api` client is registered at Pocket ID by a provision job of a new `oidc-provisioner` capability (the mechanism that already makes a database and login per consumer): it runs on every `up`, waits for Pocket ID, and `api` waits for it.
 
 ## Requirements
 
@@ -24,17 +24,19 @@ The platform's bundled sign in service changes from Authelia to Pocket ID. Authe
 - **AC-4**: The button calls `POST /api/v1/setup/identity-link` (setup cookie required) and gets a link to the auth host with a handoff token: signed with the setup session key (`libs/setupsession`), single use, valid 60 seconds. The auth host trades it for a cookie that is host only (no `Domain`), `HttpOnly`, `Secure`, with the same expiry as the setup session. A wrong MAC, an expired, reused or wrong host token, or a retired session gets 403 and no cookie.
 - **AC-5**: After the admin is bound (or the setup is done), the gate cookie stops being valid, and Pocket ID's setup route stays closed (it closes itself once its own admin exists, G1). The README says how to recover a lost passkey (G7 records the provider's command).
 - **AC-6**: With the default `signup: disabled` no account can be made without an invitation. Setting `signup` to another listed value in the graph changes only that behavior; any other value is refused with a problem at `modules.<i>.config.signup` (`invalid_config`).
-- **AC-7**: Pocket ID's encryption key and static API key are generated secret files (mode 0600), never an environment value in the rendered Compose file, never in a log line, never in any `api` or renderer response. The `api` container cannot read the static API key.
-- **AC-8**: A one shot step runs on every `up` and upserts the OIDC clients the graph declares (for `api`) in Pocket ID by client id, with the redirect URIs from the origin and base path; `api` waits for it. Changing the base path and rendering again repoints the redirect URI with no manual step.
-- **AC-9**: The contract and the checks accept (a) an optional `gate` on an `http-ingress` route (a request the ingress first asks `api` about), (b) an optional `network` on an install step, and (c) a `first_admin` block on an `oidc` provider (the provider's own first admin page and the paths to gate). A platform graph with `authelia` in place of `pocket-id` still renders and passes the checks, so nothing in the setup names one identity module.
+- **AC-7**: Pocket ID's encryption key and static API key are generated secret files (mode 0600), never an environment value in the rendered Compose file, never in a log line, never in any `api` or renderer response. The `api` container cannot read the static API key; only Pocket ID and its client jobs mount it.
+- **AC-8**: For each binding to the `oidc` provide of `pocket-id`, a provision job of the `oidc-provisioner` capability runs on every `up`. It waits for Pocket ID healthy, reaches it by its service name on the internal network (not through the ingress), and upserts the client by client id with the generated client secret one redirect URI (the public origin, the base path and the consumer's `redirect_path`) and one logout URI (the same origin and base path plus the consumer's `logout_path`). `api` builds both of its own URIs from the same `redirect_path` and `logout_path` values, so the two sides cannot drift. The consumer (`api`) has `depends_on` the job with `service_completed_successfully`. Running `up` many times leaves the client with exactly one secret. Changing the base path and rendering again repoints the redirect URI with no manual step.
+- **AC-9**: The contract and the checks accept (a) an optional `gate` on an `http-ingress` route (a request the ingress first asks `api` about), (b) an optional `network` on an install step, (c) a `first_admin` block on an `oidc` provider or on a provide of a provisioner that yields `oidc` (the provider's own first admin page and the paths to gate), and (d) a render rule, with no new contract source: a provision job gets every text `to_provider` field of the consumer's slot as `MP_<F>` (a file field is `ErrNotRendered`). The `oidc` capability drops its dead `admin_email` field (specs 0035 and 0036 already removed it) and gives `client_id` a `pattern`, so it can be a named field. A platform graph with `authelia` in place of `pocket-id` still renders and passes the checks, so nothing in the setup names one identity module.
 - **AC-10**: The module's healthcheck passes in Compose, the spike records the idle memory use, and the rendered README says: the sign in uses passkeys, the auth host needs its own DNS name, where the static API key lives and why, and how to recover a lost passkey.
 - **AC-11**: The spike's results (each gate below, the exact calls and values, the pinned image tag) are in [rationale.md](rationale.md) before any task after it starts, and a failed hard gate stops the build.
+- **AC-12**: A revoke job of `oidc-provisioner` runs on every `up` after the provision jobs and deletes the clients that carry the stack's marker and whose client id no current binding names. It never changes a client without the marker. A provision job whose client id already exists without the marker fails and names the client ("client <id> exists and was not made by the platform; delete it in Pocket ID or name another client id in the graph"). A job script never prints a response body, and the revoke job deletes nothing when any page of the client list failed.
+- **AC-13**: On a fresh database, before any admin exists, the provision job succeeds, so `api` starts and the setup page can open. (G7 proves the static API key works with no admin; a failure stops the build.)
 
 ## Decision
 
 **Chosen option**: Option 2: Pocket ID as the bundled provider, behind a spike, with Rauthy and then Authelia with lldap as the ordered fallbacks.
 
-Ship `pocket-id` as the default module that provides `oidc` and `site`, keep spec 0026's auth host, let the admin create the first account on Pocket ID's own page behind a gate that reuses the setup session, register the `api` client with a one shot step, and keep Authelia in the catalog as an optional module with its file enroll.
+Ship `pocket-id` as the default module that provides `oidc` and `site`, keep spec 0026's auth host, let the admin create the first account on Pocket ID's own page behind a gate that reuses the setup session, register the `api` client with a provision job of `oidc-provisioner` (the client step below), and keep Authelia in the catalog as an optional module with its file enroll.
 
 **Implementation skills**: `openapi-spec-generation` (`wshobson/agents`, `.agents/skills/openapi-spec-generation/`) · `golang-security` (`samber/cc-skills-golang`, `.agents/skills/golang-security/`)
 
@@ -51,7 +53,7 @@ Run the pinned Pocket ID image by hand in Compose behind Caddy on `auth.platform
 | G5 | Every env value and call this spec uses works on the pinned tag (the docs we read describe an unreleased version) | all |
 | G6 | A virtual passkey device in headless Chromium can register and sign in | AC-3 |
 
-**Soft gates** (record the value; a miss goes to you, it does not stop the build): the healthcheck command in the image; whether the image has a shell and an HTTP client for the client step (if not, the step names a small pinned helper image); whether the encryption key and the static key can come from files, and how the database connection string, which holds a password, is built without a secret in the Compose file; whether `UI_CONFIG_DISABLED=true` is needed for the sign up env to apply (it is then required); the literal env values of each `signup` mode; the claims (`email`, `email_verified`) at sign in; whether a consent screen shows at the first sign in (the smoke must click it); the command that mints a sign in link for a lost passkey; a writable data folder and the container's hardening; idle memory (record it; above 300 MB you decide); whether a sub path works (recorded for a later placement spec, not built here).
+**Soft gates** (record the value; a miss goes to you, it does not stop the build): the healthcheck command in the image; the client step's job image (decided: our own small image, see the client step); whether the encryption key and the static key can come from files, and how the database connection string, which holds a password, is built without a secret in the Compose file; whether `UI_CONFIG_DISABLED=true` is needed for the sign up env to apply (it is then required); the literal env values of each `signup` mode; the claims (`email`, `email_verified`) at sign in; whether a consent screen shows at the first sign in (the smoke must click it); the command that mints a sign in link for a lost passkey; a writable data folder and the container's hardening; idle memory (record it; above 300 MB you decide); whether a sub path works (recorded for a later placement spec, not built here).
 
 ### Contract changes (specs 0012, 0013, 0016)
 
@@ -71,6 +73,65 @@ steps:
 ```
 
 The renderer fills the ingress route's `gate` from the identity module's `first_admin.gate` and from `api`'s own address; a module with no `first_admin` gets no gated route. The exact field names are fixed in task 3 and the contract, not here.
+
+### The client step: `oidc-provisioner` (task 5, decided 2026-11-21)
+
+Pocket ID has no client config file, so something must register `api` as a client. It reuses the provisioner of spec 0014 (no new `jobs:` block): a provisioner is admin access to a thing that makes one resource per binding, its provision job already runs on every `up` after the provider is healthy, and the consumer already waits for it with `service_completed_successfully`. `pocket-id` provides `oidc-provisioner` under the provide name `oidc`; `api` keeps `uses oidc` unchanged. Authelia keeps providing plain `oidc`, so both still satisfy the same use.
+
+```yaml
+# catalog/capabilities/oidc-provisioner.yaml
+name: oidc-provisioner
+scheme: http                             # the provider's own address on the internal network
+fields:
+  url: {type: url}                       # the provider's own address on the internal network
+  api_key: {type: secret}
+  issuer: {type: url}
+  origin: {type: url}                    # the public origin
+  base_path: {type: string}
+  ca: {type: certificate, optional: true}
+yields:
+  capability: oidc
+  named: [client_id]                     # default <consumer>_<slot>, the graph may name it
+  login: client_id                       # the revoke job keeps these
+  fields:
+    issuer: {admin: issuer}
+    client_id: named
+    client_secret: generate              # the file the consumer gets is the file the job reads
+    ca: {admin: ca}
+    # redirect_path and logout_path are to_provider fields: the consumer gives them, the job
+    # reads them as MP_REDIRECT_PATH and MP_LOGOUT_PATH (render rule, AC-9d)
+  job: {image: <pinned, task 5a>, provision: ..., revoke: ...}
+# in the pocket-id entry
+provides:
+  oidc:
+    capability: oidc-provisioner
+    first_admin: {path: /setup, gate: [/setup, /signup/setup, /api/signup/setup]}
+    fields:
+      url: {platform: url}                     # http://pocket-id.<graph>.internal:1411 (scheme from the capability, port from the provide)
+      api_key: {secret: static-api-key}
+      issuer: {uses: public, format: "https://{host}"}
+      origin: {uses: public, field: origin}
+      base_path: {uses: public, field: base_path}
+      ca: {uses: public, field: ca}
+```
+
+The exact field names are fixed in task 5b; the shape is not. Changes to `catalog/capabilities/oidc.yaml`, made in 5b: remove `admin_email` (and `MP_ADMIN_EMAIL` from the `api` entry, since the check wants a source for every field the provider gives); give `client_id` a `pattern` that Authelia and Pocket ID both accept; add the `to_provider` field `logout_path`, which `api` sets to its home path. `api`'s own redirect and logout URIs come from `redirect_path` and `logout_path` in its entry, not from constants in Go.
+
+**The job image (decided)**: our own small image (Alpine with `/bin/sh`, `curl`, `jq`), built from the repo like our other images, with release-please and the frozen list of spec 0031. The job runs read only, as `${MP_UID}`, with no egress, and holds the admin key, so a third party image is a supply chain risk, and the provider's busybox `wget` cannot send PUT or DELETE. The wait anchor `mp_jobs` takes the image of the first job nothing waits for, by service name, so this image also runs `sleep infinity` under all four hardening options (the e2e of 0014 proves it).
+
+**Provision** (every `up`, one job per binding, on the `internal` network, `depends_on` `pocket-id` `service_healthy`). The script calls Pocket ID at `$MP_ADMIN_URL` with the header `X-API-KEY` read from `/run/secrets/admin/api_key` (a header file, never a command line value); every JSON body is built with `jq --arg` and `--rawfile`, so no name or secret goes through shell quoting. The job writes only to `/tmp`.
+1. `GET /api/oidc/clients/<client_id>`. `404`: `POST /api/oidc/clients` with `id`, `name`, `callbackURLs` (one item: `MP_ADMIN_ORIGIN` + `${MP_ADMIN_BASE_PATH:-}` + `MP_REDIRECT_PATH`, joined with no normalisation), `logoutCallbackURLs` (one item: the same origin and base path + `MP_LOGOUT_PATH`), `pkceEnabled: true`, `isPublic: false`, `skipConsent` as task 5a decides, and `description` set to `mp-marker:<MP_MARKER>` (the marker). The 201 body of a create holds a generated secret in `createdSecret`, which the secret step below deletes. `200` with the marker: `PUT` the same body (a PUT replaces the whole client, so 5a records the full body Pocket ID expects). The script uses `curl -sS`, never `-v`, and prints no response body (the `GET` returns the client's `credentials`). `200` without the marker: fail with the message of AC-12.
+2. Secret, an ensure in three moves: read the secret ids now on the client (`credentials.secrets` of the `GET`), `POST /api/oidc/clients/<id>/secrets` with the content of `MP_CLIENT_SECRET_FILE`, then `DELETE` each id read first. A run that stops between the second and third move leaves two secrets with the same value; the next run ends with one.
+
+**Revoke** (every `up`, one job per provide, after every provision job; the wait anchor `mp_jobs` waits for it): list the clients (all pages), and `DELETE` each one that has the marker and whose id is not in `MP_KEEP`. This deletes where the postgres revoke only disables logins (0014 AC-6); a client holds no data, and the contract only fixes `MP_KEEP`, so the script decides. A client without the marker is never read as ours. If any page of the list fails, the job fails and deletes nothing. The marker is the stack's `MP_MARKER`, so renaming the graph orphans its marked clients and a provision job then fails on the old client id; the README says to delete such a client by hand.
+
+**Order and the deadlock to avoid**: `api` waits for its job, the job waits for Pocket ID healthy, and the setup page is served by `api`. So the job must succeed before any admin exists. G7 below proves it; the build stops if it fails.
+
+**Gate G7 (hard, task 5a; passed 2026-11-21, so the build goes on)**: with `STATIC_API_KEY` set and an empty database (no admin yet), `GET` and `POST /api/oidc/clients` and the secret calls work. The spike of G3 ran after the admin existed.
+
+**Soft gates (task 5a, record the value)**: Results of the hand check of 2026-11-21 are in [rationale.md](rationale.md) (*Task 5a results*): the marker lives in the client's `description` as `mp-marker:<MP_MARKER>` (no name prefix, nothing shown to users); the list call pages with `pagination[limit]` and `pagination[page]` and reports `totalPages`; calls to the internal service name over plain HTTP work. Still to record in 5a: that Pocket ID answers the full internal name `http://pocket-id.<graph>.internal:1411`; whether `skipConsent: true` removes the consent screen (the smoke shows it, task 7); the full PUT body with `logoutCallbackURLs`; that `_` is accepted in a client id (the default is `api_oidc`).
+
+**Flavors and order**: `pocket-id` may run in a deployed (managed) graph. The deployer guard accepts any provision or revoke job, so no guard change is expected; the build adds a managed flavor golden and a guard test to prove it. The ingress gate adds no `depends_on` on `api` (`forward_auth` resolves at request time and fails closed), and the chain `api` → job → `pocket-id` → postgres has no cycle; the builder must not add one.
 
 ### Interface (api, spec 0036's setup routes)
 
@@ -92,9 +153,13 @@ The renderer fills the ingress route's `gate` from the identity module's `first_
 | gate | which paths are guarded | `first_admin.gate` in the catalog entry, filled into the ingress route |
 | gate | whether it still lets requests through | `api`'s answer (valid setup session and no admin bound) |
 | first sign in | the admin identity | the provider's `iss` and `sub` from the callback; email only if the claims carry one (0036) |
-| client step | client id and secret for `api` | the `oidc` binding: `client_id` from the consumer, `client_secret` generated (or the provider's, if G3 says so) |
-| client step | redirect URIs | the platform origin and base path, as rendered today |
-| client step | the Pocket ID admin credential | secret `static-api-key`, generated at install, mounted only into the provider and the client step |
+| client job | the provider's address | the provide's `url` field: Pocket ID's `site` address on the internal network |
+| client job | client id | `named` `client_id` of the binding: the graph's value, else the check's default `<consumer>_<slot>`; `api` reads it as `MP_OIDC_CLIENT_ID` |
+| client job | client secret | generated per binding file (spec 0013); the job reads `MP_CLIENT_SECRET_FILE`, `api` reads the same file (G3: the secret can be chosen) |
+| client job | redirect URI | `MP_ADMIN_ORIGIN` + `${MP_ADMIN_BASE_PATH:-}` (the `public` slot's `origin` and optional `base_path`) + `MP_REDIRECT_PATH` (the consumer's `redirect_path`; `api` builds its own URI from the same value) |
+| client job | logout URI | the same origin and base path + `MP_LOGOUT_PATH` (the consumer's `logout_path`, `api`'s home path) |
+| client job | the Pocket ID admin credential | secret `static-api-key`, generated at install, mounted only into the provider and its client jobs (`/run/secrets/admin/api_key`) |
+| client job | the marker and the keep list | `MP_MARKER` and `MP_KEEP` as spec 0014 renders them |
 | render | the auth host and the issuer | spec 0026; the issuer string is the one G4 proves |
 | render | the sign up mode | module config `signup`, default `disabled`, mapped to the provider's literal values |
 | setup page | whether to show "Create your admin account" | the identity module's catalog entry has `first_admin` and no `enroll` |
@@ -106,6 +171,7 @@ The renderer fills the ingress route's `gate` from the identity module's `first_
 - The gate fails closed and stops guarding only when the setup is done.
 - The bundle models no roles. Read only or no access for some users comes from another module or capability (scope #14, #28, #29).
 - `api` never holds the provider's static API key.
+- The client jobs only change clients that carry the stack's marker; they never read the provider through the ingress.
 - The image tag is exact and frozen (spec 0031).
 
 ### Security model
@@ -125,7 +191,10 @@ Pocket ID's first admin page is the one risky window: it is open to any visitor 
 - Gate: no cookie, a forged or expired token, a reused token, `api` stopped, all give 403; a valid cookie passes only the guarded paths; after the bind the cookie is refused, verifies **AC-2**, **AC-4**, **AC-5**
 - Failure: `signup: bogus` is refused, verifies **AC-6**
 - Permission: `api` cannot read `secrets/pocket-id/static-api-key`; the rendered Compose file holds no key value, verifies **AC-7**
-- Rerender: a changed base path repoints the client's redirect URI after `up`, verifies **AC-8**
+- Rerender: a changed base path repoints the client's redirect URI after `up`; three `up` runs leave one secret on the client, verifies **AC-8**
+- Revoke: unbind a consumer, `up`, its client is gone; a hand made client without the marker stays, and a provision job for a client id that exists without the marker fails with its name, verifies **AC-12**
+- Empty database: a fresh `up` with no admin finishes with the client job exited 0 and `api` ready, verifies **AC-13**
+- Render: `api` has `depends_on` the job with `service_completed_successfully`; the job is on `internal` only, mounts `static-api-key`, and `api` does not, verifies **AC-7**, **AC-8**
 - Contract: a graph with `authelia` in place of `pocket-id` still renders; a module with no `first_admin` gets no gate, verifies **AC-9**
 
 ## Build plan
@@ -150,7 +219,11 @@ Everything else of 0033 (the `setup` command pages, the keeper endpoints, the Au
 2. **Fixture catalog entry** `pocket-id` in the `platform-keeper` fixture (`provides oidc` and `site` with `first_admin`, `uses` ingress and `postgresql`, config `signup`, the two secrets, healthcheck), with its render golden. It replaces the fixture's `authelia` entry, which also removes the stale `admin-password` secret the keeper tests trip on today. Authelia's enroll tests (0035) move to a small second fixture so they keep running; satisfies **AC-1**, **AC-7**. Needs A1, A2.
 3. **Contract first** (partly done: `first_admin` and the step `network` exist): add the route `gate` on `http-ingress` in `libs/contract`, the manifest rules and the renderer, then the render that fills the gate fields; `contracts/openapi/api.yaml` for the three routes; `task generate`; satisfies **AC-9**. Needs A1, A2.
 4. **Api**: `identity-link`, `identity-enter` and `gate` on `libs/setupsession`, with the handoff token and the fail closed rule; satisfies **AC-2**, **AC-4**, **AC-5**. Needs B1, B2, and task 3.
-5. **Client step**: the one shot upsert on every `up`, `api` waits for it; satisfies **AC-8**
+5. **Client step** (the `oidc-provisioner` above), in four parts:
+   - 5a. (G7 and most soft gates done 2026-11-21, see the soft gates above for what remains) **Check by hand** on the pinned image: G7 and the soft gates of the client step, on the pinned Pocket ID image. Record the results in [rationale.md](rationale.md). A failed G7 stops the build and returns here; satisfies **AC-13**
+   - 5b. **Contract first**: `catalog/capabilities/oidc-provisioner.yaml`, `scheme: http`, the `oidc` changes above (no `admin_email`, a `client_id` pattern, `logout_path`; `api`'s entry and the keeper golden change with the client id `api_oidc`), `first_admin` on a provisioner provide, and the checks with their catalog fixtures; `task generate`; satisfies **AC-9**
+   - 5c. **Render**: resolve the consumer slot's text `to_provider` values (`{value}` or config sources) inside the provision job, which `bind.go` builds before `toProviderValues` runs today, and hand them over as `MP_<F>` (AC-9d), with the `public` slot's `origin` and `base_path`; check that the consumer and the provider share one ingress; move the `pocket-id` fixture from providing `oidc` to providing `oidc-provisioner`; goldens (a job per binding, `api` `depends_on` it, no key value in the Compose file); satisfies **AC-7**, **AC-8**
+   - 5d. **Scripts and tests**: provision and revoke scripts, our own job image (Dockerfile from the repo root, release-please, the frozen list of 0031), a managed flavor golden with a guard test, and the Docker test (`task test:integration`: three `up` runs, a base path change, an unbound consumer, a foreign client, a fresh database); satisfies **AC-8**, **AC-12**, **AC-13**
 6. **Editor setup page**: "Create your admin account", then "Sign in to finish the setup"; satisfies **AC-3**. Needs B2.
 7. **Cut over**: the real `pocket-id` catalog entry, `deploy/managed/graph.yaml` switches to it, Authelia stays as an optional entry (this is where 0026's `authelia` entry and template are finished), goldens, the managed smoke with a virtual passkey device; satisfies **AC-1**, **AC-3**, **AC-9**
 8. **Sign up config and docs**: the `signup` mapping and its refusal, the README text; satisfies **AC-6**, **AC-10**
@@ -174,7 +247,10 @@ Everything else of 0033 (the `setup` command pages, the keeper endpoints, the Au
 - The choice rests on facts not yet seen on a running image (the first admin page above all); the spike can send us back here.
 - The ingress needs a new gated route, a contract change that every ingress replacement must also support (spec 0012).
 - Pocket ID is passkey only: a user without a passkey capable device cannot sign in, and the smoke needs a virtual authenticator.
-- The static API key is a powerful shared secret that stays on disk.
+- The static API key is a powerful shared secret that stays on disk, and every client job mounts it.
+- `oidc` now has two provider shapes (Authelia provides it directly, Pocket ID through a provisioner); both satisfy the same use, as `postgresql` does for a server and a provisioner.
+- A failed client job keeps `api` from starting, so a Pocket ID that answers badly blocks the whole stack until fixed; the job log names the client, never a secret.
+- The client id of `api` becomes `api_oidc` unless the graph names it.
 - No email domain allow list, no roles, and no OpenID4VP; each needs another module or a later spec.
 - Pocket ID's 2.x docs describe an unreleased version and a 3.x redesign was announced, so the tag is pinned and each upgrade is its own change.
 
@@ -189,6 +265,9 @@ Everything else of 0033 (the `setup` command pages, the keeper endpoints, the Au
 - [ ] A later spec for email domain limits and roles in front of the bundled provider (scope #14, #28, #29), and for OpenID4VP sign in if a provider offers it.
 - [ ] Sub path placement for the provider: the spike records it, a placement spec decides.
 - [ ] Rotation of the static API key (not built here).
+- [ ] The README names the client job's service (a failing job blocks `api` and the setup page, and `docker compose logs` is the only diagnosis), and says that deleting other secrets also removes a secret an admin added by hand to a marked client.
+- [ ] Add the client job image to the frozen list of spec 0031, and note in spec 0014 that a revoke script may delete (a pointer, like the other amended rows).
+- [ ] The README says: a client the platform made carries the marker and `up` deletes it when its consumer leaves; make hand made clients without that marker.
 - [ ] No installed skill covers Pocket ID or OIDC providers; consider adding one if the spike shows the API is large.
 
 ## Rationale

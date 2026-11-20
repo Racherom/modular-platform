@@ -1102,7 +1102,7 @@ type UseBinding = GraphBinding
 // means not decided: the renderer may bind a required slot or warn about an optional one.
 type Uses map[string]*UseBinding
 
-// YieldSource `named`, `generate`, `output`, or `{admin: <field of the provisioner>}`.
+// YieldSource `named`, `generate`, `output`, `consumer` (a to_provider field the consumer gives; the job gets its value), or `{admin: <field of the provisioner>}`.
 type YieldSource = YieldFieldSource
 
 // Yields What a provisioner makes per binding (spec 0014).

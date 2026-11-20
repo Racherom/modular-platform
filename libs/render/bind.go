@@ -222,7 +222,9 @@ func (r *renderer) provisioned(e end) (map[string]value, error) {
 		r.keep[key] = append(r.keep[key], named[y.Login])
 	}
 	r.provisions[key] = append(r.provisions[key], provisionJobName(e.b))
-	r.provisionJob(e, admin, adminValues, named)
+	if err := r.provisionJob(e, admin, adminValues, named); err != nil {
+		return nil, err
+	}
 	return values, nil
 }
 
@@ -471,13 +473,14 @@ func revokeJobName(p, q string) string { return p + "_revoke_" + q }
 
 // provisionJob adds the one shot service that makes what binding e.b names (spec 0014): the
 // admin fields, the binding's consumer, slot and named values, and its generated files.
-func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues map[string]value, named map[string]string) {
+func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues map[string]value, named map[string]string) error {
 	b, y := e.b, admin.Yields
 	name := provisionJobName(b)
 	svc := r.jobService(name, e, admin, adminValues, y.Job.Provision)
 	setEnv(&svc, "MP_CONSUMER", b.Consumer)
 	setEnv(&svc, "MP_SLOT", b.Slot)
 	setEnv(&svc, "MP_CONSUMER_HOST", r.host(b.Consumer))
+	var consumer map[string]string
 	for _, f := range y.Named {
 		setEnv(&svc, "MP_"+strings.ToUpper(f), named[f])
 	}
@@ -487,6 +490,15 @@ func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues ma
 			target := "/run/secrets/bind/" + f
 			r.mountSecret(&svc, b.Consumer+"_uses_"+b.Slot+"_"+f, r.perBinding(b, f), target)
 			setEnv(&svc, "MP_"+strings.ToUpper(f)+"_FILE", target)
+		case contract.YieldConsumer:
+			// the value the consumer gives, like a redirect path (spec 0037)
+			if consumer == nil {
+				var err error
+				if consumer, err = r.clientValues(b); err != nil {
+					return fmt.Errorf("values of %s for the job of %s: %w", b.Consumer, admin.Name, err)
+				}
+			}
+			setEnv(&svc, "MP_"+strings.ToUpper(f), consumer[f])
 		case contract.YieldOutput:
 			// a bind mount, not a secret: the job writes it
 			svc.Volumes = append(svc.Volumes, types.ServiceVolumeConfig{
@@ -496,6 +508,7 @@ func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues ma
 	}
 	r.project.Services[name] = svc
 	r.jobs[name] = job{instance: b.Provider, module: e.module.Name, kind: jobProvision, capability: admin.Name, consumer: b.Consumer}
+	return nil
 }
 
 // revokeJobs adds one revoke job per provisioner provide whose capability names a login,
@@ -557,6 +570,8 @@ func (r *renderer) jobService(name string, e end, admin contract.Capability, adm
 		v := adminValues[f]
 		env := "MP_ADMIN_" + strings.ToUpper(f)
 		switch {
+		case v.folder != "":
+			continue // a file in another instance's volume: the consumer mounts it; a job reaches the provider inside the stack and needs none
 		case admin.Fields[f].IsFile():
 			target := "/run/secrets/admin/" + f
 			r.mountSecret(&svc, b.Provider+"_admin_"+b.Provide+"_"+f, v.file, target)

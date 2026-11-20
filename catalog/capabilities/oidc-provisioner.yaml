@@ -1,0 +1,86 @@
+apiVersion: modular-platform/v1
+kind: Capability
+name: oidc-provisioner
+description: Admin access to an OpenID Connect provider that registers one client per consumer.
+scheme: http
+fields:
+  url: {type: url, description: "The provider's own address on the internal network, like http://pocket-id:1411."}
+  api_key: {type: secret, description: Admin API key of the provider.}
+  issuer: {type: url, description: Issuer URL of the provider.}
+  origin: {type: url, description: "The public origin the browser sees."}
+  base_path: {type: string, optional: true, description: Path the platform is served under; unset at the site root.}
+  ca: {type: certificate, optional: true, description: Root CA that signs the provider's certificate.}
+yields:
+  capability: oidc
+  named: [client_id]
+  login: client_id
+  fields:
+    issuer: {admin: issuer}
+    client_id: named
+    client_secret: generate
+    ca: {admin: ca}
+    redirect_path: consumer
+  job:
+    # The platform's own small image: busybox sh and sleep, curl and jq (spec 0037, task 5a).
+    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0 # x-release-please-version
+    # Spec 0037, "The client step". Every JSON body is built by jq from --arg and --rawfile, so no
+    # name or secret passes through shell quoting; the API key reaches curl as a header file, never
+    # on a command line. The job reaches the provider by its service name, not through the ingress.
+    provision: |
+      umask 077
+      printf 'X-API-KEY: %s\n' "$(cat "$MP_ADMIN_API_KEY_FILE")" > /tmp/key.hdr
+      mark="mp-marker:$MP_MARKER"
+      callback="${MP_ADMIN_ORIGIN%/}${MP_ADMIN_BASE_PATH:-}$MP_REDIRECT_PATH"
+      call() { # method path [curl args]: the status code on stdout, the body in /tmp/out
+        m=$1; p=$2; shift 2
+        curl -sS -o /tmp/out -w '%{http_code}' --connect-timeout 5 --max-time 30 \
+          -X "$m" -H @/tmp/key.hdr -H 'Content-Type: application/json' "$@" "$MP_ADMIN_URL$p"
+      }
+      fail() { echo "provision: $*" >&2; exit 1; }
+      echo "provision: oidc client $MP_CLIENT_ID for $MP_CONSUMER (slot $MP_SLOT)"
+      jq -n --arg id "$MP_CLIENT_ID" --arg mark "$mark" --arg cb "$callback" \
+        '{id: $id, name: $id, description: $mark, callbackURLs: [$cb], pkceEnabled: true, isPublic: false, skipConsent: true}' > /tmp/client.json
+      jq 'del(.id)' /tmp/client.json > /tmp/client-put.json
+      case $(call GET "/api/oidc/clients/$MP_CLIENT_ID") in
+        404) [ "$(call POST /api/oidc/clients --data @/tmp/client.json)" = 201 ] || fail "creating client $MP_CLIENT_ID failed" ;;
+        200)
+          [ "$(jq -r .description /tmp/out)" = "$mark" ] || fail "client $MP_CLIENT_ID exists and was not made by the platform"
+          [ "$(call PUT "/api/oidc/clients/$MP_CLIENT_ID" --data @/tmp/client-put.json)" = 200 ] || fail "updating client $MP_CLIENT_ID failed" ;;
+        *) fail "reading client $MP_CLIENT_ID failed" ;;
+      esac
+      # the secret: add the one the consumer reads, then delete the ones that were there before
+      [ "$(call GET "/api/oidc/clients/$MP_CLIENT_ID")" = 200 ] || fail "reading client $MP_CLIENT_ID failed"
+      old=$(jq -r '.credentials.secrets[].id' /tmp/out)
+      jq -n --rawfile s "$MP_CLIENT_SECRET_FILE" '{secret: ($s | rtrimstr("\n"))}' > /tmp/secret.json
+      [ "$(call POST "/api/oidc/clients/$MP_CLIENT_ID/secrets" --data @/tmp/secret.json)" = 201 ] || fail "setting the secret of client $MP_CLIENT_ID failed"
+      for id in $old; do
+        [ "$(call DELETE "/api/oidc/clients/$MP_CLIENT_ID/secrets/$id")" = 204 ] || fail "removing an old secret of client $MP_CLIENT_ID failed"
+      done
+      echo "provision: client $MP_CLIENT_ID is ready"
+    # Deletes where the postgres revoke only disables a login: a client holds no data. A client
+    # without our marker is never read as ours.
+    revoke: |
+      umask 077
+      printf 'X-API-KEY: %s\n' "$(cat "$MP_ADMIN_API_KEY_FILE")" > /tmp/key.hdr
+      mark="mp-marker:$MP_MARKER"
+      call() {
+        m=$1; p=$2; shift 2
+        curl -sS -o /tmp/out -w '%{http_code}' --connect-timeout 5 --max-time 30 \
+          -X "$m" -H @/tmp/key.hdr -H 'Content-Type: application/json' "$@" "$MP_ADMIN_URL$p"
+      }
+      fail() { echo "revoke: $*" >&2; exit 1; }
+      echo "revoke: clients made by the platform that no binding keeps are deleted"
+      : > /tmp/drop
+      page=1
+      while :; do
+        [ "$(call GET "/api/oidc/clients?pagination%5Blimit%5D=50&pagination%5Bpage%5D=$page")" = 200 ] || fail "listing clients failed"
+        jq -r --arg mark "$mark" --arg keep "$MP_KEEP" \
+          '($keep | split(",")) as $k | .data[] | select(.description == $mark and ((.id as $i | $k | index($i)) == null)) | .id' /tmp/out >> /tmp/drop
+        [ "$page" -lt "$(jq -r '.pagination.totalPages // 1' /tmp/out)" ] || break
+        page=$((page + 1))
+      done
+      while read -r id; do
+        [ -n "$id" ] || continue
+        echo "revoke: deleting client $id"
+        [ "$(call DELETE "/api/oidc/clients/$id")" = 204 ] || fail "deleting client $id failed"
+      done < /tmp/drop

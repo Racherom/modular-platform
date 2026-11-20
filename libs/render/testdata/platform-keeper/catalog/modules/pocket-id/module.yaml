@@ -24,7 +24,8 @@ healthcheck:
   start_period: 30s
 provides:
   oidc:
-    capability: oidc
+    # a provisioner: a job per binding registers the client at the provider (spec 0037, task 5)
+    capability: oidc-provisioner
     version: "1.0"
     port: 1411
     # the provider's own first admin page, guarded by the ingress until an admin is bound
@@ -32,9 +33,11 @@ provides:
       path: /setup
       gate: [/setup, /signup/setup, /api/signup/setup]
     fields:
+      url: {platform: url}
+      api_key: {secret: static-api-key}
       issuer: {uses: public, format: "https://{host}"}
-      client_id: {platform: consumer}
-      client_secret: {generate: true}
+      origin: {uses: public, field: origin}
+      base_path: {uses: public, field: base_path}
       ca: {uses: public, field: ca}
   site:
     capability: http

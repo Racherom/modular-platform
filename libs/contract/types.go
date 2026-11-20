@@ -119,12 +119,13 @@ const (
 	YieldGenerate = "generate" // a per binding file of 32 random bytes in hex
 	YieldOutput   = "output"   // a file the provision job writes
 	YieldAdmin    = "admin"    // a field of the provisioner's own provide
+	YieldConsumer = "consumer" // a to_provider field the consumer gives; the job gets its value (spec 0037)
 )
 
 // YieldFieldSource is where one field of a yielded capability comes from (spec 0014): `named`,
-// `generate`, `output`, or `{admin: <field>}`.
+// `generate`, `output`, `consumer`, or `{admin: <field>}`.
 type YieldFieldSource struct {
-	Kind  string // YieldNamed, YieldGenerate, YieldOutput or YieldAdmin
+	Kind  string // YieldNamed, YieldGenerate, YieldOutput, YieldConsumer or YieldAdmin
 	Admin string // the provisioner's field, for YieldAdmin
 }
 
@@ -136,12 +137,12 @@ func (s YieldFieldSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s.Kind)
 }
 
-// UnmarshalJSON reads `named`, `generate`, `output` or `{admin: <field>}`.
+// UnmarshalJSON reads `named`, `generate`, `output`, `consumer` or `{admin: <field>}`.
 func (s *YieldFieldSource) UnmarshalJSON(data []byte) error {
 	var text string
 	if err := json.Unmarshal(data, &text); err == nil {
-		if !slices.Contains([]string{YieldNamed, YieldGenerate, YieldOutput}, text) {
-			return fmt.Errorf("yield source %q is not named, generate, output or {admin: <field>}", text)
+		if !slices.Contains([]string{YieldNamed, YieldGenerate, YieldOutput, YieldConsumer}, text) {
+			return fmt.Errorf("yield source %q is not named, generate, output, consumer or {admin: <field>}", text)
 		}
 		*s = YieldFieldSource{Kind: text}
 		return nil
@@ -152,7 +153,7 @@ func (s *YieldFieldSource) UnmarshalJSON(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&obj); err != nil || obj.Admin == "" {
-		return errors.New("a yield source must be named, generate, output or {admin: <field>}")
+		return errors.New("a yield source must be named, generate, output, consumer or {admin: <field>}")
 	}
 	*s = YieldFieldSource{Kind: YieldAdmin, Admin: obj.Admin}
 	return nil

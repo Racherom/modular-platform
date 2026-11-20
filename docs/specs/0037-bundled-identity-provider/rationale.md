@@ -141,6 +141,42 @@ Run by hand: Compose with `postgres:18.6-alpine3.24`, Pocket ID, and `caddy:2.11
 
 No hard gate failed, so the build goes on.
 
+## The client step (decided 2026-11-21)
+
+Your ask was a new `jobs:` block: a per `up` Compose job that waits for the provider healthy, with a `depends_on` of `service_completed_successfully` on each consumer. Spec 0014 already renders exactly that for a provisioner, so the second option below is what you picked after I showed it.
+
+| Option | Verdict |
+|---|---|
+| Reuse the provisioner: `oidc-provisioner` yields `oidc` (**chosen**) | The provision job, the consumer wait, the revoke job, the marker, the keep list and the wait anchor exist and are tested. Costs one new yields source (`consumer`) and a second provider shape for `oidc`. |
+| A `jobs:` block that takes its image from a capability | A second way to run a job per binding, with its own guard kind and revoke rule. |
+| A `jobs:` block with image and script in the entry | Self contained, but every identity module repeats the job and the provisioner machinery stays unused. |
+
+Other answers from the interview: one job per client (each consumer waits only for its own client; one failure names its client); the job runs the image of the capability file, as every provisioner does (the provider's own image has busybox `wget` and no JSON parser, which the secret cleanup needs); a removed client is deleted, by the revoke job, only when it carries our marker; the job reaches Pocket ID by its service name on the internal network (no CA, no Caddy, and the gate is not in the path).
+
+Risk found while writing: `api` waits for the job, the setup page is served by `api`, and no admin exists at the first `up`. If the static key needs an existing admin, the stack deadlocks, so G7 is a hard gate in task 5a (it passed, see *Task 5a results*).
+
+Cross check by another model (2026-11-21) found 11 gaps; you chose to apply the recommended fixes. The ones that changed the design: the `consumer` yields source is replaced by a render rule (the check refuses a source on a `to_provider` field); the dead `admin_email` leaves `oidc`; `client_id` gets a pattern; the job address uses `scheme: http` and `{platform: url}`; `api` and the job build their URIs from the same `redirect_path` and `logout_path`, and the client carries `logoutCallbackURLs`; the job image is our own, because it holds the admin key and runs read only with no egress; the flavors and the "gate adds no `depends_on`" rule are stated.
+
+## Task 5a results (2026-11-21, G7 and the client step's soft gates)
+
+Run by hand: `ghcr.io/pocket-id/pocket-id:v2.19.3` alone on a Docker network (SQLite, no admin, `STATIC_API_KEY_FILE` and `ENCRYPTION_KEY_FILE` as files), called from a second container by the service name over plain HTTP (no `X-Forwarded-*`, internal Host). Idle memory of that container: about 34 MB.
+
+**G7: pass.** With an empty database and no admin, `POST /api/oidc/clients` answers 201, so the job can succeed before any admin exists and there is no deadlock (AC-13).
+
+| Question | Result |
+|---|---|
+| Auth | Header `X-API-KEY: <key>`. A wrong key answers 401. Calls to `http://pocket-id:1411` work with the internal Host. |
+| Read | `GET /api/oidc/clients/<id>` answers 404 when missing, 200 with the client and `credentials.secrets[]` (`id`, `prefix`, `isActive`; never the value). |
+| Create | `POST /api/oidc/clients` with `id`, `name`, `callbackURLs`, `pkceEnabled`, `isPublic` answers 201; the client id is ours. An existing id answers 409 `client_id_already_exists`. The 201 body holds a generated secret in `createdSecret`, which the job deletes in the secret step. |
+| Update | `PUT /api/oidc/clients/<id>` (the same body without `id`) answers 200 and replaces `callbackURLs`. |
+| Secret we choose | `POST /api/oidc/clients/<id>/secrets` with `{"secret": "<value>"}` answers 201 and the client then accepts that value (the key must be `secret`; any other key is ignored and a random secret is made). The same value twice makes two secrets, so the ensure of the spec (read ids, add, delete the old ids) ends with one. |
+| Delete | `DELETE /api/oidc/clients/<id>/secrets/<secretId>` answers 204; `DELETE /api/oidc/clients/<id>` answers 204, then `GET` answers 404. |
+| Marker | The client field `description` is stored and returned by both `GET` and the list, so the marker lives there (`mp-marker:<MP_MARKER>`). No name prefix is needed. |
+| List and paging | `GET /api/oidc/clients?pagination[limit]=N&pagination[page]=P` (brackets URL encoded); the answer has `data[]` and `pagination.totalPages`. Default 20 per page. |
+| `skipConsent` | The create and update calls accept `skipConsent: true` and return it. Whether the consent screen is gone is for the smoke to show (task 7). |
+
+**Job image: decided with you, build our own.** No existing image has `/bin/sh`, `curl`, `jq` and `sleep infinity` with a versioned tag. `badouralix/curl-jq` has all four but only the moving tags `latest` and `alpine`; `curlimages/curl` has a version but no `jq`; `nicolaka/netshoot` is too large. The platform builds a small image from `alpine:3.24` plus `curl` and `jq` (busybox `sleep infinity` works, rc 143 when stopped), published and tagged like its other images. Spec 0031's frozen list and the build and release files follow in task 5d. `/architect` should fold this into the *client step* section of index.md.
+
 ## References
 
 **Project sources**:

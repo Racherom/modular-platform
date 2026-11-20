@@ -252,7 +252,8 @@ func (c *moduleChecker) provide(p, name string, pr Provide) {
 	}
 }
 
-// firstAdmin checks the first_admin block of a provide (spec 0037): only on an oidc provide, a
+// firstAdmin checks the first_admin block of a provide (spec 0037): only on an oidc provide (or one
+// of a provisioner that yields oidc), a
 // clean absolute path and at least one clean absolute gate path, and the page path is gated.
 func (c *moduleChecker) firstAdmin(p string, pr Provide) {
 	fa := pr.FirstAdmin
@@ -260,8 +261,8 @@ func (c *moduleChecker) firstAdmin(p string, pr Provide) {
 		return // no block
 	}
 	p += ".first_admin"
-	if pr.Capability != "oidc" {
-		c.add(p, CodeInvalidRule, "first_admin belongs to a provide of the oidc capability")
+	if !c.providesOIDC(pr) {
+		c.add(p, CodeInvalidRule, "first_admin belongs to a provide of the oidc capability, or of a provisioner that yields it")
 	}
 	if !cleanURLPath(fa.Path) {
 		c.add(p+".path", CodeInvalidRule, "path %q is not a clean absolute path like /setup", fa.Path)
@@ -277,6 +278,16 @@ func (c *moduleChecker) firstAdmin(p string, pr Provide) {
 	if cleanURLPath(fa.Path) && len(fa.Gate) > 0 && !slices.Contains(fa.Gate, fa.Path) {
 		c.add(p+".gate", CodeInvalidRule, "gate must list the page path %s", fa.Path)
 	}
+}
+
+// providesOIDC reports whether pr makes oidc clients: it provides oidc, or it provides a
+// provisioner whose yields name oidc (spec 0037).
+func (c *moduleChecker) providesOIDC(pr Provide) bool {
+	if pr.Capability == "oidc" {
+		return true
+	}
+	y := c.caps[pr.Capability].Yields
+	return y != nil && y.Capability == "oidc"
 }
 
 // cleanURLPath reports whether s is an absolute URL path with no query, fragment, dot segment,

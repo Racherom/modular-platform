@@ -50,6 +50,7 @@ yields:
     mode: {admin: mode}
     ca: output
     token: generate
+    owner: consumer
   job:
     image: example.test/job:1.0.0
     provision: echo provision
@@ -384,7 +385,9 @@ func TestYieldsRules(t *testing.T) {
 		"login not named":    one("login: name", "login: host", "yields.login", contract.CodeInvalidYields),
 		"missing source":     one("    host: {admin: host}\n", "", "yields.fields.host", contract.CodeMissingFieldSource),
 		"unknown field":      one("    host: {admin: host}\n", "    host: {admin: host}\n    nope: generate\n", "yields.fields.nope", contract.CodeUnknownField),
-		"to_provider source": one("    host: {admin: host}\n", "    host: {admin: host}\n    owner: generate\n", "yields.fields.owner", contract.CodeInvalidFieldSource),
+		"to_provider source": one("    owner: consumer\n", "    owner: generate\n", "yields.fields.owner", contract.CodeInvalidFieldSource),
+		"consumer on text":   one("    host: {admin: host}\n", "    host: consumer\n", "yields.fields.host", contract.CodeInvalidFieldSource),
+		"consumer on both":   one("    token: generate\n", "    token: consumer\n", "yields.fields.token", contract.CodeInvalidFieldSource),
 		"generate on text":   one("    host: {admin: host}\n", "    host: generate\n", "yields.fields.host", contract.CodeInvalidFieldSource),
 		"output on text":     one("    host: {admin: host}\n", "    host: output\n", "yields.fields.host", contract.CodeInvalidFieldSource),
 		"admin no field":     one("{admin: host}", "{admin: nope}", "yields.fields.host", contract.CodeInvalidFieldSource),
@@ -675,6 +678,33 @@ func TestFirstAdminRules(t *testing.T) {
 			wantProblem(t, problems, tc.path, tc.code)
 		})
 	}
+	t.Run("on a provisioner that yields oidc", func(t *testing.T) {
+		t.Parallel()
+		prov := `apiVersion: modular-platform/v1
+kind: Capability
+name: oidc-provisioner
+description: Admin access that makes an oidc client per consumer.
+fields:
+  url: {type: url, description: Address of the provider.}
+yields:
+  capability: oidc
+  fields:
+    issuer: {admin: url}
+  job:
+    image: example.test/job:1.0.0
+    provision: echo provision
+`
+		k, problems := contract.CheckCapability("capabilities/oidc-provisioner.yaml", []byte(prov))
+		if len(problems) > 0 {
+			t.Fatal(problems)
+		}
+		withProv := map[string]contract.Capability{"oidc": oidc, "oidc-provisioner": k}
+		data := strings.Replace(firstAdminModule(good), "capability: oidc\n", "capability: oidc-provisioner\n", 1)
+		data = strings.Replace(data, "issuer: {value: \"https://auth.example.test\"}", "url: {value: \"http://svc:8080\"}", 1)
+		if _, problems := contract.CheckModule("modules/svc/module.yaml", []byte(data), withProv); len(problems) > 0 {
+			t.Errorf("first_admin on an oidc-provisioner provide: %v", problems)
+		}
+	})
 	t.Run("unknown key", func(t *testing.T) {
 		t.Parallel()
 		_, problems := contract.CheckModule("modules/svc/module.yaml", []byte(firstAdminModule("    first_admin: {path: /setup, gate: [/setup], x: 1}\n")), caps)

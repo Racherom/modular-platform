@@ -979,8 +979,8 @@ export interface components {
              */
             graph: boolean;
         };
-        /** @description `named`, `generate`, `output`, or `{admin: <field of the provisioner>}`. */
-        YieldSource: ("named" | "generate" | "output") | {
+        /** @description `named`, `generate`, `output`, `consumer` (a to_provider field the consumer gives; the job gets its value), or `{admin: <field of the provisioner>}`. */
+        YieldSource: ("named" | "generate" | "output" | "consumer") | {
             admin: string;
         };
         Job: {

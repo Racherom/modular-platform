@@ -12,6 +12,7 @@
         "catalog/modules/deployer-docker/module.yaml",
         "catalog/modules/api/module.yaml",
         "catalog/modules/web/module.yaml",
+        "catalog/capabilities/oidc-provisioner.yaml",
         {
           "type": "json",
           "path": "web/package.json",

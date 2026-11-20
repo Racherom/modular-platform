@@ -439,3 +439,56 @@ func TestDecodeSetup(t *testing.T) {
 		}
 	}
 }
+
+// TestPlatformKeeperOIDCClientJob checks the client step of spec 0037 (AC-7, AC-8): api waits
+// for its provision job, the job is on the internal network only and mounts the static API key,
+// api does not, and no key value is in the Compose file.
+func TestPlatformKeeperOIDCClientJob(t *testing.T) {
+	t.Parallel()
+	files := keeperFiles(t)
+	var c struct {
+		Services map[string]struct {
+			DependsOn map[string]struct {
+				Condition string `json:"condition"`
+			} `json:"depends_on"`
+			Networks map[string]any `json:"networks"`
+			Secrets  []struct {
+				Source string `json:"source"`
+				Target string `json:"target"`
+			} `json:"secrets"`
+			Environment map[string]string `json:"environment"`
+		} `json:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(files["docker-compose.yml"]), &c); err != nil {
+		t.Fatal(err)
+	}
+	const job = "pocket-id_provision_api_oidc"
+	if got := c.Services["api"].DependsOn[job].Condition; got != "service_completed_successfully" {
+		t.Errorf("api depends_on %s = %q, want service_completed_successfully", job, got)
+	}
+	j := c.Services[job]
+	if len(j.Networks) != 1 || !hasKey(j.Networks, "internal") {
+		t.Errorf("job networks = %v, want internal only", j.Networks)
+	}
+	if j.Environment["MP_REDIRECT_PATH"] != "/api/v1/auth/callback" || j.Environment["MP_CLIENT_ID"] != "api_oidc" {
+		t.Errorf("job env = %v", j.Environment)
+	}
+	hasKeyMount := func(name string) bool {
+		for _, s := range c.Services[name].Secrets {
+			if s.Target == "/run/secrets/admin/api_key" {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasKeyMount(job) {
+		t.Error("the job does not mount the static API key")
+	}
+	for _, s := range c.Services["api"].Secrets {
+		if strings.Contains(s.Source, "static-api-key") || strings.Contains(s.Source, "oidc_api_key") {
+			t.Errorf("api mounts %s", s.Source)
+		}
+	}
+}
+
+func hasKey(m map[string]any, k string) bool { _, ok := m[k]; return ok }
