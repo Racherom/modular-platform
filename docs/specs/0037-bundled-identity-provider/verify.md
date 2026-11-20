@@ -24,3 +24,23 @@ _Steps derived from the acceptance criteria of specs 0034 (AC-17 contract part),
 - 0035 AC-20: the contract step; AC-21 to AC-26 wait for the render, keeper and cut over tasks
 - 0034 AC-17 (the `lifetime` contract part): the contract step; the render half waits for 0034 task 3
 - Not built here: 0036 AC-31 to AC-33 (the editor), the keeper's endpoints, the wiring into `api`'s `Setup`
+
+---
+
+# Verify: contract and fixture · spec 0037 task 2 · updated 2026-11-21
+_Steps derived from spec 0037 AC-1, AC-7 and AC-9 for the `pocket-id` keeper fixture. The real entry and the running stack wait for the cut over._
+
+## Commands
+- [ ] `go test -race ./libs/render/ -run Keeper` → the keeper render of the fixture graph passes: `pocket-id` provides `oidc` and `site`, no asked value, no step, no shown secret     → AC-1, AC-9
+- [ ] `grep -c -E 'ENCRYPTION_KEY|STATIC_API_KEY|password' libs/render/testdata/platform-keeper/docker-compose.yml` and read each hit → only `*_FILE` paths, no key value, no password     → AC-7
+- [ ] `grep -n 'pocket-id' libs/render/testdata/platform-keeper/docker-compose.yml` → `APP_URL: https://auth.${MP_INGRESS__DOMAIN}`, `ALLOW_USER_SIGNUPS: ${MP_POCKET_ID__SIGNUP:-disabled}`, the image tag `v2.19.3`     → AC-1, AC-6
+- [ ] `grep -n 'gate' libs/render/testdata/platform-keeper/config/ingress/Caddyfile` → the auth host guards `/setup /signup/setup /api/signup/setup` through `api`, and answers 403 when `api` is down     → AC-2, AC-9
+- [ ] Change the fixture graph's `pocket-id` back to `authelia` (real entry) and run `go test ./libs/render/ -run PlatformKeeperRefusals` → the platform flavor still refuses its asked step with `setup_required`, nothing names one identity module     → AC-9
+
+## Value sourcing
+- [ ] Issuer of `pocket-id` follows the binding `host`: set `host: id.example.com` on its `public` binding, render → `APP_URL` and the issuer use `id.example.com`     → AC-1
+- [ ] The encryption and static API keys are only mounted into `pocket-id` (the real stack's `api` container has no such mount): `docker compose exec api ls /run/secrets` after the cut over     → AC-7
+
+## Acceptance-criteria coverage
+- AC-1 (render half) · AC-7 (render half) · AC-9 (the graph renders with the bundled entry): the steps above
+- Waits for the cut over: AC-1 and AC-7 on a running stack, AC-10 healthcheck in Compose
