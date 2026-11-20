@@ -195,6 +195,7 @@ func (c *moduleChecker) provide(p, name string, pr Provide) {
 	if c.m.Runtime != Sdk && (pr.Port < 1 || pr.Port > 65535) {
 		c.add(p+".port", CodeInvalidPort, "port %d is not between 1 and 65535", pr.Port)
 	}
+	c.firstAdmin(p, pr)
 	k, known := c.caps[pr.Capability]
 	if !known {
 		return // sdk/manifest reports unknown_capability
@@ -223,6 +224,53 @@ func (c *moduleChecker) provide(p, name string, pr Provide) {
 			c.add(p+".auth", CodeInvalidFieldSource, "auth: binding-token needs a field token of direction both with source {generate: true}")
 		}
 	}
+}
+
+// firstAdmin checks the first_admin block of a provide (spec 0037): only on an oidc provide, a
+// clean absolute path and at least one clean absolute gate path, and the page path is gated.
+func (c *moduleChecker) firstAdmin(p string, pr Provide) {
+	fa := pr.FirstAdmin
+	if fa.Path == "" && len(fa.Gate) == 0 {
+		return // no block
+	}
+	p += ".first_admin"
+	if pr.Capability != "oidc" {
+		c.add(p, CodeInvalidRule, "first_admin belongs to a provide of the oidc capability")
+	}
+	if !cleanURLPath(fa.Path) {
+		c.add(p+".path", CodeInvalidRule, "path %q is not a clean absolute path like /setup", fa.Path)
+	}
+	if len(fa.Gate) == 0 {
+		c.add(p+".gate", CodeMissingField, "first_admin needs at least one gate path")
+	}
+	for i, g := range fa.Gate {
+		if !cleanURLPath(g) {
+			c.add(fmt.Sprintf("%s.gate.%d", p, i), CodeInvalidRule, "gate path %q is not a clean absolute path like /setup", g)
+		}
+	}
+	if cleanURLPath(fa.Path) && len(fa.Gate) > 0 && !slices.Contains(fa.Gate, fa.Path) {
+		c.add(p+".gate", CodeInvalidRule, "gate must list the page path %s", fa.Path)
+	}
+}
+
+// cleanURLPath reports whether s is an absolute URL path with no query, fragment, dot segment,
+// empty segment, trailing slash (except "/") or character a Caddy matcher would read as a pattern.
+func cleanURLPath(s string) bool {
+	if !strings.HasPrefix(s, "/") || s == "/" || strings.HasSuffix(s, "/") {
+		return false
+	}
+	for seg := range strings.SplitSeq(s[1:], "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+		for _, r := range seg {
+			plain := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-._~", r)
+			if !plain {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // source checks a provider side field source: exactly one kind, the keys that kind takes, and a
@@ -500,6 +548,9 @@ func (c *moduleChecker) setup() {
 		names[s.Name] = true
 		if len(s.Command) == 0 {
 			c.add(p+".command", CodeInvalidSetupStep, "a setup step needs a command")
+		}
+		if s.Network != "" && !s.Network.Valid() {
+			c.add(p+".network", CodeInvalidSetupStep, "network %q is not none or internal", s.Network)
 		}
 		if s.ForEach != "" {
 			if _, ok := c.m.Provides[s.ForEach]; !ok {

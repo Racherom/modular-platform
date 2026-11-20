@@ -552,6 +552,26 @@ components:
           description: "`to_provider` and `both` fields to the env var that gets their clients directory."
           additionalProperties:
             type: string
+        first_admin:
+          $ref: "#/components/schemas/FirstAdmin"
+    FirstAdmin:
+      type: object
+      description: >-
+        The provider's own first admin page (spec 0037), allowed only on a provide of the `oidc`
+        capability. Until an admin is bound, the ingress asks the platform before it passes a
+        request for one of the `gate` paths on to the provider.
+      additionalProperties: false
+      required: [path, gate]
+      properties:
+        path:
+          type: string
+          description: Absolute path of the first admin page on the provider's host.
+        gate:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: Absolute paths the ingress guards until an admin is bound; `path` is one of them.
     Slot:
       type: object
       additionalProperties: false
@@ -699,6 +719,13 @@ components:
           description: Literal env for the step, never a secret; no name starts with `MP_`.
           additionalProperties:
             type: string
+        network:
+          type: string
+          enum: [none, internal]
+          default: none
+          description: >-
+            `none` (default) runs the step with no network; `internal` joins it to the platform's
+            `internal` network, for a step that calls another service (spec 0037).
         for_each:
           type: string
           description: >-

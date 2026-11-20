@@ -360,6 +360,13 @@ func (r *renderer) stepRun(i string, m contract.Module, s contract.SetupStep, cl
 		Entrypoint: []string{}, Command: []string{}, Env: map[string]string{}, AskEnv: map[string]string{},
 		Reads: []SetupRead{}, Writes: []SetupWrite{},
 	}
+	if s.Network == contract.Internal {
+		// setup.sh runs before any network exists; only the keeper (spec 0016) can join one
+		if !r.opts.keeper || r.flavor != flavorPlatform {
+			return run, fmt.Errorf("render: setup step %s of %s asks for network internal, which only a keeper render of the platform graph can give", s.Name, i)
+		}
+		keep.Network = string(contract.Internal)
+	}
 	if client != nil {
 		expand = func(text string) string { return strings.ReplaceAll(text, contract.ClientToken, client.Consumer) }
 		run.Title += " for " + client.Consumer

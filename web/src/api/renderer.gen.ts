@@ -110,9 +110,9 @@ export interface components {
         /**
          * @description Config value name to its text, for a module instance (spec 0025). Each value is a string,
          *     never expanded; it becomes the value's default in the render, and `.env` can still
-         *     override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
-         *     `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
-         *     empty map is left out.
+         *     override it. A secret value, a `{uid}`, `{gid}`, `{install}` or `{install}/...` default and
+         *     a value a `host_mounts` source names cannot be set here. Written double quoted, keys
+         *     sorted; an empty map is left out.
          */
         ModuleConfig: {
             [key: string]: string;
@@ -290,6 +290,14 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
+            first_admin?: components["schemas"]["FirstAdmin"];
+        };
+        /** @description The provider's own first admin page (spec 0037), allowed only on a provide of the `oidc` capability. Until an admin is bound, the ingress asks the platform before it passes a request for one of the `gate` paths on to the provider. */
+        FirstAdmin: {
+            /** @description Absolute path of the first admin page on the provider's host. */
+            path: string;
+            /** @description Absolute paths the ingress guards until an admin is bound; `path` is one of them. */
+            gate: string[];
         };
         Slot: {
             capability: string;
@@ -391,6 +399,12 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
+            /**
+             * @description `none` (default) runs the step with no network; `internal` joins it to the platform's `internal` network, for a step that calls another service (spec 0037).
+             * @default none
+             * @enum {string}
+             */
+            network: "none" | "internal";
             /** @description A provide; the step runs once per binding to it, in consumer instance name order. That instance name is the step's client: the exact text `{client}` in its `env` values, `command` and `entrypoint` items and `writes` names is replaced by it. A step with no `for_each` holds no `{client}`, and a `for_each` step has no `asks`. */
             for_each?: string;
             asks?: components["schemas"]["SetupAsk"][];
@@ -442,7 +456,7 @@ export interface components {
             /** @default false */
             create: boolean;
         };
-        /** @description An absolute path, `{config: <value>}` or `{install: <relative path>}`. */
+        /** @description An absolute path, `{config: <value>}`, `{install: <relative path>}`, or `{install: .}` for the install folder itself (platform flavor; `create` is refused on it). */
         HostPath: string | {
             config?: string;
             install?: string;

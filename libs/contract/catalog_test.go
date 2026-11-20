@@ -292,6 +292,8 @@ func TestModuleRules(t *testing.T) {
 		"mount path relative":       one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: srv/svc}\nsecrets:\n", "host_mounts.0.path", contract.CodeInvalidMount),
 		"mount path twice":          one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: /var/lib/svc}\nsecrets:\n", "host_mounts.0.path", contract.CodeInvalidMount),
 		"mount install twice":       one("secrets:\n", "host_mounts:\n  - {host: {install: a}, path: {install: a}}\n  - {host: {install: b}, path: {install: a}}\nsecrets:\n", "host_mounts.1.path", contract.CodeInvalidMount),
+		"first admin not oidc":      one("  web:\n    capability: store\n    version: \"1.0\"\n", "  web:\n    capability: store\n    version: \"1.0\"\n    first_admin: {path: /setup, gate: [/setup]}\n", "provides.web.first_admin", contract.CodeInvalidRule),
+		"setup network":             one("    command: [svc, init]\n", "    command: [svc, init]\n    network: host\n", "setup.0.network", contract.CodeInvalidSetupStep),
 		"mount create plain":        one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: /srv/svc, create: true}\nsecrets:\n", "host_mounts.0.create", contract.CodeInvalidRule),
 	}
 	for name, tc := range tests {
@@ -600,4 +602,79 @@ func TestModuleHostAccess(t *testing.T) {
 			}
 		})
 	}
+}
+
+// firstAdminCaps is a minimal oidc capability for the first_admin cases.
+const oidcCapability = `apiVersion: modular-platform/v1
+kind: Capability
+name: oidc
+description: An OpenID Connect provider.
+fields:
+  issuer: {type: url, description: Issuer URL.}
+`
+
+func firstAdminModule(block string) string {
+	return `apiVersion: modular-platform/v1
+kind: Module
+name: svc
+description: A provider.
+image: example.test/svc:1.0.0
+provides:
+  oidc:
+    capability: oidc
+    version: "1.0"
+    port: 8080
+` + block + `    fields:
+      issuer: {value: "https://auth.example.test"}
+setup:
+  - name: clients
+    command: [svc, clients]
+    network: internal
+healthcheck:
+  test: ["CMD", "svc", "check"]
+  interval: 5s
+  retries: 3
+`
+}
+
+// TestFirstAdminRules checks the first_admin block and a step network of spec 0037, AC-9.
+func TestFirstAdminRules(t *testing.T) {
+	t.Parallel()
+	oidc, problems := contract.CheckCapability("capabilities/oidc.yaml", []byte(oidcCapability))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	caps := map[string]contract.Capability{"oidc": oidc}
+	good := "    first_admin: {path: /setup, gate: [/setup, /signup/setup, /api/signup/setup]}\n"
+	m, problems := contract.CheckModule("modules/svc/module.yaml", []byte(firstAdminModule(good)), caps)
+	if len(problems) > 0 {
+		t.Fatalf("a good first_admin block: %v", problems)
+	}
+	fa := m.Provides["oidc"].FirstAdmin
+	if fa.Path != "/setup" || len(fa.Gate) != 3 || m.Setup[0].Network != contract.Internal {
+		t.Errorf("first_admin %+v, network %q", fa, m.Setup[0].Network)
+	}
+	bad := map[string]struct{ block, path, code string }{
+		"relative path":    {"    first_admin: {path: setup, gate: [setup]}\n", "provides.oidc.first_admin.path", contract.CodeInvalidRule},
+		"path with query":  {"    first_admin: {path: \"/setup?x=1\", gate: [\"/setup?x=1\"]}\n", "provides.oidc.first_admin.path", contract.CodeInvalidRule},
+		"dot segment":      {"    first_admin: {path: /a/../b, gate: [/a/../b]}\n", "provides.oidc.first_admin.path", contract.CodeInvalidRule},
+		"trailing slash":   {"    first_admin: {path: /setup/, gate: [/setup/]}\n", "provides.oidc.first_admin.path", contract.CodeInvalidRule},
+		"matcher wildcard": {"    first_admin: {path: /setup, gate: [/setup, /api/*]}\n", "provides.oidc.first_admin.gate.1", contract.CodeInvalidRule},
+		"no gate":          {"    first_admin: {path: /setup, gate: []}\n", "provides.oidc.first_admin.gate", contract.CodeMissingField},
+		"page not gated":   {"    first_admin: {path: /setup, gate: [/signup/setup]}\n", "provides.oidc.first_admin.gate", contract.CodeInvalidRule},
+	}
+	for name, tc := range bad {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, problems := contract.CheckModule("modules/svc/module.yaml", []byte(firstAdminModule(tc.block)), caps)
+			wantProblem(t, problems, tc.path, tc.code)
+		})
+	}
+	t.Run("unknown key", func(t *testing.T) {
+		t.Parallel()
+		_, problems := contract.CheckModule("modules/svc/module.yaml", []byte(firstAdminModule("    first_admin: {path: /setup, gate: [/setup], x: 1}\n")), caps)
+		if len(problems) == 0 {
+			t.Error("an unknown first_admin key is accepted")
+		}
+	})
 }

@@ -169,6 +169,7 @@ type Provide struct {
 	Auth       string            `json:"auth,omitempty"`
 	Fields     json.RawMessage   `json:"fields,omitempty"`
 	Env        map[string]string `json:"env,omitempty"`
+	FirstAdmin json.RawMessage   `json:"first_admin,omitempty"`
 }
 
 // Use is one slot of the entry: a named need of a capability.

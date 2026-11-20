@@ -333,7 +333,7 @@ spec [0037](../specs/0037-bundled-identity-provider/index.md) · code in `catalo
 - [x] Design it (spec): `/architect bundled identity provider`
 - [ ] Build it: `/develop bundled identity provider`
    - [x] Spike with hard gates G1 to G6 and the soft gates, results in the spec's rationale (AC-11) (done 2026-11-20, no hard gate failed; G4 second half is proven at the cut over)
-   - [ ] Contract and fixture: the `pocket-id` entry, `first_admin`, a gated ingress route, a step `network` (AC-1, AC-7, AC-9)
+   - [ ] Contract and fixture: the `pocket-id` entry, `first_admin`, a gated ingress route, a step `network` (AC-1, AC-7, AC-9) (built so far: `first_admin` and the step `network` in the contract, the manifest and `setup.json`; the gated ingress route, the fixture and the entry wait for spec 0026's auth host)
    - [ ] Api and client step: identity link, handoff and gate on the setup session; the one shot client upsert (AC-2, AC-4, AC-5, AC-8)
    - [ ] Editor and cut over: the setup page, the real entry, `deploy/managed/graph.yaml`, goldens, the Chromium smoke with a virtual passkey (AC-1, AC-3, AC-9)
    - [ ] Sign up config and README (AC-6, AC-10)

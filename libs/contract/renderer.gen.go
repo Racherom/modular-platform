@@ -304,6 +304,24 @@ func (e SecretShow) Valid() bool {
 	}
 }
 
+// Defines values for SetupStepNetwork.
+const (
+	Internal SetupStepNetwork = "internal"
+	None     SetupStepNetwork = "none"
+)
+
+// Valid indicates whether the value is a known member of the SetupStepNetwork enum.
+func (e SetupStepNetwork) Valid() bool {
+	switch e {
+	case Internal:
+		return true
+	case None:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SetupWriteMode.
 const (
 	N0600 SetupWriteMode = "0600"
@@ -537,6 +555,15 @@ type FieldSource struct {
 // FieldSourcePlatform defines model for FieldSource.Platform.
 type FieldSourcePlatform string
 
+// FirstAdmin The provider's own first admin page (spec 0037), allowed only on a provide of the `oidc` capability. Until an admin is bound, the ingress asks the platform before it passes a request for one of the `gate` paths on to the provider.
+type FirstAdmin struct {
+	// Gate Absolute paths the ingress guards until an admin is bound; `path` is one of them.
+	Gate []string `json:"gate"`
+
+	// Path Absolute path of the first admin page on the provider's host.
+	Path string `json:"path"`
+}
+
 // Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
 type Graph struct {
 	// ApiVersion `modular-platform/v1`. A `modular-platform/v0alpha1` graph is still read: the renderer
@@ -560,9 +587,9 @@ type Graph struct {
 type GraphModule struct {
 	// Config Config value name to its text, for a module instance (spec 0025). Each value is a string,
 	// never expanded; it becomes the value's default in the render, and `.env` can still
-	// override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
-	// `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
-	// empty map is left out.
+	// override it. A secret value, a `{uid}`, `{gid}`, `{install}` or `{install}/...` default and
+	// a value a `host_mounts` source names cannot be set here. Written double quoted, keys
+	// sorted; an empty map is left out.
 	Config   *ModuleConfig     `json:"config,omitempty"`
 	External *ExternalInstance `json:"external,omitempty"`
 
@@ -601,15 +628,15 @@ type Healthcheck struct {
 type HostMount struct {
 	Create bool `json:"create,omitempty"`
 
-	// Host An absolute path, `{config: <value>}` or `{install: <relative path>}`.
+	// Host An absolute path, `{config: <value>}`, `{install: <relative path>}`, or `{install: .}` for the install folder itself (platform flavor; `create` is refused on it).
 	Host HostPath `json:"host"`
 
-	// Path An absolute path, `{config: <value>}` or `{install: <relative path>}`.
+	// Path An absolute path, `{config: <value>}`, `{install: <relative path>}`, or `{install: .}` for the install folder itself (platform flavor; `create` is refused on it).
 	Path     HostPath `json:"path"`
 	ReadOnly *bool    `json:"read_only,omitempty"`
 }
 
-// HostPath An absolute path, `{config: <value>}` or `{install: <relative path>}`.
+// HostPath An absolute path, `{config: <value>}`, `{install: <relative path>}`, or `{install: .}` for the install folder itself (platform flavor; `create` is refused on it).
 type HostPath = HostPathRef
 
 // HostPort A host port number, or `{config: <int value>}`.
@@ -745,9 +772,9 @@ type ModuleRuntime string
 
 // ModuleConfig Config value name to its text, for a module instance (spec 0025). Each value is a string,
 // never expanded; it becomes the value's default in the render, and `.env` can still
-// override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
-// `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
-// empty map is left out.
+// override it. A secret value, a `{uid}`, `{gid}`, `{install}` or `{install}/...` default and
+// a value a `host_mounts` source names cannot be set here. Written double quoted, keys
+// sorted; an empty map is left out.
 type ModuleConfig = InstanceConfig
 
 // ModuleImage defines model for ModuleImage.
@@ -795,6 +822,9 @@ type Provide struct {
 
 	// Fields Field of the capability to where its value comes from.
 	Fields map[string]FieldSource `json:"fields,omitempty"`
+
+	// FirstAdmin The provider's own first admin page (spec 0037), allowed only on a provide of the `oidc` capability. Until an admin is bound, the ingress asks the platform before it passes a request for one of the `gate` paths on to the provider.
+	FirstAdmin FirstAdmin `json:"first_admin,omitempty"`
 
 	// Port Required, except on a `runtime: sdk` entry, which must not set it.
 	Port int `json:"port,omitempty"`
@@ -932,11 +962,17 @@ type SetupStep struct {
 	Env map[string]string `json:"env,omitempty"`
 
 	// ForEach A provide; the step runs once per binding to it, in consumer instance name order. That instance name is the step's client: the exact text `{client}` in its `env` values, `command` and `entrypoint` items and `writes` names is replaced by it. A step with no `for_each` holds no `{client}`, and a `for_each` step has no `asks`.
-	ForEach string       `json:"for_each,omitempty"`
-	Name    string       `json:"name"`
-	Reads   []SetupRead  `json:"reads,omitempty"`
-	Writes  []SetupWrite `json:"writes,omitempty"`
+	ForEach string `json:"for_each,omitempty"`
+	Name    string `json:"name"`
+
+	// Network `none` (default) runs the step with no network; `internal` joins it to the platform's `internal` network, for a step that calls another service (spec 0037).
+	Network SetupStepNetwork `json:"network,omitempty"`
+	Reads   []SetupRead      `json:"reads,omitempty"`
+	Writes  []SetupWrite     `json:"writes,omitempty"`
 }
+
+// SetupStepNetwork `none` (default) runs the step with no network; `internal` joins it to the platform's `internal` network, for a step that calls another service (spec 0037).
+type SetupStepNetwork string
 
 // SetupWrite defines model for SetupWrite.
 type SetupWrite struct {

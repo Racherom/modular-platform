@@ -56,13 +56,16 @@ type GenerateFile struct {
 // SetupRun is one run of a setup step: a for_each step has one per client, with {client}
 // already replaced.
 type SetupRun struct {
-	Instance   string            `json:"instance"`
-	Name       string            `json:"name"`             // the step's name
-	Client     string            `json:"client,omitempty"` // the consumer of a for_each run
-	Image      string            `json:"image"`
-	Entrypoint []string          `json:"entrypoint"` // empty: the image's own
-	Command    []string          `json:"command"`
-	Env        map[string]string `json:"env"` // the step's env; the keeper adds MP_GRAPH and MP_INSTANCE
+	Instance   string   `json:"instance"`
+	Name       string   `json:"name"`             // the step's name
+	Client     string   `json:"client,omitempty"` // the consumer of a for_each run
+	Image      string   `json:"image"`
+	Entrypoint []string `json:"entrypoint"` // empty: the image's own
+	Command    []string `json:"command"`
+	// Network is "internal" for a step that joins the platform's internal network (spec 0037);
+	// left out, the run has no network.
+	Network string            `json:"network,omitempty"`
+	Env     map[string]string `json:"env"` // the step's env; the keeper adds MP_GRAPH and MP_INSTANCE
 	// AskEnv maps each MP_ASK_<V> to the .env variable MP_<I>__<V> it reads. An asked value the
 	// graph sets is in Env as its text instead.
 	AskEnv map[string]string `json:"askEnv"`
