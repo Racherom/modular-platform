@@ -330,8 +330,10 @@ func (c *moduleChecker) source(p string, k Capability, name string, field Capabi
 			c.want(p, text && s.On != "" && s.Off != "", "platform: tls needs on and off text values")
 			c.value(p, name, field, s.On)
 			c.value(p, name, field, s.Off)
+		case FieldSourcePlatformGate:
+			c.add(p, CodeInvalidFieldSource, "platform: gate is a consumer's source for a to_provider field")
 		default:
-			c.add(p, CodeInvalidFieldSource, "platform %q is not host, port, url, ca, tls or consumer", s.Platform)
+			c.add(p, CodeInvalidFieldSource, "platform %q is not host, port, url, ca, tls, consumer or gate", s.Platform)
 		}
 		if s.Path != "" {
 			c.want(p, s.Platform == FieldSourcePlatformUrl && strings.HasPrefix(s.Path, "/"), "path goes with platform: url and starts with /")
@@ -551,10 +553,13 @@ func (c *moduleChecker) consumerSource(p, name string, field CapabilityField, s 
 		}
 	case s.Platform != "" && s.Provide != "" && len(keys) == 2:
 		c.want(p, !field.IsFile(), "platform gives text, but %s is a %s", name, field.Type)
-		c.want(p, slices.Contains([]FieldSourcePlatform{FieldSourcePlatformUrl, FieldSourcePlatformHost, FieldSourcePlatformPort}, s.Platform),
-			"a consumer's platform source is url, host or port")
-		_, ok := c.m.Provides[s.Provide]
+		c.want(p, slices.Contains([]FieldSourcePlatform{FieldSourcePlatformUrl, FieldSourcePlatformHost, FieldSourcePlatformPort, FieldSourcePlatformGate}, s.Platform),
+			"a consumer's platform source is url, host, port or gate")
+		pr, ok := c.m.Provides[s.Provide]
 		c.want(p, ok, "provide %q is not declared", s.Provide)
+		if ok && s.Platform == FieldSourcePlatformGate {
+			c.want(p, len(pr.FirstAdmin.Gate) > 0, "platform: gate needs provide %q to have a first_admin block", s.Provide)
+		}
 	default:
 		c.add(p, CodeInvalidFieldSource, "a consumer source is {secret}, {value} or {platform, provide}")
 	}

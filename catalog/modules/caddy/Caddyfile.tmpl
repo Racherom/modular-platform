@@ -76,6 +76,32 @@
 # {{.Instance}} is served at the root of its own host, never under the base path
 {{$host}} {
 	import site-common
+{{- $gate := index .Values "gate"}}{{if $gate}}
+{{- $g := ""}}{{range $.Clients.public}}{{if index .Values "guard"}}{{$g = .}}{{end}}{{end}}
+{{- $gtls := and (index $g.Values "server_name") $.Uses.trust.Bound}}
+
+	# these paths pass only when {{$g.Instance}} says so (spec 0037); no answer is a 403
+	@gate-{{.Instance}} path {{$gate}}
+	handle @gate-{{.Instance}} {
+		forward_auth {{index $g.Values "upstream"}} {
+			uri {$INGRESS_BASE_PATH}{{index $g.Values "route"}}{{index $g.Values "guard"}}
+{{- if $gtls}}
+			transport http {
+				tls_trust_pool file /etc/caddy/trust/root.crt
+				tls_server_name {{index $g.Values "server_name"}}
+			}
+{{- end}}
+		}
+		reverse_proxy {{index .Values "upstream"}}
+	}
+	handle_errors {
+		@gate-down-{{.Instance}} {
+			path {{$gate}}
+			expression {err.status_code} in [502, 503, 504]
+		}
+		respond @gate-down-{{.Instance}} 403
+	}
+{{- end}}
 
 {{- if or $stream $tls}}
 	reverse_proxy {{index .Values "upstream"}} {

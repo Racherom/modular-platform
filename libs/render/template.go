@@ -2,6 +2,7 @@ package render
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/compose-spec/compose-go/v2/types"
 
@@ -150,6 +151,10 @@ func (r *renderer) clientValues(b contract.Binding) (map[string]string, error) {
 			continue // the catalog allows only a literal or a platform fact on a text field
 		}
 		own := r.end(b.Consumer, src.Provide)
+		if src.Platform == contract.FieldSourcePlatformGate {
+			out[f] = strings.Join(own.provide.FirstAdmin.Gate, " ") // a Caddy path matcher takes them as they are
+			continue
+		}
 		v, set, err := r.source(own, r.caps[own.offered], f, contract.FieldSource{Platform: src.Platform, Path: src.Path})
 		if err != nil {
 			return nil, err

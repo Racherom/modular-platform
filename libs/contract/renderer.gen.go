@@ -116,6 +116,7 @@ func (e ConfigValueType) Valid() bool {
 const (
 	FieldSourcePlatformCa       FieldSourcePlatform = "ca"
 	FieldSourcePlatformConsumer FieldSourcePlatform = "consumer"
+	FieldSourcePlatformGate     FieldSourcePlatform = "gate"
 	FieldSourcePlatformHost     FieldSourcePlatform = "host"
 	FieldSourcePlatformPort     FieldSourcePlatform = "port"
 	FieldSourcePlatformTls      FieldSourcePlatform = "tls"
@@ -128,6 +129,8 @@ func (e FieldSourcePlatform) Valid() bool {
 	case FieldSourcePlatformCa:
 		return true
 	case FieldSourcePlatformConsumer:
+		return true
+	case FieldSourcePlatformGate:
 		return true
 	case FieldSourcePlatformHost:
 		return true

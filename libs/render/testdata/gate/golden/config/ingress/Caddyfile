@@ -1,0 +1,65 @@
+# The ingress of gate (spec 0015): one origin for every backend bound to it. Each route
+# keeps its path: a backend serves under <base path><route>.
+{
+	email "{$MP_ACME_EMAIL}"
+	servers {
+		# only TCP 80 and 443 are published
+		protocols h1 h2
+	}
+}
+
+# a real certificate: browsers may keep to HTTPS for this host
+(tls-acme) {
+	header Strict-Transport-Security "max-age=31536000"
+}
+
+(tls-internal) {
+	tls internal
+}
+
+# what every site shares: the certificate by tls-mode and the security headers. MP_TLS_MODE is
+# internal or acme, the caddy entry's tls-mode value
+(site-common) {
+	import tls-{$MP_TLS_MODE}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}
+
+{$INGRESS_DOMAIN} {
+	import site-common
+
+	@guardapp path {$INGRESS_BASE_PATH}/api {$INGRESS_BASE_PATH}/api/*
+	handle @guardapp {
+		reverse_proxy http://guardapp.gate.internal:8080
+	}
+
+	handle {
+		respond 404
+	}
+}
+
+# idp is served at the root of its own host, never under the base path
+auth.{$INGRESS_DOMAIN} {
+	import site-common
+
+	# these paths pass only when guardapp says so (spec 0037); no answer is a 403
+	@gate-idp path /setup /signup/setup /api/signup/setup
+	handle @gate-idp {
+		forward_auth http://guardapp.gate.internal:8080 {
+			uri {$INGRESS_BASE_PATH}/api/v1/setup/gate
+		}
+		reverse_proxy http://idp.gate.internal:1411
+	}
+	handle_errors {
+		@gate-down-idp {
+			path /setup /signup/setup /api/signup/setup
+			expression {err.status_code} in [502, 503, 504]
+		}
+		respond @gate-down-idp 403
+	}
+	reverse_proxy http://idp.gate.internal:1411
+}

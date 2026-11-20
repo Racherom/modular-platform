@@ -1,0 +1,21 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: guardapp
+description: A backend under /api that answers the gate question.
+image: example.test/guardapp:1.0.0
+provides:
+  site:
+    capability: http
+    version: "1.0"
+    port: 8080
+    fields:
+      host: {platform: host}
+      port: {platform: port}
+      url: {platform: url}
+uses:
+  public:
+    capability: http-ingress
+    fields:
+      route: {value: /api}
+      upstream: {platform: url, provide: site}
+      guard: {value: /v1/setup/gate}

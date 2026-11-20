@@ -153,6 +153,7 @@ func (p *checking) run() {
 	p.namedValues()
 	p.tokens()
 	p.hostOrRoute()
+	p.gateGuard()
 	p.cycles(instances)
 	p.envNames(instances)
 	p.setupOrder(instances)
@@ -415,6 +416,38 @@ func (p *checking) hostOrRoute() {
 			p.fail(CodeInvalidBinding, usePath(b.Consumer, b.Slot)+".host", "Instance %s serves %s at a host and under a route; a binding has one or the other.", b.Consumer, b.Slot)
 		}
 	}
+}
+
+// gateGuard reports a gated route (spec 0037) whose ingress has no route that answers the gate
+// question, or has more than one: a gate with no guard would pass requests, so it is an error.
+func (p *checking) gateGuard() {
+	guards := map[string]int{}
+	for _, b := range p.bindings {
+		if _, ok := p.caps[b.Capability].Fields["guard"]; ok && p.entryField(b, "guard") {
+			guards[b.Provider]++
+		}
+	}
+	for _, b := range p.bindings {
+		if _, ok := p.caps[b.Capability].Fields["gate"]; !ok || !p.entryField(b, "gate") {
+			continue
+		}
+		_, entryHost := p.modules[p.graph.Modules[b.Consumer].Module].Slots()[b.Slot].Fields["host"]
+		if gm := p.graph.Modules[b.Consumer]; !entryHost && (gm.Uses == nil || (*gm.Uses)[b.Slot] == nil || (*gm.Uses)[b.Slot].Values["host"] == "") {
+			p.fail(CodeInvalidBinding, usePath(b.Consumer, b.Slot)+".gate", "Instance %s gates paths on %s, but it is served under a route; a gate needs a host of its own.", b.Consumer, b.Slot)
+		}
+		switch n := guards[b.Provider]; {
+		case n == 0:
+			p.fail(CodeInvalidBinding, usePath(b.Consumer, b.Slot)+".gate", "Instance %s gates paths on %s, but no route bound to %s answers the gate question.", b.Consumer, b.Slot, b.Provider)
+		case n > 1:
+			p.fail(CodeInvalidBinding, usePath(b.Consumer, b.Slot)+".gate", "Instance %s gates paths on %s, but %d routes bound to %s answer the gate question; one does.", b.Consumer, b.Slot, n, b.Provider)
+		}
+	}
+}
+
+// entryField reports whether the consumer's catalog entry sets field f on the binding's slot.
+func (p *checking) entryField(b contract.Binding, f string) bool {
+	_, ok := p.modules[p.graph.Modules[b.Consumer].Module].Slots()[b.Slot].Fields[f]
+	return ok
 }
 
 // versionMismatch reports offers that serve the slot's capability outside its range; short
