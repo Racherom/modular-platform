@@ -73,6 +73,9 @@ func TestRenovateDigests(t *testing.T) {
 
 	clone := filepath.Join(t.TempDir(), "repo")
 	run(t, root, nil, "git", "clone", "--quiet", root, clone)
+	// renovate.json targets dev (spec 0032, AC-7), so the clone has that branch and the stale
+	// commit below lands on it
+	run(t, clone, nil, "git", "checkout", "--quiet", "-B", "dev")
 	zero := "sha256:" + strings.Repeat("0", 64)
 
 	// a stale digest on the web # syntax= line and on the renderer's first pinned FROM line

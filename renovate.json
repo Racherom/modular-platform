@@ -1,5 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "baseBranchPatterns": ["dev"],
+  "semanticCommits": "enabled",
   "enabledManagers": ["dockerfile"],
   "includePaths": ["catalog/modules/*/Dockerfile"],
   "pinDigests": true,

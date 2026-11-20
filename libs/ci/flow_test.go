@@ -3,6 +3,7 @@ package ci_test
 import (
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"sigs.k8s.io/yaml"
@@ -68,5 +69,38 @@ func TestFlowTriggers(t *testing.T) {
 	}
 	if got := w.Jobs["release-please"].Steps[i].With["target-branch"]; got != "main" {
 		t.Errorf("release-please target-branch = %v, want main", got)
+	}
+}
+
+// TestFlowConfig covers spec 0032 AC-7: the online editor builds from dev while the platform is at
+// 0.0.0, and Renovate opens its pull requests against dev with conventional titles. The key is
+// baseBranchPatterns, the name Renovate 44 accepts (baseBranches is migrated away).
+func TestFlowConfig(t *testing.T) {
+	t.Parallel()
+	versions, err := os.ReadFile("../../deploy/online/versions.env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains("\n"+string(versions), "\nMP_SOURCE_REF=dev\n") {
+		t.Error("deploy/online/versions.env does not set MP_SOURCE_REF=dev")
+	}
+
+	data, err := os.ReadFile("../../renovate.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		BaseBranchPatterns []string `json:"baseBranchPatterns"`
+		BaseBranches       []string `json:"baseBranches"`
+		SemanticCommits    string   `json:"semanticCommits"`
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(cfg.BaseBranchPatterns, []string{"dev"}) || cfg.BaseBranches != nil {
+		t.Errorf("renovate.json base branches = %v (old key %v), want baseBranchPatterns [dev]", cfg.BaseBranchPatterns, cfg.BaseBranches)
+	}
+	if cfg.SemanticCommits != "enabled" {
+		t.Errorf("renovate.json semanticCommits = %q, want enabled", cfg.SemanticCommits)
 	}
 }
