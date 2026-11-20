@@ -101,6 +101,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/setup/identity-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A link to the identity provider's first admin page
+         * @description Needs the setup cookie. Returns a link on the auth host with a handoff token (signed with
+         *     the setup session key, single use, valid 60 seconds). Only for an identity module with a
+         *     `first_admin` block.
+         */
+        post: operations["createIdentityLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/identity-enter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trade a handoff token for the auth host cookie
+         * @description Routed on the auth host by the ingress, never reaching the identity provider. The token is
+         *     checked against the setup session key, the auth host, its expiry and its single use. Sets a
+         *     host only cookie and goes to the provider's first admin page; the response carries
+         *     `Referrer-Policy: no-referrer`.
+         */
+        get: operations["enterIdentity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/gate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The ingress's question for a guarded provider path
+         * @description The ingress forwards the request's cookies. 204 lets the request through, 403 refuses. Fails
+         *     closed: while an admin is bound, with no valid auth host cookie, or on any error.
+         */
+        get: operations["setupGate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/logout": {
         parameters: {
             query?: never;
@@ -358,6 +424,10 @@ export interface components {
         };
         SetupCode: {
             code: string;
+        };
+        IdentityLink: {
+            /** @description Link on the auth host; valid 60 seconds, once. */
+            url: string;
         };
         SetupEnroll: {
             /** @description Ask name to answer. */
@@ -1351,6 +1421,117 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ProblemList"];
                 };
+            };
+        };
+    };
+    createIdentityLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The link. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityLink"];
+                };
+            };
+            /** @description No valid setup session (`setup_pending`) or the request is not from the platform's origin (`bad_origin`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description The identity module has no first admin page (`no_first_admin`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description The setup is done (`setup_done`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description The identity provider is not ready (`provider_unavailable`). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+        };
+    };
+    enterIdentity: {
+        parameters: {
+            query: {
+                t: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cookie is set; goes to the provider's first admin page. */
+            302: {
+                headers: {
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The token is wrong, expired, used, for another host, or the session is retired (`handoff_refused`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+        };
+    };
+    setupGate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A valid auth host cookie and no admin bound yet. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

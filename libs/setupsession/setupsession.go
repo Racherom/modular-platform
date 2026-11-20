@@ -98,3 +98,70 @@ func CookiePath(basePath string) string {
 	}
 	return basePath + "/"
 }
+
+// HandoffLifetime is how long a handoff token lasts (spec 0037).
+const HandoffLifetime = 60 * time.Second
+
+const (
+	handoffVersion = "h1"
+	handoffContext = "mp-handoff|" + handoffVersion + "|"
+	gateCookieName = "__Host-mp_gate"
+)
+
+// Handoff is what a verified handoff token carries.
+type Handoff struct {
+	Expiry        time.Time // the token's own end
+	SessionExpiry time.Time // the end of the setup session it hands on
+	Nonce         string    // identifies the token, so the caller can accept it once
+}
+
+// MintHandoff returns a token that moves the setup session with the given end to host (the auth
+// host, no scheme or path). The token is h1.<expiry>.<session expiry>.<nonce>.<mac>; the mac covers
+// the host, so a token for one host is refused on another. The nonce must be random and unique.
+func MintHandoff(key []byte, host string, sessionExpiry, now time.Time, nonce string) string {
+	exp := strconv.FormatInt(now.Add(HandoffLifetime).Unix(), 10)
+	sess := strconv.FormatInt(sessionExpiry.Unix(), 10)
+	return strings.Join([]string{handoffVersion, exp, sess, nonce, handoffMAC(key, host, exp, sess, nonce)}, ".")
+}
+
+// VerifyHandoff checks a token against key, host and now. Every refusal wraps ErrInvalid; a signed
+// token past its expiry also wraps ErrExpired. It does not know about reuse: the caller keeps the
+// nonces it has seen until Expiry.
+func VerifyHandoff(key []byte, host, token string, now time.Time) (Handoff, error) {
+	if len(key) == 0 {
+		return Handoff{}, fmt.Errorf("%w: no session key", ErrInvalid)
+	}
+	parts := strings.Split(token, ".")
+	if len(parts) != 5 || parts[0] != handoffVersion || parts[3] == "" {
+		return Handoff{}, fmt.Errorf("%w: malformed handoff", ErrInvalid)
+	}
+	got, err := base64.RawURLEncoding.DecodeString(parts[4])
+	if err != nil {
+		return Handoff{}, fmt.Errorf("%w: malformed mac", ErrInvalid)
+	}
+	want, _ := base64.RawURLEncoding.DecodeString(handoffMAC(key, host, parts[1], parts[2], parts[3]))
+	if !hmac.Equal(got, want) {
+		return Handoff{}, fmt.Errorf("%w: wrong mac", ErrInvalid)
+	}
+	exp, err1 := strconv.ParseInt(parts[1], 10, 64)
+	sess, err2 := strconv.ParseInt(parts[2], 10, 64)
+	if err1 != nil || err2 != nil {
+		return Handoff{}, fmt.Errorf("%w: malformed time", ErrInvalid)
+	}
+	h := Handoff{Expiry: time.Unix(exp, 0), SessionExpiry: time.Unix(sess, 0), Nonce: parts[3]}
+	if !now.Before(h.Expiry) || !now.Before(h.SessionExpiry) {
+		return Handoff{}, fmt.Errorf("%w: %w", ErrInvalid, ErrExpired)
+	}
+	return h, nil
+}
+
+func handoffMAC(key []byte, host, exp, sess, nonce string) string {
+	h := hmac.New(sha256.New, key)
+	// the fields hold no "|", and the host is length prefixed, so no two inputs share a message
+	h.Write([]byte(handoffContext + strconv.Itoa(len(host)) + ":" + host + "|" + exp + "|" + sess + "|" + nonce))
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+}
+
+// GateCookieName is the name of the auth host cookie the gate checks: host only, at the root.
+// Its value is a setup session value (MintUntil), so it ends with the session.
+func GateCookieName() string { return gateCookieName }

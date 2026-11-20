@@ -291,6 +291,12 @@ type EventSnapshotList struct {
 	Stacks []StackSummary `json:"stacks"`
 }
 
+// IdentityLink defines model for IdentityLink.
+type IdentityLink struct {
+	// Url Link on the auth host; valid 60 seconds, once.
+	Url string `json:"url"`
+}
+
 // Logout defines model for Logout.
 type Logout struct {
 	// Redirect The provider's sign out page, or `<base>/`.

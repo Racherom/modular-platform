@@ -11,7 +11,7 @@ output-options:
   # keep the schemas only the plain handlers use (events, logout)
   skip-prune: true
   # plain handlers beside the strict server: the event stream never ends, the auth and setup routes set cookies and need no admin session
-  exclude-operation-ids: [events, login, callback, logout, getSetup, redeemSetupCode, enrollSetup]
+  exclude-operation-ids: [events, login, callback, logout, getSetup, redeemSetupCode, enrollSetup, createIdentityLink, enterIdentity, setupGate]
 import-mapping:
   ./renderer.yaml: github.com/racherom/modular-platform/libs/contract
 output: api.gen.go

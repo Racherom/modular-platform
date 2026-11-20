@@ -2,6 +2,7 @@ package setupsession_test
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -92,5 +93,41 @@ func TestCookieName(t *testing.T) {
 		if got := setupsession.CookiePath(tt.base); got != tt.path {
 			t.Errorf("CookiePath(%q) = %q, want %q", tt.base, got, tt.path)
 		}
+	}
+}
+
+func TestHandoff(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	sess := now.Add(time.Hour)
+	tok := setupsession.MintHandoff(key, "auth.example.org", sess, now, "n1")
+
+	h, err := setupsession.VerifyHandoff(key, "auth.example.org", tok, now.Add(59*time.Second))
+	if err != nil || h.Nonce != "n1" || !h.SessionExpiry.Equal(sess) || !h.Expiry.Equal(now.Add(setupsession.HandoffLifetime)) {
+		t.Fatalf("valid token: %+v, %v", h, err)
+	}
+
+	tests := []struct {
+		name, host, token string
+		key               []byte
+		at                time.Time
+		expired           bool
+	}{
+		{"other host", "evil.example.org", tok, key, now, false},
+		{"other key", "auth.example.org", tok, other, now, false},
+		{"no key", "auth.example.org", tok, nil, now, false},
+		{"expired", "auth.example.org", tok, key, now.Add(setupsession.HandoffLifetime), true},
+		{"session over", "auth.example.org", setupsession.MintHandoff(key, "auth.example.org", now.Add(10*time.Second), now, "n2"), key, now.Add(10 * time.Second), true},
+		{"garbage", "auth.example.org", "h1.x", key, now, false},
+		{"empty nonce", "auth.example.org", setupsession.MintHandoff(key, "auth.example.org", sess, now, ""), key, now, false},
+		{"session value", "auth.example.org", setupsession.MintUntil(key, sess), key, now, false},
+		{"tampered expiry", "auth.example.org", strings.Replace(tok, strconv.FormatInt(now.Add(setupsession.HandoffLifetime).Unix(), 10), strconv.FormatInt(now.Add(time.Hour).Unix(), 10), 1), key, now, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := setupsession.VerifyHandoff(tt.key, tt.host, tt.token, tt.at)
+			if !errors.Is(err, setupsession.ErrInvalid) || errors.Is(err, setupsession.ErrExpired) != tt.expired {
+				t.Fatalf("err = %v, want invalid (expired %v)", err, tt.expired)
+			}
+		})
 	}
 }

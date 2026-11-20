@@ -27,6 +27,9 @@ func (h setupRoutes) mount(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc("GET "+prefix+"/setup", h.get)
 	mux.Handle("POST "+prefix+"/setup/code", h.sameOrigin(http.HandlerFunc(h.code)))
 	mux.Handle("POST "+prefix+"/setup/enroll", h.sameOrigin(http.HandlerFunc(h.enroll)))
+	mux.Handle("POST "+prefix+"/setup/identity-link", h.sameOrigin(http.HandlerFunc(h.identityLink)))
+	mux.HandleFunc("GET "+prefix+"/setup/identity-enter", h.identityEnter)
+	mux.HandleFunc("GET "+prefix+"/setup/gate", h.gate)
 }
 
 func (h setupRoutes) sameOrigin(next http.Handler) http.Handler {
@@ -117,6 +120,54 @@ func (h setupRoutes) enroll(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+func (h setupRoutes) identityLink(w http.ResponseWriter, r *http.Request) {
+	link, err := h.svc.IdentityLink(r)
+	w.Header().Set("Cache-Control", "no-store")
+	switch {
+	case errors.Is(err, setup.ErrNoSession):
+		httpkit.WriteProblem(w, http.StatusForbidden, "setup_pending", "Enter the setup code first.")
+	case errors.Is(err, setup.ErrDone):
+		httpkit.WriteProblem(w, http.StatusConflict, "setup_done", "The setup is already done.")
+	case errors.Is(err, setup.ErrNoFirstAdmin):
+		httpkit.WriteProblem(w, http.StatusNotFound, "no_first_admin", "The identity module has no first admin page.")
+	case errors.Is(err, setup.ErrProviderUnavailable):
+		w.Header().Set("Retry-After", "2")
+		httpkit.WriteProblem(w, http.StatusServiceUnavailable, "provider_unavailable", "The identity provider is not ready yet.")
+	case err != nil:
+		h.fail(w, r, err)
+	default:
+		httpkit.WriteJSON(w, http.StatusOK, IdentityLink{Url: link})
+	}
+}
+
+// identityEnter is routed on the auth host. The token is a bearer token in a URL, so the answer
+// is never cached and never sends a referrer.
+func (h setupRoutes) identityEnter(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Cache-Control", "no-store")
+	cookie, to, err := h.svc.Enter(r, r.URL.Query().Get("t"))
+	switch {
+	case errors.Is(err, setup.ErrHandoffRefused):
+		httpkit.WriteProblem(w, http.StatusForbidden, "handoff_refused", "This link is not valid; make a new one on the setup page.")
+	case err != nil:
+		h.fail(w, r, err)
+	default:
+		http.SetCookie(w, cookie)
+		http.Redirect(w, r, to, http.StatusFound) //nolint:gosec // to is the identity module's first admin origin and path from config, never request input
+	}
+}
+
+// gate answers the ingress's forward auth question: 204 or 403, nothing else, so a failure of
+// any kind refuses.
+func (h setupRoutes) gate(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if h.svc.GateOpen(r) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.WriteHeader(http.StatusForbidden)
 }
 
 // fail logs an unexpected error without any request content and answers 500.

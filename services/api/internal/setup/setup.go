@@ -91,6 +91,8 @@ type Service struct {
 	keeper   Keeper
 	admins   Admins
 	provider Provider
+	identity Identity // nil: no first admin page (WithIdentity)
+	handoffs used
 	log      *slog.Logger
 	limiter  *httpkit.RateLimiter
 
@@ -105,7 +107,7 @@ func New(cfg Config, files Files, keeper Keeper, admins Admins, provider Provide
 	return &Service{
 		cfg: cfg, files: files, keeper: keeper, admins: admins, provider: provider, log: log,
 		limiter: httpkit.NewRateLimiter(10, 10, 10*time.Minute, 4096),
-		now:     time.Now, wait: sleep, bound: make(chan struct{}, 1),
+		now:     time.Now, wait: sleep, bound: make(chan struct{}, 1), handoffs: used{limit: 1024},
 	}
 }
 
@@ -280,6 +282,7 @@ func (s *Service) Enroll(r *http.Request, answers map[string]string) error {
 var openPaths = map[string]bool{
 	"GET /setup": true, "POST /setup/code": true, "POST /setup/enroll": true,
 	"GET /auth/login": true, "GET /auth/callback": true,
+	"POST /setup/identity-link": true, "GET /setup/identity-enter": true, "GET /setup/gate": true,
 }
 
 // Gate closes the api while the setup is pending: every route but the setup and sign in routes

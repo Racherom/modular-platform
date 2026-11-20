@@ -173,6 +173,88 @@ paths:
             application/json:
               schema:
                 $ref: "./renderer.yaml#/components/schemas/ProblemList"
+  /api/v1/setup/identity-link:
+    post:
+      operationId: createIdentityLink
+      summary: A link to the identity provider's first admin page
+      description: |
+        Needs the setup cookie. Returns a link on the auth host with a handoff token (signed with
+        the setup session key, single use, valid 60 seconds). Only for an identity module with a
+        `first_admin` block.
+      security: []
+      responses:
+        "200":
+          description: The link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityLink"
+        "403":
+          description: No valid setup session (`setup_pending`) or the request is not from the platform's origin (`bad_origin`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "404":
+          description: The identity module has no first admin page (`no_first_admin`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "409":
+          description: The setup is done (`setup_done`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "503":
+          description: The identity provider is not ready (`provider_unavailable`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+  /api/v1/setup/identity-enter:
+    get:
+      operationId: enterIdentity
+      summary: Trade a handoff token for the auth host cookie
+      description: |
+        Routed on the auth host by the ingress, never reaching the identity provider. The token is
+        checked against the setup session key, the auth host, its expiry and its single use. Sets a
+        host only cookie and goes to the provider's first admin page; the response carries
+        `Referrer-Policy: no-referrer`.
+      security: []
+      parameters:
+        - name: t
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "302":
+          description: The cookie is set; goes to the provider's first admin page.
+          headers:
+            Location:
+              schema:
+                type: string
+        "403":
+          description: The token is wrong, expired, used, for another host, or the session is retired (`handoff_refused`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+  /api/v1/setup/gate:
+    get:
+      operationId: setupGate
+      summary: The ingress's question for a guarded provider path
+      description: |
+        The ingress forwards the request's cookies. 204 lets the request through, 403 refuses. Fails
+        closed: while an admin is bound, with no valid auth host cookie, or on any error.
+      security: []
+      responses:
+        "204":
+          description: A valid auth host cookie and no admin bound yet.
+        "403":
+          description: Refused.
   /api/v1/auth/logout:
     post:
       operationId: logout
@@ -657,6 +739,14 @@ components:
       properties:
         code:
           type: string
+    IdentityLink:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: Link on the auth host; valid 60 seconds, once.
     SetupEnroll:
       type: object
       additionalProperties: false
