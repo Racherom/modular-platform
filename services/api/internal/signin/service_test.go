@@ -110,6 +110,9 @@ func signIn(t *testing.T, s *signin.Service, cookies []*http.Cookie) *httptest.R
 	for _, c := range login.Result().Cookies() {
 		cb.AddCookie(c)
 	}
+	for _, c := range cookies { // the browser sends its other cookies to the callback too
+		cb.AddCookie(c)
+	}
 	rec := httptest.NewRecorder()
 	s.Callback(rec, cb)
 	return rec

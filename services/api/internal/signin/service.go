@@ -56,11 +56,18 @@ type Service struct {
 	idp   Provider
 	log   *slog.Logger
 	now   func() time.Time
+	setup Setup // nil: the admin email rule of spec 0006 until the setup is wired in (spec 0036 task 4)
 }
 
 // New returns the service.
 func New(cfg Config, store Store, idp Provider, log *slog.Logger) *Service {
 	return &Service{cfg: cfg, store: store, idp: idp, log: log, now: time.Now}
+}
+
+// WithSetup makes the first sign in need a setup session instead of the admin email. It returns s.
+func (s *Service) WithSetup(setup Setup) *Service {
+	s.setup = setup
+	return s
 }
 
 // cookie names follow spec 0001: __Host- with Path=/ at the site root, __Secure- with
@@ -97,6 +104,16 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request) {
 	if !s.idp.Ready() {
 		httpkit.WriteProblem(w, http.StatusServiceUnavailable, "provider_unavailable", "The identity provider has not answered yet; try again shortly.")
 		return
+	}
+	if s.setup != nil && !s.setup.Session(r) {
+		if _, bound, err := s.store.AdminBinding(r.Context()); err != nil {
+			s.log.ErrorContext(r.Context(), "sign in failed", slog.Any("error", err))
+			httpkit.WriteProblem(w, http.StatusInternalServerError, "internal", "Sign in failed; try again.")
+			return
+		} else if !bound {
+			httpkit.WriteProblem(w, http.StatusForbidden, "setup_pending", "The setup is not finished; open the setup page.")
+			return
+		}
 	}
 	l := login{State: random(), Verifier: random() + random(), Nonce: random(), ReturnTo: s.returnTo(r.URL.Query().Get("return_to"))}
 	data, _ := json.Marshal(l) //nolint:errchkjson // plain strings
@@ -147,7 +164,7 @@ func (s *Service) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	id := claims.Identity
 	attrs := []any{slog.String("iss", id.Issuer), slog.String("sub", id.Subject)}
-	reason, err := s.admit(ctx, claims)
+	reason, justBound, err := s.admit(r, claims)
 	if err != nil {
 		s.log.ErrorContext(ctx, "sign in failed", append(attrs, slog.Any("error", err))...)
 		httpkit.WriteProblem(w, http.StatusInternalServerError, "internal", "Sign in failed; try again.")
@@ -169,36 +186,63 @@ func (s *Service) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, s.cookie("session", token, int(s.cfg.Max.Seconds())))
+	if justBound && s.setup != nil {
+		http.SetCookie(w, s.setup.ClearCookie())
+		s.setup.Bound()
+	}
 	s.log.InfoContext(ctx, "signed in", attrs...)
 	http.Redirect(w, r, l.ReturnTo, http.StatusFound)
 }
 
-// admit decides whether claims get a session: the bound admin does; while none is bound, the
-// admin email (whole address, case insensitive) with a verified email binds itself. It returns
-// the refusal reason, or "" to admit.
-func (s *Service) admit(ctx context.Context, c Claims) (string, error) {
+// admit decides whether claims get a session. The bound admin does. While none is bound, a valid
+// setup session binds the identity (the email when the claims carry one, else none); without it
+// nothing binds. It returns the refusal reason, or "" to admit, and whether this call bound the
+// admin.
+func (s *Service) admit(r *http.Request, c Claims) (reason string, justBound bool, err error) {
+	ctx := r.Context()
 	bound, ok, err := s.store.AdminBinding(ctx)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if !ok {
-		if !strings.EqualFold(c.Email, s.cfg.AdminEmail) {
-			return ReasonNotAdmin, nil
-		}
-		if !c.EmailVerified {
-			return ReasonEmailUnverified, nil
+		switch {
+		case s.setup == nil:
+			return s.legacyBind(ctx, c)
+		case !s.setup.Session(r):
+			return ReasonSetupPending, false, nil
 		}
 		if bound, err = s.store.BindAdmin(ctx, c.Identity, c.Email); err != nil {
-			return "", err
+			return "", false, err
 		}
 		if bound == c.Identity {
+			justBound = true
 			s.log.InfoContext(ctx, "admin bound", slog.String("iss", bound.Issuer), slog.String("sub", bound.Subject))
 		}
 	}
 	if bound != c.Identity {
-		return ReasonNotAdmin, nil
+		return ReasonNotAdmin, false, nil
 	}
-	return "", nil
+	return "", justBound, nil
+}
+
+// legacyBind is spec 0006's rule, kept only until the setup is wired in: the first verified sign
+// in with the admin email binds the admin.
+func (s *Service) legacyBind(ctx context.Context, c Claims) (string, bool, error) {
+	if !strings.EqualFold(c.Email, s.cfg.AdminEmail) {
+		return ReasonNotAdmin, false, nil
+	}
+	if !c.EmailVerified {
+		return ReasonEmailUnverified, false, nil
+	}
+	bound, err := s.store.BindAdmin(ctx, c.Identity, c.Email)
+	if err != nil {
+		return "", false, err
+	}
+	if bound != c.Identity {
+		return ReasonNotAdmin, false, nil
+	}
+	s.log.InfoContext(ctx, "admin bound", slog.String("iss", bound.Issuer), slog.String("sub", bound.Subject))
+	return "", false, nil
 }
 
 // Authenticate returns the request's session, recording its activity, or ErrUnauthenticated.

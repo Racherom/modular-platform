@@ -117,25 +117,25 @@ func (e OperationStatus) Valid() bool {
 
 // Defines values for OperationStep.
 const (
-	Done    OperationStep = "done"
-	Down    OperationStep = "down"
-	Prepare OperationStep = "prepare"
-	Pull    OperationStep = "pull"
-	Up      OperationStep = "up"
+	OperationStepDone    OperationStep = "done"
+	OperationStepDown    OperationStep = "down"
+	OperationStepPrepare OperationStep = "prepare"
+	OperationStepPull    OperationStep = "pull"
+	OperationStepUp      OperationStep = "up"
 )
 
 // Valid indicates whether the value is a known member of the OperationStep enum.
 func (e OperationStep) Valid() bool {
 	switch e {
-	case Done:
+	case OperationStepDone:
 		return true
-	case Down:
+	case OperationStepDown:
 		return true
-	case Prepare:
+	case OperationStepPrepare:
 		return true
-	case Pull:
+	case OperationStepPull:
 		return true
-	case Up:
+	case OperationStepUp:
 		return true
 	default:
 		return false
@@ -178,6 +178,39 @@ func (e ReviewImageUserKind) Valid() bool {
 	case Provision:
 		return true
 	case Revoke:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetupStateReason.
+const (
+	NoCode SetupStateReason = "no_code"
+)
+
+// Valid indicates whether the value is a known member of the SetupStateReason enum.
+func (e SetupStateReason) Valid() bool {
+	switch e {
+	case NoCode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetupStateState.
+const (
+	SetupStateStateDone    SetupStateState = "done"
+	SetupStateStatePending SetupStateState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the SetupStateState enum.
+func (e SetupStateState) Valid() bool {
+	switch e {
+	case SetupStateStateDone:
+		return true
+	case SetupStateStatePending:
 		return true
 	default:
 		return false
@@ -416,10 +449,58 @@ type ReviewRequest struct {
 
 // Session defines model for Session.
 type Session struct {
-	Email         string    `json:"email"`
+	// Email Absent when the identity provider's claims carry none.
+	Email         string    `json:"email,omitempty,omitzero"`
 	ExpiresAt     time.Time `json:"expiresAt"`
 	IdleExpiresAt time.Time `json:"idleExpiresAt"`
 }
+
+// SetupAsk defines model for SetupAsk.
+type SetupAsk struct {
+	Description string `json:"description"`
+	MinLength   int    `json:"minLength,omitempty,omitzero"`
+	Name        string `json:"name"`
+	Pattern     string `json:"pattern,omitempty,omitzero"`
+	Secret      bool   `json:"secret"`
+}
+
+// SetupCode defines model for SetupCode.
+type SetupCode struct {
+	Code string `json:"code"`
+}
+
+// SetupEnroll defines model for SetupEnroll.
+type SetupEnroll struct {
+	// Answers Ask name to answer.
+	Answers map[string]string `json:"answers"`
+}
+
+// SetupEnrollAsks The identity module's enroll questions, asked on the setup page in this order.
+type SetupEnrollAsks struct {
+	Asks []SetupAsk `json:"asks"`
+}
+
+// SetupState defines model for SetupState.
+type SetupState struct {
+	// Enroll The identity module's enroll questions, asked on the setup page in this order.
+	Enroll *SetupEnrollAsks `json:"enroll,omitempty"`
+
+	// ProviderReady Whether OIDC discovery against the issuer has succeeded. Only with a session.
+	ProviderReady bool `json:"providerReady,omitempty,omitzero"`
+
+	// Reason Only while pending. `no_code`: no code file exists, so remove `<state>/.setup-done` and restart the keeper.
+	Reason SetupStateReason `json:"reason,omitempty,omitzero"`
+
+	// Session Whether the request carries a valid setup session. Only while pending.
+	Session bool            `json:"session,omitempty,omitzero"`
+	State   SetupStateState `json:"state"`
+}
+
+// SetupStateReason Only while pending. `no_code`: no code file exists, so remove `<state>/.setup-done` and restart the keeper.
+type SetupStateReason string
+
+// SetupStateState defines model for SetupState.State.
+type SetupStateState string
 
 // Stack defines model for Stack.
 type Stack struct {

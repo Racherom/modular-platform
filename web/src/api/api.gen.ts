@@ -38,6 +38,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The state of the first run setup
+         * @description Public. Without a setup session it shows only `state` (and `reason`). `providerReady`
+         *     and `enroll` come only with a valid setup session.
+         */
+        get: operations["getSetup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trade the setup code for a setup session
+         * @description Public, rate limited to 10 tries a minute per client address (the last `X-Forwarded-For`
+         *     hop). The code is accepted once. Needs the public `Origin`.
+         */
+        post: operations["redeemSetupCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make the first user at the identity module
+         * @description Needs the setup cookie. Passes the answers to the keeper, which runs the identity
+         *     module's `enroll` block; enrolling again before the first sign in replaces the user.
+         */
+        post: operations["enrollSetup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/logout": {
         parameters: {
             query?: never;
@@ -268,8 +331,43 @@ export interface components {
             /** @description The provider's sign out page, or `<base>/`. */
             redirect: string;
         };
+        SetupState: {
+            /** @enum {string} */
+            state: "pending" | "done";
+            /**
+             * @description Only while pending. `no_code`: no code file exists, so remove `<state>/.setup-done` and restart the keeper.
+             * @enum {string}
+             */
+            reason?: "no_code";
+            /** @description Whether the request carries a valid setup session. Only while pending. */
+            session?: boolean;
+            /** @description Whether OIDC discovery against the issuer has succeeded. Only with a session. */
+            providerReady?: boolean;
+            enroll?: components["schemas"]["SetupEnrollAsks"];
+        };
+        /** @description The identity module's enroll questions, asked on the setup page in this order. */
+        SetupEnrollAsks: {
+            asks: components["schemas"]["SetupAsk"][];
+        };
+        SetupAsk: {
+            name: string;
+            description: string;
+            secret: boolean;
+            pattern?: string;
+            minLength?: number;
+        };
+        SetupCode: {
+            code: string;
+        };
+        SetupEnroll: {
+            /** @description Ask name to answer. */
+            answers: {
+                [key: string]: string;
+            };
+        };
         Session: {
-            email: string;
+            /** @description Absent when the identity provider's claims carry none. */
+            email?: string;
             /** Format: date-time */
             expiresAt: string;
             /** Format: date-time */
@@ -603,7 +701,7 @@ export interface components {
             /** @description Absolute path to mount it at. */
             mount?: string;
         };
-        SetupAsk: {
+        "schemas-SetupAsk": {
             name: string;
             description: string;
             /** @default false */
@@ -645,7 +743,7 @@ export interface components {
             network: "none" | "internal";
             /** @description A provide; the step runs once per binding to it, in consumer instance name order. That instance name is the step's client: the exact text `{client}` in its `env` values, `command` and `entrypoint` items and `writes` names is replaced by it. A step with no `for_each` holds no `{client}`, and a `for_each` step has no `asks`. */
             for_each?: string;
-            asks?: components["schemas"]["SetupAsk"][];
+            asks?: components["schemas"]["schemas-SetupAsk"][];
             reads?: components["schemas"]["SetupRead"][];
             writes?: components["schemas"]["SetupWrite"][];
         };
@@ -664,7 +762,7 @@ export interface components {
                 [key: string]: string;
             };
             /** @description Asked on the setup page, in this order. */
-            asks?: components["schemas"]["SetupAsk"][];
+            asks?: components["schemas"]["schemas-SetupAsk"][];
             reads?: components["schemas"]["SetupRead"][];
             writes?: components["schemas"]["SetupWrite"][];
             /**
@@ -1104,9 +1202,10 @@ export interface operations {
         requestBody?: never;
         responses: {
             /**
-             * @description Signed in: sets the session cookie and goes to the return path. Refused: goes to
-             *     `<base>/?signed_out=<reason>`, reason `not_admin`, `email_unverified`,
-             *     `state_mismatch` or `provider_error`.
+             * @description Signed in: sets the session cookie and goes to the return path. The sign in that
+             *     binds the first admin also deletes the setup cookie. Refused: goes to
+             *     `<base>/?signed_out=<reason>`, reason `not_admin`, `state_mismatch`, `provider_error`
+             *     or `setup_pending` (no valid setup session while no admin is bound).
              */
             302: {
                 headers: {
@@ -1114,6 +1213,144 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    getSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The setup state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupState"];
+                };
+            };
+        };
+    };
+    redeemSetupCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupCode"];
+            };
+        };
+        responses: {
+            /** @description Sets the setup cookie (`__Host-mp_setup`, or `__Secure-mp_setup` under a base path; 24 hours). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The code is not accepted (`code_refused`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            403: components["responses"]["BadOrigin"];
+            /** @description The setup is done (`setup_done`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description Too many tries (`too_many_tries`). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+        };
+    };
+    enrollSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupEnroll"];
+            };
+        };
+        responses: {
+            /** @description The user exists. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No valid setup session (`no_session`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            403: components["responses"]["BadOrigin"];
+            /** @description The setup is done (`setup_done`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description An answer breaks a rule (`invalid_answer`, at `answers.<name>`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description The enroll run failed (`enroll_failed`). */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description The keeper is busy (`busy`). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
             };
         };
     };

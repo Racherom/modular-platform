@@ -15,6 +15,7 @@ import (
 	"github.com/racherom/modular-platform/sdk"
 	"github.com/racherom/modular-platform/sdk/httpkit"
 	"github.com/racherom/modular-platform/services/api/internal/deploy"
+	"github.com/racherom/modular-platform/services/api/internal/setup"
 	"github.com/racherom/modular-platform/services/api/internal/signin"
 )
 
@@ -26,6 +27,7 @@ const (
 // Options wires the HTTP layer.
 type Options struct {
 	Signin       *signin.Service
+	Setup        *setup.Service // nil until the setup is wired in (spec 0036 task 4)
 	Deploy       *deploy.Service
 	Hub          *deploy.Hub
 	Renderer     Renderer
@@ -54,6 +56,9 @@ func NewHandler(o Options) http.Handler {
 	prefix := o.BasePath + "/api/v1"
 	mux.HandleFunc("GET "+prefix+"/auth/login", o.Signin.Login)
 	mux.HandleFunc("GET "+prefix+"/auth/callback", o.Signin.Callback)
+	if o.Setup != nil {
+		setupRoutes{svc: o.Setup, origin: o.PublicOrigin, log: o.Log}.mount(mux, prefix)
+	}
 	mux.Handle("POST "+prefix+"/auth/logout", guard.wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next, err := o.Signin.Logout(w, r, sessionFrom(r.Context()).Session)
 		if err != nil {
@@ -69,7 +74,11 @@ func NewHandler(o Options) http.Handler {
 		// the last one runs first: the origin, then the session, then the body
 		Middlewares: []MiddlewareFunc{strictBodies, func(next http.Handler) http.Handler { return guard.wrap(next, true) }},
 	})
-	timed := http.TimeoutHandler(mux, requestTimeout, `{"problems":[{"severity":"error","code":"timeout","path":"","message":"api took too long; try again."}]}`)
+	var inner http.Handler = mux
+	if o.Setup != nil {
+		inner = o.Setup.Gate(prefix, mux) // while no admin is bound, only the setup and sign in routes answer
+	}
+	timed := http.TimeoutHandler(inner, requestTimeout, `{"problems":[{"severity":"error","code":"timeout","path":"","message":"api took too long; try again."}]}`)
 
 	// the event stream never ends, so it stays outside the timeout, which buffers its answer
 	stream := guard.wrap(&events{signin: o.Signin, deploy: o.Deploy, hub: o.Hub, log: o.Log, perSession: map[string]int{}}, false)
