@@ -315,9 +315,9 @@ The managed platform starts from one container, most likely the deployer, instea
 spec [0016](../specs/0016-platform-one-container/index.md) · code in `services/deployer-docker/`, `libs/render/`, `libs/contract/`, `contracts/openapi/renderer.yaml`, `catalog/`, `deploy/managed/`, `scripts/smoke-managed.sh`
 - [x] Design it (spec): `/architect start the platform from one container`
 - [ ] Build it: `/develop start the platform from one container`
-   - [ ] Spike and contract: `COMPOSE_FILE` from the state `.env`, a second keeper project, self removal; `keeper`, `show: once`, `format: password` and the platform refusals; the `deployer-docker` and `authelia` entries (AC-3, AC-5, AC-6, AC-10, AC-12)
-   - [ ] Render: `docker-compose.yml` without the keeper, `keeper.yml`, `setup.json` and the root `setup.sh` with the seed and the one time print (AC-1, AC-10, AC-11)
-   - [ ] The keeper thread: seed, lock, atomic prepare, reconcile, self check and handover, then dev and smoke switched to it (AC-1, AC-2, AC-3, AC-12)
+   - [ ] Spike and contract: `COMPOSE_FILE` from the state `.env`, a second keeper project, self removal; `keeper`, `show: once`, `format: password`; `deployer-docker` declares `keeper` (AC-5, AC-6, AC-10, AC-12) (spike done and recorded in rationale.md; `keeper`, `format`, `show` and `invalid_secret` built, and `deployer-docker` declares `keeper`; the `authelia` admin password and the `deployer-docker` mounts and config moved to the keeper thread by spec 0016 on 2026-11-20, so this ticks once its own pieces are checked)
+   - [ ] Render, behind `render.WithKeeper()`: `{install: .}` and a bare `{install}` default; `docker-compose.yml` without the keeper, `keeper.yml`, `setup.json`, the platform refusals and keeper rule, and the root `setup.sh` with the seed and the one time print, golden tested with the task 4 entries as fixtures; milestone 4's output unchanged (AC-1, AC-10, AC-11)
+   - [ ] The keeper thread: the `authelia` and `deployer-docker` entries moved in from the fixtures and the render default switched; seed, lock, atomic prepare, reconcile, self check and handover, then dev and smoke switched to it (AC-1, AC-2, AC-3, AC-12)
    - [ ] Starting again, drift, untouched stacks, failure paths and the README (AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9)
 - [ ] Verify it: `/check verify start the platform from one container`
 - [ ] Test it: `/test start the platform from one container`
