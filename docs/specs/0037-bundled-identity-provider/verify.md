@@ -44,3 +44,27 @@ _Steps derived from spec 0037 AC-1, AC-7 and AC-9 for the `pocket-id` keeper fix
 ## Acceptance-criteria coverage
 - AC-1 (render half) · AC-7 (render half) · AC-9 (the graph renders with the bundled entry): the steps above
 - Waits for the cut over: AC-1 and AC-7 on a running stack, AC-10 healthcheck in Compose
+
+---
+
+# Verify: api identity link, handoff and gate · spec 0037 task 4 · updated 2026-11-21
+_Steps derived from spec 0037 AC-2, AC-4 and AC-5 for the api half. The ingress route to `identity-enter`, the `Identity` adapter and the end to end run wait for the cut over; the client step (AC-8) waits for a spec amendment._
+
+## Commands
+- [ ] `go test -race ./libs/setupsession/ -run Handoff` → a wrong host, wrong key, expired, tampered, empty nonce or a session value as token is refused     → AC-4
+- [ ] `go test -race ./services/api/internal/setup/ -run 'Identity|Enter|Gate'` → one use only, 60 second expiry, retired session (key gone or replaced), admin bound, no token or cookie value in the log     → AC-4, AC-5
+- [ ] `go test -race ./services/api/internal/api/ -run Identity` → link needs the origin and a session (403 `setup_pending`), 409 after the bind, 404 without `first_admin`, `Referrer-Policy: no-referrer`, host only `__Host-mp_gate` cookie     → AC-4
+- [ ] `task lint` and `task generate` leave no diff     → contract first
+
+## UI / manual (after the cut over)
+- [ ] With no cookie, `curl -k https://auth.<domain>/setup` and `/api/signup/setup` → 403; `/login` and `/.well-known/openid-configuration` → 200     → AC-2
+- [ ] Stop `api`, repeat the first step with a valid gate cookie → 403 (fail closed)     → AC-2
+- [ ] Use the identity link twice → the second answers 403 `handoff_refused`, no cookie     → AC-4
+- [ ] After the admin is bound, replay the gate cookie on `/setup` → 403     → AC-5
+
+## Value sourcing
+- [ ] Link host and path follow the `pocket-id` binding `host` and `first_admin.path`; with base path `/platform` the link carries `/platform/api/v1/setup/identity-enter`     → AC-4
+- [ ] Gate cookie expiry equals the setup session's expiry (`MaxAge` within seconds of the 24 hour end)     → AC-4
+
+## Acceptance-criteria coverage
+- AC-2 (api half) · AC-4 · AC-5 (api half): the steps above. AC-8: not built (see the open decision).
