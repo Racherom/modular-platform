@@ -47,7 +47,7 @@ One name for each thing (your answers of 2026-11-10). #41 brings code, contracts
 | 34 | Edit layer and gated apply | Slice 3 | planned |
 | 43 | Add a graph to a running stack | Slice 3 | planned |
 | 35 | Apply history and diff | Slice 3 | planned |
-| 37 | First run setup on the web | Slice 4 | planned |
+| 37 | First run setup on the web | Slice 4 | in-progress |
 | 32 | Start the platform from one container | Slice 4 | in-progress |
 | 23 | Replace the platform's own modules | Slice 4 | planned |
 | 24 | Stack editor standalone or in your site | Slice 4 | planned |
@@ -309,10 +309,21 @@ Every apply writes one history entry: who applied it, when, the full graph and w
 
 ## Slice 4: Own the platform
 
-### 37. First run setup on the web · needs a decision · from spec 0016
+### 37. First run setup on the web · in-progress · from spec 0016
 All install setup moves to the web, before the platform starts from one container (#32), so that installing asks nothing and prints no secret. After the first start, the platform shows a one time setup site, protected by a generated setup code with no user name (a `show: once` secret; until #32 `setup.sh` prints it, and from #32 on the README and the keeper's log name only its path). It collects the install answers `setup.sh` asks today (domain, origin, admin email), and the first admin enrolls through whichever identity module is installed, so it works when the replacement for Authelia offers no username and password, only OID4VP with a wallet. It replaces the admin user name and password `setup.sh` asks today, so `authelia`'s `users` step asks nothing, and `setup.sh` then asks nothing. Its first start runs in a setup mode on a self signed certificate with no domain name; the domain from the setup then gets its own certificate, and the answers reach the state folder through one keeper call (spec 0016 *Setup mode* lists what #32 needs from it). Designed together with #28, so the enrollment seam and the sign in method seam are decided once. Its spec decides where the site runs before the domain is known, how the code is checked and retired, how the answers reach the platform's state folder, and the seam an identity module offers for enrolling its first admin.
-**Done when:** on a clean host `setup.sh` asks nothing and prints only the setup code; the setup site accepts that code once and refuses it afterwards; you enter the install answers there and enroll the first admin with the bundled module, and with a second identity module that has no password; you then sign in and deploy as today.
-- [ ] Design it (spec): `/architect first run setup on the web`
+**Done when:** on a clean host no script runs and nothing asks on the terminal, and the only secret you read is the setup code, by its path; the setup site accepts that code once and refuses it afterwards; you enter the install answers there and enroll the first admin with the bundled module; you then sign in and deploy as today. (Enrolling with a second identity module that has no password moved to #23 on 2026-11-20.)
+spec [0033](../specs/0033-first-run-web-setup/index.md) · code in `services/deployer-docker/`, `services/api/`, `web/`, `libs/render/`, `libs/contract/`, `libs/setupsession/`, `sdk/`, `contracts/openapi/`, `catalog/`, `scripts/smoke-managed.sh`
+- [x] Design it (spec): `/architect first run setup on the web`
+- [ ] Build it: `/develop first run setup on the web`
+   - [ ] Spike: Authelia's empty users file and reload through a folder mount; the probe, the cookie and the sign in callback in Chromium (AC-13, AC-23)
+   - [ ] Phase 1 pieces (0034): `lifetime: setup`, `libs/setupsession`, the render's `setup` section, the `setup` command's pages (AC-10 to AC-18)
+   - [ ] Enrollment seam (0035): `enroll` in the contract, the `platform-setup` capability and keeper calls, Authelia's enroll in the fixture catalog (AC-20 to AC-26)
+   - [ ] Phase 2 pieces (0036): migration `00003`, the SDK setup getters, the api's setup package and sign in changes, the editor's `/setup` route (AC-30 to AC-39)
+   - [ ] Cut over inside #32's keeper thread: the real entries, the seed's phase 1, the api wiring, dev and the Chromium smoke, the README (AC-1, AC-2, AC-3, AC-4)
+- [ ] Verify it: `/check verify first run setup on the web`
+- [ ] Test it: `/test first run setup on the web`
+- [ ] Review it (fresh model): `/check review first run setup on the web`
+- [ ] Document it: `/document first run setup on the web`
 
 ### 32. Start the platform from one container · in-progress
 The managed platform starts from one container, most likely the deployer, instead of one `docker compose up` for every service. It reads the platform's starting state from its files (the platform graph and render of spec 0015, plus the install answers the web setup of #37 collected). Then it looks for the platform's containers on the host: it starts the ones that exist and match, recreates the ones that no longer match the files, and creates the ones that are missing. Only the platform's own modules: deployed stacks keep relying on Docker's restart policy. Comes after #3's milestone 4 (the platform is a graph) and after #37 (the web setup), so installing runs no script on the host and asks nothing, and gives #23, #25 and #19 one entry point that brings the platform up from its files. Its spec decides how this first container is started and restarted, how it finds the platform's containers (labels), what counts as no longer matching, and how it keeps from stopping itself.

@@ -140,6 +140,8 @@ The seed needs no `already running` check: when a matching keeper already runs, 
 
 ### Setup mode (the contract with #37)
 
+> Revised 2026-11-20 by [0033](../0033-first-run-web-setup/index.md): the seed runs a throwaway setup container before it installs, so the answers land in `.env` at install and the platform has no setup mode. Points 1 to 3 below no longer apply; point 4 stays, with `lifetime: setup` (0033) defining "only while the setup is not done". See 0033 *What this changes in 0016* for the other edits (install step 2, `beforeSetup` and `placed_missing`, prepare's two exceptions, AC-3 and AC-12).
+
 The first start happens before the install answers (domain, origin, admin email) exist, so the platform first runs in a setup mode. #37's spec designs it; this spec relies on these points, and #37 must deliver them:
 1. **Reconcile without answers**: the platform files reconcile, and every service of the setup mode gets healthy, with the install answers and the setup questions unset. #37's spec names the services of the setup mode, which also decides `beforeSetup` for placed files.
 2. **No domain yet**: in the setup mode the ingress serves the setup site on a self signed certificate with no domain name, reached by the host's address. The keeper's own certificate comes from the internal `cert-issuer` (spec 0008) and needs no domain, so the seed's handover works the same before and after the setup.
