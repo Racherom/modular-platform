@@ -497,6 +497,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SetupStep"
+        enroll:
+          $ref: "#/components/schemas/Enroll"
+          # keep the pointer: most entries declare none
+          x-go-type-skip-optional-pointer: false
         templates:
           type: array
           items:
@@ -685,6 +689,16 @@ components:
           description: |
             `once`: the platform's `setup.sh` prints the value one time at a fresh install
             (spec 0016). Only with `from: generate`.
+        lifetime:
+          type: string
+          enum: [install, setup]
+          x-enum-varnames: [SecretLifetimeInstall, SecretLifetimeSetup]
+          default: install
+          description: |
+            `install` (default) is a secret as before. `setup` (spec 0033) is a generated file that
+            lives only while the web setup is not done: it lands in `secrets/<instance>/setup/<name>`,
+            and every such secret of the instance is mounted as one folder at `/run/secrets/setup/`
+            (so a replaced or deleted file shows inside). It takes no `from`, `env` or `mount`.
         env:
           type: string
           description: Env var set to the secret file's path inside the container.
@@ -752,6 +766,47 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SetupWrite"
+    Enroll:
+      type: object
+      description: |
+        How an identity module (one that provides `oidc`) makes its first user (spec 0035). It has
+        the shape of a setup step, with questions the platform's setup page asks after the platform
+        runs. The keeper runs it on one call from the api, with the answers on standard input only,
+        for as long as no admin is bound. It runs with no network, so it has no `network` or
+        `for_each`.
+      additionalProperties: false
+      required: [command]
+      properties:
+        entrypoint:
+          type: array
+          items:
+            type: string
+        command:
+          type: array
+          items:
+            type: string
+        env:
+          type: object
+          description: Literal env for the run, never a secret; no name starts with `MP_`.
+          additionalProperties:
+            type: string
+        asks:
+          type: array
+          description: Asked on the setup page, in this order.
+          items:
+            $ref: "#/components/schemas/SetupAsk"
+        reads:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetupRead"
+        writes:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetupWrite"
+        restart:
+          type: boolean
+          default: false
+          description: "`true`: the keeper restarts the module's containers after it moved the writes."
     SetupAsk:
       type: object
       additionalProperties: false
@@ -764,6 +819,14 @@ components:
         secret:
           type: boolean
           default: false
+        pattern:
+          type: string
+          description: An RE2 pattern the whole answer must match.
+        min_length:
+          type: integer
+          description: The fewest characters the answer may have; 1 or more.
+          # keep the pointer: 0 is a value the catalog refuses, absent is none
+          x-go-type-skip-optional-pointer: false
     SetupRead:
       type: object
       description: >-

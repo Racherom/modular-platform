@@ -152,6 +152,7 @@ type Entry struct {
 	Secrets       []Secret           `json:"secrets,omitempty"`
 	Config        map[string]Value   `json:"config,omitempty"`
 	Setup         json.RawMessage    `json:"setup,omitempty"`
+	Enroll        json.RawMessage    `json:"enroll,omitempty"`
 	Templates     json.RawMessage    `json:"templates,omitempty"`
 	Volumes       json.RawMessage    `json:"volumes,omitempty"`
 	Publish       json.RawMessage    `json:"publish,omitempty"`
@@ -191,6 +192,7 @@ type Secret struct {
 	From        string `json:"from,omitempty"`
 	Format      string `json:"format,omitempty"`
 	Show        string `json:"show,omitempty"`
+	Lifetime    string `json:"lifetime,omitempty"`
 	Env         string `json:"env,omitempty"`
 	Mount       string `json:"mount,omitempty"`
 }

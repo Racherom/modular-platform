@@ -246,6 +246,11 @@ func TestModuleRules(t *testing.T) {
 		"secret show":               one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    show: twice\n", "secrets.0.show", contract.CodeInvalidSecret),
 		"show from setup":           one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    from: setup\n    show: once\n", "secrets.0.show", contract.CodeInvalidSecret),
 		"show from ask":             one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    from: ask\n    show: once\n", "secrets.0.show", contract.CodeInvalidSecret),
+		"lifetime value":            one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    lifetime: forever\n", "secrets.0.lifetime", contract.CodeInvalidSecret),
+		"setup lifetime from":       one("    env: TOKEN_FILE\n", "    lifetime: setup\n    from: ask\n", "secrets.0.from", contract.CodeInvalidSecret),
+		"setup lifetime env":        one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    lifetime: setup\n", "secrets.0.env", contract.CodeInvalidSecret),
+		"setup lifetime mount":      one("    env: TOKEN_FILE\n", "    mount: /run/token\n    lifetime: setup\n", "secrets.0.mount", contract.CodeInvalidSecret),
+		"setup lifetime folder":     {[][2]string{{"name: token\n", "name: token/\n    lifetime: setup\n"}}, "secrets.0", contract.CodeInvalidSecret},
 		"keeper no command":         one("volumes:\n", "keeper: {command: []}\nvolumes:\n", "keeper.command", contract.CodeMissingField),
 		"keeper empty arg":          one("volumes:\n", "keeper: {command: [seed, \" \"]}\nvolumes:\n", "keeper.command.1", contract.CodeInvalidRule),
 		"keeper unknown key":        one("volumes:\n", "keeper: {command: [seed], args: [x]}\nvolumes:\n", ".", contract.CodeInvalidEntry),
@@ -677,4 +682,31 @@ func TestFirstAdminRules(t *testing.T) {
 			t.Error("an unknown first_admin key is accepted")
 		}
 	})
+}
+
+// setupLifetimeSecrets are the code and the key a setup holder declares (spec 0033): no env, no
+// mount and no from, because the platform mounts the setup files as one folder.
+const setupLifetimeSecrets = `secrets:
+  - {name: code, lifetime: setup, show: once, format: password, description: The setup code.}
+  - {name: session-key, lifetime: setup, format: hex, description: The key of the setup session.}
+`
+
+// TestSetupLifetimeSecrets accepts generated lifetime: setup secrets that name no env or mount.
+func TestSetupLifetimeSecrets(t *testing.T) {
+	t.Parallel()
+	data := strings.Replace(goodModule, "secrets:\n  - name: token\n    env: TOKEN_FILE\n    description: A token.\n",
+		"secrets:\n  - name: token\n    env: TOKEN_FILE\n    description: A token.\n"+strings.TrimPrefix(setupLifetimeSecrets, "secrets:\n"), 1)
+	if data == goodModule {
+		t.Fatal("the edit did not apply")
+	}
+	m, problems := contract.CheckModule("modules/svc/module.yaml", []byte(data), testCaps(t))
+	if len(problems) > 0 {
+		t.Fatalf("problems = %v", problems)
+	}
+	if got := m.Secrets[1].Lifetime; got != contract.SecretLifetimeSetup {
+		t.Errorf("lifetime = %q, want setup", got)
+	}
+	if got := m.Secrets[0].Lifetime; got != "" {
+		t.Errorf("lifetime of an install secret = %q, want unset", got)
+	}
 }

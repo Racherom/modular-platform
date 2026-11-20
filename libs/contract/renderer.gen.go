@@ -289,6 +289,24 @@ func (e SecretFrom) Valid() bool {
 	}
 }
 
+// Defines values for SecretLifetime.
+const (
+	SecretLifetimeInstall SecretLifetime = "install"
+	SecretLifetimeSetup   SecretLifetime = "setup"
+)
+
+// Valid indicates whether the value is a known member of the SecretLifetime enum.
+func (e SecretLifetime) Valid() bool {
+	switch e {
+	case SecretLifetimeInstall:
+		return true
+	case SecretLifetimeSetup:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SecretShow.
 const (
 	SecretShowOnce SecretShow = "once"
@@ -506,6 +524,26 @@ type ConfigValueSetup string
 
 // ConfigValueType defines model for ConfigValue.Type.
 type ConfigValueType string
+
+// Enroll How an identity module (one that provides `oidc`) makes its first user (spec 0035). It has
+// the shape of a setup step, with questions the platform's setup page asks after the platform
+// runs. The keeper runs it on one call from the api, with the answers on standard input only,
+// for as long as no admin is bound. It runs with no network, so it has no `network` or
+// `for_each`.
+type Enroll struct {
+	// Asks Asked on the setup page, in this order.
+	Asks       []SetupAsk `json:"asks,omitempty"`
+	Command    []string   `json:"command"`
+	Entrypoint []string   `json:"entrypoint,omitempty"`
+
+	// Env Literal env for the run, never a secret; no name starts with `MP_`.
+	Env   map[string]string `json:"env,omitempty"`
+	Reads []SetupRead       `json:"reads,omitempty"`
+
+	// Restart `true`: the keeper restarts the module's containers after it moved the writes.
+	Restart bool         `json:"restart,omitempty"`
+	Writes  []SetupWrite `json:"writes,omitempty"`
+}
 
 // ExternalInstance defines model for ExternalInstance.
 type ExternalInstance struct {
@@ -725,7 +763,14 @@ type Module struct {
 	// Config Value name to one declared config value (spec 0005).
 	Config      map[string]ConfigValue `json:"config,omitempty"`
 	Description string                 `json:"description"`
-	Entrypoint  []string               `json:"entrypoint,omitempty"`
+
+	// Enroll How an identity module (one that provides `oidc`) makes its first user (spec 0035). It has
+	// the shape of a setup step, with questions the platform's setup page asks after the platform
+	// runs. The keeper runs it on one call from the api, with the answers on standard input only,
+	// for as long as no admin is bound. It runs with no network, so it has no `network` or
+	// `for_each`.
+	Enroll     *Enroll  `json:"enroll,omitempty"`
+	Entrypoint []string `json:"entrypoint,omitempty"`
 
 	// Environment Fixed env, with `{<slot>.<field>}`, `{config.<value>}`, `{uid}`, `{gid}` and `{install}` placeholders.
 	Environment   map[string]string `json:"environment,omitempty"`
@@ -918,6 +963,12 @@ type Secret struct {
 	Format SecretFormat `json:"format,omitempty"`
 	From   SecretFrom   `json:"from,omitempty"`
 
+	// Lifetime `install` (default) is a secret as before. `setup` (spec 0033) is a generated file that
+	// lives only while the web setup is not done: it lands in `secrets/<instance>/setup/<name>`,
+	// and every such secret of the instance is mounted as one folder at `/run/secrets/setup/`
+	// (so a replaced or deleted file shows inside). It takes no `from`, `env` or `mount`.
+	Lifetime SecretLifetime `json:"lifetime,omitempty"`
+
 	// Mount Absolute path to mount it at.
 	Mount string `json:"mount,omitempty"`
 
@@ -936,6 +987,12 @@ type SecretFormat string
 // SecretFrom defines model for Secret.From.
 type SecretFrom string
 
+// SecretLifetime `install` (default) is a secret as before. `setup` (spec 0033) is a generated file that
+// lives only while the web setup is not done: it lands in `secrets/<instance>/setup/<name>`,
+// and every such secret of the instance is mounted as one folder at `/run/secrets/setup/`
+// (so a replaced or deleted file shows inside). It takes no `from`, `env` or `mount`.
+type SecretLifetime string
+
 // SecretShow `once`: the platform's `setup.sh` prints the value one time at a fresh install
 // (spec 0016). Only with `from: generate`.
 type SecretShow string
@@ -943,8 +1000,14 @@ type SecretShow string
 // SetupAsk defines model for SetupAsk.
 type SetupAsk struct {
 	Description string `json:"description"`
-	Name        string `json:"name"`
-	Secret      bool   `json:"secret,omitempty"`
+
+	// MinLength The fewest characters the answer may have; 1 or more.
+	MinLength *int   `json:"min_length,omitempty"`
+	Name      string `json:"name"`
+
+	// Pattern An RE2 pattern the whole answer must match.
+	Pattern string `json:"pattern,omitempty"`
+	Secret  bool   `json:"secret,omitempty"`
 }
 
 // SetupRead One of `{slot, field}`, `{provide, field}` or `{secret}`. A `{provide, field}` read belongs to a `for_each` step, names its own provide and a `to_provider` or `both` field, and gives that one client's file.

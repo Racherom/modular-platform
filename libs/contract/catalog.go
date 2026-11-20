@@ -55,6 +55,7 @@ const (
 	CodeInvalidYields       = "invalid_yields"
 	CodeInvalidJob          = "invalid_job"
 	CodeInvalidSecret       = "invalid_secret"
+	CodeInvalidEnroll       = "invalid_enroll"
 )
 
 // Catalog folders (spec 0011, "Catalog layout and loading").

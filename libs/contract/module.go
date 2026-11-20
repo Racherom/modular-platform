@@ -71,6 +71,7 @@ func CheckModule(file string, data []byte, caps map[string]Capability) (Module, 
 	mc.keeper()
 	mc.templates()
 	mc.setup()
+	mc.enroll()
 	if m.Hardening != nil {
 		for i, t := range m.Hardening.Tmpfs {
 			mc.mount(fmt.Sprintf("hardening.tmpfs.%d", i), t)
@@ -134,16 +135,41 @@ func (c *moduleChecker) secrets() {
 		default:
 			c.add(p+".from", CodeInvalidRule, "from %q is not generate, ask or setup", s.From)
 		}
-		if s.Env == "" && s.Mount == "" {
+		setupLife := s.Lifetime == SecretLifetimeSetup
+		switch {
+		case s.Lifetime != "" && !s.Lifetime.Valid():
+			c.add(p+".lifetime", CodeInvalidSecret, "lifetime %q is not install or setup", s.Lifetime)
+		case setupLife:
+			c.setupLifetime(p, s, folder)
+		case s.Env == "" && s.Mount == "":
 			c.add(p, CodeMissingField, "a secret needs env, mount or both")
 		}
-		if folder && (s.From != SecretFromSetup || s.Mount == "" || s.Env != "") {
+		if folder && !setupLife && (s.From != SecretFromSetup || s.Mount == "" || s.Env != "") {
 			c.add(p, CodeInvalidRule, "a secret folder needs from: setup and a mount, and takes no env")
 		}
 		if s.Mount != "" {
 			c.mount(p+".mount", s.Mount)
 		}
 		c.generated(p, s)
+	}
+}
+
+// setupLifetime checks a lifetime: setup secret (spec 0033): a generated file that lives only
+// while the web setup is not done. The platform mounts every such secret of the instance as one
+// folder, so the secret has no from, env, mount or folder name of its own.
+func (c *moduleChecker) setupLifetime(p string, s Secret, folder bool) {
+	const why = "a lifetime: setup secret is generated, so it takes no "
+	switch {
+	case folder:
+		c.add(p, CodeInvalidSecret, "a lifetime: setup secret is a file, not a folder")
+	case s.From != "":
+		c.add(p+".from", CodeInvalidSecret, why+"from")
+	}
+	if s.Env != "" {
+		c.add(p+".env", CodeInvalidSecret, why+"env: the platform mounts the setup files as one folder")
+	}
+	if s.Mount != "" {
+		c.add(p+".mount", CodeInvalidSecret, why+"mount: the platform mounts the setup files as one folder")
 	}
 }
 
@@ -717,5 +743,90 @@ func (c *checker) healthcheck(h Healthcheck) {
 	}
 	if h.Retries != nil && *h.Retries < 1 {
 		c.add("healthcheck.retries", CodeInvalidRetries, "retries must be 1 or more")
+	}
+}
+
+// enroll checks the enroll block (spec 0035): only an identity module (one that provides oidc)
+// has one, it runs once, so it has no for_each, and its asks and writes are well formed.
+func (c *moduleChecker) enroll() {
+	e := c.m.Enroll
+	if e == nil {
+		return
+	}
+	const p = "enroll"
+	if !c.providesCapability("oidc") {
+		c.add(p, CodeInvalidEnroll, "enroll belongs to a module that provides oidc")
+	}
+	if len(e.Command) == 0 {
+		c.add(p+".command", CodeInvalidEnroll, "an enroll needs a command")
+	}
+	for _, k := range sortedKeys(e.Env) {
+		if strings.HasPrefix(k, "MP_") {
+			c.add(p+".env."+k, CodeInvalidEnroll, "env names starting with MP_ belong to the platform")
+		}
+	}
+	c.enrollAsks(p, e.Asks)
+	c.enrollReads(p, e.Reads)
+	c.enrollWrites(p, e.Writes)
+}
+
+// providesCapability reports whether any provide of the entry offers the capability.
+func (c *moduleChecker) providesCapability(capability string) bool {
+	for _, pr := range c.m.Provides {
+		if pr.Capability == capability {
+			return true
+		}
+	}
+	return false
+}
+
+// enrollAsks checks the questions: a name once each, a pattern that compiles (RE2), a min_length
+// of 1 or more.
+func (c *moduleChecker) enrollAsks(p string, asks []SetupAsk) {
+	seen := map[string]bool{}
+	for i, a := range asks {
+		ap := fmt.Sprintf("%s.asks.%d", p, i)
+		c.name(ap+".name", a.Name)
+		if seen[a.Name] && a.Name != "" {
+			c.add(ap+".name", CodeInvalidEnroll, "ask %q is declared twice", a.Name)
+		}
+		seen[a.Name] = true
+		c.description(ap+".description", a.Description)
+		if a.Pattern != "" {
+			if _, err := regexp.Compile(a.Pattern); err != nil {
+				c.add(ap+".pattern", CodeInvalidEnroll, "pattern %q is not an RE2 pattern: %s", a.Pattern, oneLine(err))
+			}
+		}
+		if a.MinLength != nil && *a.MinLength < 1 {
+			c.add(ap+".min_length", CodeInvalidEnroll, "min_length must be 1 or more")
+		}
+	}
+}
+
+// enrollReads checks the reads: an enroll runs once, so a {provide, field} read (one file per
+// client) does not belong to it.
+func (c *moduleChecker) enrollReads(p string, reads []SetupRead) {
+	for i, r := range reads {
+		if r.Provide != "" {
+			c.add(fmt.Sprintf("%s.reads.%d.provide", p, i), CodeInvalidEnroll, "an enroll has no for_each, so it takes no {provide} read")
+		}
+	}
+}
+
+// enrollWrites checks the writes: each lands in a from: setup secret of the module, either the
+// secret itself or a file inside its folder (users/users.yml in the folder users/).
+func (c *moduleChecker) enrollWrites(p string, writes []SetupWrite) {
+	for i, w := range writes {
+		wp := fmt.Sprintf("%s.writes.%d.name", p, i)
+		secret := w.Name
+		if first, _, nested := strings.Cut(w.Name, "/"); nested {
+			secret = first + "/"
+		}
+		if !slices.ContainsFunc(c.m.Secrets, func(s Secret) bool { return s.Name == secret && s.From == SecretFromSetup }) {
+			c.add(wp, CodeInvalidEnroll, "write %q names no secret of the module with from: setup", w.Name)
+		}
+		if strings.Contains(w.Name, clientToken) {
+			c.add(wp, CodeInvalidEnroll, "an enroll has no for_each, so a write takes no {client}")
+		}
 	}
 }
