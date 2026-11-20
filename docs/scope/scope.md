@@ -48,6 +48,7 @@ One name for each thing (your answers of 2026-11-10). #41 brings code, contracts
 | 43 | Add a graph to a running stack | Slice 3 | planned |
 | 35 | Apply history and diff | Slice 3 | planned |
 | 37 | First run setup on the web | Slice 4 | in-progress |
+| 48 | Bundled identity provider: Pocket ID | Slice 4 | in-progress |
 | 32 | Start the platform from one container | Slice 4 | in-progress |
 | 23 | Replace the platform's own modules | Slice 4 | planned |
 | 24 | Stack editor standalone or in your site | Slice 4 | planned |
@@ -151,8 +152,8 @@ spec [0032](../specs/0032-dev-branch-release-flow/index.md) · code in `.github/
    - [x] Branch rules check and CI on `dev`: script, workflow, act test, push trigger, `target-branch` (AC-1, AC-3, AC-4, AC-9)
    - [x] Back merge job after a release: script, `release.yml` job, act test (AC-5, AC-9)
    - [x] Rulesets and the check name test, Renovate and `MP_SOURCE_REF` on `dev` (AC-2, AC-7, AC-8)
-   - [ ] Docs and cut over: AGENTS.md `## Git`, README Releases, create `dev`, apply the rulesets (AC-1, AC-2, AC-6, AC-10) (docs written; the cut over on GitHub is still to do)
-- [ ] Verify it: `/check verify dev branch and release flow`
+   - [ ] Docs and cut over: AGENTS.md `## Git`, README Releases, create `dev`, apply the rulesets (AC-1, AC-2, AC-6, AC-10) (docs written; `dev` exists on GitHub at the same commit as `main`; the rulesets in `deploy/github/` are not enforced yet: PR #3 merged into `main` with two failed checks and both branches show `protected: false`; import them in Settings, Rules, Rulesets and confirm the required check names, then this ticks)
+- [ ] Verify it: `/check verify dev branch and release flow` (blocked on 2026-11-20: local steps pass, the GitHub steps wait for the rulesets; the throwaway pull requests for AC-1 to AC-3 need your yes, and AC-4 to AC-6 wait for the first release)
 - [x] Test it: `/test dev branch and release flow`
 - [ ] Review it (fresh model): `/check review dev branch and release flow`
 - [ ] Document it: `/document dev branch and release flow`
@@ -324,6 +325,22 @@ spec [0033](../specs/0033-first-run-web-setup/index.md) · code in `services/dep
 - [ ] Test it: `/test first run setup on the web`
 - [ ] Review it (fresh model): `/check review first run setup on the web`
 - [ ] Document it: `/document first run setup on the web`
+
+### 48. Bundled identity provider: Pocket ID · in-progress
+The platform's bundled sign in service changes from Authelia (users in a file, no user API) to Pocket ID, a small passkey based OIDC provider on the platform's Postgres. The admin creates their own account on Pocket ID's first admin page and registers a passkey; the ingress guards that page with the setup session from the web setup (#37), and a one shot step registers the OIDC client for `api`. Authelia stays in the catalog as an optional module. Because the provider facts are not all verified, the first task is a spike with pass or fail gates, and a failed hard gate returns to `/architect` for the fallback (Rauthy, then Authelia with lldap).
+**Done when:** a fresh managed install brings up Pocket ID on the auth host, the admin creates the account behind the gate and registers a passkey in the Chromium smoke, signs in and is bound as the admin, and a graph with `authelia` in its place still renders and passes the checks.
+spec [0037](../specs/0037-bundled-identity-provider/index.md) · code in `catalog/`, `libs/contract/`, `libs/render/`, `services/api/`, `web/`, `contracts/openapi/`, `deploy/managed/`, `scripts/smoke-managed.sh`
+- [x] Design it (spec): `/architect bundled identity provider`
+- [ ] Build it: `/develop bundled identity provider`
+   - [x] Spike with hard gates G1 to G6 and the soft gates, results in the spec's rationale (AC-11) (done 2026-11-20, no hard gate failed; G4 second half is proven at the cut over)
+   - [ ] Contract and fixture: the `pocket-id` entry, `first_admin`, a gated ingress route, a step `network` (AC-1, AC-7, AC-9)
+   - [ ] Api and client step: identity link, handoff and gate on the setup session; the one shot client upsert (AC-2, AC-4, AC-5, AC-8)
+   - [ ] Editor and cut over: the setup page, the real entry, `deploy/managed/graph.yaml`, goldens, the Chromium smoke with a virtual passkey (AC-1, AC-3, AC-9)
+   - [ ] Sign up config and README (AC-6, AC-10)
+- [ ] Verify it: `/check verify bundled identity provider`
+- [ ] Test it: `/test bundled identity provider`
+- [ ] Review it (fresh model): `/check review bundled identity provider`
+- [ ] Document it: `/document bundled identity provider`
 
 ### 32. Start the platform from one container · in-progress
 The managed platform starts from one container, most likely the deployer, instead of one `docker compose up` for every service. It reads the platform's starting state from its files (the platform graph and render of spec 0015, plus the install answers the web setup of #37 collected). Then it looks for the platform's containers on the host: it starts the ones that exist and match, recreates the ones that no longer match the files, and creates the ones that are missing. Only the platform's own modules: deployed stacks keep relying on Docker's restart policy. Comes after #3's milestone 4 (the platform is a graph) and after #37 (the web setup), so installing runs no script on the host and asks nothing, and gives #23, #25 and #19 one entry point that brings the platform up from its files. Its spec decides how this first container is started and restarted, how it finds the platform's containers (labels), what counts as no longer matching, and how it keeps from stopping itself.
