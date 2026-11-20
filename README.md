@@ -40,7 +40,7 @@ authority, so your browser warns about the certificate on first visit.
 
 `task online:up` pulls the release images named by `MP_VERSION` in `deploy/online/versions.env`.
 Until the first release exists (it reads `0.0.0`), it builds the web and renderer images from
-GitHub at `MP_SOURCE_REF` (also in `versions.env`, `main` by default) instead, which takes a few
+GitHub at `MP_SOURCE_REF` (also in `versions.env`, `dev` by default) instead, which takes a few
 minutes. To run the images you built from your checkout:
 
 ```sh
@@ -110,6 +110,39 @@ IMAGE_TAG=ci task images
 task smoke:managed
 ```
 
+## Branches and releases
+
+Two branches matter. `main` holds only released code, so it always shows the last release. `dev`
+holds the work for the next release. Feature branches start from `dev` and merge back into it.
+
+| You want to | Open a pull request | Merge method |
+|---|---|---|
+| Add a feature or a fix | from `feat/...` (or any short branch) into `dev` | squash |
+| Start a release | from `dev` into `main` | merge commit, never squash |
+| Finish a release | merge the release pull request release-please opens on `main` | merge commit |
+| Fix a released version | from `hotfix/...` (cut from `main`) into `main` | merge commit |
+| Carry a release back | merge the `back-merge/<version>` pull request into `dev` | merge commit, never squash |
+
+Two checks guard this. The *Branch rules* check fails a pull request into `main` unless it comes
+from `dev`, `hotfix/...` or the release branch, and fails a pull request into `dev` unless its title
+is a conventional commit (`feat(web): show a failed check`). A squash merge uses the pull request
+title as the commit message, and release-please reads those messages for the changelog, so the
+title counts. GitHub rulesets enforce both branches; they are kept in `deploy/github/` and
+checked against the job names by a test.
+
+A release takes two merges. Merging `dev` into `main` makes release-please open its release pull
+request on `main`. Merging that one tags the release, builds the images and attaches the zip. Then
+a job opens the pull request `back-merge/<version>` into `dev`, so `dev` gets the release commit.
+Merge it with a merge commit, never a squash, or the next release conflicts. If it does conflict,
+merge `dev` into `back-merge/<version>` on your machine and keep the release side for the version
+lines (`MP_VERSION`, the four catalog image lines, `web/package.json`, the manifest and
+`CHANGELOG.md`).
+
+A fix for a released version goes on a `hotfix/<name>` branch cut from `main`, with conventional
+commit messages, into `main`. release-please then opens a patch release pull request, and the
+release's back merge brings the fix into `dev`. Merge or close a pending release pull request
+before you cut a hotfix, or the hotfix ships the unreleased work that is already on `main`.
+
 ## Releases
 
 release-please opens the release pull request, but it stays off until a release is near. While
@@ -126,7 +159,12 @@ this order:
 3. Add the repository secret `RELEASE_PLEASE_TOKEN`: a fine grained token, or a GitHub App
    token, with contents and pull request write access. It is required, there is no fallback to
    the default `GITHUB_TOKEN` (a pull request that token opens starts no CI).
-4. Set the repository variable `RELEASES_ENABLED` to `true`, then push to `main` or rerun the
+4. Check that both rulesets from `deploy/github/` are active, that the release token also has
+   contents and pull request write access for the back merge job, and that you ran release-please
+   in dry run mode on a real `dev` into `main` merge. Expect a long first changelog: the first
+   release reads the whole history (manifest `0.0.0`) and the version is 0.1.0; accept that, or set
+   `bootstrap-sha` first.
+5. Set the repository variable `RELEASES_ENABLED` to `true`, then push to `main` or rerun the
    latest Release run. The variable alone starts nothing.
 
 Approving a pull request stays with a person, so the setting in step 2 stays off. If the

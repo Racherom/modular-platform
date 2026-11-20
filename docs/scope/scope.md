@@ -32,6 +32,8 @@ One name for each thing (your answers of 2026-11-10). #41 brings code, contracts
 | 5 | Design system & graph editor foundation | Foundation | in-progress |
 | 41 | One vocabulary | Foundation | in-progress |
 | 44 | Skills from a list, not from git | Foundation | in-progress |
+| 48 | Dev branch and release flow | Foundation | in-progress |
+| 49 | Local tests and CI tests | Foundation | planned |
 | 27 | Module SDK | Slice 1 | done |
 | 16 | Managed mode control plane | Slice 1 | in-progress |
 | 3 | Capability and module contract | Slice 2 | in-progress |
@@ -139,6 +141,26 @@ Stop tracking the installed skill folders (`.agents/skills/`, `.claude/skills/`)
 code in `.gitignore`, `Taskfile.yml` (`skills`), `skills-lock.json`, `AGENTS.md` (`## Agent skills`), `README.md`
 - [x] Build it: `/develop skills from a list`
 - [ ] Verify it: `/check verify skills from a list` (a fresh clone, then `task skills`)
+
+### 48. Dev branch and release flow · in-progress
+Add a long lived `dev` branch. Feature branches (`feat/...`) merge into `dev`, and `dev` merges into `main` only at a release. So `main` always holds the last release, and `dev` holds the work for the next one. This changes where CI runs, where release please looks, and where the release images are built from, so the flow has to be decided and written down before anything moves.
+**Done when:** a `dev` branch exists and feature branches merge into it (CI runs on pull requests that target `dev`, not only `main`); a release is one merge of `dev` into `main`, and release please, the release gate and the release image build still work from that merge; `main` and `dev` are protected the way you choose; and `AGENTS.md` (`## Git`) and the README (Releases) describe the flow, including how a fix for a released version reaches `dev` again.
+spec [0032](../specs/0032-dev-branch-release-flow.md) · code in `.github/workflows/`, `scripts/`, `deploy/github/`, `deploy/online/versions.env`, `renovate.json`, `libs/ci/`, `AGENTS.md`, `README.md`
+- [x] Design it (spec): `/architect dev branch and release flow`
+- [ ] Build it: `/develop dev branch and release flow`
+   - [x] Branch rules check and CI on `dev`: script, workflow, act test, push trigger, `target-branch` (AC-1, AC-3, AC-4, AC-9)
+   - [x] Back merge job after a release: script, `release.yml` job, act test (AC-5, AC-9)
+   - [x] Rulesets and the check name test, Renovate and `MP_SOURCE_REF` on `dev` (AC-2, AC-7, AC-8)
+   - [ ] Docs and cut over: AGENTS.md `## Git`, README Releases, create `dev`, apply the rulesets (AC-1, AC-2, AC-6, AC-10) (docs written; the cut over on GitHub is still to do)
+- [ ] Verify it: `/check verify dev branch and release flow`
+- [ ] Test it: `/test dev branch and release flow`
+- [ ] Review it (fresh model): `/check review dev branch and release flow`
+- [ ] Document it: `/document dev branch and release flow`
+
+### 49. Local tests and CI tests · needs a decision
+Split the tests in two sets. **Local tests** run offline on your machine with no Docker, no network and no browser download, so you can run them while you build. **CI tests** are the rest (the Docker tests, the smoke runs, anything that pulls images or needs Chromium) and run only on the pull request. The flow: you finish a feature, the local tests pass, you open the pull request (or merge request), the CI tests run on it, and it can be merged only when they pass. This works with #48, which decides the branch the pull request targets.
+**Done when:** one command (say `task test:local`) runs every local test with the network switched off and passes; each test is in exactly one set, and a test that needs the network or Docker cannot sit in the local set unnoticed; opening a pull request is a documented step that follows a passing local run (a hook or a task checks it, you choose which); the CI tests run on the pull request and the branch protection requires them before a merge; and `AGENTS.md` (`## Commands`) and the README describe both sets and the order.
+- [ ] Design it (spec): `/architect local tests and CI tests`
 
 ## Slice 1: Managed mode, the first thread
 
@@ -552,6 +574,7 @@ Other deferred ideas, not yet numbered:
 - Your answers in the `/scope` pass (2026-11-10, second): one name per thing (the Words table); the running whole is a stack, network stays the Docker network; one editor in two modes, the online editor and the stack editor; the renderer turns a graph into a zip or the deployer's files; checks run at several stages and are not one component; "planner" retires as a name. A complete graph always gives a zip; an incomplete one gives a zip with a warning only when the core of its managed stack can start, so the rest is set in the stack editor (#40 updated). New #41 (foundation), #42 (slice 3, after #6) and #43 (slice 3, after #34); module by module apply folded into #19; #24, #12 and #22 renamed. <!-- vocabulary: allow -->
 - Your answers in the `/scope` replan (2026-11-10, third): #27 done; #32's done line follows Compose's rule (spec 0016); #40 and #42 carry spec 0027's follow up items; #44 gets its Alpha verify box; next is #41, before more #10 and #32 code, so the rename meets few open branches.
 - Spec 0029 follow up, applied by `/scope` replan (2026-11-11): #41's build milestones all ticked (the retired word check now fails `task lint` and the pre commit hook), so its next box is Verify; remove and rename of modules enrolled as #45 in slice 3 after #6; drag from the catalog onto the canvas stays an idea until testing shows a need.
+- Your request in the `/scope` add pass (2026-11-15): tests split into local tests (offline) and CI tests; a pull request opens after a feature is built and the local tests pass, and it merges only when the CI tests pass; new #49 in Foundation, beside #48.
 - Your answers in the `/scope` add pass (2026-11-13): an apply freezes image versions, so a rollback after an apply that pulled a broken newer image does not pull the same image again; managed apply only, the static zip keeps its tags; new #47 in slice 14, beside #19.
 
 **Practices & standards**

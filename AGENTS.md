@@ -63,6 +63,10 @@ Installed and enforced:
 - integration: on
 - branch prefix: feat/
 - commit: per-milestone
+- branches (spec 0032): `main` holds only released code, `dev` holds the next release. Branch from `dev`, open the pull request into `dev` with a conventional commit title, and **squash** it (the title becomes the commit message release-please reads)
+- release: open a pull request `dev` into `main` and merge it with a **merge commit, never squash**; release-please then opens its release pull request on `main`, and merging that tags the release. A job then opens `back-merge/<version>` into `dev`: merge it with a merge commit, never a squash. On a conflict, merge `dev` into it locally and keep the release side for the version lines (`MP_VERSION`, the four catalog image lines, `web/package.json`, the manifest, `CHANGELOG.md`)
+- hotfix: branch `hotfix/<name>` from `main`, conventional commits, pull request into `main`; merge or close a pending release pull request first. The back merge carries it to `dev`
+- guard: the `Branch rules` check (`scripts/branch-rules.sh`) and the rulesets in `deploy/github/`; renaming a CI job means editing both rulesets (a test fails otherwise)
 
 ## Agent skills
 
