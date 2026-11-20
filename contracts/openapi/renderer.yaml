@@ -515,6 +515,10 @@ components:
           $ref: "#/components/schemas/Hardening"
           # keep the pointer: most entries declare none
           x-go-type-skip-optional-pointer: false
+        keeper:
+          $ref: "#/components/schemas/Keeper"
+          # keep the pointer: only the platform's keeper declares it
+          x-go-type-skip-optional-pointer: false
         healthcheck:
           $ref: "#/components/schemas/Healthcheck"
           # keep the pointer: render tells a missing healthcheck from an empty one
@@ -639,12 +643,42 @@ components:
           type: string
           enum: [generate, ask, setup]
           default: generate
+        format:
+          type: string
+          enum: [hex, password]
+          x-enum-varnames: [SecretFormatHex, SecretFormatPassword]
+          default: hex
+          description: |
+            How a `from: generate` value is made (spec 0016): `hex` is 32 random bytes as hex,
+            `password` is 24 characters drawn uniformly from `A` to `Z`, `a` to `z` and `0` to `9`.
+        show:
+          type: string
+          enum: [once]
+          x-enum-varnames: [SecretShowOnce]
+          description: |
+            `once`: the platform's `setup.sh` prints the value one time at a fresh install
+            (spec 0016). Only with `from: generate`.
         env:
           type: string
           description: Env var set to the secret file's path inside the container.
         mount:
           type: string
           description: Absolute path to mount it at.
+    Keeper:
+      type: object
+      description: |
+        Marks the module as the platform's keeper (spec 0016): the one service that keeps the
+        platform's own containers in line with its state folder. The platform's `setup.sh` starts
+        a seed container that runs `command` plus `--state <dir>`. A keeper is host access.
+      additionalProperties: false
+      required: [command]
+      properties:
+        command:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: The arguments a seed runs, after the image's entrypoint.
     SetupStep:
       type: object
       additionalProperties: false

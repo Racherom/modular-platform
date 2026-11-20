@@ -80,8 +80,8 @@ func (c *moduleChecker) claim(p, target string) {
 
 // HostAccess names every reason a deployed graph refuses an instance of m, joined into one
 // phrase such as "publishes host ports and adds the Linux capability SYS_ADMIN" (spec 0022):
-// publish, host_mounts, and the cap_add names UndeployableLinuxCaps lists. It is "" when a
-// deployed graph may run m.
+// publish, host_mounts, keeper (spec 0016), and the cap_add names UndeployableLinuxCaps lists.
+// It is "" when a deployed graph may run m.
 func (m Module) HostAccess() string {
 	var reasons []string
 	if len(m.Publish) > 0 {
@@ -89,6 +89,9 @@ func (m Module) HostAccess() string {
 	}
 	if len(m.HostMounts) > 0 {
 		reasons = append(reasons, "mounts host paths")
+	}
+	if m.Keeper != nil {
+		reasons = append(reasons, "keeps the platform's own containers")
 	}
 	switch caps := m.UndeployableLinuxCaps(); len(caps) {
 	case 0:

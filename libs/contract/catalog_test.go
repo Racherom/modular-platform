@@ -241,6 +241,14 @@ func TestModuleRules(t *testing.T) {
 		"secret twice":        one("    description: A token.\n", "    description: A token.\n  - name: token\n    env: OTHER_FILE\n    description: Again.\n", "secrets.1.name", contract.CodeDuplicateName),
 		"secret folder":       one("name: token\n", "name: certs/\n", "secrets.0", contract.CodeInvalidRule),
 		"secret env twice":    one("env: TOKEN_FILE", "env: DB_HOST", "secrets.0.env", contract.CodeDuplicateEnv),
+		"secret format":       one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    format: base32\n", "secrets.0.format", contract.CodeInvalidSecret),
+		"format not generate": one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    from: ask\n    format: password\n", "secrets.0.format", contract.CodeInvalidSecret),
+		"secret show":         one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    show: twice\n", "secrets.0.show", contract.CodeInvalidSecret),
+		"show from setup":     one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    from: setup\n    show: once\n", "secrets.0.show", contract.CodeInvalidSecret),
+		"show from ask":       one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    from: ask\n    show: once\n", "secrets.0.show", contract.CodeInvalidSecret),
+		"keeper no command":   one("volumes:\n", "keeper: {command: []}\nvolumes:\n", "keeper.command", contract.CodeMissingField),
+		"keeper empty arg":    one("volumes:\n", "keeper: {command: [seed, \" \"]}\nvolumes:\n", "keeper.command.1", contract.CodeInvalidRule),
+		"keeper unknown key":  one("volumes:\n", "keeper: {command: [seed], args: [x]}\nvolumes:\n", ".", contract.CodeInvalidEntry),
 		"volume path":         one("data: /var/lib/svc", "data: var/lib", "volumes.data", contract.CodeInvalidMount),
 		"template file":       one("svc.conf.tmpl", "svc.conf", "templates.0.file", contract.CodeInvalidTemplate),
 		"template delims":     one("    path: /etc/svc.conf\n", "    path: /etc/svc.conf\n    delims: [\"[[\", \"\"]\n", "templates.0.delims", contract.CodeInvalidTemplate),
@@ -542,6 +550,26 @@ func TestUndeployableLinuxCaps(t *testing.T) {
 	}
 }
 
+// TestKeeperAndShownSecret accepts the keeper field and a generated password shown once (spec
+// 0016, AC-10), and keeps what they say.
+func TestKeeperAndShownSecret(t *testing.T) {
+	t.Parallel()
+	text := edit(t, goodModule, [][2]string{
+		{"    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    format: password\n    show: once\n"},
+		{"volumes:\n", "keeper: {command: [seed]}\nvolumes:\n"},
+	})
+	m, problems := contract.CheckModule("modules/svc/module.yaml", []byte(text), testCaps(t))
+	if len(problems) > 0 {
+		t.Fatalf("problems = %v", problems)
+	}
+	if s := m.Secrets[0]; s.Format != contract.SecretFormatPassword || s.Show != contract.SecretShowOnce {
+		t.Errorf("secret = %+v, want format password and show once", s)
+	}
+	if m.Keeper == nil || !slices.Equal(m.Keeper.Command, []string{"seed"}) {
+		t.Errorf("keeper = %+v, want command [seed]", m.Keeper)
+	}
+}
+
 // TestModuleHostAccess joins every reason a deployed graph refuses into one phrase (spec 0022).
 func TestModuleHostAccess(t *testing.T) {
 	t.Parallel()
@@ -559,6 +587,7 @@ func TestModuleHostAccess(t *testing.T) {
 		"three reasons":  {contract.Module{Publish: publish, HostMounts: mounts, Hardening: caps("SYS_ADMIN")}, "publishes host ports, mounts host paths and adds the Linux capability SYS_ADMIN"},
 		"two caps":       {contract.Module{Hardening: caps("SYS_ADMIN", "NET_BIND_SERVICE", "NET_ADMIN")}, "adds the Linux capabilities SYS_ADMIN and NET_ADMIN"},
 		"three caps":     {contract.Module{Hardening: caps("CHOWN", "SETUID", "SETGID")}, "adds the Linux capabilities CHOWN, SETUID and SETGID"},
+		"keeper":         {contract.Module{HostMounts: mounts, Keeper: &contract.Keeper{Command: []string{"seed"}}}, "mounts host paths and keeps the platform's own containers"},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

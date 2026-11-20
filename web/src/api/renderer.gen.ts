@@ -268,6 +268,7 @@ export interface components {
             host_mounts?: components["schemas"]["HostMount"][];
             network?: components["schemas"]["Network"];
             hardening?: components["schemas"]["Hardening"];
+            keeper?: components["schemas"]["Keeper"];
             healthcheck?: components["schemas"]["Healthcheck"];
         };
         Provide: {
@@ -355,10 +356,32 @@ export interface components {
              * @enum {string}
              */
             from: "generate" | "ask" | "setup";
+            /**
+             * @description How a `from: generate` value is made (spec 0016): `hex` is 32 random bytes as hex,
+             *     `password` is 24 characters drawn uniformly from `A` to `Z`, `a` to `z` and `0` to `9`.
+             * @default hex
+             * @enum {string}
+             */
+            format: "hex" | "password";
+            /**
+             * @description `once`: the platform's `setup.sh` prints the value one time at a fresh install
+             *     (spec 0016). Only with `from: generate`.
+             * @enum {string}
+             */
+            show?: "once";
             /** @description Env var set to the secret file's path inside the container. */
             env?: string;
             /** @description Absolute path to mount it at. */
             mount?: string;
+        };
+        /**
+         * @description Marks the module as the platform's keeper (spec 0016): the one service that keeps the
+         *     platform's own containers in line with its state folder. The platform's `setup.sh` starts
+         *     a seed container that runs `command` plus `--state <dir>`. A keeper is host access.
+         */
+        Keeper: {
+            /** @description The arguments a seed runs, after the image's entrypoint. */
+            command: string[];
         };
         SetupStep: {
             name: string;

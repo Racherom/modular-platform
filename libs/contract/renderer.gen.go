@@ -250,6 +250,24 @@ func (e RenderedSecretKind) Valid() bool {
 	}
 }
 
+// Defines values for SecretFormat.
+const (
+	SecretFormatHex      SecretFormat = "hex"
+	SecretFormatPassword SecretFormat = "password"
+)
+
+// Valid indicates whether the value is a known member of the SecretFormat enum.
+func (e SecretFormat) Valid() bool {
+	switch e {
+	case SecretFormatHex:
+		return true
+	case SecretFormatPassword:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SecretFrom.
 const (
 	SecretFromAsk      SecretFrom = "ask"
@@ -265,6 +283,21 @@ func (e SecretFrom) Valid() bool {
 	case SecretFromGenerate:
 		return true
 	case SecretFromSetup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SecretShow.
+const (
+	SecretShowOnce SecretShow = "once"
+)
+
+// Valid indicates whether the value is a known member of the SecretShow enum.
+func (e SecretShow) Valid() bool {
+	switch e {
+	case SecretShowOnce:
 		return true
 	default:
 		return false
@@ -631,6 +664,14 @@ type Job struct {
 	Revoke string `json:"revoke,omitempty"`
 }
 
+// Keeper Marks the module as the platform's keeper (spec 0016): the one service that keeps the
+// platform's own containers in line with its state folder. The platform's `setup.sh` starts
+// a seed container that runs `command` plus `--state <dir>`. A keeper is host access.
+type Keeper struct {
+	// Command The arguments a seed runs, after the image's entrypoint.
+	Command []string `json:"command"`
+}
+
 // ManagedRenderRequest defines model for ManagedRenderRequest.
 type ManagedRenderRequest struct {
 	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
@@ -667,6 +708,11 @@ type Module struct {
 
 	// Image An image reference with a tag other than `latest`, optionally followed by a digest.
 	Image string `json:"image"`
+
+	// Keeper Marks the module as the platform's keeper (spec 0016): the one service that keeps the
+	// platform's own containers in line with its state folder. The platform's `setup.sh` starts
+	// a seed container that runs `command` plus `--state <dir>`. A keeper is host access.
+	Keeper *Keeper `json:"keeper,omitempty"`
 
 	// Kind Exactly `Module`.
 	Kind string `json:"kind"`
@@ -832,18 +878,34 @@ type Secret struct {
 	Description string `json:"description"`
 
 	// Env Env var set to the secret file's path inside the container.
-	Env  string     `json:"env,omitempty"`
-	From SecretFrom `json:"from,omitempty"`
+	Env string `json:"env,omitempty"`
+
+	// Format How a `from: generate` value is made (spec 0016): `hex` is 32 random bytes as hex,
+	// `password` is 24 characters drawn uniformly from `A` to `Z`, `a` to `z` and `0` to `9`.
+	Format SecretFormat `json:"format,omitempty"`
+	From   SecretFrom   `json:"from,omitempty"`
 
 	// Mount Absolute path to mount it at.
 	Mount string `json:"mount,omitempty"`
 
 	// Name A name ending in `/` is a folder a setup step writes.
 	Name string `json:"name"`
+
+	// Show `once`: the platform's `setup.sh` prints the value one time at a fresh install
+	// (spec 0016). Only with `from: generate`.
+	Show SecretShow `json:"show,omitempty"`
 }
+
+// SecretFormat How a `from: generate` value is made (spec 0016): `hex` is 32 random bytes as hex,
+// `password` is 24 characters drawn uniformly from `A` to `Z`, `a` to `z` and `0` to `9`.
+type SecretFormat string
 
 // SecretFrom defines model for Secret.From.
 type SecretFrom string
+
+// SecretShow `once`: the platform's `setup.sh` prints the value one time at a fresh install
+// (spec 0016). Only with `from: generate`.
+type SecretShow string
 
 // SetupAsk defines model for SetupAsk.
 type SetupAsk struct {

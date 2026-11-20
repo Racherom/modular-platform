@@ -5,6 +5,9 @@ description: Applies a rendered project to this host with Docker Compose and rep
 # release-please bumps the version on this line
 image: ghcr.io/racherom/modular-platform/deployer-docker:0.0.0 # x-release-please-version
 runtime: sdk
+# the platform's keeper (spec 0016): setup.sh starts a seed that runs this command plus --state <dir>
+keeper:
+  command: [seed]
 healthcheck:
   test: ["CMD", "/deployer-docker", "healthcheck"]
   interval: 5s

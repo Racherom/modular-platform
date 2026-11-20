@@ -68,6 +68,7 @@ func CheckModule(file string, data []byte, caps map[string]Capability) (Module, 
 	mc.network()
 	mc.volumes()
 	mc.hostAccess()
+	mc.keeper()
 	mc.templates()
 	mc.setup()
 	if m.Hardening != nil {
@@ -141,6 +142,42 @@ func (c *moduleChecker) secrets() {
 		}
 		if s.Mount != "" {
 			c.mount(p+".mount", s.Mount)
+		}
+		c.generated(p, s)
+	}
+}
+
+// generated checks format and show (spec 0016): both apply only to a from: generate secret,
+// format is hex or password, and show is once.
+func (c *moduleChecker) generated(p string, s Secret) {
+	generated := s.From == "" || s.From == SecretFromGenerate
+	switch {
+	case s.Format != "" && !s.Format.Valid():
+		c.add(p+".format", CodeInvalidSecret, "format %q is not hex or password", s.Format)
+	case s.Format != "" && !generated:
+		c.add(p+".format", CodeInvalidSecret, "format applies only to a secret with from: generate")
+	}
+	switch {
+	case s.Show != "" && !s.Show.Valid():
+		c.add(p+".show", CodeInvalidSecret, "show %q is not once", s.Show)
+	case s.Show != "" && !generated:
+		c.add(p+".show", CodeInvalidSecret, "show: once applies only to a secret with from: generate")
+	}
+}
+
+// keeper checks the keeper field (spec 0016): a seed runs its command, so it names at least one
+// argument and no argument is empty.
+func (c *moduleChecker) keeper() {
+	k := c.m.Keeper
+	if k == nil {
+		return
+	}
+	if len(k.Command) == 0 {
+		c.add("keeper.command", CodeMissingField, "a keeper names the command a seed runs, with at least one argument")
+	}
+	for i, a := range k.Command {
+		if strings.TrimSpace(a) == "" {
+			c.add(fmt.Sprintf("keeper.command.%d", i), CodeInvalidRule, "an argument of the keeper command is empty")
 		}
 	}
 }

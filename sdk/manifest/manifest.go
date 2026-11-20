@@ -158,6 +158,7 @@ type Entry struct {
 	HostMounts    json.RawMessage    `json:"host_mounts,omitempty"`
 	Network       json.RawMessage    `json:"network,omitempty"`
 	Hardening     json.RawMessage    `json:"hardening,omitempty"`
+	Keeper        json.RawMessage    `json:"keeper,omitempty"`
 }
 
 // Provide is one named provide of the entry.
@@ -187,6 +188,8 @@ type Secret struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	From        string `json:"from,omitempty"`
+	Format      string `json:"format,omitempty"`
+	Show        string `json:"show,omitempty"`
 	Env         string `json:"env,omitempty"`
 	Mount       string `json:"mount,omitempty"`
 }
