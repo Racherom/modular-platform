@@ -31,7 +31,7 @@ func (q *Queries) AcceptOperation(ctx context.Context, arg AcceptOperationParams
 }
 
 const bindAdmin = `-- name: BindAdmin :one
-INSERT INTO admin_binding (iss, sub, email) VALUES ($1, $2, $3)
+INSERT INTO admin_binding (iss, sub, email) VALUES ($1, $2, NULLIF($3::text, ''))
 ON CONFLICT (singleton) DO UPDATE SET singleton = admin_binding.singleton
 RETURNING iss, sub
 `

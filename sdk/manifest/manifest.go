@@ -48,6 +48,7 @@ var BootstrapNames = []string{
 	"MP_ACME_URL",
 	"MP_CA_FILE",
 	"MP_CALLER_SIGNING_KEY_FILE",
+	"MP_SETUP_DIR",
 }
 
 // clientFields lists the capability fields a slot with that client kind must map in env, so the

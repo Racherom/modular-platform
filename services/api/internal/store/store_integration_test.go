@@ -139,6 +139,47 @@ func TestAdminBindsOnce(t *testing.T) {
 	}
 }
 
+// TestAdminBindsWithoutEmail covers spec 0036 AC-38: an identity whose claims carry no email
+// binds with no email stored, and of several first sign ins at once exactly one wins.
+func TestAdminBindsWithoutEmail(t *testing.T) {
+	const rounds, contenders = 10, 8
+	st, pool := startStore(t)
+	ctx := t.Context()
+	for round := range rounds {
+		got := make([]signin.Identity, contenders)
+		errs := make([]error, contenders)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := range contenders {
+			wg.Go(func() {
+				<-start
+				got[i], errs[i] = st.BindAdmin(ctx, signin.Identity{Issuer: "https://idp", Subject: fmt.Sprintf("r%d-c%d", round, i)}, "")
+			})
+		}
+		close(start)
+		wg.Wait()
+		if err := errors.Join(errs...); err != nil {
+			t.Fatalf("round %d: a racing sign in failed: %v", round, err)
+		}
+		for i, g := range got {
+			if g != got[0] {
+				t.Fatalf("round %d: contender %d saw %v, contender 0 saw %v", round, i, g, got[0])
+			}
+		}
+		var rows int
+		var nullEmail bool
+		if err := pool.QueryRow(ctx, "SELECT count(*), bool_and(email IS NULL) FROM admin_binding").Scan(&rows, &nullEmail); err != nil {
+			t.Fatal(err)
+		}
+		if rows != 1 || !nullEmail {
+			t.Fatalf("round %d: %d admin rows, email null %v; want 1 and true", round, rows, nullEmail)
+		}
+		if err := st.ResetAdmin(ctx); err != nil {
+			t.Fatalf("round %d: reset: %v", round, err)
+		}
+	}
+}
+
 func TestSessions(t *testing.T) {
 	st, pool := startStore(t)
 	ctx := t.Context()

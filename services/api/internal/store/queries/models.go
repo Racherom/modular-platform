@@ -15,7 +15,7 @@ type AdminBinding struct {
 	Singleton bool
 	Iss       string
 	Sub       string
-	Email     string
+	Email     *string
 	BoundAt   time.Time
 }
 

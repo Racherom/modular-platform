@@ -274,3 +274,28 @@ func TestSourceName(t *testing.T) {
 		}
 	}
 }
+
+// TestGenerateSetupFiles covers a lifetime: setup secret: a Setup<Name> getter that returns the
+// secret and whether the file exists, and the file names in the declaration.
+func TestGenerateSetupFiles(t *testing.T) {
+	t.Parallel()
+	entry := header + `secrets:
+  - {name: code, lifetime: setup, show: once, format: password, description: The setup code.}
+  - {name: session-key, lifetime: setup, description: The key of the setup session.}
+`
+	src, problems := Generate("catalog/svc.yaml", "config", []byte(entry), testCaps(t))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	out := string(src)
+	for _, want := range []string{
+		"func (c Config) SetupCode(ctx context.Context) (sdk.Secret, bool, error) {",
+		`return sdk.SetupFile(ctx, c.v, "session-key")`,
+		`SetupFiles: []string{"code", "session-key"},`,
+		"type Config struct{ v *sdk.Values }",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("source lacks %q:\n%s", want, out)
+		}
+	}
+}

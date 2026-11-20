@@ -25,7 +25,7 @@ SELECT * FROM admin_binding WHERE singleton;
 -- DO UPDATE with a no-op SET, not DO NOTHING plus a SELECT: the loser waits for the winner's
 -- commit, then locks and returns the committed row, while a SELECT in the same statement would
 -- read the statement's snapshot from before that commit and find nothing.
-INSERT INTO admin_binding (iss, sub, email) VALUES ($1, $2, $3)
+INSERT INTO admin_binding (iss, sub, email) VALUES ($1, $2, NULLIF(sqlc.arg(email)::text, ''))
 ON CONFLICT (singleton) DO UPDATE SET singleton = admin_binding.singleton
 RETURNING iss, sub;
 

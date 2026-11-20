@@ -589,6 +589,15 @@ export interface components {
              * @enum {string}
              */
             show?: "once";
+            /**
+             * @description `install` (default) is a secret as before. `setup` (spec 0033) is a generated file that
+             *     lives only while the web setup is not done: it lands in `secrets/<instance>/setup/<name>`,
+             *     and every such secret of the instance is mounted as one folder at `/run/secrets/setup/`
+             *     (so a replaced or deleted file shows inside). It takes no `from`, `env` or `mount`.
+             * @default install
+             * @enum {string}
+             */
+            lifetime: "install" | "setup";
             /** @description Env var set to the secret file's path inside the container. */
             env?: string;
             /** @description Absolute path to mount it at. */
@@ -599,6 +608,10 @@ export interface components {
             description: string;
             /** @default false */
             secret: boolean;
+            /** @description An RE2 pattern the whole answer must match. */
+            pattern?: string;
+            /** @description The fewest characters the answer may have; 1 or more. */
+            min_length?: number;
         };
         /** @description One of `{slot, field}`, `{provide, field}` or `{secret}`. A `{provide, field}` read belongs to a `for_each` step, names its own provide and a `to_provider` or `both` field, and gives that one client's file. */
         SetupRead: {
@@ -635,6 +648,30 @@ export interface components {
             asks?: components["schemas"]["SetupAsk"][];
             reads?: components["schemas"]["SetupRead"][];
             writes?: components["schemas"]["SetupWrite"][];
+        };
+        /**
+         * @description How an identity module (one that provides `oidc`) makes its first user (spec 0035). It has
+         *     the shape of a setup step, with questions the platform's setup page asks after the platform
+         *     runs. The keeper runs it on one call from the api, with the answers on standard input only,
+         *     for as long as no admin is bound. It runs with no network, so it has no `network` or
+         *     `for_each`.
+         */
+        Enroll: {
+            entrypoint?: string[];
+            command: string[];
+            /** @description Literal env for the run, never a secret; no name starts with `MP_`. */
+            env?: {
+                [key: string]: string;
+            };
+            /** @description Asked on the setup page, in this order. */
+            asks?: components["schemas"]["SetupAsk"][];
+            reads?: components["schemas"]["SetupRead"][];
+            writes?: components["schemas"]["SetupWrite"][];
+            /**
+             * @description `true`: the keeper restarts the module's containers after it moved the writes.
+             * @default false
+             */
+            restart: boolean;
         };
         Template: {
             /** @description A file in the module folder ending in `.tmpl`. */
@@ -737,6 +774,7 @@ export interface components {
             };
             secrets?: components["schemas"]["Secret"][];
             setup?: components["schemas"]["SetupStep"][];
+            enroll?: components["schemas"]["Enroll"];
             templates?: components["schemas"]["Template"][];
             /** @description Data folder name to its absolute path in the container. */
             volumes?: {
