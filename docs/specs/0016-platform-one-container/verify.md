@@ -19,6 +19,7 @@ _Steps derived from spec 0016 acceptance criteria and its Value sourcing table. 
 - [ ] `docker stop` the keeper, then `sudo sh setup.sh` → a seed appears, the stopped keeper is started again (same container ID), the seed is gone → AC-4, AC-6
 - [ ] On a fresh install, press Ctrl+C while `setup.sh` waits, then run it again → it asks nothing, prints the password once and writes `.shown`; a third run prints nothing → AC-3
 - [ ] During a handover (both the seed and the successor running), `sudo systemctl restart docker` → one keeper and no seed remain, no duplicate service container → AC-4, AC-6, AC-8
+- [ ] With the platform images at `0.0.0` (moved here from spec 0030, whose AC-6 needs the keeper): `task managed:zip VERSION=0.0.0`, install it with `MP_SOURCE_PATH=<checkout> sudo -E sh setup.sh`, then `docker restart` the keeper → no platform image is pulled (`docker events --filter type=image` shows no `pull` of a `ghcr.io/racherom/modular-platform/` image) and every service is healthy; then make an empty commit in the checkout and run `setup.sh` again with `MP_SOURCE_PATH` → the rebuilt keeper image has a new ID and hands over, one keeper and no seed remain. A new image ID, not a new GitHub ref, starts the handover, so no push is needed → AC-4, AC-6 (spec 0030 AC-6)
 - [ ] `docker kill` the seed while `cert-issuer`'s `ca` step runs, then start the seed again → every file under `secrets/cert-issuer/` is whole, `.prepare/` holds nothing after the next prepare, and `cert-issuer` starts with them → AC-2
 
 ## Drift

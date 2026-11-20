@@ -177,9 +177,12 @@ func cleanBody(path string, data []byte) ([]byte, *contract.Problem) {
 	if err := dec.Decode(&envelope); err != nil || dec.More() {
 		return nil, &contract.Problem{Severity: contract.Error, Code: "invalid_request", Message: "The body must be one JSON object."}
 	}
-	allowed := map[string]bool{"graph": true}
+	// update is the image choice of both (spec 0031); checkNewer belongs to review only
+	allowed := map[string]bool{"graph": true, "update": true}
 	if strings.HasSuffix(path, "/apply") {
 		allowed["digest"], allowed["placed"] = true, true
+	} else {
+		allowed["checkNewer"] = true
 	}
 	for k := range envelope {
 		if !allowed[k] {

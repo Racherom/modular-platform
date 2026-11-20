@@ -176,7 +176,7 @@ func TestPlatformOnlyFeatures(t *testing.T) {
 		t.Errorf("static render: %v, want ErrNotRendered", err)
 	}
 	var refused *render.RefusedError
-	if _, err := render.Managed(result, catalog, templates, testStack); !errors.As(err, &refused) {
+	if _, err := render.Managed(result, catalog, templates, testStack, nil); !errors.As(err, &refused) {
 		t.Fatalf("managed render: %v, want a RefusedError", err)
 	}
 	var got []string

@@ -95,19 +95,23 @@ export async function fetchOperations(name: string, cursor?: string): Promise<Pa
   return { items: data.items, ...(data.next ? { next: data.next } : {}) }
 }
 
-export async function reviewStack(graph: Graph): Promise<Review> {
+/** Image choices of a review and its apply (spec 0031): ask the registry about frozen images, and which ones to take newer. */
+export type ImageOptions = { checkNewer?: boolean; update?: string[] }
+
+export async function reviewStack(graph: Graph, images: ImageOptions = {}): Promise<Review> {
   const { data, error, response } = await client.POST('/api/v1/stacks/{name}/review', {
     params: { path: { name: graph.name } },
-    body: { graph },
+    body: { graph, checkNewer: images.checkNewer ?? false, update: images.update ?? [] },
   })
   if (!data) throw failure(response.status, error)
   return data
 }
 
-export async function applyStack(graph: Graph, digest: string, placed: PlacedInput[]): Promise<Operation> {
+/** Applies graph after the review whose digest is digest, with the same update list the review used. */
+export async function applyStack(graph: Graph, digest: string, placed: PlacedInput[], update: string[] = []): Promise<Operation> {
   const { data, error, response } = await client.POST('/api/v1/stacks/{name}/apply', {
     params: { path: { name: graph.name } },
-    body: { graph, digest, placed },
+    body: { graph, digest, placed, update },
   })
   if (!data) throw failure(response.status, error)
   return data

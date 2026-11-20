@@ -19,12 +19,18 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ResolveImages Resolve image references to their registry digests without pulling
+	// (POST /v1/images/resolve)
+	ResolveImages(w http.ResponseWriter, r *http.Request)
 	// GetOperation Read one operation
 	// (GET /v1/operations/{id})
 	GetOperation(w http.ResponseWriter, r *http.Request, id string)
 	// ApplyStack Write the stack's files and start it
 	// (POST /v1/stacks/{stack}/apply)
 	ApplyStack(w http.ResponseWriter, r *http.Request, stack Stack)
+	// GetStackImages Read the stack's frozen image versions
+	// (GET /v1/stacks/{stack}/images)
+	GetStackImages(w http.ResponseWriter, r *http.Request, stack Stack)
 	// RemoveStack Stop and remove the stack's containers
 	// (POST /v1/stacks/{stack}/remove)
 	RemoveStack(w http.ResponseWriter, r *http.Request, stack Stack)
@@ -44,6 +50,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ResolveImages operation middleware
+func (siw *ServerInterfaceWrapper) ResolveImages(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResolveImages(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetOperation operation middleware
 func (siw *ServerInterfaceWrapper) GetOperation(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +108,32 @@ func (siw *ServerInterfaceWrapper) ApplyStack(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ApplyStack(w, r, stack)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetStackImages operation middleware
+func (siw *ServerInterfaceWrapper) GetStackImages(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "stack" -------------
+	var stack Stack
+
+	err = runtime.BindStyledParameterWithOptions("simple", "stack", r.PathValue("stack"), &stack, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "stack", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetStackImages(w, r, stack)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -300,6 +346,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/operations/{id}", wrapper.GetOperation)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/stacks/{stack}/state", wrapper.GetStackState)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/stacks/{stack}/secrets", wrapper.GetStackSecrets)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/stacks/{stack}/images", wrapper.GetStackImages)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/images/resolve", wrapper.ResolveImages)
 
 	return m
 }
@@ -329,6 +377,95 @@ type UnauthorizedJSONResponse struct {
 	Body externalRef0.ProblemList
 
 	Headers UnauthorizedResponseHeaders
+}
+
+type ResolveImagesRequestObject struct {
+	Body *ResolveImagesJSONRequestBody
+}
+
+type ResolveImagesResponseObject interface {
+	VisitResolveImagesResponse(w http.ResponseWriter) error
+}
+
+type ResolveImages200ResponseHeaders struct {
+	MPBootId string
+}
+
+type ResolveImages200JSONResponse struct {
+	Body    ResolveResult
+	Headers ResolveImages200ResponseHeaders
+}
+
+func (response ResolveImages200JSONResponse) VisitResolveImagesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResolveImages400ResponseHeaders struct {
+	MPBootId string
+}
+
+type ResolveImages400JSONResponse struct {
+	Body    externalRef0.ProblemList
+	Headers ResolveImages400ResponseHeaders
+}
+
+func (response ResolveImages400JSONResponse) VisitResolveImagesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResolveImages401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ResolveImages401JSONResponse) VisitResolveImagesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResolveImages503ResponseHeaders struct {
+	MPBootId string
+}
+
+type ResolveImages503JSONResponse struct {
+	Body    externalRef0.ProblemList
+	Headers ResolveImages503ResponseHeaders
+}
+
+func (response ResolveImages503JSONResponse) VisitResolveImagesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type GetOperationRequestObject struct {
@@ -514,6 +651,132 @@ func (response ApplyStack422JSONResponse) VisitApplyStackResponse(w http.Respons
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
 	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStackImagesRequestObject struct {
+	Stack Stack `json:"stack"`
+}
+
+type GetStackImagesResponseObject interface {
+	VisitGetStackImagesResponse(w http.ResponseWriter) error
+}
+
+type GetStackImages200ResponseHeaders struct {
+	MPBootId string
+}
+
+type GetStackImages200JSONResponse struct {
+	Body    StackImages
+	Headers GetStackImages200ResponseHeaders
+}
+
+func (response GetStackImages200JSONResponse) VisitGetStackImagesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStackImages400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response GetStackImages400JSONResponse) VisitGetStackImagesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStackImages401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetStackImages401JSONResponse) VisitGetStackImagesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStackImages409ResponseHeaders struct {
+	MPBootId string
+}
+
+type GetStackImages409JSONResponse struct {
+	Body    externalRef0.ProblemList
+	Headers GetStackImages409ResponseHeaders
+}
+
+func (response GetStackImages409JSONResponse) VisitGetStackImagesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStackImages500ResponseHeaders struct {
+	MPBootId string
+}
+
+type GetStackImages500JSONResponse struct {
+	Body    externalRef0.ProblemList
+	Headers GetStackImages500ResponseHeaders
+}
+
+func (response GetStackImages500JSONResponse) VisitGetStackImagesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStackImages503ResponseHeaders struct {
+	MPBootId string
+}
+
+type GetStackImages503JSONResponse struct {
+	Body    externalRef0.ProblemList
+	Headers GetStackImages503ResponseHeaders
+}
+
+func (response GetStackImages503JSONResponse) VisitGetStackImagesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MP-Boot-Id", fmt.Sprint(response.Headers.MPBootId))
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -789,12 +1052,18 @@ func (response GetStackState503JSONResponse) VisitGetStackStateResponse(w http.R
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// ResolveImages Resolve image references to their registry digests without pulling
+	// (POST /v1/images/resolve)
+	ResolveImages(ctx context.Context, request ResolveImagesRequestObject) (ResolveImagesResponseObject, error)
 	// GetOperation Read one operation
 	// (GET /v1/operations/{id})
 	GetOperation(ctx context.Context, request GetOperationRequestObject) (GetOperationResponseObject, error)
 	// ApplyStack Write the stack's files and start it
 	// (POST /v1/stacks/{stack}/apply)
 	ApplyStack(ctx context.Context, request ApplyStackRequestObject) (ApplyStackResponseObject, error)
+	// GetStackImages Read the stack's frozen image versions
+	// (GET /v1/stacks/{stack}/images)
+	GetStackImages(ctx context.Context, request GetStackImagesRequestObject) (GetStackImagesResponseObject, error)
 	// RemoveStack Stop and remove the stack's containers
 	// (POST /v1/stacks/{stack}/remove)
 	RemoveStack(ctx context.Context, request RemoveStackRequestObject) (RemoveStackResponseObject, error)
@@ -843,6 +1112,37 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ResolveImages operation middleware
+func (sh *strictHandler) ResolveImages(w http.ResponseWriter, r *http.Request) {
+	var request ResolveImagesRequestObject
+
+	var body ResolveImagesJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResolveImages(ctx, request.(ResolveImagesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResolveImages")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResolveImagesResponseObject); ok {
+		if err := validResponse.VisitResolveImagesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // GetOperation operation middleware
@@ -897,6 +1197,32 @@ func (sh *strictHandler) ApplyStack(w http.ResponseWriter, r *http.Request, stac
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ApplyStackResponseObject); ok {
 		if err := validResponse.VisitApplyStackResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetStackImages operation middleware
+func (sh *strictHandler) GetStackImages(w http.ResponseWriter, r *http.Request, stack Stack) {
+	var request GetStackImagesRequestObject
+
+	request.Stack = stack
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetStackImages(ctx, request.(GetStackImagesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetStackImages")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetStackImagesResponseObject); ok {
+		if err := validResponse.VisitGetStackImagesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

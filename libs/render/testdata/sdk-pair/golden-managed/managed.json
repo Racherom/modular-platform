@@ -11,6 +11,28 @@
       "Image": "modular-platform/pair-provider:test"
     }
   ],
+  "References": [
+    {
+      "reference": "modular-platform/pair-consumer:test",
+      "usedBy": [
+        {
+          "instance": "consumer",
+          "kind": "module",
+          "service": "consumer"
+        }
+      ]
+    },
+    {
+      "reference": "modular-platform/pair-provider:test",
+      "usedBy": [
+        {
+          "instance": "provider",
+          "kind": "module",
+          "service": "provider"
+        }
+      ]
+    }
+  ],
   "Secrets": [
     {
       "Path": "secrets/consumer/uses_greet_token",

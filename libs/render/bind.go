@@ -489,7 +489,7 @@ func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues ma
 		}
 	}
 	r.project.Services[name] = svc
-	r.jobs[name] = job{instance: b.Provider, module: e.module.Name, kind: jobProvision}
+	r.jobs[name] = job{instance: b.Provider, module: e.module.Name, kind: jobProvision, capability: admin.Name, consumer: b.Consumer}
 }
 
 // revokeJobs adds one revoke job per provisioner provide whose capability names a login,
@@ -517,7 +517,7 @@ func (r *renderer) revokeJobs() error {
 				dependOn(&svc, j, types.ServiceConditionCompletedSuccessfully)
 			}
 			r.project.Services[name] = svc
-			r.jobs[name] = job{instance: p, module: e.module.Name, kind: jobRevoke}
+			r.jobs[name] = job{instance: p, module: e.module.Name, kind: jobRevoke, capability: admin.Name}
 		}
 	}
 	return nil

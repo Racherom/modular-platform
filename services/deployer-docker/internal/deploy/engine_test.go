@@ -54,6 +54,8 @@ func (c *fakeCompose) subcommands() []string {
 type fakeDocker struct {
 	containers []deploy.Container
 	err        error
+	// images backs the image calls; nil has no image, accepts every tag and resolves nothing
+	images *fakeImages
 	// streams hands one stream to each Events call; nil gives a stream that stays quiet
 	streams chan fakeStream
 }
@@ -66,6 +68,13 @@ type fakeStream struct {
 }
 
 func (d fakeDocker) Containers(context.Context, string) ([]deploy.Container, error) {
+	if d.images != nil {
+		d.images.mu.Lock()
+		defer d.images.mu.Unlock()
+		if d.images.running != nil {
+			return slices.Clone(d.images.running), d.err
+		}
+	}
 	return d.containers, d.err
 }
 
@@ -84,13 +93,106 @@ func (d fakeDocker) Events(ctx context.Context, since time.Time) (<-chan deploy.
 	}
 }
 
+// fakeImages is the image store of a fakeDocker: names (tags, reference@digest, IDs) to images,
+// registry digests by reference, and a failing tag call when tagErr is set.
+type fakeImages struct {
+	mu       sync.Mutex
+	byName   map[string]deploy.Image
+	registry map[string]string
+	tagErr   error
+	untagged []string
+	running  []deploy.Container // when set, what Containers answers
+}
+
+func (d fakeDocker) ImageInspect(_ context.Context, name string) (deploy.Image, error) {
+	if d.images == nil {
+		return deploy.Image{}, deploy.ErrImageNotFound
+	}
+	d.images.mu.Lock()
+	defer d.images.mu.Unlock()
+	img, ok := d.images.byName[name]
+	if !ok {
+		return deploy.Image{}, deploy.ErrImageNotFound
+	}
+	return img, nil
+}
+
+func (d fakeDocker) ImageTag(_ context.Context, source, target string) error {
+	if d.images == nil {
+		return nil
+	}
+	d.images.mu.Lock()
+	defer d.images.mu.Unlock()
+	if d.images.tagErr != nil {
+		return d.images.tagErr
+	}
+	img, ok := d.images.byName[source]
+	if !ok {
+		return deploy.ErrImageNotFound
+	}
+	d.images.byName[target] = img
+	return nil
+}
+
+func (d fakeDocker) ImageUntag(_ context.Context, tag string) error {
+	if d.images == nil {
+		return nil
+	}
+	d.images.mu.Lock()
+	defer d.images.mu.Unlock()
+	delete(d.images.byName, tag)
+	d.images.untagged = append(d.images.untagged, tag)
+	return nil
+}
+
+func (d fakeDocker) ImageTags(_ context.Context, repository string) ([]string, error) {
+	if d.images == nil {
+		return nil, nil
+	}
+	d.images.mu.Lock()
+	defer d.images.mu.Unlock()
+	var out []string
+	for name := range d.images.byName {
+		if strings.HasPrefix(name, repository+":") {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+func (d fakeDocker) DistributionDigest(_ context.Context, ref string) (string, error) {
+	if d.images != nil {
+		d.images.mu.Lock()
+		defer d.images.mu.Unlock()
+		if digest, ok := d.images.registry[ref]; ok {
+			return digest, nil
+		}
+	}
+	return "", &deploy.ResolveError{Kind: deploy.ResolveNotFound, Err: errors.New("manifest unknown")}
+}
+
+// keepTags lists the keep tags in the store, sorted.
+func (f *fakeImages) keepTags() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for name := range f.byName {
+		if strings.HasPrefix(name, "localhost/mp-keep/") {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 func newEngine(t *testing.T, c *fakeCompose, d fakeDocker) (*deploy.Engine, string, *bytes.Buffer) {
 	t.Helper()
 	dir := t.TempDir()
 	var logs bytes.Buffer
 	e := deploy.New(t.Context(), deploy.Config{
 		Dir: dir, UID: os.Getuid(), GID: os.Getgid(), PullTimeout: time.Minute, WaitTimeout: 30 * time.Second,
-		ReservedPorts: []int{80, 443},
+		ResolveTimeout: 5 * time.Second, ReservedPorts: []int{80, 443},
 	}, c, d, slog.New(slog.NewJSONHandler(&logs, nil)))
 	t.Cleanup(e.Wait)
 	return e, dir, &logs

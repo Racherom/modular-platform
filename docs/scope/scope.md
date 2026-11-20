@@ -32,6 +32,8 @@ One name for each thing (your answers of 2026-11-10). #41 brings code, contracts
 | 5 | Design system & graph editor foundation | Foundation | in-progress |
 | 41 | One vocabulary | Foundation | in-progress |
 | 44 | Skills from a list, not from git | Foundation | in-progress |
+| 48 | Dev branch and release flow | Foundation | in-progress |
+| 49 | Local tests and CI tests | Foundation | planned |
 | 27 | Module SDK | Slice 1 | done |
 | 16 | Managed mode control plane | Slice 1 | in-progress |
 | 3 | Capability and module contract | Slice 2 | in-progress |
@@ -66,6 +68,7 @@ One name for each thing (your answers of 2026-11-10). #41 brings code, contracts
 | 18 | Users, groups and permissions modules | Slice 13 | planned |
 | 29 | Sign in policy and tenant issuers | Slice 13 | planned |
 | 19 | Live graph changes | Slice 14 | planned |
+| 47 | Frozen image versions for apply and rollback | Slice 14 | in-progress |
 | 36 | Live health and binding statistics | Slice 14 | planned |
 | 20 | Scale modules | Slice 15 | planned |
 | 21 | Per user provider routing | Slice 16 | planned |
@@ -138,6 +141,26 @@ Stop tracking the installed skill folders (`.agents/skills/`, `.claude/skills/`)
 code in `.gitignore`, `Taskfile.yml` (`skills`), `skills-lock.json`, `AGENTS.md` (`## Agent skills`), `README.md`
 - [x] Build it: `/develop skills from a list`
 - [ ] Verify it: `/check verify skills from a list` (a fresh clone, then `task skills`)
+
+### 48. Dev branch and release flow · in-progress
+Add a long lived `dev` branch. Feature branches (`feat/...`) merge into `dev`, and `dev` merges into `main` only at a release. So `main` always holds the last release, and `dev` holds the work for the next one. This changes where CI runs, where release please looks, and where the release images are built from, so the flow has to be decided and written down before anything moves.
+**Done when:** a `dev` branch exists and feature branches merge into it (CI runs on pull requests that target `dev`, not only `main`); a release is one merge of `dev` into `main`, and release please, the release gate and the release image build still work from that merge; `main` and `dev` are protected the way you choose; and `AGENTS.md` (`## Git`) and the README (Releases) describe the flow, including how a fix for a released version reaches `dev` again.
+spec [0032](../specs/0032-dev-branch-release-flow/index.md) · code in `.github/workflows/`, `scripts/`, `deploy/github/`, `deploy/online/versions.env`, `renovate.json`, `libs/ci/`, `AGENTS.md`, `README.md`
+- [x] Design it (spec): `/architect dev branch and release flow`
+- [ ] Build it: `/develop dev branch and release flow`
+   - [x] Branch rules check and CI on `dev`: script, workflow, act test, push trigger, `target-branch` (AC-1, AC-3, AC-4, AC-9)
+   - [x] Back merge job after a release: script, `release.yml` job, act test (AC-5, AC-9)
+   - [x] Rulesets and the check name test, Renovate and `MP_SOURCE_REF` on `dev` (AC-2, AC-7, AC-8)
+   - [ ] Docs and cut over: AGENTS.md `## Git`, README Releases, create `dev`, apply the rulesets (AC-1, AC-2, AC-6, AC-10) (docs written; the cut over on GitHub is still to do)
+- [ ] Verify it: `/check verify dev branch and release flow`
+- [x] Test it: `/test dev branch and release flow`
+- [ ] Review it (fresh model): `/check review dev branch and release flow`
+- [ ] Document it: `/document dev branch and release flow`
+
+### 49. Local tests and CI tests · needs a decision
+Split the tests in two sets. **Local tests** run offline on your machine with no Docker, no network and no browser download, so you can run them while you build. **CI tests** are the rest (the Docker tests, the smoke runs, anything that pulls images or needs Chromium) and run only on the pull request. The flow: you finish a feature, the local tests pass, you open the pull request (or merge request), the CI tests run on it, and it can be merged only when they pass. This works with #48, which decides the branch the pull request targets.
+**Done when:** one command (say `task test:local`) runs every local test with the network switched off and passes; each test is in exactly one set, and a test that needs the network or Docker cannot sit in the local set unnoticed; opening a pull request is a documented step that follows a passing local run (a hook or a task checks it, you choose which); the CI tests run on the pull request and the branch protection requires them before a merge; and `AGENTS.md` (`## Commands`) and the README describe both sets and the order.
+- [ ] Design it (spec): `/architect local tests and CI tests`
 
 ## Slice 1: Managed mode, the first thread
 
@@ -238,18 +261,25 @@ Spec 0029 lets you add a module to an open graph (or to an empty one). The rest 
 - [ ] Design it (spec): `/architect remove and rename modules in the editor`
 
 ### 46. Pre release image source for the zip · in-progress · from spec 0030
-Until the first release, the platform's own images (`api`, `renderer`, `web`, `deployer-docker`) carry the tag `0.0.0`, which no registry holds, so a zip that uses one fails on `docker compose up`. Such a zip now carries the image's own Dockerfile, and `setup.sh` builds it first from the renderer's commit on GitHub (or a local checkout named by `MP_SOURCE_PATH`); the online editor builds the same way, and the release pull request pushes its images before the merge flips the tags.
-**Done when:** a static zip and a managed zip that use a `0.0.0` platform image start on a clean host with `setup.sh` and pull no platform image; the online editor starts from its folder alone; and after the first release no zip carries a Dockerfile and every image named on main exists in GHCR.
+Until the first release, the platform's own images (`api`, `renderer`, `web`, `deployer-docker`) carry the tag `0.0.0`, which no registry holds, so a zip that uses one fails on `docker compose up`. Such a zip now carries the image's own Dockerfile, and `setup.sh` builds it first from the renderer's commit on GitHub (or a local checkout named by `MP_SOURCE_PATH`); the online editor builds the same way, from the commit its branch points to, and the release images are pushed from the release commit right after the merge.
+**Done when:** a static zip and a managed zip that use a `0.0.0` platform image start on a clean host with `setup.sh` and pull no platform image; the online editor starts from its folder alone; every AC-8 check passes on a commit that is not on GitHub yet (nothing waits for a push); no check of #46 waits for GitHub (the release gate and the Renovate rule run locally, the keeper step lives in spec 0016, and the GitHub settings and the Renovate App wait for the first release checklist); and after the first release no zip carries a Dockerfile and every image named on main exists in GHCR.
 spec [0030](../specs/0030-prerelease-image-source-zip/index.md) · code in `catalog/modules/`, `libs/render/`, `services/renderer/`, `catalog/cmd/render-platform/`, `deploy/online/`, `.github/workflows/`, `Taskfile.yml`
 - [x] Design it (spec): `/architect pre release image source for the zip`
+   - [x] Decided: AC-8 without a push. `MP_SOURCE_PATH=<checkout> task online:up` builds from a local checkout, with no git remote and no network for the source (spec 0030, task 11)
+   - [x] Decided: AC-6, AC-11 and AC-13 without GitHub. `act` runs `release.yml` locally with a stub release-please, Renovate's local dry run checks the digest rule, the keeper step moves to spec 0016, and the GitHub settings and the App install go to the release checklist (spec 0030, task 12)
 - [x] Build it: `/develop pre release image source for the zip`
    - [x] One Dockerfile per image beside its catalog entry, source chosen by build args, the renderer's source ref (AC-7, AC-10)
    - [x] Static zip: Dockerfile in the zip, `setup.sh` builds first, README, e2e with `MP_SOURCE_PATH` (AC-1, AC-2, AC-3, AC-4, AC-5)
    - [x] Managed zip: build before the seed, `pull_policy: never`, keeper restart check (AC-6)
-   - [x] Online editor overlay and release images pushed from the release pull request (AC-8, AC-9)
-- [ ] Verify it: `/check verify pre release image source for the zip`
-- [ ] Test it: `/test pre release image source for the zip`
-- [ ] Review it (fresh model): `/check review pre release image source for the zip`
+   - [x] Online editor overlay and release images pushed from the release pull request (AC-8, AC-9; release order replaced by the review findings milestone)
+   - [x] Release gate: release-please off until `RELEASES_ENABLED`, no `github.token` fallback (AC-11)
+   - [x] Review findings: the `local` ref for checkout builds (AC-3, AC-10, AC-12), release images after the merge (AC-9, AC-11)
+   - [x] Review findings: pinned build inputs with Renovate, the online editor at a resolved commit (AC-1, AC-8, AC-13)
+   - [x] AC-8 before a push: `MP_SOURCE_PATH` for `task online:up` (`compose.checkout.yaml`, the script's checkout mode, a precondition stop), and an integration test that runs it on an unpushed commit, so no AC-8 step is marked **(after push)** (AC-8)
+   - [x] No check waits for GitHub: `TestReleaseGateAct` and `TestRenovateDigests` (build tag `integration`), the pinned `act` and runner image, the verify steps moved (keeper step to spec 0016, settings and the Renovate App to the release checklist) (AC-6, AC-11, AC-13)
+- [x] Verify it: `/check verify pre release image source for the zip`
+- [x] Test it: `/test pre release image source for the zip`
+- [x] Review it (fresh model): `/check review pre release image source for the zip`
 - [ ] Document it: `/document pre release image source for the zip`
 
 ### 42. Open a zip in the editor · needs a decision
@@ -425,6 +455,21 @@ Change the running stack without a full redeploy: swap a provider, add a module 
 **Done when:** in managed mode a swap, an add and a remove each apply while the rest of the stack keeps running, a platform module (for example the ingress) can be swapped on a running platform, the stack editor shows the impact before you apply, no module runs while a provider it uses is down during an apply, and a failed change leaves the previous stack running.
 - [ ] Design it (spec): `/architect live graph changes`
 
+### 47. Frozen image versions for apply and rollback · in-progress
+A module names its image by tag, and a tag can move (a re pushed `postgres:18.6-alpine3.24`, or a platform image rebuilt from a new commit). Today an apply that pulls a newer, broken image fails, and the automatic rollback of #16 then pulls the same tag again and fails too. So each apply freezes versions: it resolves every image to the exact digest it runs and records it with the apply, and a rollback starts the digests of the last good apply, without pulling a tag again. Managed mode only: the static zip keeps its tags. It lands with #19, whose done line already says a failed change leaves the previous stack running. Its spec decides where the frozen digests live (the apply history of #16 and #35, or the deployer's files), how images built from source on the host (#46) are frozen, how long older images are kept on the host so a rollback needs no registry, and what an admin does to take a newer version on purpose.
+**Done when:** in managed mode an apply records the digest of every image it starts; when a tag moves to a broken image and that apply fails, the rollback starts the previous digests and the stack runs as before, even with the registry out of reach; applying the same graph again without asking for newer versions starts the same digests; and taking a newer version is a choice you make, shown before apply.
+spec [0031](../specs/0031-frozen-image-versions/index.md) · code in `libs/contract/`, `libs/render/`, `contracts/openapi/`, `services/deployer-docker/`, `services/api/internal/deploy/`, `services/api/internal/clients/`, `catalog/modules/deployer-docker/`, `web/src/components/ReviewDialog.tsx`, `web/src/components/ReviewImages.tsx`, `scripts/smoke-managed.sh`
+- [x] Design it (spec): `/architect frozen image versions for apply and rollback`
+- [x] Build it: `/develop frozen image versions for apply and rollback`
+   - [x] The thread: the spike, `ImageLock` and the freeze rule, `image_digest` in the catalog, the renderer's `references` (modules, jobs, `mp_jobs`) and lock, the deployer's lock write and images and resolve endpoints, review, apply and offline rollback in api, the Images section, the e2e with a local registry and a provisioner (AC-1, AC-2, AC-3, AC-4, AC-5, AC-12, AC-13, AC-14)
+   - [x] Take newer on purpose: `checkNewer` and `update`, the tick boxes, `graph_changed` on a moved tag (AC-6, AC-7)
+   - [x] Lifecycle: keep tags for two generations, adoption written before pull, `busy` reads, `present`, remove cleanup (AC-8, AC-9, AC-10, AC-11)
+   - [x] Show a failed check: `checkFailed` on a frozen row when the registry lookup fails, the `check failed` badge, a test that a broken `images.previous.lock` is logged and dropped (AC-6, AC-8)
+- [x] Verify it: `/check verify frozen image versions for apply and rollback`
+- [x] Test it: `/test frozen image versions for apply and rollback`
+- [x] Review it (fresh model): `/check review frozen image versions for apply and rollback`
+- [ ] Document it: `/document frozen image versions for apply and rollback`
+
 ### 36. Live health and binding statistics · needs a decision
 The graph shows how the running stack is doing: each module's health, and on each binding its request rate, the share of requests that fail, and how slow they are, updated while you watch. Modules wrap existing container images, so the numbers must come without changing those containers. It thickens the per module state #16 already shows, and replaces the deferred Observability idea for health and metrics (logs stay deferred). Managed mode only. Its spec decides where the numbers come from, how often they refresh, and how long they are kept.
 **Done when:** in managed mode the graph shows each module's health and each binding's request rate, error share and latency, refreshing on its own; an unhealthy module or a binding with a high error share stands out without opening anything; the numbers stay visible on the running parts while the edit layer (#34) is on; and no module's container changed to report them.
@@ -483,7 +528,7 @@ Other deferred ideas, not yet numbered:
 - **Accessibility**: the graph editor works by keyboard and with screen readers (WCAG AA) · needs a decision
 - **Multiple languages**: translatable UI text · needs a decision
 - **Usage analytics**: opt in, anonymous counts of feature use · needs a decision
-- **Private registries for platform images**: registry credentials in the keeper, so setup steps and the keeper image can come from a private registry · from spec 0016 · needs a decision
+- **Private registries for platform images**: registry credentials in the keeper, so setup steps and the keeper image can come from a private registry; spec 0031 needs the same credentials to resolve and pull deployed stack images from a private registry · from spec 0016 and spec 0031 · needs a decision
 - **Renderer CPU protection**: a cap on requests in flight or a global limit for the renderer in public mode, against floods from many addresses; would add a 503 to the renderer contract · from spec 0003 · needs a decision
 
 ## Legend
@@ -529,6 +574,8 @@ Other deferred ideas, not yet numbered:
 - Your answers in the `/scope` pass (2026-11-10, second): one name per thing (the Words table); the running whole is a stack, network stays the Docker network; one editor in two modes, the online editor and the stack editor; the renderer turns a graph into a zip or the deployer's files; checks run at several stages and are not one component; "planner" retires as a name. A complete graph always gives a zip; an incomplete one gives a zip with a warning only when the core of its managed stack can start, so the rest is set in the stack editor (#40 updated). New #41 (foundation), #42 (slice 3, after #6) and #43 (slice 3, after #34); module by module apply folded into #19; #24, #12 and #22 renamed. <!-- vocabulary: allow -->
 - Your answers in the `/scope` replan (2026-11-10, third): #27 done; #32's done line follows Compose's rule (spec 0016); #40 and #42 carry spec 0027's follow up items; #44 gets its Alpha verify box; next is #41, before more #10 and #32 code, so the rename meets few open branches.
 - Spec 0029 follow up, applied by `/scope` replan (2026-11-11): #41's build milestones all ticked (the retired word check now fails `task lint` and the pre commit hook), so its next box is Verify; remove and rename of modules enrolled as #45 in slice 3 after #6; drag from the catalog onto the canvas stays an idea until testing shows a need.
+- Your request in the `/scope` add pass (2026-11-15): tests split into local tests (offline) and CI tests; a pull request opens after a feature is built and the local tests pass, and it merges only when the CI tests pass; new #49 in Foundation, beside #48.
+- Your answers in the `/scope` add pass (2026-11-13): an apply freezes image versions, so a rollback after an apply that pulled a broken newer image does not pull the same image again; managed apply only, the static zip keeps its tags; new #47 in slice 14, beside #19.
 
 **Practices & standards**
 - Vertical slices ship real value early (tracer bullet development)

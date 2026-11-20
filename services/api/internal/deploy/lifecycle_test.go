@@ -28,7 +28,7 @@ func stateOf(t *testing.T, st *memStore) deploy.State {
 // applyAndWait applies g and waits until its operation has a final status.
 func applyAndWait(t *testing.T, s *deploy.Service, st *memStore, g contract.Graph) deploy.Operation {
 	t.Helper()
-	op, err := s.Apply(t.Context(), admin, "sample", g, "sha256:abc", nil)
+	op, err := s.Apply(t.Context(), admin, "sample", g, goodDigest, deploy.ImageOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestRemoveRefusals(t *testing.T) {
 		t.Parallel()
 		st := newMem()
 		s := newService(t, st, &fakeTarget{boot: "boot-1"})
-		if _, err := s.Apply(t.Context(), admin, "sample", sample, "sha256:abc", nil); err != nil {
+		if _, err := s.Apply(t.Context(), admin, "sample", sample, goodDigest, deploy.ImageOptions{}, nil); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := s.Remove(t.Context(), admin, "sample", false, ""); !errors.Is(err, deploy.ErrBusy) {
@@ -323,7 +323,7 @@ func TestRollbackRefusedIsRecorded(t *testing.T) {
 	s := newService(t, st, target)
 	deploy.SetRetryAfter(s, time.Hour)
 	applyAndWait(t, s, st, sample)
-	op, err := s.Apply(t.Context(), admin, "sample", changed, "sha256:abc", nil)
+	op, err := s.Apply(t.Context(), admin, "sample", changed, goodDigest, deploy.ImageOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

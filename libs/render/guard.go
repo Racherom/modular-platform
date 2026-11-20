@@ -442,3 +442,15 @@ func DataFolders(p Project) []string {
 	slices.Sort(out)
 	return slices.Compact(out)
 }
+
+// ServiceImages is the image: value of each service of p, by service name (spec 0031: the
+// deployer builds the image lock from the Compose file it guarded).
+func ServiceImages(p Project) map[string]string {
+	services, _ := p.model["services"].(map[string]any)
+	out := make(map[string]string, len(services))
+	for name, s := range services {
+		svc, _ := s.(map[string]any)
+		out[name], _ = svc["image"].(string)
+	}
+	return out
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "baseBranchPatterns": ["dev"],
+  "semanticCommits": "enabled",
+  "enabledManagers": ["dockerfile"],
+  "includePaths": ["catalog/modules/*/Dockerfile"],
+  "pinDigests": true,
+  "schedule": ["before 6am on monday"],
+  "packageRules": [
+    { "matchManagers": ["dockerfile"], "matchUpdateTypes": ["major", "minor", "patch"], "enabled": false },
+    { "matchManagers": ["dockerfile"], "matchUpdateTypes": ["digest", "pin", "pinDigest"], "groupName": "build image digests" }
+  ]
+}

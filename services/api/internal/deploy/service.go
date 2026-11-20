@@ -70,19 +70,30 @@ func checkName(name string, g contract.Graph) error {
 	return nil
 }
 
-// Review renders g as an apply would and lists what it would run. It writes nothing and
-// touches nothing on the host.
-func (s *Service) Review(ctx context.Context, name string, g contract.Graph) (Review, error) {
+// stackID is the id of the stack named name, or uuid.Nil when there is none yet.
+func (s *Service) stackID(ctx context.Context, name string) (uuid.UUID, error) {
+	d, ok, err := s.store.Stack(ctx, name)
+	if err != nil || !ok {
+		return uuid.Nil, err
+	}
+	return d.ID, nil
+}
+
+// Review renders g as an apply would, with every image frozen (spec 0031), and lists what it
+// would run. It writes nothing and touches nothing on the host.
+func (s *Service) Review(ctx context.Context, name string, g contract.Graph, opts ImageOptions) (Review, error) {
 	if err := checkName(name, g); err != nil {
 		return Review{}, err
 	}
-	id := uuid.Nil
-	if d, ok, err := s.store.Stack(ctx, name); err != nil {
+	id, err := s.stackID(ctx, name)
+	if err != nil {
 		return Review{}, err
-	} else if ok {
-		id = d.ID
 	}
-	composeProject, err := s.renderer.RenderManaged(ctx, g, id)
+	f, err := s.freeze(ctx, g, id, opts)
+	if err != nil {
+		return Review{}, err
+	}
+	composeProject, err := s.renderer.RenderManaged(ctx, g, id, f.pins())
 	if err != nil {
 		return Review{}, err
 	}
@@ -92,7 +103,10 @@ func (s *Service) Review(ctx context.Context, name string, g contract.Graph) (Re
 	if err != nil {
 		return Review{}, err
 	}
-	r := Review{Check: composeProject.Check, Modules: composeProject.Images, PublishedPorts: composeProject.PublishedPorts}
+	r := Review{
+		Check: composeProject.Check, Digest: f.digest, Modules: composeProject.Images, Images: f.reviewImages(),
+		PublishedPorts: composeProject.PublishedPorts,
+	}
 	for _, sec := range composeProject.Secrets {
 		if sec.Kind == contract.Placed {
 			r.Placed = append(r.Placed, PlacedCredential{
@@ -105,20 +119,24 @@ func (s *Service) Review(ctx context.Context, name string, g contract.Graph) (Re
 }
 
 // Apply starts an apply of g after the review whose digest is digest (spec 0006, "Apply
-// dispatch order"). A refusal leaves no trace. When the deploy target does not answer, the
-// operation is recorded as failed with deployer_unavailable and returned without error.
-func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract.Graph, digest string, placed []PlacedInput) (Operation, error) {
+// dispatch order"). It freezes the images again with opts.Update (spec 0031); when the check
+// result or the frozen lock differs from the review's, it is ErrGraphChanged and nothing starts.
+// A refusal leaves no trace. When the deploy target does not answer at dispatch, the operation is
+// recorded as failed with deployer_unavailable and returned without error.
+func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract.Graph, digest string, opts ImageOptions, placed []PlacedInput) (Operation, error) {
 	if err := checkName(name, g); err != nil {
 		return Operation{}, err
 	}
-	result, err := s.renderer.Check(ctx, g)
+	known, err := s.stackID(ctx, name)
 	if err != nil {
 		return Operation{}, err
 	}
-	if !result.Ok {
-		return Operation{}, &RefusedError{Problems: result.Problems}
+	f, err := s.freeze(ctx, g, known, ImageOptions{Update: opts.Update})
+	if err != nil {
+		return Operation{}, err
 	}
-	if result.Digest != digest {
+	result := f.plain.Check
+	if f.digest != digest {
 		return Operation{}, ErrGraphChanged
 	}
 	id, composeProject, created, err := s.store.EnsureStack(ctx, name)
@@ -132,7 +150,7 @@ func (s *Service) Apply(ctx context.Context, by Starter, name string, g contract
 			}
 		}
 	}
-	rendered, err := s.renderer.RenderManaged(ctx, g, id)
+	rendered, err := s.renderer.RenderManaged(ctx, g, id, f.pins())
 	if err != nil {
 		dropNew()
 		return Operation{}, err

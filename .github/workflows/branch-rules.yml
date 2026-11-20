@@ -1,0 +1,24 @@
+name: Branch rules
+
+# Its own light workflow: an edited title must rerun only this check, not all of CI (spec 0032).
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  branch-rules:
+    name: Branch rules
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # base, head and title are untrusted: they go through env and are quoted, never expanded
+      # into the script text
+      - name: The pull request follows the branch rules
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: sh scripts/branch-rules.sh "$BASE" "$HEAD" "$TITLE"

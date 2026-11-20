@@ -95,6 +95,7 @@ type templateData struct {
 
 	Builds      []imageBuild // unreleased platform images setup.sh builds first (spec 0030)
 	SourceRef   string       // the git ref those builds use
+	SourceLocal bool         // the ref is local: the code is in a local checkout, so setup.sh needs MP_SOURCE_PATH
 	SourceMoves bool         // the ref is a branch, not a commit, so a later build may differ
 }
 
@@ -133,6 +134,8 @@ type rendered struct {
 // job is a one shot service of the project (spec 0014), or the wait anchor mp_jobs.
 type job struct {
 	instance, module, kind string // the provisioner instance and module (none on mp_jobs); provision, revoke or wait
+	capability             string // the provisioner capability whose yields.job it runs (none on mp_jobs)
+	consumer               string // the binding's consumer, provision jobs only
 }
 
 // renderer holds one render in progress.
@@ -207,6 +210,7 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 	if err != nil {
 		return rendered{}, err
 	}
+	r.neverPull()
 	for _, b := range deliveryOrder(instances, result.Bindings) {
 		if err := r.binding(b); err != nil {
 			return rendered{}, err

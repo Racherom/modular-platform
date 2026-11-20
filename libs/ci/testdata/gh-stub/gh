@@ -1,0 +1,63 @@
+#!/bin/sh
+# Stands in for the gh program in the back merge tests (spec 0032, AC-5, AC-9). It answers the
+# few calls scripts/release-back-merge.sh makes from files in the folder $GH_STUB_STATE and logs
+# each call as one line to $GH_STUB_STATE/calls.log, so a test can read what happened and a
+# second run can start from the first run's state. No network.
+#
+#   compare-status   the answer to the compare call (default ahead)
+#   ref-<branch>     the SHA of a branch that exists (slashes written as __)
+#   prs              one line per open pull request (its head branch)
+set -eu
+state=${GH_STUB_STATE:?GH_STUB_STATE is not set}
+mkdir -p "$state"
+echo "$*" >>"$state/calls.log"
+
+key() { printf '%s' "$1" | sed 's|/|__|g'; }
+
+path=${2:-}
+
+case "$*" in
+"api repos/"*"/compare/"*)
+	cat "$state/compare-status" 2>/dev/null || echo ahead
+	;;
+"pr list "*)
+	head=
+	while [ $# -gt 0 ]; do
+		[ "$1" = --head ] && head=$2
+		shift
+	done
+	if [ -f "$state/prs" ]; then grep -cx "$head" "$state/prs" || true; else echo 0; fi
+	;;
+"api repos/"*"/git/ref/heads/"*)
+	branch=${path#*/git/ref/heads/}
+	if [ -f "$state/ref-$(key "$branch")" ]; then
+		cat "$state/ref-$(key "$branch")"
+	else
+		echo "gh: Not Found (HTTP 404)" >&2
+		exit 1
+	fi
+	;;
+"api -X POST repos/"*"/git/refs "*)
+	ref= sha=
+	while [ $# -gt 0 ]; do
+		case $1 in
+		ref=*) ref=${1#ref=} ;;
+		sha=*) sha=${1#sha=} ;;
+		esac
+		shift
+	done
+	printf '%s\n' "$sha" >"$state/ref-$(key "${ref#refs/heads/}")"
+	;;
+"pr create "*)
+	head=
+	while [ $# -gt 0 ]; do
+		[ "$1" = --head ] && head=$2
+		shift
+	done
+	echo "$head" >>"$state/prs"
+	;;
+*)
+	echo "gh stub: unexpected call: $*" >&2
+	exit 99
+	;;
+esac

@@ -3,6 +3,7 @@ package render_test
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -50,12 +51,20 @@ func file(out render.Output, path string) []byte {
 	return nil
 }
 
-// TestRenderPrereleaseGolden covers spec 0030 AC-1 and AC-5: the renderer's Dockerfile, once for
-// both instances, the build block first in setup.sh, the README section, and an unchanged image
-// line with no build section. Run with -update after an intended change.
+// TestRenderPrereleaseGolden covers spec 0030 AC-1, AC-5 and AC-13: the renderer's Dockerfile,
+// once for both instances, the build block first in setup.sh, the README section, and an
+// unchanged image line with no build section. The golden holds no copy of the Dockerfile: the
+// zip's is compared with the catalog file read now, so a digest update needs no -update. Run
+// with -update after an intended change.
 func TestRenderPrereleaseGolden(t *testing.T) {
 	out := prereleaseRender(t, prereleaseCommit)
-	checkGolden(t, filepath.Join("testdata", "prerelease", "golden"), out)
+	var stored render.Output
+	for _, f := range out.Files {
+		if !strings.HasPrefix(f.Path, "build/") {
+			stored.Files = append(stored.Files, f)
+		}
+	}
+	checkGolden(t, filepath.Join("testdata", "prerelease", "golden"), stored)
 
 	want, err := os.ReadFile("../../catalog/modules/renderer/Dockerfile")
 	if err != nil {
@@ -88,6 +97,52 @@ func TestRenderPrereleaseGolden(t *testing.T) {
 	}
 	if strings.Count(setup, "\nbuild_image ") != 1 {
 		t.Error("setup.sh builds the renderer image more than once")
+	}
+}
+
+// TestRenderPrereleaseLocal covers spec 0030 AC-12 for a zip rendered with the ref local: its
+// README and setup.sh (golden-local holds only these two, the files a local ref changes), and a
+// setup.sh run without MP_SOURCE_PATH, which stops before the BuildKit check and before it makes
+// any file, naming MP_SOURCE_PATH. It runs no Docker. Run with -update after an intended change.
+func TestRenderPrereleaseLocal(t *testing.T) {
+	out := prereleaseRender(t, render.LocalSourceRef)
+	var changed render.Output
+	for _, f := range out.Files {
+		if f.Path == "README.md" || f.Path == "setup.sh" {
+			changed.Files = append(changed.Files, f)
+		}
+	}
+	checkGolden(t, filepath.Join("testdata", "prerelease", "golden-local"), changed)
+
+	readme := string(file(out, "README.md"))
+	if !strings.Contains(readme, "source ref `local`") || strings.Contains(readme, "is a branch, not a commit") {
+		t.Errorf("README.md lacks the local text, or warns about a branch:\n%s", readme)
+	}
+	setup := string(file(out, "setup.sh"))
+	if stop, buildx := strings.Index(setup, "made by a renderer built from a local checkout"), strings.Index(setup, "docker buildx version"); stop < 0 || stop > buildx {
+		t.Errorf("setup.sh stops for local at %d, after the BuildKit check at %d", stop, buildx)
+	}
+
+	dir := t.TempDir()
+	writeOutput(t, dir, out)
+	cmd := exec.CommandContext(t.Context(), "sh", "setup.sh")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "MP_SOURCE_PATH=")
+	cmd.Stdin = strings.NewReader("")
+	stopped, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("setup.sh of a local zip ran without MP_SOURCE_PATH:\n%s", stopped)
+	}
+	if !strings.Contains(string(stopped), "set MP_SOURCE_PATH=<a checkout of Modular Platform>") {
+		t.Errorf("setup.sh stop does not name MP_SOURCE_PATH:\n%s", stopped)
+	}
+	if env, err := os.ReadFile(filepath.Join(dir, ".env")); err != nil || strings.Contains(string(env), "MP_UID=") {
+		t.Errorf("setup.sh wrote .env before it stopped (%v)", err)
+	}
+	for _, made := range []string{"secrets", "data"} {
+		if _, err := os.Stat(filepath.Join(dir, made)); err == nil {
+			t.Errorf("setup.sh made %s before it stopped", made)
+		}
 	}
 }
 
@@ -147,6 +202,27 @@ func TestRenderPrereleaseRules(t *testing.T) {
 			t.Errorf("err = %v, want one naming the renderer", err)
 		}
 	})
+}
+
+// TestRenderMissingDockerfileStable checks that with several unreleased modules lacking a
+// Dockerfile, the render error names the same module every time (instances walked in name order).
+func TestRenderMissingDockerfileStable(t *testing.T) {
+	t.Parallel()
+	catalog, templates := loadCatalogTemplates(t, "../../catalog")
+	result := checkFile(t, "../../deploy/managed/graph.yaml", catalog)
+	ref, _ := render.NewSourceRef(prereleaseCommit)
+	var first string
+	for range 20 {
+		_, err := render.Platform(result, catalog, templates, render.WithSource(ref, map[string][]byte{}))
+		if err == nil {
+			t.Fatal("render without Dockerfiles succeeded")
+		}
+		if first == "" {
+			first = err.Error()
+		} else if err.Error() != first {
+			t.Fatalf("render errors differ between runs: %q and %q", first, err)
+		}
+	}
 }
 
 // TestUnreleased covers the one predicate of spec 0030: the platform prefix and exactly 0.0.0.
@@ -224,6 +300,18 @@ func TestRenderPlatformPrerelease(t *testing.T) {
 	if !strings.Contains(string(file(out, "README.md")), "### Images built on this host") {
 		t.Error("README.md has no section on the images built on this host")
 	}
+	// rendered from a checkout with changes, the README says so and setup.sh needs MP_SOURCE_PATH
+	local, _ := render.NewSourceRef(render.LocalSourceRef)
+	localOut, err := render.Platform(result, catalog, templates, render.WithSource(local, dockerfiles))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readme := string(file(localOut, "README.md")); !strings.Contains(readme, "source ref `local`") {
+		t.Errorf("README.md of a local render lacks the local text:\n%s", readme)
+	}
+	if setup := string(file(localOut, "setup.sh")); !strings.Contains(setup, "set MP_SOURCE_PATH=<a checkout of Modular Platform>") {
+		t.Error("setup.sh of a local render does not stop without MP_SOURCE_PATH")
+	}
 
 	// a render retagged dev or ci names no unreleased image, so nothing changes
 	retagged, _, _ := platformResult(t)
@@ -250,4 +338,100 @@ func platformCatalog(t *testing.T) contract.Catalog {
 	t.Helper()
 	_, catalog, _ := platformResult(t)
 	return catalog
+}
+
+// fakeBuildDocker writes a docker program into a new folder and returns that folder, for a PATH that
+// puts it first. buildx says whether `docker buildx version` succeeds, version is what
+// `docker version` prints (empty: it fails, as when the daemon does not answer). Every other call
+// is appended to the calls file and fails, so a build never reaches a real Docker.
+func fakeBuildDocker(t *testing.T, buildx bool, version, calls string) string {
+	t.Helper()
+	bin := t.TempDir()
+	buildxExit := "1"
+	if buildx {
+		buildxExit = "0"
+	}
+	versionCmd := "exit 1"
+	if version != "" {
+		versionCmd = "echo '" + version + "'; exit 0"
+	}
+	fake := "#!/bin/sh\n" +
+		"if [ \"$1 $2\" = 'buildx version' ]; then exit " + buildxExit + "; fi\n" +
+		"if [ \"$1\" = version ]; then " + versionCmd + "; fi\n" +
+		"echo \"$*\" >> '" + calls + "'\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(fake), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+// TestPrereleaseSetupDockerChecks covers spec 0030 AC-4 without a real Docker: on a host without
+// buildx, with a daemon that does not answer, or with Docker older than 23, setup.sh of a zip
+// that builds stops before it writes .env or makes secrets/ or data/, names the image, the ref
+// and MP_SOURCE_PATH, and never starts a build. Docker 23 or newer passes the checks and builds
+// from GitHub at the zip's ref.
+func TestPrereleaseSetupDockerChecks(t *testing.T) {
+	t.Parallel()
+	out := prereleaseRender(t, prereleaseCommit)
+	const image = "ghcr.io/racherom/modular-platform/renderer:0.0.0"
+	for name, tc := range map[string]struct {
+		buildx  bool
+		version string
+		stop    string
+		builds  bool
+	}{
+		"no buildx": {
+			buildx: false, version: "27.3.1",
+			stop: "docker buildx is not available; install Docker 23 or newer with the buildx plugin",
+		},
+		"daemon does not answer": {
+			buildx: true, version: "",
+			stop: "Docker does not answer; start it and run setup.sh again",
+		},
+		"Docker 20": {
+			buildx: true, version: "20.10.24",
+			stop: "the platform images need Docker 23 or newer, this host runs 20.10.24",
+		},
+		"Docker 23 passes and builds from GitHub": {
+			buildx: true, version: "23.0.0", builds: true,
+			stop: "could not build " + image + " at " + prereleaseCommit,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			writeOutput(t, dir, out)
+			calls := filepath.Join(t.TempDir(), "docker-calls")
+			cmd := exec.CommandContext(t.Context(), "sh", "setup.sh")
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "MP_SOURCE_PATH=", "PATH="+fakeBuildDocker(t, tc.buildx, tc.version, calls)+string(os.PathListSeparator)+os.Getenv("PATH"))
+			cmd.Stdin = strings.NewReader("")
+			got, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("setup.sh went on:\n%s", got)
+			}
+			for _, want := range []string{tc.stop, image, prereleaseCommit, "MP_SOURCE_PATH="} {
+				if !strings.Contains(string(got), want) {
+					t.Errorf("setup.sh output lacks %q:\n%s", want, got)
+				}
+			}
+			build, _ := os.ReadFile(calls)
+			if tc.builds != strings.Contains(string(build), "buildx build") {
+				t.Errorf("docker calls %q, want a build: %v", build, tc.builds)
+			}
+			if tc.builds && !strings.Contains(string(build), "MP_SOURCE=git --build-arg MP_SOURCE_REF="+prereleaseCommit) {
+				t.Errorf("the build is not from GitHub at %s: %q", prereleaseCommit, build)
+			}
+			if _, err := os.Stat(filepath.Join(dir, ".env")); err == nil {
+				if env, _ := os.ReadFile(filepath.Join(dir, ".env")); strings.Contains(string(env), "MP_UID=") {
+					t.Error("setup.sh wrote MP_UID to .env before it stopped")
+				}
+			}
+			for _, made := range []string{"secrets", "data"} {
+				if _, err := os.Stat(filepath.Join(dir, made)); err == nil {
+					t.Errorf("setup.sh made %s before it stopped", made)
+				}
+			}
+		})
+	}
 }

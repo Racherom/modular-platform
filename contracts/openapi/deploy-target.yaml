@@ -9,8 +9,8 @@ info:
     creates missing secrets and runs `docker compose` (spec 0006, child 0007). It keeps running
     operations in memory only; it never checks, never stores history and never decides a rollback.
 
-    Every call needs the consumer's binding token. Apply and remove need an `MP-Caller` token too
-    (401 `invalid_token` without one). Every answer, error answers included, carries the
+    Every call needs the consumer's binding token. Apply, remove, the images read and resolve
+    need an `MP-Caller` token too (401 `invalid_token` without one). Every answer, error answers included, carries the
     `MP-Boot-Id` header: 16 random bytes, base64url, chosen at each start. A new value means the
     deployer restarted and forgot its running operations.
 
@@ -210,6 +210,101 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /v1/stacks/{stack}/images:
+    get:
+      operationId: getStackImages
+      summary: Read the stack's frozen image versions
+      description: |
+        The current and the previous lock from the stack's folder (spec 0031). A stack with
+        containers but no `images.lock` answers `adopted: true` with a lock built from its
+        containers. A stack with neither answers `adopted: false` and no lock.
+      parameters:
+        - $ref: "#/components/parameters/Stack"
+      responses:
+        "200":
+          description: The locks.
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StackImages"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: An operation of this stack is running, so the files may be mid rotation (`busy`).
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "500":
+          description: A lock file does not decode or breaks a rule (`lock_invalid`, naming the file).
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "503":
+          description: The container engine did not answer (`docker_unavailable`).
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+  /v1/images/resolve:
+    post:
+      operationId: resolveImages
+      summary: Resolve image references to their registry digests without pulling
+      description: |
+        Asks the registry, through the container engine, which manifest digest each reference
+        names now. At most 4 lookups run at once, and the whole call ends after the deployer's
+        resolve timeout; a reference still open then is a problem with reason `timeout`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveRequest"
+      responses:
+        "200":
+          description: The digests found, and one `image_unresolved` problem per reference that failed.
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResolveResult"
+        "400":
+          description: The body does not decode (`invalid_request`), or a reference is not a tagged image reference (`invalid_reference`, at `references[<n>]`).
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: The container engine did not answer (`docker_unavailable`).
+          headers:
+            MP-Boot-Id:
+              $ref: "#/components/headers/BootId"
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
 components:
   securitySchemes:
     bearerAuth:
@@ -422,3 +517,94 @@ components:
           type: array
           items:
             type: string
+    StackImages:
+      type: object
+      additionalProperties: false
+      required: [adopted]
+      properties:
+        adopted:
+          type: boolean
+          description: True when `current` was built from the running containers because the folder has no `images.lock`.
+        current:
+          description: The lock of the last succeeded apply; absent when there is none.
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: "#/components/schemas/ImageLock"
+        previous:
+          description: The lock that was current before it; absent when there is none.
+          x-go-type-skip-optional-pointer: false
+          allOf:
+            - $ref: "#/components/schemas/ImageLock"
+    ImageLock:
+      type: object
+      additionalProperties: false
+      required: [formatVersion, stack, operation, writtenAt, images]
+      description: The lock file format (spec 0031); `present` exists only in this answer.
+      properties:
+        formatVersion:
+          type: integer
+        stack:
+          type: string
+        operation:
+          type: string
+        writtenAt:
+          type: string
+          format: date-time
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/LockedImage"
+    LockedImage:
+      type: object
+      additionalProperties: false
+      required: [reference, source, imageId, present]
+      properties:
+        reference:
+          type: string
+        source:
+          type: string
+          enum: [registry, built]
+        digest:
+          type: string
+          description: Set for `registry`.
+        imageId:
+          type: string
+        present:
+          type: boolean
+          description: The image is on the host under the name Compose looks up (`reference@digest`, or the image ID for `built`).
+    ResolveRequest:
+      type: object
+      additionalProperties: false
+      required: [references]
+      properties:
+        references:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: string
+            maxLength: 255
+    ResolveResult:
+      type: object
+      additionalProperties: false
+      required: [images, problems]
+      properties:
+        images:
+          type: array
+          description: Sorted by reference.
+          items:
+            $ref: "#/components/schemas/ResolvedImage"
+        problems:
+          type: array
+          description: One `image_unresolved` per reference that failed, at `references[<n>]`, the reason in plain words.
+          items:
+            $ref: "./renderer.yaml#/components/schemas/Problem"
+    ResolvedImage:
+      type: object
+      additionalProperties: false
+      required: [reference, digest]
+      properties:
+        reference:
+          type: string
+        digest:
+          type: string

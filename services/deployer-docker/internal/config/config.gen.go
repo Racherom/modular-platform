@@ -27,6 +27,11 @@ func (c Config) PullTimeout(ctx context.Context) (time.Duration, error) {
 	return sdk.Value[time.Duration](ctx, c.v, "pull-timeout")
 }
 
+// ResolveTimeout is longest time one call may spend asking registries which digest each image tag names.
+func (c Config) ResolveTimeout(ctx context.Context) (time.Duration, error) {
+	return sdk.Value[time.Duration](ctx, c.v, "resolve-timeout")
+}
+
 // StacksDir is absolute path of the stacks folder, the same path on the host and in the deployer.
 func (c Config) StacksDir(ctx context.Context) (string, error) {
 	return sdk.Value[string](ctx, c.v, "stacks-dir")
@@ -67,6 +72,7 @@ var Module = sdk.Declaration[Config, Uses]{
 		{Name: "platform-gid", Env: "MP_PLATFORM_GID", Type: "int", Min: "0", Description: "Group id that owns deployed files and secrets and runs deployed sdk modules."},
 		{Name: "platform-uid", Env: "MP_PLATFORM_UID", Type: "int", Min: "0", Description: "User id that owns deployed files and secrets and runs deployed sdk modules."},
 		{Name: "pull-timeout", Env: "MP_PULL_TIMEOUT", Type: "duration", Default: "10m", Min: "1m", Description: "Longest time an apply may spend pulling images."},
+		{Name: "resolve-timeout", Env: "MP_RESOLVE_TIMEOUT", Type: "duration", Default: "30s", Min: "5s", Max: "50s", Description: "Longest time one call may spend asking registries which digest each image tag names."},
 		{Name: "stacks-dir", Env: "MP_DEPLOYER_STACKS_DIR", Type: "string", Pattern: "/.+", Description: "Absolute path of the stacks folder, the same path on the host and in the deployer."},
 		{Name: "wait-timeout", Env: "MP_WAIT_TIMEOUT", Type: "duration", Default: "5m", Min: "10s", Description: "Longest time an apply waits for every service to run and pass its healthcheck."},
 	},

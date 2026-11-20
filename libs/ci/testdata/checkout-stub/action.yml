@@ -1,0 +1,14 @@
+# Stands in for actions/checkout in the act tests (spec 0032, AC-9). act copies the working
+# folder into the runner container itself, and the runner image has no Node, so the real action
+# could neither run nor should reach GitHub. act maps the SHA pinned uses: line to this folder.
+name: checkout stub
+description: Does nothing, the files are already there
+inputs:
+  ref:
+    description: ignored
+    required: false
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: echo "checkout stub ran"

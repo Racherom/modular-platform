@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,7 +24,9 @@ const ReservedName = "modular-platform"
 var (
 	ErrNotFound     = errors.New("deploy: no such stack")
 	ErrBusy         = errors.New("deploy: an operation of this stack is running")
-	ErrGraphChanged = errors.New("deploy: the check result changed since review")
+	ErrGraphChanged = errors.New("deploy: the check result or an image version changed since review")
+	// ErrLockInvalid reports a stack whose image lock file the deploy target cannot read.
+	ErrLockInvalid = errors.New("deploy: the deploy target cannot read the stack's image lock")
 	// ErrAlreadyRemoved refuses a plain remove of a removed stack.
 	ErrAlreadyRemoved = errors.New("deploy: the stack is removed already")
 	// ErrRenderer reports a renderer that did not answer as its contract says.
@@ -33,6 +36,42 @@ var (
 	// ErrTarget reports a deploy target that answered outside its contract: a wiring fault.
 	ErrTarget = errors.New("deploy: the deploy target answered unexpectedly")
 )
+
+// The lock files of a stack on the deploy target (spec 0031).
+const (
+	LockFile         = "images.lock"
+	PreviousLockFile = "images.previous.lock"
+)
+
+// LockInvalidError is ErrLockInvalid naming the lock file the deploy target cannot read: File is
+// LockFile, PreviousLockFile, or empty when the target did not name a known file.
+type LockInvalidError struct {
+	File string
+	Err  error
+}
+
+func (e *LockInvalidError) Error() string {
+	if e.File == "" {
+		return fmt.Sprintf("%v: %v", ErrLockInvalid, e.Err)
+	}
+	return fmt.Sprintf("%v: %s: %v", ErrLockInvalid, e.File, e.Err)
+}
+
+// Is makes errors.Is(err, ErrLockInvalid) hold.
+func (e *LockInvalidError) Is(target error) bool { return target == ErrLockInvalid }
+
+func (e *LockInvalidError) Unwrap() error { return e.Err }
+
+// ResolveRefusedError is a resolve call the deploy target refused as a whole (400): Problems
+// holds one problem per reference it named, its path `references[n]`. Unlike a reference the
+// registry could not resolve, it refuses the review even for a frozen reference (spec 0031, AC-6).
+type ResolveRefusedError struct {
+	Problems []contract.Problem
+}
+
+func (e *ResolveRefusedError) Error() string {
+	return "deploy: the deploy target refused the resolve call"
+}
 
 // RefusedError lists why a review or apply was refused; nothing happened.
 type RefusedError struct {
@@ -181,12 +220,37 @@ type PlacedCredential struct {
 	Exists                            bool
 }
 
-// Review is what an apply of a graph would run.
+// Review is what an apply of a graph would run. Digest covers the check result and the frozen
+// image lock (spec 0031); apply sends it back.
 type Review struct {
 	Check          contract.CheckResult
+	Digest         string
 	Modules        []contract.ModuleImage
+	Images         []ReviewImage
 	PublishedPorts []contract.PublishedPort
 	Placed         []PlacedCredential
+}
+
+// ReviewImage is one image reference the stack runs, frozen to the digest an apply runs.
+// Available is the registry's digest when checkNewer asked and it differs; CheckFailed is the
+// reason when checkNewer asked and the lookup failed (never together with Available); Present
+// is false when the image is not on the host.
+type ReviewImage struct {
+	Reference      string
+	UsedBy         []contract.ImageUser // the render's users without mp_jobs
+	Digest         string
+	Change         contract.ImageChange
+	PreviousDigest string
+	Available      string
+	CheckFailed    string
+	Present        bool
+}
+
+// ImageOptions are the review's and apply's image choices: CheckNewer asks the registry about
+// every frozen reference, Update takes these references at their newest digest.
+type ImageOptions struct {
+	CheckNewer bool
+	Update     []string
 }
 
 // PlacedInput is a value you supply for a placed secret.
@@ -242,8 +306,9 @@ type Store interface {
 // Renderer checks and renders graphs.
 type Renderer interface {
 	Check(ctx context.Context, g contract.Graph) (contract.CheckResult, error)
-	// RenderManaged renders g for stack; a check result with errors comes back as a *RefusedError.
-	RenderManaged(ctx context.Context, g contract.Graph, stack uuid.UUID) (contract.RenderedStack, error)
+	// RenderManaged renders g for stack with its images frozen by lock (none when nil); a check
+	// result with errors comes back as a *RefusedError.
+	RenderManaged(ctx context.Context, g contract.Graph, stack uuid.UUID, lock []contract.ImagePin) (contract.RenderedStack, error)
 }
 
 // TargetOperation is an operation as the deploy target reports it, with the boot id it
@@ -263,4 +328,9 @@ type Target interface {
 	Operation(ctx context.Context, id string) (TargetOperation, string, error)
 	State(ctx context.Context, composeProject string) (deploytarget.StackState, error)
 	Secrets(ctx context.Context, composeProject string) ([]string, error)
+	// Images reads the stack's image locks (spec 0031); ErrBusy while an operation runs,
+	// ErrLockInvalid for a broken lock file.
+	Images(ctx context.Context, composeProject string) (deploytarget.StackImages, error)
+	// Resolve asks the registry for the digest of each reference, without pulling.
+	Resolve(ctx context.Context, references []string) (deploytarget.ResolveResult, error)
 }

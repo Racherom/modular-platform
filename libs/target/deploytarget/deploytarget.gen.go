@@ -19,6 +19,24 @@ import (
 	externalRef0 "github.com/racherom/modular-platform/libs/contract"
 )
 
+// Defines values for LockedImageSource.
+const (
+	Built    LockedImageSource = "built"
+	Registry LockedImageSource = "registry"
+)
+
+// Valid indicates whether the value is a known member of the LockedImageSource enum.
+func (e LockedImageSource) Valid() bool {
+	switch e {
+	case Built:
+		return true
+	case Registry:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for OperationAction.
 const (
 	Apply  OperationAction = "apply"
@@ -150,6 +168,30 @@ type ApplyRequest struct {
 	Stack openapi_types.UUID `json:"stack"`
 }
 
+// ImageLock The lock file format (spec 0031); `present` exists only in this answer.
+type ImageLock struct {
+	FormatVersion int           `json:"formatVersion"`
+	Images        []LockedImage `json:"images"`
+	Operation     string        `json:"operation"`
+	Stack         string        `json:"stack"`
+	WrittenAt     time.Time     `json:"writtenAt"`
+}
+
+// LockedImage defines model for LockedImage.
+type LockedImage struct {
+	// Digest Set for `registry`.
+	Digest  string `json:"digest,omitempty,omitzero"`
+	ImageId string `json:"imageId"`
+
+	// Present The image is on the host under the name Compose looks up (`reference@digest`, or the image ID for `built`).
+	Present   bool              `json:"present"`
+	Reference string            `json:"reference"`
+	Source    LockedImageSource `json:"source"`
+}
+
+// LockedImageSource defines model for LockedImage.Source.
+type LockedImageSource string
+
 // Operation defines model for Operation.
 type Operation struct {
 	Action OperationAction `json:"action"`
@@ -194,6 +236,26 @@ type RemoveRequest struct {
 	DeleteData bool `json:"deleteData"`
 }
 
+// ResolveRequest defines model for ResolveRequest.
+type ResolveRequest struct {
+	References []string `json:"references"`
+}
+
+// ResolveResult defines model for ResolveResult.
+type ResolveResult struct {
+	// Images Sorted by reference.
+	Images []ResolvedImage `json:"images"`
+
+	// Problems One `image_unresolved` per reference that failed, at `references[<n>]`, the reason in plain words.
+	Problems []externalRef0.Problem `json:"problems"`
+}
+
+// ResolvedImage defines model for ResolvedImage.
+type ResolvedImage struct {
+	Digest    string `json:"digest"`
+	Reference string `json:"reference"`
+}
+
 // ServiceState defines model for ServiceState.
 type ServiceState struct {
 	// ExitCode Set when `exited`.
@@ -224,6 +286,18 @@ type StackFile struct {
 
 	// Path `docker-compose.yml`, `.env`, `graph.yaml`, `README.md`, `setup.sh`, `config/<instance>.env`, or a template output `config/<instance>/<file>`.
 	Path string `json:"path"`
+}
+
+// StackImages defines model for StackImages.
+type StackImages struct {
+	// Adopted True when `current` was built from the running containers because the folder has no `images.lock`.
+	Adopted bool `json:"adopted"`
+
+	// Current The lock of the last succeeded apply; absent when there is none.
+	Current *ImageLock `json:"current,omitempty"`
+
+	// Previous The lock that was current before it; absent when there is none.
+	Previous *ImageLock `json:"previous,omitempty"`
 }
 
 // StackSecret defines model for StackSecret.
@@ -260,6 +334,9 @@ type NotFound = externalRef0.ProblemList
 
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = externalRef0.ProblemList
+
+// ResolveImagesJSONRequestBody defines body for ResolveImages for application/json ContentType.
+type ResolveImagesJSONRequestBody = ResolveRequest
 
 // ApplyStackJSONRequestBody defines body for ApplyStack for application/json ContentType.
 type ApplyStackJSONRequestBody = ApplyRequest
@@ -341,6 +418,28 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 // The interface specification for the client above.
 type ClientInterface interface {
 
+	// ResolveImagesWithBody Resolve image references to their registry digests without pulling
+	//
+	// Asks the registry, through the container engine, which manifest digest each reference
+	// names now. At most 4 lookups run at once, and the whole call ends after the deployer's
+	// resolve timeout; a reference still open then is a problem with reason `timeout`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/images/resolve (the `ResolveImages` operationId).
+	ResolveImagesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResolveImages Resolve image references to their registry digests without pulling
+	//
+	// Asks the registry, through the container engine, which manifest digest each reference
+	// names now. At most 4 lookups run at once, and the whole call ends after the deployer's
+	// resolve timeout; a reference still open then is a problem with reason `timeout`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/images/resolve (the `ResolveImages` operationId).
+	ResolveImages(ctx context.Context, body ResolveImagesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetOperation Read one operation
 	//
 	// Corresponds with GET /v1/operations/{id} (the `GetOperation` operationId).
@@ -365,6 +464,15 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/stacks/{stack}/apply (the `ApplyStack` operationId).
 	ApplyStack(ctx context.Context, stack Stack, body ApplyStackJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetStackImages Read the stack's frozen image versions
+	//
+	// The current and the previous lock from the stack's folder (spec 0031). A stack with
+	// containers but no `images.lock` answers `adopted: true` with a lock built from its
+	// containers. A stack with neither answers `adopted: false` and no lock.
+	//
+	// Corresponds with GET /v1/stacks/{stack}/images (the `GetStackImages` operationId).
+	GetStackImages(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RemoveStackWithBody Stop and remove the stack's containers
 	//
@@ -395,6 +503,48 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /v1/stacks/{stack}/state (the `GetStackState` operationId).
 	GetStackState(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+// ResolveImagesWithBody Resolve image references to their registry digests without pulling
+//
+// Asks the registry, through the container engine, which manifest digest each reference
+// names now. At most 4 lookups run at once, and the whole call ends after the deployer's
+// resolve timeout; a reference still open then is a problem with reason `timeout`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/images/resolve (the `ResolveImages` operationId).
+func (c *Client) ResolveImagesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveImagesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ResolveImages Resolve image references to their registry digests without pulling
+//
+// Asks the registry, through the container engine, which manifest digest each reference
+// names now. At most 4 lookups run at once, and the whole call ends after the deployer's
+// resolve timeout; a reference still open then is a problem with reason `timeout`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/images/resolve (the `ResolveImages` operationId).
+func (c *Client) ResolveImages(ctx context.Context, body ResolveImagesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResolveImagesRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 // GetOperation Read one operation
@@ -442,6 +592,25 @@ func (c *Client) ApplyStackWithBody(ctx context.Context, stack Stack, contentTyp
 // Corresponds with POST /v1/stacks/{stack}/apply (the `ApplyStack` operationId).
 func (c *Client) ApplyStack(ctx context.Context, stack Stack, body ApplyStackJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewApplyStackRequest(c.Server, stack, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetStackImages Read the stack's frozen image versions
+//
+// The current and the previous lock from the stack's folder (spec 0031). A stack with
+// containers but no `images.lock` answers `adopted: true` with a lock built from its
+// containers. A stack with neither answers `adopted: false` and no lock.
+//
+// Corresponds with GET /v1/stacks/{stack}/images (the `GetStackImages` operationId).
+func (c *Client) GetStackImages(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetStackImagesRequest(c.Server, stack)
 	if err != nil {
 		return nil, err
 	}
@@ -522,6 +691,46 @@ func (c *Client) GetStackState(ctx context.Context, stack Stack, reqEditors ...R
 	return c.Client.Do(req)
 }
 
+// NewResolveImagesRequest calls the generic ResolveImages builder with application/json body
+func NewResolveImagesRequest(server string, body ResolveImagesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewResolveImagesRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewResolveImagesRequestWithBody constructs an http.Request for the ResolveImages method, with any body, and a specified content type
+func NewResolveImagesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/images/resolve")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetOperationRequest constructs an http.Request for the GetOperation method
 func NewGetOperationRequest(server string, id string) (*http.Request, error) {
 	var err error
@@ -599,6 +808,40 @@ func NewApplyStackRequestWithBody(server string, stack Stack, contentType string
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetStackImagesRequest constructs an http.Request for the GetStackImages method
+func NewGetStackImagesRequest(server string, stack Stack) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "stack", stack, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/stacks/%s/images", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -762,6 +1005,28 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 
+	// ResolveImagesWithBodyWithResponse Resolve image references to their registry digests without pulling
+	//
+	// Asks the registry, through the container engine, which manifest digest each reference
+	// names now. At most 4 lookups run at once, and the whole call ends after the deployer's
+	// resolve timeout; a reference still open then is a problem with reason `timeout`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/images/resolve (the `ResolveImages` operationId).
+	ResolveImagesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveImagesResponse, error)
+
+	// ResolveImagesWithResponse Resolve image references to their registry digests without pulling
+	//
+	// Asks the registry, through the container engine, which manifest digest each reference
+	// names now. At most 4 lookups run at once, and the whole call ends after the deployer's
+	// resolve timeout; a reference still open then is a problem with reason `timeout`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/images/resolve (the `ResolveImages` operationId).
+	ResolveImagesWithResponse(ctx context.Context, body ResolveImagesJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveImagesResponse, error)
+
 	// GetOperationWithResponse Read one operation
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -788,6 +1053,17 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/stacks/{stack}/apply (the `ApplyStack` operationId).
 	ApplyStackWithResponse(ctx context.Context, stack Stack, body ApplyStackJSONRequestBody, reqEditors ...RequestEditorFn) (*ApplyStackResponse, error)
+
+	// GetStackImagesWithResponse Read the stack's frozen image versions
+	//
+	// The current and the previous lock from the stack's folder (spec 0031). A stack with
+	// containers but no `images.lock` answers `adopted: true` with a lock built from its
+	// containers. A stack with neither answers `adopted: false` and no lock.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/stacks/{stack}/images (the `GetStackImages` operationId).
+	GetStackImagesWithResponse(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*GetStackImagesResponse, error)
 
 	// RemoveStackWithBodyWithResponse Stop and remove the stack's containers
 	//
@@ -822,6 +1098,96 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /v1/stacks/{stack}/state (the `GetStackState` operationId).
 	GetStackStateWithResponse(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*GetStackStateResponse, error)
+}
+
+// ResolveImagesResponse200Headers the declared response headers of an HTTP 200 response for ResolveImages
+type ResolveImagesResponse200Headers struct {
+	MPBootId string
+}
+
+// ResolveImagesResponse400Headers the declared response headers of an HTTP 400 response for ResolveImages
+type ResolveImagesResponse400Headers struct {
+	MPBootId string
+}
+
+// ResolveImagesResponse401Headers the declared response headers of an HTTP 401 response for ResolveImages
+type ResolveImagesResponse401Headers struct {
+	MPBootId string
+}
+
+// ResolveImagesResponse503Headers the declared response headers of an HTTP 503 response for ResolveImages
+type ResolveImagesResponse503Headers struct {
+	MPBootId string
+}
+
+type ResolveImagesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ResolveResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *externalRef0.ProblemList
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *externalRef0.ProblemList
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *ResolveImagesResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *ResolveImagesResponse400Headers
+	// Headers401 the parsed response headers for an HTTP 401 response
+	Headers401 *ResolveImagesResponse401Headers
+	// Headers503 the parsed response headers for an HTTP 503 response
+	Headers503 *ResolveImagesResponse503Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ResolveImagesResponse) GetJSON200() *ResolveResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ResolveImagesResponse) GetJSON400() *externalRef0.ProblemList {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ResolveImagesResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ResolveImagesResponse) GetJSON503() *externalRef0.ProblemList {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ResolveImagesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ResolveImagesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResolveImagesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ResolveImagesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
 }
 
 // GetOperationResponse200Headers the declared response headers of an HTTP 200 response for GetOperation
@@ -1012,6 +1378,124 @@ func (r ApplyStackResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ApplyStackResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetStackImagesResponse200Headers the declared response headers of an HTTP 200 response for GetStackImages
+type GetStackImagesResponse200Headers struct {
+	MPBootId string
+}
+
+// GetStackImagesResponse400Headers the declared response headers of an HTTP 400 response for GetStackImages
+type GetStackImagesResponse400Headers struct {
+	MPBootId string
+}
+
+// GetStackImagesResponse401Headers the declared response headers of an HTTP 401 response for GetStackImages
+type GetStackImagesResponse401Headers struct {
+	MPBootId string
+}
+
+// GetStackImagesResponse409Headers the declared response headers of an HTTP 409 response for GetStackImages
+type GetStackImagesResponse409Headers struct {
+	MPBootId string
+}
+
+// GetStackImagesResponse500Headers the declared response headers of an HTTP 500 response for GetStackImages
+type GetStackImagesResponse500Headers struct {
+	MPBootId string
+}
+
+// GetStackImagesResponse503Headers the declared response headers of an HTTP 503 response for GetStackImages
+type GetStackImagesResponse503Headers struct {
+	MPBootId string
+}
+
+type GetStackImagesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *StackImages
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthorized
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *externalRef0.ProblemList
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *externalRef0.ProblemList
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *externalRef0.ProblemList
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetStackImagesResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetStackImagesResponse400Headers
+	// Headers401 the parsed response headers for an HTTP 401 response
+	Headers401 *GetStackImagesResponse401Headers
+	// Headers409 the parsed response headers for an HTTP 409 response
+	Headers409 *GetStackImagesResponse409Headers
+	// Headers500 the parsed response headers for an HTTP 500 response
+	Headers500 *GetStackImagesResponse500Headers
+	// Headers503 the parsed response headers for an HTTP 503 response
+	Headers503 *GetStackImagesResponse503Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetStackImagesResponse) GetJSON200() *StackImages {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetStackImagesResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetStackImagesResponse) GetJSON401() *Unauthorized {
+	return r.JSON401
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r GetStackImagesResponse) GetJSON409() *externalRef0.ProblemList {
+	return r.JSON409
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetStackImagesResponse) GetJSON500() *externalRef0.ProblemList {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetStackImagesResponse) GetJSON503() *externalRef0.ProblemList {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetStackImagesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetStackImagesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetStackImagesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetStackImagesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -1302,6 +1786,40 @@ func (r GetStackStateResponse) ContentType() string {
 	return ""
 }
 
+// ResolveImagesWithBodyWithResponse Resolve image references to their registry digests without pulling
+//
+// Asks the registry, through the container engine, which manifest digest each reference
+// names now. At most 4 lookups run at once, and the whole call ends after the deployer's
+// resolve timeout; a reference still open then is a problem with reason `timeout`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/images/resolve (the `ResolveImages` operationId).
+func (c *ClientWithResponses) ResolveImagesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ResolveImagesResponse, error) {
+	rsp, err := c.ResolveImagesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResolveImagesResponse(rsp)
+}
+
+// ResolveImagesWithResponse Resolve image references to their registry digests without pulling
+//
+// Asks the registry, through the container engine, which manifest digest each reference
+// names now. At most 4 lookups run at once, and the whole call ends after the deployer's
+// resolve timeout; a reference still open then is a problem with reason `timeout`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/images/resolve (the `ResolveImages` operationId).
+func (c *ClientWithResponses) ResolveImagesWithResponse(ctx context.Context, body ResolveImagesJSONRequestBody, reqEditors ...RequestEditorFn) (*ResolveImagesResponse, error) {
+	rsp, err := c.ResolveImages(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResolveImagesResponse(rsp)
+}
+
 // GetOperationWithResponse Read one operation
 //
 // Returns a wrapper object for the known response body format(s).
@@ -1345,6 +1863,23 @@ func (c *ClientWithResponses) ApplyStackWithResponse(ctx context.Context, stack 
 		return nil, err
 	}
 	return ParseApplyStackResponse(rsp)
+}
+
+// GetStackImagesWithResponse Read the stack's frozen image versions
+//
+// The current and the previous lock from the stack's folder (spec 0031). A stack with
+// containers but no `images.lock` answers `adopted: true` with a lock built from its
+// containers. A stack with neither answers `adopted: false` and no lock.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/stacks/{stack}/images (the `GetStackImages` operationId).
+func (c *ClientWithResponses) GetStackImagesWithResponse(ctx context.Context, stack Stack, reqEditors ...RequestEditorFn) (*GetStackImagesResponse, error) {
+	rsp, err := c.GetStackImages(ctx, stack, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetStackImagesResponse(rsp)
 }
 
 // RemoveStackWithBodyWithResponse Stop and remove the stack's containers
@@ -1403,6 +1938,96 @@ func (c *ClientWithResponses) GetStackStateWithResponse(ctx context.Context, sta
 		return nil, err
 	}
 	return ParseGetStackStateResponse(rsp)
+}
+
+// ParseResolveImagesResponse parses an HTTP response from a ResolveImagesWithResponse call
+func ParseResolveImagesResponse(rsp *http.Response) (*ResolveImagesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResolveImagesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ResolveResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.ProblemList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest externalRef0.ProblemList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers ResolveImagesResponse200Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers ResolveImagesResponse400Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers400 = &headers
+	case rsp.StatusCode == 401:
+		var headers ResolveImagesResponse401Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers401 = &headers
+	case rsp.StatusCode == 503:
+		var headers ResolveImagesResponse503Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers503 = &headers
+	}
+
+	return response, nil
 }
 
 // ParseGetOperationResponse parses an HTTP response from a GetOperationWithResponse call
@@ -1597,6 +2222,130 @@ func ParseApplyStackResponse(rsp *http.Response) (*ApplyStackResponse, error) {
 			headers.MPBootId = value
 		}
 		response.Headers422 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetStackImagesResponse parses an HTTP response from a GetStackImagesWithResponse call
+func ParseGetStackImagesResponse(rsp *http.Response) (*GetStackImagesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetStackImagesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StackImages
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest externalRef0.ProblemList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.ProblemList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest externalRef0.ProblemList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetStackImagesResponse200Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetStackImagesResponse400Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers400 = &headers
+	case rsp.StatusCode == 401:
+		var headers GetStackImagesResponse401Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers401 = &headers
+	case rsp.StatusCode == 409:
+		var headers GetStackImagesResponse409Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers409 = &headers
+	case rsp.StatusCode == 500:
+		var headers GetStackImagesResponse500Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers500 = &headers
+	case rsp.StatusCode == 503:
+		var headers GetStackImagesResponse503Headers
+		if values := rsp.Header.Values("MP-Boot-Id"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "MP-Boot-Id", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.MPBootId = value
+		}
+		response.Headers503 = &headers
 	}
 
 	return response, nil

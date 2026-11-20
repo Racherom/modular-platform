@@ -37,7 +37,7 @@ func main() {
 	graph := flag.String("graph", "deploy/managed/graph.yaml", "the platform graph")
 	out := flag.String("out", "build/managed", "the folder to write; replaced as a whole")
 	tag := flag.String("image-tag", "", "a tag for the platform's own images instead of the catalog's, for a local or CI run")
-	sourceRef := flag.String("source-ref", "", "the git ref unreleased platform images build from (a full commit or a branch); empty means main")
+	sourceRef := flag.String("source-ref", "", "the git ref unreleased platform images build from (a full commit, a branch, or local for a checkout with changes); empty means main")
 	flag.Parse()
 	if err := run(*graph, *out, *tag, *sourceRef, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "render-platform:", err)
@@ -50,7 +50,10 @@ func run(graphPath, out, tag, sourceRef string, log io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if !source.Commit() {
+	switch {
+	case source.Local():
+		fmt.Fprintln(log, "warning: source ref local: this render comes from a local checkout, and a zip that builds a platform image builds only with MP_SOURCE_PATH")
+	case source.Moves():
 		fmt.Fprintf(log, "warning: source ref %s is a branch, not a commit: a zip that builds a platform image builds whatever it holds then\n", source)
 	}
 	entries, problems := contract.LoadCatalog(catalog.FS)

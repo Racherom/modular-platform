@@ -8,7 +8,7 @@ set -eu
 # GitHub; resolved before the cd below, so a relative path starts where you ran setup.sh.
 source_path=
 if [ -n "${MP_SOURCE_PATH:-}" ]; then
-	source_path=$(cd "$MP_SOURCE_PATH" 2>/dev/null && pwd) || {
+	source_path=$(cd "$MP_SOURCE_PATH" 2>/dev/null && pwd -P) || {
 		echo "setup.sh: MP_SOURCE_PATH=$MP_SOURCE_PATH is not a folder" >&2
 		exit 1
 	}
@@ -38,16 +38,20 @@ docker_version=$(docker version --format '{{.Server.Version}}' 2>/dev/null) ||
 	build_stop "Docker does not answer; start it and run setup.sh again"
 [ "${docker_version%%.*}" -ge 23 ] 2>/dev/null ||
 	build_stop "the platform images need Docker 23 or newer, this host runs $docker_version"
-# build_image IMAGE MODULE builds IMAGE from build/MODULE/Dockerfile.
+# build_image IMAGE MODULE builds IMAGE from build/MODULE/Dockerfile. A build from a local
+# checkout is labeled local, never with source_ref, which the checkout may not match.
 build_image() {
-	echo "building $1 from Modular Platform at $source_ref${source_path:+ (local checkout $source_path)}"
 	if [ -n "$source_path" ]; then
-		docker buildx build --load -t "$1" --build-arg MP_SOURCE=local --build-arg MP_SOURCE_REF="$source_ref" \
-			-f "build/$2/Dockerfile" "$source_path"
+		echo "building $1 from the local checkout $source_path"
+		docker buildx build --load -t "$1" --build-arg MP_SOURCE=local --build-arg MP_SOURCE_REF=local \
+			-f "build/$2/Dockerfile" "$source_path" ||
+			build_stop "could not build $1 from the local checkout $source_path; the build needs Docker Hub (the Dockerfile frontend and base images)"
 	else
+		echo "building $1 from Modular Platform at $source_ref"
 		docker buildx build --load -t "$1" --build-arg MP_SOURCE=git --build-arg MP_SOURCE_REF="$source_ref" \
-			-f "build/$2/Dockerfile" "build/$2"
-	fi || build_stop "could not build $1 at $source_ref; the build needs GitHub and Docker Hub, and the ref must be pushed"
+			-f "build/$2/Dockerfile" "build/$2" ||
+			build_stop "could not build $1 at $source_ref; the ref must be pushed, and the build needs GitHub and Docker Hub (the Dockerfile frontend and base images)"
+	fi
 }
 build_image 'ghcr.io/racherom/modular-platform/renderer:0.0.0' 'renderer'
 

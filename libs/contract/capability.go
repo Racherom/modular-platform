@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"fmt"
 	"path"
 	"regexp"
 	"slices"
@@ -182,8 +183,11 @@ func CheckYields(file string, k Capability, byName map[string]Capability) []Cata
 }
 
 func (c *checker) job(y Yields) {
-	if msg := imageProblem(y.Job.Image); msg != "" {
-		c.add("yields.job.image", CodeInvalidJob, "%s", msg)
+	if code, msg := imageProblem(y.Job.Image); code != "" {
+		if code != CodeImageDigest {
+			code = CodeInvalidJob
+		}
+		c.add("yields.job.image", code, "%s", msg)
 	}
 	if strings.TrimSpace(y.Job.Provision) == "" {
 		c.add("yields.job.provision", CodeInvalidJob, "a provisioner needs a provision script")
@@ -196,21 +200,25 @@ func (c *checker) job(y Yields) {
 	}
 }
 
-// imageProblem describes why image is not a tagged image reference, or is "".
-func imageProblem(image string) string {
+// imageProblem gives the code and message of why image is not a catalog image, `repo:tag` with
+// an exact tag and no digest (spec 0031: the lock is the one place an image is pinned), or "".
+func imageProblem(image string) (code, msg string) {
 	if image == "" {
-		return "image is required"
+		return CodeMissingField, "image is required"
 	}
 	ref, err := reference.ParseNormalizedNamed(image)
 	if err != nil {
-		return "\"" + image + "\" is not an image reference: " + err.Error()
+		return CodeInvalidImage, fmt.Sprintf("%q is not an image reference: %v", image, err)
+	}
+	if _, ok := ref.(reference.Digested); ok {
+		return CodeImageDigest, fmt.Sprintf("%q must not pin a digest; the stack's image lock freezes the version", image)
 	}
 	tagged, ok := ref.(reference.Tagged)
 	switch {
 	case !ok:
-		return "\"" + image + "\" must carry an exact tag"
+		return CodeImageUntagged, fmt.Sprintf("%q must carry an exact tag", image)
 	case tagged.Tag() == "latest":
-		return "\"" + image + "\" must not use the latest tag"
+		return CodeImageLatest, fmt.Sprintf("%q must not use the latest tag", image)
 	}
-	return ""
+	return "", ""
 }

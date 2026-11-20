@@ -21,7 +21,7 @@ func TestWatchSharesOnePollerAndPublishesChanges(t *testing.T) {
 	t.Cleanup(func() { cancel(); s.Wait() })
 	deploy.SetPollEvery(s, 5*time.Millisecond)
 	deploy.SetWatchEvery(s, 20*time.Millisecond)
-	if _, err := s.Apply(t.Context(), admin, "sample", sample, "sha256:abc", nil); err != nil {
+	if _, err := s.Apply(t.Context(), admin, "sample", sample, goodDigest, deploy.ImageOptions{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "running", func() bool {

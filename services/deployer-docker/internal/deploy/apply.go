@@ -197,6 +197,8 @@ func (e *Engine) projectDir(project string) string { return filepath.Join(e.cfg.
 
 // apply runs prepare, pull and up. A failure in prepare or pull puts the folder back as it
 // was, so the running containers and their files stay untouched (child 0007, "Apply pipeline").
+// Only a successful up writes the image lock (spec 0031); a project with containers and no lock
+// gets its adopted lock in prepare, before pull.
 func (e *Engine) apply(op *Operation, req ApplyRequest) error {
 	dir := e.projectDir(req.Project)
 	before, err := e.snapshot(dir, req)
@@ -207,10 +209,13 @@ func (e *Engine) apply(op *Operation, req ApplyRequest) error {
 	if err != nil {
 		return e.restore(dir, before, created, fmt.Errorf("%s\n%w", codePrepareFailed, err))
 	}
+	e.adoptBeforePull(dir, req.Project)
 
 	e.step(op, StepPull)
 	ctx, cancel := context.WithTimeout(e.ctx, e.cfg.PullTimeout)
-	out, err := e.compose.Run(ctx, dir, req.Project, "pull")
+	// --policy missing: an image already on the host, reference@digest included, needs no
+	// registry, so a rollback to locked images works offline (spec 0031)
+	out, err := e.compose.Run(ctx, dir, req.Project, "pull", "--policy", "missing")
 	cancel()
 	if err != nil {
 		return e.restore(dir, before, created, composeError(codePullFailed, out, err))
@@ -233,6 +238,7 @@ func (e *Engine) apply(op *Operation, req ApplyRequest) error {
 	if err != nil {
 		return composeError(codeUpFailed, out, err)
 	}
+	e.recordLock(op, dir, req)
 	return nil
 }
 

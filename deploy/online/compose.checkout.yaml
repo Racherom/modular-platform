@@ -1,0 +1,23 @@
+# While MP_VERSION is 0.0.0, this overlay builds web and renderer from a local checkout of
+# Modular Platform instead of from GitHub (spec 0030, AC-8), so the online editor runs a commit
+# that is on no remote yet. It needs a checkout and is meant for `task online:up` with
+# MP_SOURCE_PATH set: the task checks the folder, makes it absolute and passes the ref
+# (scripts/online-source-ref.sh: the checkout's commit when its tree is clean, else local).
+# It replaces compose.prerelease.yaml, never joins it:
+#   MP_SOURCE_PATH=<checkout> task online:up
+services:
+  web:
+    build:
+      context: ${MP_SOURCE_PATH:?set by task online:up}
+      dockerfile: catalog/modules/web/Dockerfile
+      args:
+        MP_SOURCE: local
+        MP_SOURCE_REF: ${MP_SOURCE_REF:?set by task online:up}
+
+  renderer:
+    build:
+      context: ${MP_SOURCE_PATH:?set by task online:up}
+      dockerfile: catalog/modules/renderer/Dockerfile
+      args:
+        MP_SOURCE: local
+        MP_SOURCE_REF: ${MP_SOURCE_REF:?set by task online:up}

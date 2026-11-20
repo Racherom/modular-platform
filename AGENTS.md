@@ -56,13 +56,17 @@ Installed and enforced:
 
 - **Lint and format**: golangci-lint v2 (gofumpt formatter) for Go; Biome for `web/` (lint and format, React hooks rules). Both run through `task lint`.
 - **Pre commit**: lefthook runs format, lint and typecheck on staged files; tests stay in CI.
-- **CI**: `.github/workflows/ci.yml` already runs generate diff, lint, test, build; new linters reach it through `task lint`.
+- **CI**: `.github/workflows/ci.yml` already runs generate diff, lint, test, build; new linters reach it through `task lint`. `.github/workflows/branch-rules.yml` is the `Branch rules` check; `libs/ci` holds the tests of the workflows, rulesets and `scripts/` (no bounded context, no code of its own).
 
 ## Git
 
 - integration: on
 - branch prefix: feat/
 - commit: per-milestone
+- branches (spec 0032): `main` holds only released code, `dev` holds the next release. Branch from `dev`, open the pull request into `dev` with a conventional commit title, and **squash** it (the title becomes the commit message release-please reads)
+- release: open a pull request `dev` into `main` and merge it with a **merge commit, never squash**; release-please then opens its release pull request on `main`, and merging that tags the release. A job then opens `back-merge/<version>` into `dev`: merge it with a merge commit, never a squash. On a conflict, merge `dev` into it locally and keep the release side for the version lines (`MP_VERSION`, the four catalog image lines, `web/package.json`, the manifest, `CHANGELOG.md`)
+- hotfix: branch `hotfix/<name>` from `main`, conventional commits, pull request into `main`; merge or close a pending release pull request first. The back merge carries it to `dev`
+- guard: the `Branch rules` check (`scripts/branch-rules.sh`) and the rulesets in `deploy/github/`; renaming a CI job means editing both rulesets (a test fails otherwise)
 
 ## Agent skills
 

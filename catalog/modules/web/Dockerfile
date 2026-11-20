@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 # The web image (spec 0030). MP_SOURCE picks where its source comes from:
 #   local (default): the build context, the repository root:
 #     docker build -f catalog/modules/web/Dockerfile .
@@ -20,7 +20,7 @@ ADD https://github.com/racherom/modular-platform.git#${MP_SOURCE_REF} /
 
 FROM source-${MP_SOURCE} AS source
 
-FROM node:26.13.0-alpine AS build
+FROM node:26.13.0-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS build
 RUN npm install --global pnpm@12.16.1
 WORKDIR /repo/web
 COPY --from=source /web/package.json /web/pnpm-lock.yaml /web/pnpm-workspace.yaml ./
@@ -32,7 +32,7 @@ RUN pnpm run build
 
 # One image for every placement and mode: MP_BASE_PATH, MP_API_ROOT, MP_MODE and MP_SIGNED_OUT
 # are filled into index.html at serve time.
-FROM caddy:2.11.7-alpine
+FROM caddy:2.11.7-alpine@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5
 ARG MP_SOURCE_REF
 LABEL org.opencontainers.image.revision=${MP_SOURCE_REF}
 ENV MP_BASE_PATH="" \

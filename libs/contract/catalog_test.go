@@ -189,6 +189,7 @@ func TestModuleRules(t *testing.T) {
 		"bad image":           one("example.test/svc:1.0.0", "example.test/svc!:1.0.0", "image", contract.CodeInvalidImage),
 		"untagged image":      one("example.test/svc:1.0.0", "example.test/svc", "image", contract.CodeImageUntagged),
 		"latest image":        one("example.test/svc:1.0.0", "example.test/svc:latest", "image", contract.CodeImageLatest),
+		"digest image":        one("example.test/svc:1.0.0", "example.test/svc:1.0.0@sha256:"+strings.Repeat("a", 64), "image", contract.CodeImageDigest),
 		"provide name":        one("  web:", "  Web:", "provides.Web", contract.CodeInvalidName),
 		"unknown capability":  one("    capability: store\n    version", "    capability: nope\n    version", "provides.web.capability", contract.CodeUnknownCapability),
 		"invalid version":     one(`version: "1.0"`, `version: "one"`, "provides.web.version", contract.CodeInvalidVersion),
@@ -373,6 +374,7 @@ func TestYieldsRules(t *testing.T) {
 		"named not listed":   one("    port: {admin: port}\n", "    port: named\n", "yields.fields.port", contract.CodeInvalidFieldSource),
 		"named field source": one("    name: named\n", "    name: {admin: host}\n", "yields.fields.name", contract.CodeInvalidFieldSource),
 		"job latest":         one("example.test/job:1.0.0", "example.test/job:latest", "yields.job.image", contract.CodeInvalidJob),
+		"job digest":         one("example.test/job:1.0.0", "example.test/job:1.0.0@sha256:"+strings.Repeat("a", 64), "yields.job.image", contract.CodeImageDigest),
 		"job no provision":   one("provision: echo provision", "provision: \"\"", "yields.job.provision", contract.CodeInvalidJob),
 		"login no revoke":    one("    revoke: echo revoke\n", "", "yields.job.revoke", contract.CodeInvalidJob),
 		"revoke no login":    one("  login: name\n", "", "yields.job.revoke", contract.CodeInvalidJob),
@@ -399,7 +401,7 @@ func TestGoodEntries(t *testing.T) {
 	}
 	for _, data := range []string{
 		goodModule,
-		strings.Replace(goodModule, "example.test/svc:1.0.0", "registry.test:5000/team/svc:1.0.0@sha256:"+strings.Repeat("a", 64), 1),
+		strings.Replace(goodModule, "example.test/svc:1.0.0", "registry.test:5000/team/svc:1.0.0", 1),
 	} {
 		if _, problems := contract.CheckModule("modules/svc/module.yaml", []byte(data), caps); len(problems) > 0 {
 			t.Errorf("problems = %v, want none", problems)

@@ -6,12 +6,19 @@ vars:
   GO_PACKAGES: ./catalog/... ./libs/... ./sdk/... ./services/renderer/... ./services/api/... ./services/deployer-docker/...
   IMAGE_PREFIX: ghcr.io/racherom/modular-platform
   IMAGE_TAG: dev
-  # the commit an image build names as its source (spec 0030), also with local changes
+  # the commit an image build names as its source (spec 0030); local when the tree has changes,
+  # so no image or zip claims a commit its code does not come from (AC-12)
   SOURCE_REF:
-    sh: git rev-parse HEAD
+    sh: if [ -z "$(git status --porcelain)" ]; then git rev-parse HEAD; else echo local; fi
   GOLANGCI_LINT_VERSION: v2.15.0
   LEFTHOOK_VERSION: v2.2.2
   SKILLS_VERSION: 1.7.6
+  # the renovate npm package, for its config validator and the digest test (spec 0030, AC-13)
+  RENOVATE_VERSION: 44.198.3
+  # act runs release.yml in local Docker for the release gate test (spec 0030, AC-11); the
+  # test reads both values from here and builds act with go install, so nothing is installed
+  ACT_VERSION: v0.2.92
+  ACT_RUNNER_IMAGE: debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
   # go run pkg@version builds with the toolchain the tool's module asks for; golangci-lint must be
   # built with at least the toolchain go.work pins, or it refuses the code
   GO_TOOLCHAIN:
@@ -86,16 +93,19 @@ tasks:
     # Two runs: testcontainers shares one session, and one reaper, across every package of a go
     # test run. The e2e test builds images for about 10 seconds before it reaches Docker, and by
     # then the reaper of packages that finished early prunes the session's containers.
+    # The integration run gets 30 minutes: the AC-8 checkout build, a cold act build and Renovate
+    # together pass the default 10 (spec 0030).
     cmds:
-      - go test -race -tags integration {{.GO_PACKAGES}}
+      - go test -race -timeout 30m -tags integration {{.GO_PACKAGES}}
       - go test -race -tags e2e {{.GO_PACKAGES}}
 
   lint:
-    desc: Lint and check formatting of the Go code (golangci-lint) and the editor (Biome, tsc), and check for retired words
+    desc: Lint and check formatting of the Go code (golangci-lint) and the editor (Biome, tsc), check renovate.json, and check for retired words
     deps: [web:install]
     cmds:
       - task: lint:vocabulary
       - task: lint:go
+      - task: lint:renovate
       - pnpm --dir web run lint
       - pnpm --dir web run typecheck
 
@@ -103,6 +113,17 @@ tasks:
     desc: Run golangci-lint on the Go code, formatters included (.golangci.yml)
     cmds:
       - "{{.GOLANGCI_LINT}} run {{.GO_PACKAGES}}"
+
+  lint:renovate:
+    desc: Check renovate.json with Renovate's own validator; a wrong key would otherwise fail silently
+    # LOG_LEVEL=error hides the warning (and its long stack trace) that Renovate prints because
+    # pnpm dlx does not build its optional native re2 module; a bad config still prints its
+    # errors and fails. renovate.json holds no regex, so the RegExp fallback checks it fully.
+    env:
+      LOG_LEVEL: error
+    cmds:
+      - pnpm dlx --package renovate@{{.RENOVATE_VERSION}} renovate-config-validator --strict renovate.json
+      - 'echo "lint:renovate: renovate.json is valid"'
 
   lint:vocabulary:
     desc: Fail on a retired word (scripts/vocabulary.txt, spec 0027) in a tracked or staged file; report=1 only prints the hits and their count
@@ -143,16 +164,38 @@ tasks:
       - test -f deploy/online/.env
 
   online:up:
-    desc: Run the online editor from the images in versions.env (MP_VERSION=dev for your own task images); while MP_VERSION is 0.0.0 it builds them from GitHub at MP_SOURCE_REF
-    deps: [online:env]
+    desc: Run the online editor from the images in versions.env (MP_VERSION=dev for your own task images); while MP_VERSION is 0.0.0 it builds them from GitHub at the commit MP_SOURCE_REF points to, or with MP_SOURCE_PATH=<checkout> from that checkout, on no remote
+    vars:
+      # the shell value wins over versions.env, as in the compose command below
+      ONLINE_VERSION:
+        sh: >-
+          echo "${MP_VERSION:-$(sed -n 's/^MP_VERSION=\([^ #]*\).*/\1/p' deploy/online/versions.env)}"
+    # a checkout build is only for the pre release images; checked before any command runs, so a
+    # stop writes no deploy/online/.env (Task runs deps before preconditions, so online:env is
+    # the first command, not a dep)
+    preconditions:
+      - sh: '[ -z "${MP_SOURCE_PATH:-}" ] || [ "{{.ONLINE_VERSION}}" = 0.0.0 ]'
+        msg: "online:up: MP_SOURCE_PATH builds only while MP_VERSION is 0.0.0 (it is {{.ONLINE_VERSION}}); use task dev for a renderer from your checkout and a hot reload editor"
     cmds:
-      # 0.0.0 is in no registry: build web and renderer from GitHub instead (spec 0030, AC-8)
+      - task: online:env
+      # 0.0.0 is in no registry: build web and renderer instead (spec 0030, AC-8). With
+      # MP_SOURCE_PATH, from that checkout at its commit (or local), reaching no remote;
+      # otherwise from GitHub at the commit MP_SOURCE_REF resolves to now. Both values go to the
+      # one compose command only, and versions.env stays as it is.
       - |
-        version=${MP_VERSION:-$(sed -n 's/^MP_VERSION=\([^ #]*\).*/\1/p' deploy/online/versions.env)}
-        if [ "$version" = 0.0.0 ]; then
-          {{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.prerelease.yaml up -d --build --wait --wait-timeout 120
-        else
+        if [ "{{.ONLINE_VERSION}}" != 0.0.0 ]; then
           {{.ONLINE}} -f deploy/online/compose.yaml up -d --wait --wait-timeout 120
+        elif [ -n "${MP_SOURCE_PATH:-}" ]; then
+          ref=$(sh scripts/online-source-ref.sh) || exit 1
+          # absolute: --project-directory deploy/online would read a relative context against it
+          path=$(CDPATH='' cd "$MP_SOURCE_PATH" && pwd -P) || exit 1
+          echo "online:up: building web and renderer from the checkout $path at $ref"
+          MP_SOURCE_PATH="$path" MP_SOURCE_REF="$ref" {{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.checkout.yaml up -d --build --wait --wait-timeout 120
+        else
+          MP_SOURCE_REF=$(sh scripts/online-source-ref.sh) || exit 1
+          export MP_SOURCE_REF
+          echo "online:up: building web and renderer from GitHub at $MP_SOURCE_REF"
+          {{.ONLINE}} -f deploy/online/compose.yaml -f deploy/online/compose.prerelease.yaml up -d --build --wait --wait-timeout 120
         fi
 
   online:down:
@@ -222,6 +265,10 @@ tasks:
           sed -n 's/.*"\.": "\(.*\)".*/\1/p' .release-please-manifest.json
     deps: [managed:render]
     cmds:
+      - |
+        if [ '{{.VERSION}}' = 0.0.0 ] && [ '{{.SOURCE_REF}}' = local ]; then
+          echo "managed:zip: the tree has uncommitted changes, so this zip builds only with MP_SOURCE_PATH; commit first for a zip that builds from GitHub" >&2
+        fi
       - mkdir -p dist
       - python3 scripts/managed_zip.py build/managed "modular-platform-{{.VERSION}}" "dist/modular-platform-{{.VERSION}}.zip"
 

@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/distribution/reference"
-
 	"github.com/racherom/modular-platform/sdk/manifest"
 )
 
@@ -592,21 +590,8 @@ func (c *moduleChecker) mount(p, target string) {
 }
 
 func (c *checker) image(image string) {
-	if image == "" {
-		c.add("image", CodeMissingField, "image is required")
-		return
-	}
-	ref, err := reference.ParseNormalizedNamed(image)
-	if err != nil {
-		c.add("image", CodeInvalidImage, "%q is not an image reference: %v", image, err)
-		return
-	}
-	tagged, ok := ref.(reference.Tagged)
-	switch {
-	case !ok:
-		c.add("image", CodeImageUntagged, "%q must carry an exact tag", image)
-	case tagged.Tag() == "latest":
-		c.add("image", CodeImageLatest, "%q must not use the latest tag", image)
+	if code, msg := imageProblem(image); code != "" {
+		c.add("image", code, "%s", msg)
 	}
 }
 
