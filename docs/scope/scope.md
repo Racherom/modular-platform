@@ -145,7 +145,7 @@ code in `.gitignore`, `Taskfile.yml` (`skills`), `skills-lock.json`, `AGENTS.md`
 ### 48. Dev branch and release flow · in-progress
 Add a long lived `dev` branch. Feature branches (`feat/...`) merge into `dev`, and `dev` merges into `main` only at a release. So `main` always holds the last release, and `dev` holds the work for the next one. This changes where CI runs, where release please looks, and where the release images are built from, so the flow has to be decided and written down before anything moves.
 **Done when:** a `dev` branch exists and feature branches merge into it (CI runs on pull requests that target `dev`, not only `main`); a release is one merge of `dev` into `main`, and release please, the release gate and the release image build still work from that merge; `main` and `dev` are protected the way you choose; and `AGENTS.md` (`## Git`) and the README (Releases) describe the flow, including how a fix for a released version reaches `dev` again.
-spec [0032](../specs/0032-dev-branch-release-flow.md) · code in `.github/workflows/`, `scripts/`, `deploy/github/`, `deploy/online/versions.env`, `renovate.json`, `libs/ci/`, `AGENTS.md`, `README.md`
+spec [0032](../specs/0032-dev-branch-release-flow/index.md) · code in `.github/workflows/`, `scripts/`, `deploy/github/`, `deploy/online/versions.env`, `renovate.json`, `libs/ci/`, `AGENTS.md`, `README.md`
 - [x] Design it (spec): `/architect dev branch and release flow`
 - [ ] Build it: `/develop dev branch and release flow`
    - [x] Branch rules check and CI on `dev`: script, workflow, act test, push trigger, `target-branch` (AC-1, AC-3, AC-4, AC-9)
