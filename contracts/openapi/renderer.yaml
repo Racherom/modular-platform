@@ -264,9 +264,10 @@ components:
     UseBinding:
       x-go-type: GraphBinding
       description: |
-        `instance` or `instance.provide`, or an object with that text as `provider` plus named
-        values (field name to value) for a binding to a provisioner. Written as a string when it
-        carries no named values.
+        `instance` or `instance.provide`, or an object with that text as `provider` plus values
+        (field name to value): the named values of a binding to a provisioner, or the fields a
+        direct binding lets the graph set (spec 0026, `graph: true` on the capability's field).
+        Written as a string when it carries no values.
       oneOf:
         - type: string
         - type: object
@@ -376,6 +377,12 @@ components:
           type: string
           enum: [to_consumer, to_provider, both]
           default: to_consumer
+        graph:
+          type: boolean
+          default: false
+          description: >-
+            The graph may set this field on a binding (spec 0026); only with `direction: to_provider`
+            and a text type. The value may hold `{field}` tokens naming text fields the provider gives.
     Yields:
       type: object
       description: What a provisioner makes per binding (spec 0014).

@@ -100,6 +100,22 @@ func (c *checker) capabilityField(p, name string, f CapabilityField) {
 	default:
 		c.add(p+".direction", CodeInvalidDirection, "direction %q is not to_consumer, to_provider or both", f.Direction)
 	}
+	if f.Graph && (f.Direction != ToProvider || f.IsFile() || f.Type == CapabilityFieldTypeEnum) {
+		c.add(p+".graph", CodeInvalidRule, "graph applies to a to_provider text field (string, int, bool or url) only")
+	}
+}
+
+// TokenSample replaces each {field} token of a graph value with x.example, the text the checks
+// test the value's rules against (spec 0026).
+func TokenSample(v string) string { return formatFieldRe.ReplaceAllString(v, "x.example") }
+
+// Tokens lists the field names a graph value's {field} tokens name, in order of appearance.
+func Tokens(v string) []string {
+	var out []string
+	for _, m := range formatFieldRe.FindAllStringSubmatch(v, -1) {
+		out = append(out, m[1])
+	}
+	return out
 }
 
 // CheckYields checks the yields of capability k against the capabilities by name (spec 0014).

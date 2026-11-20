@@ -1,0 +1,22 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: hostapp
+description: A web app served at the root of its own host, auth.{domain} unless the graph names another.
+image: example.test/hostapp:1.0.0
+provides:
+  site:
+    capability: http
+    version: "1.0"
+    port: 8080
+    fields:
+      host: {platform: host}
+      port: {platform: port}
+      url: {platform: url}
+uses:
+  public:
+    capability: http-ingress
+    fields:
+      host: {value: "auth.{domain}"}
+      upstream: {platform: url, provide: site}
+environment:
+  APP_HOST: "{public.host}"

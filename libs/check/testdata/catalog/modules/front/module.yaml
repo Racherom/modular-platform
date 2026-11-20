@@ -1,0 +1,15 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: front
+description: An ingress with fixed values, for the checks of hosts and routes.
+image: example.test/front:1.0.0
+provides:
+  public:
+    capability: http-ingress
+    version: "1.0"
+    port: 443
+    fields:
+      origin: {value: "https://example.test"}
+      domain: {value: example.test}
+      http_port: {value: "80"}
+      https_port: {value: "443"}

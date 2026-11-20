@@ -13,7 +13,7 @@ const (
 	EnvGID     = "gid"     // {gid}: the setup user's group id
 	EnvInstall = "install" // {install}: the install folder, platform flavor only
 	EnvConfig  = "config"  // {config.<value>}: one of the entry's config values
-	EnvUses    = "uses"    // {<slot>.<field>}: a text field of one of the entry's own bindings
+	EnvUses    = "uses"    // {<slot>.<field>}: a text field of one of the entry's own bindings, given or its own
 )
 
 // envPlaceholderRe finds the placeholders of an environment value: braces around text with no
@@ -59,8 +59,8 @@ func placeholder(text, inner string) EnvPart {
 }
 
 // environment checks the placeholders of every environment value (spec 0013): {uid}, {gid},
-// {install}, a declared config value, or a text field of a declared slot that reaches the
-// consumer.
+// {install}, a declared config value, or a text field of a declared slot: one the consumer
+// receives, or one of its own to_provider fields (spec 0026).
 func (c *moduleChecker) environment() {
 	slots := c.m.Slots()
 	for _, name := range sortedKeys(c.m.Environment) {
@@ -78,7 +78,7 @@ func (c *moduleChecker) environment() {
 					continue
 				}
 				f, ok := c.caps[slot.Capability].Fields[part.Field]
-				c.want(p, ok && !f.IsFile() && f.ToConsumer(), "%s names %s, which is not a text field slot %s receives", part.Text, part.Field, part.Name)
+				c.want(p, ok && !f.IsFile() && (f.ToConsumer() || f.ToProvider()), "%s names %s, which is not a text field of slot %s", part.Text, part.Field, part.Name)
 			}
 		}
 	}

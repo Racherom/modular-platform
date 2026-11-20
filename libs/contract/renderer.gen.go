@@ -406,7 +406,10 @@ type Capability struct {
 type CapabilityField struct {
 	Description string                   `json:"description"`
 	Direction   CapabilityFieldDirection `json:"direction,omitempty"`
-	Optional    bool                     `json:"optional,omitempty"`
+
+	// Graph The graph may set this field on a binding (spec 0026); only with `direction: to_provider` and a text type. The value may hold `{field}` tokens naming text fields the provider gives.
+	Graph    bool `json:"graph,omitempty"`
+	Optional bool `json:"optional,omitempty"`
 
 	// Pattern RE2, matched against the whole value; string only.
 	Pattern string `json:"pattern,omitempty"`
@@ -1023,9 +1026,10 @@ type Template struct {
 	Path string `json:"path"`
 }
 
-// UseBinding `instance` or `instance.provide`, or an object with that text as `provider` plus named
-// values (field name to value) for a binding to a provisioner. Written as a string when it
-// carries no named values.
+// UseBinding `instance` or `instance.provide`, or an object with that text as `provider` plus values
+// (field name to value): the named values of a binding to a provisioner, or the fields a
+// direct binding lets the graph set (spec 0026, `graph: true` on the capability's field).
+// Written as a string when it carries no values.
 type UseBinding = GraphBinding
 
 // Uses Slot name to its binding. `null` leaves an optional slot unbound on purpose. A missing key

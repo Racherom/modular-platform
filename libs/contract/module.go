@@ -316,7 +316,11 @@ func (c *moduleChecker) source(p string, k Capability, name string, field Capabi
 	case "value":
 		extra("value")
 		c.want(p, text, "value gives text, but %s is a %s", name, field.Type)
-		c.value(p, name, field, s.Value)
+		if field.Graph {
+			c.graphValue(p, name, field, s.Value)
+		} else {
+			c.value(p, name, field, s.Value)
+		}
 	case "config":
 		extra("config", "format")
 		c.want(p, text, "config gives text, but %s is a %s", name, field.Type)
@@ -370,6 +374,15 @@ func (c *moduleChecker) want(p string, ok bool, format string, args ...any) bool
 // value checks a literal against the field's type and rules.
 func (c *moduleChecker) value(p, name string, field CapabilityField, v string) {
 	if msg := FieldValueProblem(field, v); msg != "" {
+		c.add(p, CodeInvalidFieldSource, "%s: %s", name, msg)
+	}
+}
+
+// graphValue checks a literal of a graph field: each {field} token must name a text field of the
+// slot's capability that reaches the consumer, and the value with the tokens filled in must meet
+// the field's rules (spec 0026).
+func (c *moduleChecker) graphValue(p, name string, field CapabilityField, v string) {
+	if msg := FieldValueProblem(field, TokenSample(v)); msg != "" {
 		c.add(p, CodeInvalidFieldSource, "%s: %s", name, msg)
 	}
 }
@@ -505,7 +518,11 @@ func (c *moduleChecker) consumerSource(p, name string, field CapabilityField, s 
 		c.want(p, c.secret(s.Secret), "secret %q is not declared", s.Secret)
 	case s.Value != "" && len(keys) == 1:
 		c.want(p, !field.IsFile(), "value gives text, but %s is a %s", name, field.Type)
-		c.value(p, name, field, s.Value)
+		if field.Graph {
+			c.graphValue(p, name, field, s.Value)
+		} else {
+			c.value(p, name, field, s.Value)
+		}
 	case s.Platform != "" && s.Provide != "" && len(keys) == 2:
 		c.want(p, !field.IsFile(), "platform gives text, but %s is a %s", name, field.Type)
 		c.want(p, slices.Contains([]FieldSourcePlatform{FieldSourcePlatformUrl, FieldSourcePlatformHost, FieldSourcePlatformPort}, s.Platform),

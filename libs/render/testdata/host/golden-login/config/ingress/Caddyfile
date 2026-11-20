@@ -1,0 +1,44 @@
+# The ingress of host-login (spec 0015): one origin for every backend bound to it. Each route
+# keeps its path: a backend serves under <base path><route>.
+{
+	email "{$MP_ACME_EMAIL}"
+	servers {
+		# only TCP 80 and 443 are published
+		protocols h1 h2
+	}
+}
+
+# a real certificate: browsers may keep to HTTPS for this host
+(tls-acme) {
+	header Strict-Transport-Security "max-age=31536000"
+}
+
+(tls-internal) {
+	tls internal
+}
+
+# what every site shares: the certificate by tls-mode and the security headers. MP_TLS_MODE is
+# internal or acme, the caddy entry's tls-mode value
+(site-common) {
+	import tls-{$MP_TLS_MODE}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}
+
+{$INGRESS_DOMAIN} {
+	import site-common
+
+	handle {
+		respond 404
+	}
+}
+
+# hostapp is served at the root of its own host, never under the base path
+login.example.org {
+	import site-common
+	reverse_proxy http://hostapp.host-login.internal:8080
+}

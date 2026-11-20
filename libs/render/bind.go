@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -93,6 +94,11 @@ func (r *renderer) binding(b contract.Binding) error {
 	if err != nil {
 		return err
 	}
+	own, err := r.toProviderValues(b, k)
+	if err != nil {
+		return err
+	}
+	maps.Copy(values, own) // the consumer's own to_provider text; the delivery below skips it
 	if r.bound[b.Consumer] == nil {
 		r.bound[b.Consumer] = map[string]map[string]value{}
 	}
@@ -192,7 +198,7 @@ func (r *renderer) provisioned(e end) (map[string]value, error) {
 		return nil, err
 	}
 	y := admin.Yields
-	named := (*r.g.Modules[e.b.Consumer].Uses)[e.b.Slot].Named
+	named := (*r.g.Modules[e.b.Consumer].Uses)[e.b.Slot].Values
 	values := map[string]value{}
 	for _, f := range sortedKeys(y.Fields) {
 		switch src := y.Fields[f]; src.Kind {

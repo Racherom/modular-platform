@@ -17,8 +17,9 @@
 	tls internal
 }
 
-{$INGRESS_DOMAIN} {
-	# MP_TLS_MODE is internal or acme, the caddy entry's tls-mode value
+# what every site shares: the certificate by tls-mode and the security headers. MP_TLS_MODE is
+# internal or acme, the caddy entry's tls-mode value
+(site-common) {
 	import tls-{$MP_TLS_MODE}
 
 	header {
@@ -26,6 +27,10 @@
 		Referrer-Policy no-referrer
 		-Server
 	}
+}
+
+{$INGRESS_DOMAIN} {
+	import site-common
 
 	@api path {$INGRESS_BASE_PATH}/api {$INGRESS_BASE_PATH}/api/*
 	handle @api {

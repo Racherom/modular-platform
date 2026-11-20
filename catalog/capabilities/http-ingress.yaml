@@ -13,3 +13,4 @@ fields:
   upstream: {type: url, direction: to_provider, optional: true, description: URL the ingress forwards the route to.}
   server_name: {type: string, direction: to_provider, optional: true, description: TLS name the ingress verifies for an https upstream.}
   stream: {type: bool, direction: to_provider, optional: true, description: Whether responses stream (server sent events) without buffering.}
+  host: {type: string, direction: to_provider, optional: true, graph: true, pattern: "[a-z0-9-]+(\\.[a-z0-9-]+)+", description: "Host name the consumer is served at, at its root, instead of under the base path."}

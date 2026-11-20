@@ -1,0 +1,12 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  hosted:
+    module: hosted
+    uses:
+      public:
+        host: auth.{nope}
+        provider: ingress
+  ingress:
+    module: front
+name: host-token-unknown

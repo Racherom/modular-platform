@@ -11,11 +11,12 @@ import (
 )
 
 // GraphBinding is the binding of one slot in a graph (spec 0012): the provider text, `instance`
-// or `instance.provide`, plus the named values of a binding to a provisioner. It is written as a
-// string when it carries no named values, else as an object with the text under `provider`.
+// or `instance.provide`, plus its values: the named values of a binding to a provisioner, or the
+// fields a direct binding lets the graph set (spec 0026). It is written as a string when it
+// carries no values, else as an object with the text under `provider`.
 type GraphBinding struct {
 	Provider string            // instance or instance.provide
-	Named    map[string]string // field name to value; empty for a string binding
+	Values   map[string]string // field name to value: named values or graph set fields; empty for a string binding
 }
 
 // Instance is the provider instance the binding names.
@@ -33,25 +34,25 @@ func (b GraphBinding) Provide() string {
 // Clone returns a copy that shares no map with b.
 func (b GraphBinding) Clone() GraphBinding {
 	out := GraphBinding{Provider: b.Provider}
-	if len(b.Named) > 0 {
-		out.Named = maps.Clone(b.Named)
+	if len(b.Values) > 0 {
+		out.Values = maps.Clone(b.Values)
 	}
 	return out
 }
 
-// MarshalJSON writes the string form, or the object form when the binding has named values.
+// MarshalJSON writes the string form, or the object form when the binding has values.
 // encoding/json sorts the object's keys, so the text is canonical.
 func (b GraphBinding) MarshalJSON() ([]byte, error) {
-	if len(b.Named) == 0 {
+	if len(b.Values) == 0 {
 		return json.Marshal(b.Provider)
 	}
-	m := make(map[string]string, len(b.Named)+1)
-	maps.Copy(m, b.Named)
+	m := make(map[string]string, len(b.Values)+1)
+	maps.Copy(m, b.Values)
 	m["provider"] = b.Provider
 	return json.Marshal(m)
 }
 
-// UnmarshalJSON reads a string, or an object with a string `provider` and string named values.
+// UnmarshalJSON reads a string, or an object with a string `provider` and string values.
 func (b *GraphBinding) UnmarshalJSON(data []byte) error {
 	data = bytes.TrimSpace(data)
 	if len(data) > 0 && data[0] == '"' {
@@ -76,10 +77,10 @@ func (b *GraphBinding) UnmarshalJSON(data []byte) error {
 			out.Provider = v
 			continue
 		}
-		if out.Named == nil {
-			out.Named = map[string]string{}
+		if out.Values == nil {
+			out.Values = map[string]string{}
 		}
-		out.Named[k] = v
+		out.Values[k] = v
 	}
 	if out.Provider == "" {
 		return errors.New("a binding object needs a provider")

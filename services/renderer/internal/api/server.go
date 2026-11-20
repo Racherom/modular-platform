@@ -61,6 +61,9 @@ func (s *Server) Render(ctx context.Context, req RenderRequestObject) (RenderRes
 		return nil, err
 	}
 	out, err := render.Render(result, s.catalog, s.templates, s.source)
+	if refused, ok := errors.AsType[*render.RefusedError](err); ok {
+		return Render422JSONResponse(render.Refuse(result, refused.Problems)), nil
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -28,7 +28,7 @@ const (
 	CodeCapabilityNotProvided = "capability_not_provided"
 	CodeVersionMismatch       = "version_mismatch"
 	CodeAmbiguousProvide      = "ambiguous_provide"
-	CodeNamedNotAllowed       = "named_not_allowed"
+	CodeInvalidBinding        = "invalid_binding"
 	CodeUnknownNamedField     = "unknown_named_field"
 	CodeInvalidNamedValue     = "invalid_named_value"
 	CodeDuplicateNamedValue   = "duplicate_named_value"
@@ -152,6 +152,7 @@ func (p *checking) run() {
 	p.config(instances)
 	p.namedValues()
 	p.tokens()
+	p.hostOrRoute()
 	p.cycles(instances)
 	p.envNames(instances)
 	p.setupOrder(instances)
@@ -318,32 +319,102 @@ func (p *checking) explicit(i, s string, slot contract.Slot, r contract.Range, b
 		o = matching[0]
 	}
 
-	provisioned := p.provisions(o, c)
-	if len(b.Named) > 0 {
-		if !provisioned {
-			p.fail(CodeNamedNotAllowed, path, "Instance %s names values for %s, but %s provides %s directly, so there is nothing to make.", i, s, o.text(false), c)
-			return nil
-		}
-		y := p.caps[o.capability].Yields
-		target := p.caps[y.Capability]
-		bad := false
-		for _, k := range sortedKeys(b.Named) {
-			switch {
-			case !slices.Contains(y.Named, k):
-				p.fail(CodeUnknownNamedField, path+"."+k, "Provisioner %s names only %s, not %s.", o.capability, strings.Join(y.Named, ", "), k)
-				bad = true
-			default:
-				if msg := contract.FieldValueProblem(target.Fields[k], b.Named[k]); msg != "" {
-					p.fail(CodeInvalidNamedValue, path+"."+k, "The %s of %s is invalid: %s.", k, s, msg)
-					bad = true
-				}
-			}
-		}
-		if bad {
-			return nil
-		}
+	if len(b.Values) > 0 && !p.valuesOK(path, i, s, c, o, b) {
+		return nil
 	}
 	return &o
+}
+
+// valuesOK checks the values a graph writes on a binding: the named values of a binding to a
+// provisioner, or the fields a direct binding lets the graph set (spec 0026).
+func (p *checking) valuesOK(path, i, s, c string, o offer, b *contract.GraphBinding) bool {
+	if !p.provisions(o, c) {
+		return p.graphFields(path, i, s, c, b)
+	}
+	y := p.caps[o.capability].Yields
+	target := p.caps[y.Capability]
+	ok := true
+	for _, k := range sortedKeys(b.Values) {
+		switch {
+		case !slices.Contains(y.Named, k):
+			p.fail(CodeUnknownNamedField, path+"."+k, "Provisioner %s names only %s, not %s.", o.capability, strings.Join(y.Named, ", "), k)
+			ok = false
+		default:
+			if msg := contract.FieldValueProblem(target.Fields[k], b.Values[k]); msg != "" {
+				p.fail(CodeInvalidNamedValue, path+"."+k, "The %s of %s is invalid: %s.", k, s, msg)
+				ok = false
+			}
+		}
+	}
+	return ok
+}
+
+// graphFields checks the values a graph writes on a direct binding (spec 0026): each key is a
+// field the capability lets the graph set, each {field} token names a text field the provider
+// gives, and the value with its tokens filled in meets the field's rules. It reports whether the
+// binding is fine.
+func (p *checking) graphFields(path, i, s, capability string, b *contract.GraphBinding) bool {
+	k := p.caps[capability]
+	var settable []string
+	for _, f := range sortedKeys(k.Fields) {
+		if k.Fields[f].Graph {
+			settable = append(settable, f)
+		}
+	}
+	ok := true
+	for _, f := range sortedKeys(b.Values) {
+		field, known := k.Fields[f]
+		if !known || !field.Graph {
+			list := "no field"
+			if len(settable) > 0 {
+				list = strings.Join(settable, ", ")
+			}
+			p.fail(CodeInvalidBinding, path+"."+f, "Instance %s sets %s on %s, but the graph may set only %s of %s on a binding.", i, f, s, list, capability)
+			ok = false
+			continue
+		}
+		v := b.Values[f]
+		for _, t := range contract.Tokens(v) {
+			if tf, has := k.Fields[t]; !has || tf.IsFile() || !tf.ToConsumer() {
+				p.fail(CodeInvalidBinding, path+"."+f, "The %s of %s names {%s}, which is not a text field %s gives.", f, s, t, capability)
+				ok = false
+			}
+		}
+		if !ok {
+			continue
+		}
+		if msg := contract.FieldValueProblem(field, contract.TokenSample(v)); msg != "" {
+			p.fail(CodeInvalidNamedValue, path+"."+f, "The %s of %s is invalid: %s.", f, s, msg)
+			ok = false
+		}
+	}
+	return ok
+}
+
+// hostOrRoute reports each binding of a capability with a host and a route field that has both
+// (spec 0026): a consumer is served at a host or under a path, never both. The host may come from
+// the graph or from the consumer's entry; the route comes from the entry.
+func (p *checking) hostOrRoute() {
+	for _, b := range p.bindings {
+		k := p.caps[b.Capability]
+		if _, ok := k.Fields["host"]; !ok {
+			continue
+		}
+		if _, ok := k.Fields["route"]; !ok {
+			continue
+		}
+		gm := p.graph.Modules[b.Consumer]
+		slot := p.modules[gm.Module].Slots()[b.Slot]
+		graphHost := false
+		if gm.Uses != nil && (*gm.Uses)[b.Slot] != nil {
+			_, graphHost = (*gm.Uses)[b.Slot].Values["host"]
+		}
+		_, entryHost := slot.Fields["host"]
+		_, entryRoute := slot.Fields["route"]
+		if (graphHost || entryHost) && entryRoute {
+			p.fail(CodeInvalidBinding, usePath(b.Consumer, b.Slot)+".host", "Instance %s serves %s at a host and under a route; a binding has one or the other.", b.Consumer, b.Slot)
+		}
+	}
 }
 
 // versionMismatch reports offers that serve the slot's capability outside its range; short
@@ -440,14 +511,14 @@ func (p *checking) namedValues() {
 		gb := (*m.Uses)[b.Slot]
 		path := usePath(b.Consumer, b.Slot)
 		for _, f := range y.Named {
-			if _, ok := gb.Named[f]; ok {
+			if _, ok := gb.Values[f]; ok {
 				continue
 			}
-			if gb.Named == nil {
-				gb.Named = map[string]string{}
+			if gb.Values == nil {
+				gb.Values = map[string]string{}
 			}
 			v := DefaultName(b.Consumer, b.Slot)
-			gb.Named[f] = v
+			gb.Values[f] = v
 			b.Named = true
 			if msg := contract.FieldValueProblem(target.Fields[f], v); msg != "" {
 				p.fail(CodeInvalidNamedValue, path+"."+f, "The default %s %q of %s breaks its pattern; name it in the graph.", f, v, b.Slot)
@@ -458,15 +529,15 @@ func (p *checking) namedValues() {
 			seen[key] = map[string]string{}
 		}
 		for _, f := range y.Named {
-			v := gb.Named[f]
+			v := gb.Values[f]
 			if first, dup := seen[key][f+"="+v]; dup {
 				p.fail(CodeDuplicateNamedValue, path+"."+f, "The %s %q of %s is already used by %s on %s.", f, v, b.Slot, first, key)
 				continue
 			}
 			seen[key][f+"="+v] = path
 		}
-		if y.Login != "" && gb.Named[y.Login] == p.adminLogin(b.Provider, b.Provide, y.Login) {
-			p.fail(CodeInvalidNamedValue, path+"."+y.Login, "The %s %q of %s is the provider's admin login; name another.", y.Login, gb.Named[y.Login], b.Slot)
+		if y.Login != "" && gb.Values[y.Login] == p.adminLogin(b.Provider, b.Provide, y.Login) {
+			p.fail(CodeInvalidNamedValue, path+"."+y.Login, "The %s %q of %s is the provider's admin login; name another.", y.Login, gb.Values[y.Login], b.Slot)
 		}
 	}
 }

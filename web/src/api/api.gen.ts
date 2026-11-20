@@ -767,6 +767,11 @@ export interface components {
              * @enum {string}
              */
             direction: "to_consumer" | "to_provider" | "both";
+            /**
+             * @description The graph may set this field on a binding (spec 0026); only with `direction: to_provider` and a text type. The value may hold `{field}` tokens naming text fields the provider gives.
+             * @default false
+             */
+            graph: boolean;
         };
         /** @description `named`, `generate`, `output`, or `{admin: <field of the provisioner>}`. */
         YieldSource: ("named" | "generate" | "output") | {
@@ -837,9 +842,10 @@ export interface components {
             };
         };
         /**
-         * @description `instance` or `instance.provide`, or an object with that text as `provider` plus named
-         *     values (field name to value) for a binding to a provisioner. Written as a string when it
-         *     carries no named values.
+         * @description `instance` or `instance.provide`, or an object with that text as `provider` plus values
+         *     (field name to value): the named values of a binding to a provisioner, or the fields a
+         *     direct binding lets the graph set (spec 0026, `graph: true` on the capability's field).
+         *     Written as a string when it carries no values.
          */
         UseBinding: string | ({
             provider: string;

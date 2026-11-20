@@ -126,9 +126,20 @@ func (r *renderer) clientValues(b contract.Binding) (map[string]string, error) {
 	out := map[string]string{}
 	slot := r.modules[r.g.Modules[b.Consumer].Module].Slots()[b.Slot]
 	k := r.caps[b.Capability]
+	for _, f := range graphFields(k) {
+		text, ok := r.graphText(b, f)
+		if !ok {
+			continue
+		}
+		v, err := r.fill(b, text, true) // the ingress's file reads {$ENV} itself
+		if err != nil {
+			return nil, err
+		}
+		out[f] = v.text
+	}
 	for f, src := range slot.Fields {
 		field := k.Fields[f]
-		if field.IsFile() || field.Direction != contract.ToProvider {
+		if field.IsFile() || field.Direction != contract.ToProvider || field.Graph {
 			continue
 		}
 		switch {

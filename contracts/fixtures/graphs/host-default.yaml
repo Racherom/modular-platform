@@ -1,0 +1,10 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  hosted:
+    module: hosted
+    uses:
+      public: ingress
+  ingress:
+    module: front
+name: host-default

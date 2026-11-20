@@ -199,6 +199,10 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 		r.caps[c.Name] = c
 	}
 
+	if err := refuseGraphValues(result, f); err != nil {
+		return rendered{}, err
+	}
+
 	instances := sortedKeys(r.g.Modules)
 	for _, i := range instances {
 		gm := r.g.Modules[i]
@@ -220,10 +224,8 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 		return rendered{}, err
 	}
 	r.neverPull()
-	for _, b := range deliveryOrder(instances, result.Bindings) {
-		if err := r.binding(b); err != nil {
-			return rendered{}, err
-		}
+	if err := r.bindAll(instances, result.Bindings); err != nil {
+		return rendered{}, err
 	}
 	if err := r.revokeJobs(); err != nil {
 		return rendered{}, err

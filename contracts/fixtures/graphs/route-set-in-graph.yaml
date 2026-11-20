@@ -1,0 +1,12 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  ingress:
+    module: front
+  routed:
+    module: routed
+    uses:
+      public:
+        provider: ingress
+        route: /other
+name: route-set-in-graph

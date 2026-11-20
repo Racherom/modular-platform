@@ -27,7 +27,7 @@ export function parseGraph(text: string): Graph {
 
 /**
  * Writes the canonical text, byte identical to the Go writer (AC-19): keys sorted (so an object
- * binding writes database, provider, user), a binding as a string unless it has named values,
+ * binding writes database, provider, user), a binding as a string unless it has values,
  * each config value double quoted and an empty or null config left out (spec 0025),
  * formatVersion left out at 1.0, no line wrapping. Version 1.1 makes the writer quote YAML 1.1
  * words like yes and on the way the Go side does.
