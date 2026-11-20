@@ -249,9 +249,9 @@ components:
       description: |
         Config value name to its text, for a module instance (spec 0025). Each value is a string,
         never expanded; it becomes the value's default in the render, and `.env` can still
-        override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
-        `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
-        empty map is left out.
+        override it. A secret value, a `{uid}`, `{gid}`, `{install}` or `{install}/...` default and
+        a value a `host_mounts` source names cannot be set here. Written double quoted, keys
+        sorted; an empty map is left out.
       additionalProperties:
         type: string
     Uses:
@@ -821,7 +821,7 @@ components:
           default: false
     HostPath:
       x-go-type: HostPathRef
-      description: "An absolute path, `{config: <value>}` or `{install: <relative path>}`."
+      description: "An absolute path, `{config: <value>}`, `{install: <relative path>}`, or `{install: .}` for the install folder itself (platform flavor; `create` is refused on it)."
       oneOf:
         - type: string
         - type: object

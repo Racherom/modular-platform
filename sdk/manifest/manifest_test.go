@@ -146,6 +146,21 @@ func TestIsBootstrap(t *testing.T) {
 	}
 }
 
+// TestInstallToken covers the defaults the render fills at install time: the setup user's ids,
+// the install folder itself (spec 0016) and a path in it, but no other text that only looks like
+// one.
+func TestInstallToken(t *testing.T) {
+	t.Parallel()
+	for s, want := range map[string]bool{
+		"{uid}": true, "{gid}": true, "{install}": true, "{install}/stacks": true,
+		"": false, "{install}stacks": false, "{install}x": false, "/var/{install}": false, "{UID}": false, "install": false,
+	} {
+		if got := manifest.InstallToken(s); got != want {
+			t.Errorf("InstallToken(%q) = %v, want %v", s, got, want)
+		}
+	}
+}
+
 func TestGoName(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]string{
