@@ -32,6 +32,8 @@ jobs:
           # never github.token: Actions may not open or approve pull requests here, and a
           # pull request opened with it starts no CI; see README, Releases
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # explicit: the release pull request is always cut from main, never from dev (spec 0032)
+          target-branch: main
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
