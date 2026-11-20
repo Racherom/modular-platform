@@ -75,7 +75,7 @@ func (r *renderer) installTime(svc *types.ServiceConfig, i string, m contract.Mo
 	r.data.NeedEnvGet = true // check_env reads each line back
 	for _, name := range sortedKeys(m.Config) {
 		v := m.Config[name]
-		if strings.HasPrefix(v.Default, installPrefix) && r.flavor != flavorPlatform {
+		if installDefault(v.Default) && r.flavor != flavorPlatform {
 			return fmt.Errorf("%w: {install} in config value %s of module %s belongs to the platform flavor", ErrNotRendered, name, m.Name)
 		}
 		check := envCheck{Var: contract.ComposeVar(i, name)}
@@ -157,18 +157,32 @@ func orEmpty(c *contract.InstanceConfig) *contract.InstanceConfig {
 	return c
 }
 
-// installPrefix starts a default in the install folder, which only the platform flavor renders.
-const installPrefix = "{install}/"
+// The install folder tokens, which only the platform flavor renders: the folder itself (spec
+// 0016), and the start of a path in it.
+const (
+	installToken  = "{install}"
+	installPrefix = installToken + "/"
+)
 
-// tokenDefault reports whether def is the setup user's id, {uid} or {gid}, or a path in the
-// install folder, {install}/<relative>, which renders as a variable setup.sh writes rather than
-// as a value of its own (spec 0013).
-func tokenDefault(def string) bool {
-	return def == "{uid}" || def == "{gid}" || strings.HasPrefix(def, installPrefix)
+// installDefault reports whether def is the install folder, {install}, or a path in it,
+// {install}/<relative>.
+func installDefault(def string) bool {
+	return def == installToken || strings.HasPrefix(def, installPrefix)
 }
 
-// tokenText is a token default as Compose text: ${MP_UID}, ${MP_GID} or ${MP_DIR}/<relative>.
+// tokenDefault reports whether def is the setup user's id, {uid} or {gid}, or the install folder
+// or a path in it, which renders as a variable setup.sh writes rather than as a value of its own
+// (spec 0013).
+func tokenDefault(def string) bool {
+	return def == "{uid}" || def == "{gid}" || installDefault(def)
+}
+
+// tokenText is a token default as Compose text: ${MP_UID}, ${MP_GID}, ${MP_DIR} or
+// ${MP_DIR}/<relative>.
 func tokenText(def string) string {
+	if def == installToken {
+		return "${MP_DIR}"
+	}
 	if rel, ok := strings.CutPrefix(def, installPrefix); ok {
 		return "${MP_DIR}/" + escape(rel)
 	}
@@ -341,9 +355,15 @@ func (r *renderer) steps(bindings []contract.Binding) error {
 func (r *renderer) stepRun(i string, m contract.Module, s contract.SetupStep, client *contract.Binding) (stepRun, error) {
 	expand := func(text string) string { return text }
 	run := stepRun{Title: s.Name + " of " + i, Out: "secrets/" + i}
+	keep := SetupRun{
+		Instance: i, Name: s.Name, Image: m.Image,
+		Entrypoint: []string{}, Command: []string{}, Env: map[string]string{}, AskEnv: map[string]string{},
+		Reads: []SetupRead{}, Writes: []SetupWrite{},
+	}
 	if client != nil {
 		expand = func(text string) string { return strings.ReplaceAll(text, contract.ClientToken, client.Consumer) }
 		run.Title += " for " + client.Consumer
+		keep.Client = client.Consumer
 	}
 	args := []string{
 		"--rm -i --network none", `--user "$(id -u):$(id -g)"`,
@@ -358,20 +378,32 @@ func (r *renderer) stepRun(i string, m contract.Module, s contract.SetupStep, cl
 			continue // an optional field the binding leaves out, or an unbound slot
 		}
 		run.Reads = append(run.Reads, file)
+		keep.Reads = append(keep.Reads, SetupRead{Path: file, Mount: target})
 		args = append(args, `-v "$PWD/`+file+":"+target+`:ro"`)
 	}
 	args = append(args, "-e "+shellQuote("MP_GRAPH="+r.g.Name), "-e "+shellQuote("MP_INSTANCE="+i))
 	for _, name := range sortedKeys(m.Config) {
 		if v := m.Config[name]; v.Asked() && v.Type != contract.ConfigValueTypeSecret {
-			args = append(args, `-e "MP_ASK_`+envPart(name)+"=$("+r.answer(i, name)+`)"`)
+			ask := "MP_ASK_" + envPart(name)
+			if text, set := r.graphValue(i, name); set {
+				keep.Env[ask] = text
+			} else {
+				keep.AskEnv[ask] = contract.ComposeVar(i, name)
+			}
+			args = append(args, `-e "`+ask+"=$("+r.answer(i, name)+`)"`)
 		}
 	}
 	for _, k := range sortedKeys(s.Env) {
+		keep.Env[k] = expand(s.Env[k])
 		args = append(args, "-e "+shellQuote(k+"="+expand(s.Env[k])))
 	}
 	entrypoint := make([]string, len(s.Entrypoint))
 	for n, e := range s.Entrypoint {
 		entrypoint[n] = expand(e)
+	}
+	keep.Entrypoint = append(keep.Entrypoint, entrypoint...)
+	for _, c := range s.Command {
+		keep.Command = append(keep.Command, expand(c))
 	}
 	if len(entrypoint) > 0 {
 		args = append(args, "--entrypoint "+shellQuote(entrypoint[0]))
@@ -394,7 +426,9 @@ func (r *renderer) stepRun(i string, m contract.Module, s contract.SetupStep, cl
 		}
 		run.Writes = append(run.Writes, path)
 		run.Modes = append(run.Modes, mode+" "+strings.TrimSuffix(path, "/"))
+		keep.Writes = append(keep.Writes, SetupWrite{Name: expand(w.Name), Mode: mode})
 	}
+	r.runs = append(r.runs, keep)
 	for _, a := range s.Asks {
 		run.Asks = append(run.Asks, shellQuote(a.Description)+" "+strconv.FormatBool(a.Secret))
 	}

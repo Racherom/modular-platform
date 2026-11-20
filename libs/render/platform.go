@@ -18,7 +18,18 @@ const PlatformStack = "platform"
 // its values in binding order. The project is named after the graph. With WithSource it builds
 // the unreleased platform images as the static zip does, and gives their services pull_policy:
 // never, since the keeper's compose pull fails on an image only built on this host (spec 0030).
+//
+// WithKeeper renders the keeper's output instead (spec 0016) and returns a *RefusedError for a
+// graph the keeper cannot set up.
 func Platform(result contract.CheckResult, catalog contract.Catalog, templates contract.Templates, opts ...Option) (Output, error) {
+	if !result.Ok {
+		return Output{}, ErrGraphHasErrors
+	}
+	if optionsOf(opts).keeper {
+		if problems := keeperRefusals(result, catalog); len(problems) > 0 {
+			return Output{}, &RefusedError{Problems: problems, flavor: "platform"}
+		}
+	}
 	r, err := renderProject(result, catalog, templates, flavorPlatform, func(p *types.Project, jobs map[string]job) {
 		label(p, result.Graph, jobs, PlatformStack)
 	}, opts...)

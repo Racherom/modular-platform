@@ -69,7 +69,11 @@ type secret struct {
 	PerBinding        bool   // generated for one binding, after the module secrets
 	Output            bool   // a file a provision job writes: setup.sh makes it empty (spec 0014)
 	Capability, Field string // placed only: the external provide's capability and field
-	Description       string // placed only: the field's description
+	Description       string // placed: the field's description; shown: the secret's
+	// Format and Show are a module secret's format and show: once (spec 0016); only the keeper
+	// render reads them, from setup.json.
+	Format contract.SecretFormat
+	Show   bool
 }
 
 type templateData struct {
@@ -92,6 +96,8 @@ type templateData struct {
 	NeedDuration bool // setup.sh checks a duration
 	WaitAnchor   bool // the stack has the wait anchor mp_jobs (spec 0014, "Waiting")
 	Platform     bool // the platform flavor: setup.sh writes MP_DIR, .env.example holds the blocks
+
+	Keeper *keeperScript // a keeper render (WithKeeper): setup.sh installs into the state folder and starts the seed
 
 	Builds      []imageBuild // unreleased platform images setup.sh builds first (spec 0030)
 	SourceRef   string       // the git ref those builds use
@@ -143,12 +149,14 @@ type renderer struct {
 	g         contract.Graph
 	flavor    flavor
 	templates contract.Templates
+	opts      options
 	modules   map[string]contract.Module
 	caps      map[string]contract.Capability
 	project   types.Project
 	data      templateData
 	jobs      map[string]job
 	declared  map[string]bool // secret file paths already listed for setup.sh or as placed
+	runs      []SetupRun      // every setup step run, for setup.json (spec 0016)
 
 	bound      map[string]map[string]map[string]value // consumer, slot, field to its value
 	admin      map[string]map[string]value            // provider.provide to its admin field values
@@ -168,6 +176,7 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 		g:          result.Graph,
 		flavor:     f,
 		templates:  templates,
+		opts:       optionsOf(opts),
 		modules:    make(map[string]contract.Module, len(catalog.Modules)),
 		caps:       make(map[string]contract.Capability, len(catalog.Capabilities)),
 		data:       templateData{Name: result.Graph.Name, Platform: f == flavorPlatform},
@@ -206,7 +215,7 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 		}
 		r.project.Services[i] = svc
 	}
-	builds, err := r.imageBuilds(opts)
+	builds, err := r.imageBuilds()
 	if err != nil {
 		return rendered{}, err
 	}
@@ -241,11 +250,22 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 		r.project.Networks[networkEgress] = types.NetworkConfig{}
 	}
 	r.sortData()
+	var keeper string
+	var setup Setup
+	if r.opts.keeper && f == flavorPlatform {
+		keeper = r.keeperInstance()
+		setup = r.setup(keeper)
+		r.data.Keeper = r.keeperScript(keeper, setup)
+	}
 
 	if finish != nil {
 		finish(&r.project, r.jobs)
 	}
-	compose, err := composeYAML(r.project)
+	project, keeperFiles, err := splitProject(r.project, keeper, setup)
+	if err != nil {
+		return rendered{}, err
+	}
+	compose, err := composeYAML(project)
 	if err != nil {
 		return rendered{}, err
 	}
@@ -257,29 +277,67 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 		{Path: "docker-compose.yml", Mode: 0o644, Data: compose},
 		{Path: "graph.yaml", Mode: 0o644, Data: graphText},
 	}
+	projectFiles, err := r.projectFiles(f, keeper != "")
+	if err != nil {
+		return rendered{}, err
+	}
+	files = append(files, projectFiles...)
+	files = append(files, r.envFiles(instances)...)
+	files = append(files, configs...)
+	files = append(files, builds...)
+	files = append(files, keeperFiles...)
+	slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
+	return rendered{out: Output{Name: r.project.Name, Files: files}, data: r.data, jobs: r.jobs}, nil
+}
+
+// projectFiles renders the top level files from the templates: setup.sh, the env file and the
+// README.
+func (r *renderer) projectFiles(f flavor, keeper bool) ([]File, error) {
+	var files []File
 	for _, t := range []struct {
 		path, template string
 		mode           fs.FileMode
 	}{
-		{"setup.sh", "setup.sh.tmpl", 0o755},
+		{"setup.sh", setupTemplate(keeper), 0o755},
 		{envName(f), "env.tmpl", 0o644},
 		{"README.md", readmeTemplate(f), 0o644},
 	} {
 		var buf bytes.Buffer
 		if err := projectTemplates.ExecuteTemplate(&buf, t.template, r.data); err != nil {
-			return rendered{}, fmt.Errorf("render %s: %w", t.path, err)
+			return nil, fmt.Errorf("render %s: %w", t.path, err)
 		}
 		files = append(files, File{Path: t.path, Mode: t.mode, Data: buf.Bytes()})
 	}
+	return files, nil
+}
+
+// envFiles writes the env file of each sdk module instance.
+func (r *renderer) envFiles(instances []string) []File {
+	var files []File
 	for _, i := range instances {
 		if gm := r.g.Modules[i]; gm.External == nil && r.modules[gm.Module].Runtime == contract.Sdk {
 			files = append(files, File{Path: envFilePath(i), Mode: 0o644, Data: envFile(i, r.modules[gm.Module], gm.Config)})
 		}
 	}
-	files = append(files, configs...)
-	files = append(files, builds...)
-	slices.SortFunc(files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
-	return rendered{out: Output{Name: r.project.Name, Files: files}, data: r.data, jobs: r.jobs}, nil
+	return files
+}
+
+// splitProject moves the keeper's services into their own Compose file when there is a keeper
+// (spec 0016): it returns the main project and the keeper's files (keeper.yml and setup.json).
+func splitProject(p types.Project, keeper string, setup Setup) (types.Project, []File, error) {
+	if keeper == "" {
+		return p, nil, nil
+	}
+	project, keeperProject := splitKeeper(p, keeper)
+	keeperYAML, err := composeYAML(keeperProject)
+	if err != nil {
+		return types.Project{}, nil, err
+	}
+	setupJSON, err := MarshalSetup(setup)
+	if err != nil {
+		return types.Project{}, nil, fmt.Errorf("render: %w", err)
+	}
+	return project, []File{{Path: "keeper.yml", Mode: 0o644, Data: keeperYAML}, {Path: "setup.json", Mode: 0o644, Data: setupJSON}}, nil
 }
 
 // askInBindingOrder sorts the asked values by their instance's place in the binding order, so a
@@ -315,6 +373,15 @@ func envName(f flavor) string {
 		return ".env.example"
 	}
 	return ".env"
+}
+
+// setupTemplate is the setup.sh of a render: the keeper's, which installs the platform into its
+// state folder and starts the seed (spec 0016), or the one every other render writes.
+func setupTemplate(keeper bool) string {
+	if keeper {
+		return "keeper-setup.sh.tmpl"
+	}
+	return "setup.sh.tmpl"
 }
 
 // readmeTemplate is the README of flavor f: the platform's own guide, or the stack's.
@@ -372,7 +439,10 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 			setEnv(&svc, s.Env, target)
 		}
 		if s.From != contract.SecretFromAsk { // setup.sh asks it instead
-			r.generated(i, path, false)
+			r.generatedSecret(secret{
+				Instance: i, Path: path, Description: s.Description,
+				Format: s.Format, Show: s.Show == contract.SecretShowOnce,
+			})
 		}
 	}
 	for _, n := range sortedKeys(m.Volumes) {
@@ -505,11 +575,16 @@ func (r *renderer) mountSecret(svc *types.ServiceConfig, name, path, target stri
 // generated lists path once as a file setup.sh (or the deployer) creates; perBinding marks a
 // file of one binding, which setup.sh creates after the module secrets.
 func (r *renderer) generated(instance, path string, perBinding bool) {
-	if r.declared[path] {
+	r.generatedSecret(secret{Instance: instance, Path: path, PerBinding: perBinding})
+}
+
+// generatedSecret lists s once as a file setup.sh (or the keeper) creates.
+func (r *renderer) generatedSecret(s secret) {
+	if r.declared[s.Path] {
 		return
 	}
-	r.declared[path] = true
-	r.data.Secrets = append(r.data.Secrets, secret{Instance: instance, Path: path, PerBinding: perBinding})
+	r.declared[s.Path] = true
+	r.data.Secrets = append(r.data.Secrets, s)
 }
 
 // placed lists path once as a file you place.

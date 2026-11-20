@@ -117,10 +117,22 @@ func Unreleased(image string) bool {
 type options struct {
 	source      SourceRef
 	dockerfiles map[string][]byte // module name to its Dockerfile; nil without WithSource
+	keeper      bool              // the platform flavor renders for the keeper (WithKeeper)
 }
 
 // Option changes one render.
 type Option func(*options)
+
+// optionsOf applies opts in order; a nil Option is skipped.
+func optionsOf(opts []Option) options {
+	var o options
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	return o
+}
 
 // WithSource lets a render build the unreleased platform images it names (spec 0030): each such
 // module's Dockerfile, from dockerfiles by module name, goes into the zip as
@@ -146,13 +158,8 @@ func (b imageBuild) Dockerfile() string { return "build/" + b.Module + "/Dockerf
 // imageBuilds collects, once per module, the unreleased platform images of the placed modules,
 // sorted by module name, and the Dockerfile file of each. It walks the instances in name order,
 // so a missing Dockerfile always names the same module. It does nothing without WithSource.
-func (r *renderer) imageBuilds(opts []Option) ([]File, error) {
-	var o options
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&o)
-		}
-	}
+func (r *renderer) imageBuilds() ([]File, error) {
+	o := r.opts
 	if o.dockerfiles == nil {
 		return nil, nil
 	}

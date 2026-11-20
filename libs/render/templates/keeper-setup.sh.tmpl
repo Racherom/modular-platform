@@ -1,0 +1,187 @@
+#!/bin/sh
+# Installs the platform {{.Name}} and starts it from one container (spec 0016). Run it as root:
+#
+#	sudo sh setup.sh
+#
+# At a fresh install it asks{{if .NeedAsk}} a few values{{else}} nothing{{end}}, copies this folder into the state folder
+# ($MP_STATE_DIR, default /var/lib/modular-platform) and starts the seed. The seed creates every
+# secret, runs every setup step and brings the platform up, then hands over to the keeper. Run
+# again, setup.sh asks nothing and changes no file; it starts the seed only when no keeper runs.
+set -eu
+
+if [ "$(id -u)" -ne 0 ]; then
+	echo "run as root: sudo sh setup.sh" >&2
+	exit 1
+fi
+{{- if .Builds}}
+{{template "source-path" .}}
+{{- end}}
+here=$(cd "$(dirname "$0")" && pwd -P)
+umask 077
+
+# The state folder holds the platform's files, secrets and data, for root only. Compose and the
+# keeper see it at the same path, so it holds only plain characters.
+dir=${MP_STATE_DIR:-/var/lib/modular-platform}
+case $dir in
+/*) ;;
+*)
+	echo "setup.sh: MP_STATE_DIR=$dir is not an absolute path" >&2
+	exit 1
+	;;
+esac
+case $dir in
+*[!A-Za-z0-9._/-]*)
+	echo "setup.sh: the state folder $dir may hold only A to Z, a to z, 0 to 9, ., _, - and /; set MP_STATE_DIR to another path" >&2
+	exit 1
+	;;
+esac
+seed={{shellQuote (printf "%s-seed" .Name)}}
+{{- if .Placed}}
+
+# Files you place yourself: in the state folder once it holds the platform, else beside
+# setup.sh, which copies them in. Nothing is created in their place.
+if [ -f "$dir/docker-compose.yml" ]; then
+	place=$dir
+else
+	place=$here
+fi
+missing=0
+need() {
+	if [ ! -e "$place/$1" ]; then
+		echo "missing $place/$1: $2" >&2
+		missing=1
+	fi
+}
+{{range .Placed}}
+need {{.Path}} {{shellQuote (printf "%s of %s, a %s service. %s" .Field .Instance .Capability .Description)}}
+{{- end}}
+if [ "$missing" -ne 0 ]; then
+	echo "setup.sh: place the files above, then run it again" >&2
+	exit 1
+fi
+{{- end}}
+{{- if .Builds}}
+cd "$here"
+{{template "builds" .}}
+{{- end}}
+
+# env_get NAME prints the value of NAME in .env, with each $$ read back as $.
+env_get() {
+	sed -n "s/^$1=//p" .env 2>/dev/null | tail -n 1 | sed 's/\$\$/$/g'
+}
+
+# env_set NAME VALUE adds NAME to .env unless it is there already: unquoted, with each $ written
+# $$, which Compose reads back as one $.
+env_set() {
+	if grep -q "^$1=" .env 2>/dev/null; then
+		echo "kept    $1 in .env"
+		return 0
+	fi
+	printf '%s=%s\n' "$1" "$(printf '%s' "$2" | sed 's/\$/$$/g')" >> .env
+	echo "added   $1 to .env"
+}
+{{- if .GraphSet}}
+{{template "graph-set" .}}
+{{- end}}
+{{- if .NeedDuration}}
+{{template "nanoseconds" .}}
+{{- end}}
+{{- if .NeedValid}}
+{{template "valid" .}}
+{{- end}}
+{{- if .NeedAsk}}
+{{template "answers" .}}
+{{template "ask" .}}
+{{- end}}
+
+if [ ! -f "$dir/docker-compose.yml" ]; then
+	echo "installing the platform into $dir"
+	mkdir -p "$dir"
+	chmod 0700 "$dir"
+	# Every file of this folder but setup.sh, with its mode from the zip. docker-compose.yml comes
+	# last, so a run that stops early is a fresh install again; answers it gave are kept.
+	umask 022
+	(cd "$here" && find . -type f ! -path ./setup.sh ! -path ./docker-compose.yml) |
+		while IFS= read -r file; do
+			mkdir -p "$dir/$(dirname "$file")"
+			cp "$here/$file" "$dir/$file"
+		done
+	umask 077
+	cd "$dir"
+	env_set MP_DIR "$dir"
+	env_set MP_UID {{.Keeper.UID}}
+	env_set MP_GID {{.Keeper.UID}}
+	# dev and CI only: the Compose files of the platform project, and the keeper image
+	if [ -n "${COMPOSE_FILE:-}" ]; then
+		env_set COMPOSE_FILE "$COMPOSE_FILE"
+	fi
+	if [ -n "${ {{- .Keeper.ImageVar}}:-}" ]; then
+		env_set {{.Keeper.ImageVar}} "${{.Keeper.ImageVar}}"
+	fi
+{{- range .Placed}}
+	chown {{$.Keeper.UID}}:{{$.Keeper.UID}} {{.Path}}
+{{- end}}
+{{- if .Asked}}
+
+	# Values the modules ask you, written into .env{{if .GraphSet}}, unless the graph answers them{{end}}.
+{{- range .Asked}}
+	{{.Func}} {{.Args}}
+{{- end}}
+{{- end}}
+	umask 022
+	cp "$here/docker-compose.yml" "$dir/docker-compose.yml"
+	umask 077
+else
+	echo "the platform is installed in $dir: nothing is asked and no file changes"
+	cd "$dir"
+fi
+
+# keeper_running [FILTER...] succeeds when a keeper container runs: the keeper instance's labels
+# and the Compose project of a keeper definition. A seed never carries the instance label.
+keeper_running() {
+	docker ps "$@" --filter "label={{.Keeper.StackLabel}}={{.Keeper.Stack}}" --filter "label={{.Keeper.InstanceLabel}}={{.Keeper.Instance}}" \
+		--format '{{"{{"}}.Label "com.docker.compose.project"{{"}}"}}' | grep -q '^{{.Name}}-keeper-'
+}
+
+if keeper_running; then
+	echo "already running"
+elif [ "$(docker inspect -f '{{"{{"}}.State.Running{{"}}"}}' "$seed" 2>/dev/null)" = true ]; then
+	echo "the seed $seed is still starting the platform"
+else
+	docker rm -f "$seed" >/dev/null 2>&1 || true
+	image=$(sed -n 's/^{{.Keeper.ImageVar}}=//p' "$dir/.env" | tail -n 1)
+	[ -n "$image" ] || image={{shellQuote .Keeper.Image}}
+	echo "starting the seed $seed from $image"
+	docker run -d --name "$seed" --restart unless-stopped \
+		--label "{{.Keeper.StackLabel}}={{.Keeper.Stack}}" --label "{{.Keeper.ModuleLabel}}={{.Keeper.Module}}" \
+		-v /var/run/docker.sock:/var/run/docker.sock -v "$dir:$dir" \
+		{{if .Keeper.Entrypoint}}--entrypoint {{.Keeper.Entrypoint}} {{end}}"$image" {{.Keeper.Command}} --state "$dir" >/dev/null
+fi
+
+if [ -e .shown ]; then
+	echo "The platform runs from $dir."
+	exit 0
+fi
+# The first start: wait until a keeper is healthy and the seed is gone, then print what only this
+# run shows. A run that stops before the print prints it next time.
+echo "waiting for the platform's first start (up to 15 minutes)"
+waited=0
+until keeper_running --filter health=healthy && ! docker inspect "$seed" >/dev/null 2>&1; do
+	restarts=$(docker inspect -f '{{"{{"}}.RestartCount{{"}}"}}' "$seed" 2>/dev/null || echo 0)
+	if [ "$waited" -ge 900 ] || [ "${restarts:-0}" -gt 3 ]; then
+		echo "setup.sh: the platform did not finish its first start; see: docker logs $seed" >&2
+		exit 1
+	fi
+	sleep 5
+	waited=$((waited + 5))
+done
+echo
+{{- range .Keeper.Shown}}
+printf '%s: %s\n' {{shellQuote .Description}} "$(cat {{.Path}})"
+{{- end}}
+{{- if .Keeper.OriginVar}}
+echo "Open $(env_get {{.Keeper.OriginVar}}) and sign in."
+{{- else}}
+echo "Open the platform's origin and sign in."
+{{- end}}
+: > .shown

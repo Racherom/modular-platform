@@ -67,14 +67,16 @@ type ManagedProject struct {
 // CodeSetupRequired refuses a deployed instance that needs setup.sh (spec 0013, Managed flavor).
 const CodeSetupRequired = "setup_required"
 
-// RefusedError lists why the managed flavor refuses an ok check result, one error per instance and
-// code, sorted by path then code; nothing was rendered.
+// RefusedError lists why the managed flavor, or the platform flavor with WithKeeper, refuses an
+// ok check result, one error per instance and code, sorted by path then code; nothing was
+// rendered.
 type RefusedError struct {
 	Problems []contract.Problem
+	flavor   string // the flavor that refused; "" is managed
 }
 
 func (e *RefusedError) Error() string {
-	return fmt.Sprintf("render: the managed flavor refuses the graph: %d problems", len(e.Problems))
+	return fmt.Sprintf("render: the %s flavor refuses the graph: %d problems", cmp.Or(e.flavor, "managed"), len(e.Problems))
 }
 
 // Refuse returns result refused with problems: not ok, no digest, a warning that one of problems
