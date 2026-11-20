@@ -21,16 +21,12 @@ WHERE expires_at <= now() OR last_seen_at <= now() - sqlc.arg(idle)::interval;
 SELECT * FROM admin_binding WHERE singleton;
 
 -- name: BindAdmin :one
--- atomic: of two first sign ins at once, one inserts and the other reads the winner
-WITH bound AS (
-    INSERT INTO admin_binding (iss, sub, email) VALUES ($1, $2, $3)
-    ON CONFLICT (singleton) DO NOTHING
-    RETURNING iss, sub
-)
-SELECT iss, sub FROM bound
-UNION ALL
-SELECT iss, sub FROM admin_binding WHERE singleton
-LIMIT 1;
+-- atomic: of two first sign ins at once, one inserts and the other gets the winner's row back.
+-- The no op update makes the loser wait for the winner and return the committed row; a plain
+-- DO NOTHING plus a SELECT cannot see it, because the statement snapshot predates the commit.
+INSERT INTO admin_binding (iss, sub, email) VALUES ($1, $2, $3)
+ON CONFLICT (singleton) DO UPDATE SET singleton = admin_binding.singleton
+RETURNING iss, sub;
 
 -- name: EnsureStack :one
 -- returns the stack named $1, creating it when it does not exist yet

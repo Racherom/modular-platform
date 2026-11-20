@@ -89,27 +89,51 @@ func TestAdminBindsOnce(t *testing.T) {
 	if _, ok, err := st.AdminBinding(ctx); err != nil || ok {
 		t.Fatalf("fresh database: bound %v, err %v", ok, err)
 	}
-	// two first sign ins at once: exactly one identity wins, and both see the winner
-	ids := []signin.Identity{{Issuer: "https://idp", Subject: "a"}, {Issuer: "https://idp", Subject: "b"}}
-	got := make([]signin.Identity, 2)
-	var wg sync.WaitGroup
-	for i, id := range ids {
-		wg.Go(func() {
-			var err error
-			if got[i], err = st.BindAdmin(ctx, id, "admin@example.com"); err != nil {
-				t.Error(err)
+	// First sign ins at once: exactly one identity wins, and every caller sees the winner.
+	// One round rarely hits the window between the winner's insert and its commit, so the
+	// race repeats on the same database, with a reset between rounds.
+	const rounds, contenders = 50, 4
+	ids := make([]signin.Identity, contenders)
+	for i := range ids {
+		ids[i] = signin.Identity{Issuer: "https://idp", Subject: string(rune('a' + i))}
+	}
+	for round := range rounds {
+		got := make([]signin.Identity, contenders)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i, id := range ids {
+			wg.Go(func() {
+				<-start // release all callers together
+				var err error
+				if got[i], err = st.BindAdmin(ctx, id, "admin@example.com"); err != nil {
+					t.Errorf("round %d: %v", round, err)
+				}
+			})
+		}
+		close(start)
+		wg.Wait()
+		if t.Failed() {
+			return
+		}
+		if !slices.Contains(ids, got[0]) {
+			t.Fatalf("round %d: bound %v, not one of the callers", round, got[0])
+		}
+		for _, g := range got {
+			if g != got[0] {
+				t.Fatalf("round %d: callers saw different admins: %v", round, got)
 			}
-		})
-	}
-	wg.Wait()
-	if got[0] != got[1] || !slices.Contains(ids, got[0]) {
-		t.Errorf("bound %v and %v", got[0], got[1])
-	}
-	if err := st.ResetAdmin(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, _ := st.AdminBinding(ctx); ok {
-		t.Error("reset left an admin bound")
+		}
+		// the stored binding is the one every caller was told about
+		stored, ok, err := st.AdminBinding(ctx)
+		if err != nil || !ok || stored != got[0] {
+			t.Fatalf("round %d: stored %v (bound %v, err %v), callers saw %v", round, stored, ok, err, got[0])
+		}
+		if err := st.ResetAdmin(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, _ := st.AdminBinding(ctx); ok {
+			t.Fatalf("round %d: reset left an admin bound", round)
+		}
 	}
 }
 

@@ -31,15 +31,9 @@ func (q *Queries) AcceptOperation(ctx context.Context, arg AcceptOperationParams
 }
 
 const bindAdmin = `-- name: BindAdmin :one
-WITH bound AS (
-    INSERT INTO admin_binding (iss, sub, email) VALUES ($1, $2, $3)
-    ON CONFLICT (singleton) DO NOTHING
-    RETURNING iss, sub
-)
-SELECT iss, sub FROM bound
-UNION ALL
-SELECT iss, sub FROM admin_binding WHERE singleton
-LIMIT 1
+INSERT INTO admin_binding (iss, sub, email) VALUES ($1, $2, $3)
+ON CONFLICT (singleton) DO UPDATE SET singleton = admin_binding.singleton
+RETURNING iss, sub
 `
 
 type BindAdminParams struct {
@@ -53,7 +47,9 @@ type BindAdminRow struct {
 	Sub string
 }
 
-// atomic: of two first sign ins at once, one inserts and the other reads the winner
+// atomic: of two first sign ins at once, one inserts and the other gets the winner's row back.
+// The no op update makes the loser wait for the winner and return the committed row; a plain
+// DO NOTHING plus a SELECT cannot see it, because the statement snapshot predates the commit.
 func (q *Queries) BindAdmin(ctx context.Context, arg BindAdminParams) (BindAdminRow, error) {
 	row := q.db.QueryRow(ctx, bindAdmin, arg.Iss, arg.Sub, arg.Email)
 	var i BindAdminRow
