@@ -153,7 +153,7 @@ spec [0032](../specs/0032-dev-branch-release-flow/index.md) · code in `.github/
    - [x] Rulesets and the check name test, Renovate and `MP_SOURCE_REF` on `dev` (AC-2, AC-7, AC-8)
    - [ ] Docs and cut over: AGENTS.md `## Git`, README Releases, create `dev`, apply the rulesets (AC-1, AC-2, AC-6, AC-10) (docs written; the cut over on GitHub is still to do)
 - [ ] Verify it: `/check verify dev branch and release flow`
-- [ ] Test it: `/test dev branch and release flow`
+- [x] Test it: `/test dev branch and release flow`
 - [ ] Review it (fresh model): `/check review dev branch and release flow`
 - [ ] Document it: `/document dev branch and release flow`
 

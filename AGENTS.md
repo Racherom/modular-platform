@@ -56,7 +56,7 @@ Installed and enforced:
 
 - **Lint and format**: golangci-lint v2 (gofumpt formatter) for Go; Biome for `web/` (lint and format, React hooks rules). Both run through `task lint`.
 - **Pre commit**: lefthook runs format, lint and typecheck on staged files; tests stay in CI.
-- **CI**: `.github/workflows/ci.yml` already runs generate diff, lint, test, build; new linters reach it through `task lint`.
+- **CI**: `.github/workflows/ci.yml` already runs generate diff, lint, test, build; new linters reach it through `task lint`. `.github/workflows/branch-rules.yml` is the `Branch rules` check; `libs/ci` holds the tests of the workflows, rulesets and `scripts/` (no bounded context, no code of its own).
 
 ## Git
 
