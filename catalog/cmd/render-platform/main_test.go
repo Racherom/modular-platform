@@ -63,7 +63,7 @@ func TestRun_SourceRef(t *testing.T) {
 		},
 		"local warns about MP_SOURCE_PATH": {
 			ref: "local", wantRef: "local",
-			warning: "warning: source ref local: this render comes from a local checkout, and a zip that builds a platform image builds only with MP_SOURCE_PATH",
+			warning: "warning: source ref local: this render comes from a local checkout, and a zip that builds a module image builds only with MP_SOURCE_PATH",
 		},
 		"a full commit gives no warning": {ref: testCommit, wantRef: testCommit},
 	} {

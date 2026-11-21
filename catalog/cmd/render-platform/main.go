@@ -52,7 +52,7 @@ func run(graphPath, out, tag, sourceRef string, log io.Writer) error {
 	}
 	switch {
 	case source.Local():
-		fmt.Fprintln(log, "warning: source ref local: this render comes from a local checkout, and a zip that builds a platform image builds only with MP_SOURCE_PATH")
+		fmt.Fprintln(log, "warning: source ref local: this render comes from a local checkout, and a zip that builds a module image builds only with MP_SOURCE_PATH")
 	case source.Moves():
 		fmt.Fprintf(log, "warning: source ref %s is a branch, not a commit: a zip that builds a platform image builds whatever it holds then\n", source)
 	}
@@ -65,6 +65,16 @@ func run(graphPath, out, tag, sourceRef string, log io.Writer) error {
 			if name, ok := strings.CutPrefix(m.Image, render.PlatformImages); ok {
 				repo, _, _ := strings.Cut(name, ":")
 				entries.Modules[i].Image = render.PlatformImages + repo + ":" + tag
+			}
+		}
+		// a capability's job image is retagged like a module image (spec 0030, AC-14d)
+		for i, c := range entries.Capabilities {
+			if c.Yields == nil {
+				continue
+			}
+			if name, ok := strings.CutPrefix(c.Yields.Job.Image, render.PlatformImages); ok {
+				repo, _, _ := strings.Cut(name, ":")
+				entries.Capabilities[i].Yields.Job.Image = render.PlatformImages + repo + ":" + tag
 			}
 		}
 	}

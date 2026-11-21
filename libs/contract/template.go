@@ -201,8 +201,10 @@ func textFields(k Capability, dir func(CapabilityField) bool, exact bool) map[st
 }
 
 // LoadDockerfiles reads the Dockerfile beside each module of c in fsys, laid out as LoadCatalog
-// reads it, keyed by module name; a module without one is left out (spec 0030). The catalog
-// loader itself never reads a Dockerfile, so it changes nothing the catalog returns.
+// reads it, keyed by module name; a module without one is left out (spec 0030). It also reads
+// every images/<name>/Dockerfile, the job images of capabilities, keyed by folder name (AC-14);
+// a catalog test keeps those names apart from the module names. The catalog loader itself never
+// reads a Dockerfile, so it changes nothing the catalog returns.
 func LoadDockerfiles(fsys fs.FS, c Catalog) (map[string][]byte, error) {
 	out := map[string][]byte{}
 	for _, m := range c.Modules {
@@ -214,6 +216,18 @@ func LoadDockerfiles(fsys fs.FS, c Catalog) (map[string][]byte, error) {
 			return nil, fmt.Errorf("read the Dockerfile of module %s: %w", m.Name, err)
 		}
 		out[m.Name] = data
+	}
+	images, err := fs.Glob(fsys, "images/*/Dockerfile")
+	if err != nil {
+		return nil, fmt.Errorf("list the job image Dockerfiles: %w", err)
+	}
+	for _, p := range images {
+		name := path.Base(path.Dir(p))
+		data, err := fs.ReadFile(fsys, p)
+		if err != nil {
+			return nil, fmt.Errorf("read the Dockerfile of image %s: %w", name, err)
+		}
+		out[name] = data
 	}
 	return out, nil
 }

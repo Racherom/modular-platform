@@ -3,7 +3,7 @@
   "baseBranchPatterns": ["dev"],
   "semanticCommits": "enabled",
   "enabledManagers": ["dockerfile"],
-  "includePaths": ["catalog/modules/*/Dockerfile"],
+  "includePaths": ["catalog/modules/*/Dockerfile", "catalog/images/*/Dockerfile"],
   "pinDigests": true,
   "schedule": ["before 6am on monday"],
   "packageRules": [

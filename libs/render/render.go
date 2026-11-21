@@ -99,10 +99,27 @@ type templateData struct {
 
 	Keeper *keeperScript // a keeper render (WithKeeper): setup.sh installs into the state folder and starts the seed
 
-	Builds      []imageBuild // unreleased platform images setup.sh builds first (spec 0030)
-	SourceRef   string       // the git ref those builds use
-	SourceLocal bool         // the ref is local: the code is in a local checkout, so setup.sh needs MP_SOURCE_PATH
-	SourceMoves bool         // the ref is a branch, not a commit, so a later build may differ
+	Builds       []imageBuild // unreleased platform images setup.sh builds first (spec 0030)
+	SourceRef    string       // the git ref those builds use
+	SourceNeeded bool         // at least one build is a module image, which needs the repository source
+	SourceLocal  bool         // the ref is local: the code is in a local checkout, so setup.sh needs MP_SOURCE_PATH
+	SourceMoves  bool         // the ref is a branch, not a commit, so a later build may differ
+}
+
+// ModuleBuilds returns the builds of module images, which need the repository source.
+func (d templateData) ModuleBuilds() []imageBuild { return d.buildsOf(false) }
+
+// JobBuilds returns the builds of job images, which hold no repository code (spec 0030, AC-14).
+func (d templateData) JobBuilds() []imageBuild { return d.buildsOf(true) }
+
+func (d templateData) buildsOf(job bool) []imageBuild {
+	var out []imageBuild
+	for _, b := range d.Builds {
+		if b.Job == job {
+			out = append(out, b)
+		}
+	}
+	return out
 }
 
 // HasOutputs reports whether setup.sh makes a file a provision job writes.
@@ -219,11 +236,6 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 		}
 		r.project.Services[i] = svc
 	}
-	builds, err := r.imageBuilds()
-	if err != nil {
-		return rendered{}, err
-	}
-	r.neverPull()
 	if err := r.bindAll(instances, result.Bindings); err != nil {
 		return rendered{}, err
 	}
@@ -248,6 +260,11 @@ func renderProject(result contract.CheckResult, catalog contract.Catalog, templa
 		return rendered{}, err
 	}
 	r.waitAnchor()
+	builds, err := r.imageBuilds()
+	if err != nil {
+		return rendered{}, err
+	}
+	r.neverPull()
 	if r.egress {
 		r.project.Networks[networkEgress] = types.NetworkConfig{}
 	}

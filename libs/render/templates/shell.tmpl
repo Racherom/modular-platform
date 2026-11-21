@@ -21,18 +21,22 @@ fi{{end}}
 # each from Modular Platform at source_ref before anything else is made. A rerun builds again;
 # the build cache makes that quick.
 source_ref='{{.SourceRef}}'
-{{- if .SourceLocal}}
+{{- if and .SourceNeeded .SourceLocal}}
 if [ -z "$source_path" ]; then
 	echo "setup.sh: this zip was made by a renderer built from a local checkout, so no commit on GitHub holds its code; set MP_SOURCE_PATH=<a checkout of Modular Platform> and run setup.sh again" >&2
 	exit 1
 fi
 {{- end}}
-build_images='{{range $i, $b := .Builds}}{{if $i}} {{end}}{{$b.Image}}{{end}}'
+build_images='{{range $i, $b := .ModuleBuilds}}{{if $i}} {{end}}{{$b.Image}}{{end}}'
 # build_stop TEXT stops setup.sh before it makes any file, naming the builds and how to build
 # from a local checkout.
 build_stop() {
 	echo "setup.sh: $1" >&2
+{{- if .SourceNeeded}}
 	echo "setup.sh: this stack builds $build_images from Modular Platform at $source_ref; MP_SOURCE_PATH=<a checkout of it> builds from that folder instead of GitHub" >&2
+{{- else}}
+	echo "setup.sh: this stack builds its job image from the Dockerfile in this zip; MP_SOURCE_PATH does not change that" >&2
+{{- end}}
 	exit 1
 }
 docker buildx version >/dev/null 2>&1 ||
@@ -41,6 +45,7 @@ docker_version=$(docker version --format '{{"{{"}}.Server.Version{{"}}"}}' 2>/de
 	build_stop "Docker does not answer; start it and run setup.sh again"
 [ "${docker_version%%.*}" -ge 23 ] 2>/dev/null ||
 	build_stop "the platform images need Docker 23 or newer, this host runs $docker_version"
+{{- if .SourceNeeded}}
 # build_image IMAGE MODULE builds IMAGE from build/MODULE/Dockerfile. A build from a local
 # checkout is labeled local, never with source_ref, which the checkout may not match.
 build_image() {
@@ -56,8 +61,23 @@ build_image() {
 			build_stop "could not build $1 at $source_ref; the ref must be pushed, and the build needs GitHub and Docker Hub (the Dockerfile frontend and base images)"
 	fi
 }
+{{- end}}
+{{- if .JobBuilds}}
+# build_job_image IMAGE NAME builds a job image from build/NAME alone: it holds no repository code,
+# so it needs no source and no MP_SOURCE_PATH. The label names the zip's ref.
+build_job_image() {
+	echo "building $1 from the Dockerfile in this zip"
+	docker buildx build --load -t "$1" --build-arg MP_SOURCE_REF="$source_ref" \
+		-f "build/$2/Dockerfile" "build/$2" ||
+		build_stop "could not build $1; the build needs Docker Hub and the Alpine package mirror"
+}
+{{- end}}
 {{- range .Builds}}
+{{- if .Job}}
+build_job_image {{shellQuote .Image}} {{shellQuote .Module}}
+{{- else}}
 build_image {{shellQuote .Image}} {{shellQuote .Module}}
+{{- end}}
 {{- end}}{{end}}
 {{define "graph-set"}}
 # env_or NAME TEXT prints the value of NAME in .env, or TEXT, the graph's value, when .env has no

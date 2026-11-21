@@ -209,8 +209,10 @@ func checkPackageFiles(t *testing.T, entries []renovateEntry, image, zero string
 	fixed := map[string]bool{"docker/dockerfile": false, image: false}
 	for manager, files := range entries[i].Config {
 		for _, f := range files {
-			if ok, _ := filepath.Match("catalog/modules/*/Dockerfile", f.PackageFile); !ok {
-				t.Errorf("%s update in %s, outside catalog/modules/*/Dockerfile", manager, f.PackageFile)
+			okModule, _ := filepath.Match("catalog/modules/*/Dockerfile", f.PackageFile)
+			okImage, _ := filepath.Match("catalog/images/*/Dockerfile", f.PackageFile)
+			if !okModule && !okImage {
+				t.Errorf("%s update in %s, outside catalog/modules/*/Dockerfile and catalog/images/*/Dockerfile", manager, f.PackageFile)
 			}
 			for _, d := range f.Deps {
 				for _, u := range d.Updates {

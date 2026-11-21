@@ -169,7 +169,7 @@ func Setup(catalogFS fs.FS, sourceRef string) sdk.Setup[config.Config, config.Us
 		}
 		switch {
 		case source.Local():
-			m.Log.WarnContext(ctx, "the renderer's source ref is local: it was built from a local checkout, and its zips build only with MP_SOURCE_PATH", slog.String("source_ref", source.String()))
+			m.Log.WarnContext(ctx, "the renderer's source ref is local: it was built from a local checkout, and a zip that builds a module image builds only with MP_SOURCE_PATH", slog.String("source_ref", source.String()))
 		case source.Moves():
 			m.Log.WarnContext(ctx, "the renderer's source ref is a branch, not a commit: zips that build a platform image build whatever it holds then", slog.String("source_ref", source.String()))
 		}

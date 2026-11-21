@@ -6,7 +6,7 @@ package catalog
 
 import "embed"
 
-// FS holds the capabilities and modules folders at its root.
+// FS holds the capabilities, images and modules folders at its root.
 //
-//go:embed capabilities modules
+//go:embed capabilities images modules
 var FS embed.FS

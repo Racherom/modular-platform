@@ -31,6 +31,14 @@ func keeperResult(t *testing.T) (contract.CheckResult, contract.Catalog, contrac
 			catalog.Modules[i].Image = platformImagePrefix + name[:strings.LastIndex(name, ":")] + ":" + testTag
 		}
 	}
+	for i, c := range catalog.Capabilities {
+		if c.Yields == nil {
+			continue
+		}
+		if name, ok := strings.CutPrefix(c.Yields.Job.Image, platformImagePrefix); ok {
+			catalog.Capabilities[i].Yields.Job.Image = platformImagePrefix + name[:strings.LastIndex(name, ":")] + ":" + testTag
+		}
+	}
 	return checkFile(t, filepath.Join(keeperDir, "graph.yaml"), catalog), catalog, templates
 }
 

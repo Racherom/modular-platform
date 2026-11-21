@@ -68,12 +68,13 @@ tasks:
       - pnpm --dir web run build
 
   images:
-    desc: Build the web, renderer, api and deployer-docker images, tagged {{.IMAGE_TAG}}
+    desc: Build the web, renderer, api, deployer-docker and oidc-job images, tagged {{.IMAGE_TAG}}
     cmds:
       - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/renderer/Dockerfile -t {{.IMAGE_PREFIX}}/renderer:{{.IMAGE_TAG}} .
       - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:{{.IMAGE_TAG}} .
       - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/deployer-docker/Dockerfile -t {{.IMAGE_PREFIX}}/deployer-docker:{{.IMAGE_TAG}} .
       - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/web/Dockerfile -t {{.IMAGE_PREFIX}}/web:{{.IMAGE_TAG}} .
+      - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/images/oidc-job/Dockerfile -t {{.IMAGE_PREFIX}}/oidc-job:{{.IMAGE_TAG}} catalog/images/oidc-job
 
   test:
     desc: Run the Go and editor tests
@@ -239,6 +240,7 @@ tasks:
       - cp -R build/managed/. .dev/managed/
       # setup.sh runs api's caller-key step in the api image, before up builds it
       - docker build -q --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:dev . >/dev/null
+      - docker build -q --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/images/oidc-job/Dockerfile -t {{.IMAGE_PREFIX}}/oidc-job:dev catalog/images/oidc-job >/dev/null
       - |
         if [ -f .dev/managed/.env ] && [ -f .dev/managed/secrets/authelia/users ]; then
           sh .dev/managed/setup.sh </dev/null >/dev/null

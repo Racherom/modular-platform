@@ -395,7 +395,7 @@ services:
     entrypoint:
     - sleep
     - infinity
-    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0
+    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0-test
     init: true
     labels:
       io.github.racherom.modular-platform.graph: modular-platform
@@ -538,7 +538,7 @@ services:
       MP_MARKER: mp_provisioned_52d73175
       MP_REDIRECT_PATH: /api/v1/auth/callback
       MP_SLOT: oidc
-    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0
+    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0-test
     labels:
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: pocket-id
@@ -605,7 +605,7 @@ services:
       MP_ADMIN_URL: http://pocket-id.modular-platform.internal:1411
       MP_KEEP: api_oidc
       MP_MARKER: mp_provisioned_52d73175
-    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0
+    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0-test
     labels:
       io.github.racherom.modular-platform.graph: modular-platform
       io.github.racherom.modular-platform.instance: pocket-id
