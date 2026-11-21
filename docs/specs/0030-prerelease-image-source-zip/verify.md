@@ -113,3 +113,26 @@ _From `docs/reviews/2026-11-13-feat-release-gate-2.md`. The tests of workflows a
 ### Renovate lint output (AC-13)
 - [x] `task lint:renovate </dev/null` → no re2 warning or stack trace; prints `lint:renovate: renovate.json is valid`, exit 0 → AC-13
 - [x] The same validator with `LOG_LEVEL=error` on a scratch config with an unknown key prints `Invalid configuration option: bogusKey` and exits 1, so the quieter output still fails a bad config → AC-13
+
+## Job images · added 2026-11-21 (task 13, AC-14)
+_Steps for the `oidc-job` image of spec 0037. Commands that already ran when task 13 landed are ticked._
+
+### Zip and render (AC-14a to d)
+- [x] `go test -race ./libs/render/ -run 'TestRenderJobImage'` → a `platform-keeper` render at `0.0.0` holds `build/oidc-job/Dockerfile` equal to the catalog file, once; every job service keeps its `image:` line and carries `pull_policy: never`; `setup.sh` has one `build_job_image` line whose context is `build/oidc-job` with no `MP_SOURCE`; with a `dev` tag nothing under `build/` → AC-14a, AC-14b, AC-14c, AC-14d
+- [x] `go test -race ./libs/render/ -run TestRenderJobImageOnly` → a `local` zip whose only build is the job image has no `MP_SOURCE_PATH` stop and no module build function; the README says job images build from the Dockerfile in the zip → AC-14c
+- [x] `go test -race ./libs/render/` → every existing golden is unchanged except the three `oidc-job` image lines of the keeper fixture (now `0.0.0-test`, as the module images are) → AC-14 (a graph with no job is byte identical)
+- [ ] `task managed:zip VERSION=0.0.0` once spec 0037 task 7 switches the graph to `pocket-id` → the zip holds `build/oidc-job/Dockerfile` and the README lists its `docker build` line → AC-14b (waits for 0037)
+- [ ] `task dev:managed:install` → builds `oidc-job:dev`, and `up --build` pulls no `oidc-job` (waits for 0037 task 7) → AC-14 (dev)
+
+### Catalog and pins (AC-14f, AC-14g)
+- [x] `go test -race ./catalog/ -run 'TestJobImagesHaveDockerfiles|TestPlatformDockerfilesPinned'` → the job image has `images/oidc-job/Dockerfile`, no folder clashes with a module, every `FROM` and `# syntax=` is pinned, and the `apk add` line pins both versions → AC-14f, AC-14g
+- [x] `task lint:renovate` → `renovate.json` with both `includePaths` is valid → AC-14f
+- [ ] `go test -race -tags integration ./libs/ci/ -run TestRenovateDigests` → still one planned branch, now allowing `catalog/images/*/Dockerfile` → AC-14f
+
+### Image and release (AC-14c, AC-14e)
+- [x] `go test -race -tags integration ./libs/ci/ -run TestOIDCJobImageRuns` → the Dockerfile builds from its own folder, the label holds the ref, `curl` and `jq` run and the default command stays up under read only, no capabilities, no new privileges and a non root user → AC-14c
+- [x] `go test -race ./libs/ci/ -run 'TestReleaseImagesJob|TestReleaseImagesCheckScript|TestCIImagesSourceRef'` → the release matrix, `scripts/release-images-check.sh` and `task images` agree with `releaseImageList` (five images) → AC-14e
+- [ ] **(at release)** the `images` job pushes `oidc-job:<version>` and the managed zip job's check passes for five images → AC-9, AC-14e
+
+### Coverage
+- AC-14a to d: render steps · AC-14e: release steps · AC-14f: pins and Renovate · AC-14g: catalog test
