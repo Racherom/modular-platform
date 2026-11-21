@@ -115,3 +115,30 @@ _Steps derived from spec 0037 AC-3 for the `firstAdmin` field and the editor's `
 
 ## Acceptance-criteria coverage
 - AC-3 (state and page halves): the steps above. The passkey flow and the bind are the managed smoke of task 7.
+
+---
+
+# Verify: setup files and render · spec 0037 task 7a · updated 2026-11-21
+_Steps derived from spec 0037 AC-14, AC-16 and AC-18. The adapter that reads and writes the folder (AC-15) and the smoke (AC-17) come with 7b and 7d._
+
+## Commands
+- [x] `go test -race ./libs/render/ -run 'TestSetupFiles|TestRenderPlatformGolden|TestRenderPlatformKeeperGolden'` → no Compose secret for `code` or `session-key`; one read write bind `./secrets/api/setup:/run/secrets/setup`; `MP_SETUP_DIR`; the managed flavor refuses `api` with `setup_required`     → AC-14
+- [x] `go test -race ./libs/setupsession/ ./services/api/internal/setup/ -run 'Gate'` → a gate value is no session, a session value is no gate cookie, and the gate cookie sent as `__Host-mp_setup` is `ErrNoSession`     → AC-18
+- [x] `docker run caddy:2.11.7-alpine caddy validate` on `libs/render/testdata/platform-keeper/config/ingress/Caddyfile` → valid; `caddy adapt` lists the `GET` handoff route first, then the gate prefixes, then the catch all     → AC-16, AC-18
+- [ ] `go test -race -tags e2e ./libs/render/` → the platform render still starts under Docker     → AC-14
+
+## UI / manual
+- [ ] In an empty install folder run the rendered `setup.sh` twice → the first run prints "Setup code (shown once)" and the address; the second prints "kept" and only the path of the code     → AC-14
+- [ ] `stat -c '%a' secrets/api/setup secrets/api/setup/*` → `700` for the folder, `600` for the files; the code is 24 characters of `A-Za-z0-9`, the key 64 hex characters     → AC-14
+- [ ] `touch secrets/api/setup/code-used`, delete `secrets/api/setup/code`, run `setup.sh` → a new code, and `code-used` is gone     → AC-14
+- [ ] `touch secrets/api/setup/.setup-done` and run `setup.sh` → it makes and prints nothing; change `MP_UID` in `.env` to another id → it stops with a message     → AC-14
+- [ ] `grep -r` for the printed code and the key in `docker-compose.yml`, `.env`, `config/` and `docker compose config` → no hit     → AC-14
+- [ ] Gate paths on a stack with `pocket-id`: `curl -k https://auth.<domain>/setup/`, `/setup/__data.json`, `/api/signup/setup` with no cookie → 403 each     → AC-18
+
+## Value sourcing
+- [ ] `MP_OIDC_FIRST_ADMIN_PATH` in `api`'s environment is `/setup` with `pocket-id` and absent with `authelia` (render both)     → AC-16
+- [ ] With `MP_INGRESS__BASE_PATH=/platform` the handoff route in the Caddyfile is `/platform/api/v1/setup/identity-enter`, and `GET` on any other `api` path of the auth host goes to the provider     → AC-16
+- [ ] The printed address is the `origin` answer in `.env` plus the base path     → AC-14
+
+## Acceptance-criteria coverage
+- AC-14 · AC-16 · AC-18: the steps above. AC-15 (the file adapter), AC-17 (the smoke) and the live handoff are 7b and 7d.
