@@ -227,7 +227,8 @@ func TestOIDCClientEndToEnd(t *testing.T) {
 		t.Fatalf("up with a client id taken by hand succeeded:\n%s", out)
 	}
 	logs, _ := compose("logs", "--no-color", "pocket-id_provision_app_oidc")
-	if !strings.Contains(logs, "hand_made") || !strings.Contains(logs, "was not made by the platform") {
+	const foreign = "client hand_made exists and was not made by the platform; delete it in Pocket ID or name another client id in the graph"
+	if !strings.Contains(logs, foreign) {
 		t.Errorf("the job log does not name the foreign client:\n%s", logs)
 	}
 	if code, _ := api("GET", "/api/oidc/clients/hand_made", ""); code != 200 {

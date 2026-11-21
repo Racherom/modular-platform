@@ -596,7 +596,7 @@ services:
       case $$(call GET "/api/oidc/clients/$$MP_CLIENT_ID") in
         404) [ "$$(call POST /api/oidc/clients --data @/tmp/client.json)" = 201 ] || fail "creating client $$MP_CLIENT_ID failed" ;;
         200)
-          [ "$$(jq -r .description /tmp/out)" = "$$mark" ] || fail "client $$MP_CLIENT_ID exists and was not made by the platform"
+          [ "$$(jq -r .description /tmp/out)" = "$$mark" ] || fail "client $$MP_CLIENT_ID exists and was not made by the platform; delete it in Pocket ID or name another client id in the graph"
           [ "$$(call PUT "/api/oidc/clients/$$MP_CLIENT_ID" --data @/tmp/client-put.json)" = 200 ] || fail "updating client $$MP_CLIENT_ID failed" ;;
         *) fail "reading client $$MP_CLIENT_ID failed" ;;
       esac
