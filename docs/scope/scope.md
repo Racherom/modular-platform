@@ -343,7 +343,7 @@ spec [0037](../specs/0037-bundled-identity-provider/index.md) · code in `catalo
 - [x] Verify it: `/check verify bundled identity provider`
 - [x] Test it: `/test bundled identity provider` (2026-11-21: the build's Go and vitest tests cover the AC rows; added vitest for the setup page's refused code, unreadable state with Retry, refused identity link, the gate failing closed, and the sign in link under `/platform`)
 - [x] Review it (fresh model): `/check review bundled identity provider`
-- [ ] Document it: `/document bundled identity provider`
+- [x] Document it: `/document bundled identity provider` (2026-11-21: PR description into `dev`)
 
 ### 32. Start the platform from one container · in-progress
 The managed platform starts from one container, most likely the deployer, instead of one `docker compose up` for every service. It reads the platform's starting state from its files (the platform graph and render of spec 0015, plus the install answers the web setup of #37 collected). Then it looks for the platform's containers on the host: it starts the ones that exist and match, recreates the ones that no longer match the files, and creates the ones that are missing. Only the platform's own modules: deployed stacks keep relying on Docker's restart policy. Comes after #3's milestone 4 (the platform is a graph) and after #37 (the web setup), so installing runs no script on the host and asks nothing, and gives #23, #25 and #19 one entry point that brings the platform up from its files. Its spec decides how this first container is started and restarted, how it finds the platform's containers (labels), what counts as no longer matching, and how it keeps from stopping itself.
