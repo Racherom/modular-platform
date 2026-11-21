@@ -56,6 +56,9 @@ func (h setupRoutes) get(w http.ResponseWriter, r *http.Request) {
 		if st.NoCode {
 			out.Reason = NoCode
 		}
+		if st.FirstAdmin {
+			out.FirstAdmin = True
+		}
 		if st.Enroll != nil {
 			asks := make([]SetupAsk, len(st.Enroll))
 			for i, a := range st.Enroll {

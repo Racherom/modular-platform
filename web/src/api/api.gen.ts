@@ -410,6 +410,14 @@ export interface components {
             /** @description Whether OIDC discovery against the issuer has succeeded. Only with a session. */
             providerReady?: boolean;
             enroll?: components["schemas"]["SetupEnrollAsks"];
+            /**
+             * @description `true` only with a valid setup session while pending, when the identity module has a
+             *     `first_admin` block (spec 0037). Absent otherwise, never `false`. The page shows
+             *     "Create your admin account" when this is present and `enroll` is absent; the real link
+             *     comes from `POST /api/v1/setup/identity-link`.
+             * @enum {boolean}
+             */
+            firstAdmin?: true;
         };
         /** @description The identity module's enroll questions, asked on the setup page in this order. */
         SetupEnrollAsks: {

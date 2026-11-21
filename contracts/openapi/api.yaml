@@ -707,6 +707,14 @@ components:
           $ref: "#/components/schemas/SetupEnrollAsks"
           # keep the pointer: absent means the identity module has no enroll block
           x-go-type-skip-optional-pointer: false
+        firstAdmin:
+          type: boolean
+          enum: [true]
+          description: |
+            `true` only with a valid setup session while pending, when the identity module has a
+            `first_admin` block (spec 0037). Absent otherwise, never `false`. The page shows
+            "Create your admin account" when this is present and `enroll` is absent; the real link
+            comes from `POST /api/v1/setup/identity-link`.
     SetupEnrollAsks:
       type: object
       additionalProperties: false

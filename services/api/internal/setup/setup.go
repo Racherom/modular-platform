@@ -182,6 +182,7 @@ type State struct {
 	Session       bool
 	ProviderReady bool
 	Enroll        []Ask // nil: the identity module has no enroll block; only with a session
+	FirstAdmin    bool  // the identity module has a first_admin block; only with a session
 }
 
 // State describes the setup for the request.
@@ -201,6 +202,10 @@ func (s *Service) State(r *http.Request) (State, error) {
 		st.ProviderReady = s.provider.Ready()
 		if st.Enroll, err = s.keeper.Enroll(ctx); err != nil {
 			return State{}, fmt.Errorf("asking the keeper for the enroll questions: %w", err)
+		}
+		// A failed lookup fails the whole state, so the page never hides the button by guessing.
+		if _, _, st.FirstAdmin, err = s.firstAdmin(ctx); err != nil {
+			return State{}, err
 		}
 	}
 	return st, nil

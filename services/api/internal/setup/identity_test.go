@@ -246,3 +246,46 @@ func TestGateRouteIsOpenWhilePending(t *testing.T) {
 		}
 	}
 }
+
+type brokenIdentity struct{}
+
+func (brokenIdentity) FirstAdmin(context.Context) (setup.FirstAdmin, bool, error) {
+	return setup.FirstAdmin{}, false, errors.New("lookup failed")
+}
+
+func TestStateFirstAdmin(t *testing.T) {
+	cases := map[string]struct {
+		identity setup.Identity
+		session  bool
+		bound    bool
+		want     bool
+		wantErr  bool
+	}{
+		"session and first_admin": {identity: authIdentity, session: true, want: true},
+		"no session":              {identity: authIdentity},
+		"module without block":    {identity: fakeIdentity{}, session: true},
+		"no identity port":        {session: true},
+		"done":                    {identity: authIdentity, session: true, bound: true},
+		"failed lookup":           {identity: brokenIdentity{}, session: true, wantErr: true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, "")
+			if tc.identity != nil {
+				r.svc.WithIdentity(tc.identity)
+			}
+			req := request(http.MethodGet, "/api/v1/setup", "192.0.2.1")
+			if tc.session {
+				req = r.redeem(t)
+			}
+			r.admins.bound = tc.bound
+			st, err := r.svc.State(req)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, want error: %v", err, tc.wantErr)
+			}
+			if st.FirstAdmin != tc.want {
+				t.Errorf("FirstAdmin = %v, want %v", st.FirstAdmin, tc.want)
+			}
+		})
+	}
+}

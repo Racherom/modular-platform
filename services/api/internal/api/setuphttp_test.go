@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -178,5 +179,60 @@ func TestSetupDoneState(t *testing.T) {
 	}
 	if rec := post(mux, "/api/v1/setup/enroll", testOrigin, `{"answers":{}}`); rec.Code != 409 {
 		t.Errorf("enroll after the bind = %d, want 409", rec.Code)
+	}
+}
+
+type lookupIdentity struct {
+	ok  bool
+	err error
+}
+
+func (i lookupIdentity) FirstAdmin(context.Context) (setup.FirstAdmin, bool, error) {
+	return setup.FirstAdmin{Origin: "https://auth.platform.test", Path: "/setup"}, i.ok, i.err
+}
+
+// TestSetupStateFirstAdmin checks the wire shape: firstAdmin is true or absent, never false, and
+// a failed lookup is a 500 problem.
+func TestSetupStateFirstAdmin(t *testing.T) {
+	cases := map[string]struct {
+		id      setup.Identity
+		session bool
+		status  int
+		want    bool
+	}{
+		"session and block": {lookupIdentity{ok: true}, true, 200, true},
+		"no session":        {lookupIdentity{ok: true}, false, 200, false},
+		"no block":          {lookupIdentity{}, true, 200, false},
+		"failed lookup":     {lookupIdentity{err: errors.New("down")}, true, 500, false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var logs bytes.Buffer
+			log := slog.New(slog.NewJSONHandler(&logs, nil))
+			files := stubFiles{code: "the-code-0123456789abcdef", key: "0123456789abcdef0123456789abcdef"}
+			svc := setup.New(setup.Config{Hops: 1}, files, stubKeeper{}, stubAdmins{}, stubProvider{}, log).WithIdentity(tc.id)
+			mux := http.NewServeMux()
+			setupRoutes{svc: svc, origin: testOrigin, log: log}.mount(mux, "/api/v1")
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/setup", nil)
+			if tc.session {
+				rec := post(mux, "/api/v1/setup/code", testOrigin, `{"code":"`+files.code+`"}`)
+				for _, c := range rec.Result().Cookies() {
+					req.AddCookie(c)
+				}
+			}
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != tc.status {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tc.status, rec.Body)
+			}
+			var body map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			v, present := body["firstAdmin"]
+			if present != tc.want || (present && v != true) {
+				t.Errorf("firstAdmin = %v (present %v), want present %v: %s", v, present, tc.want, rec.Body)
+			}
+		})
 	}
 }

@@ -184,6 +184,21 @@ func (e ReviewImageUserKind) Valid() bool {
 	}
 }
 
+// Defines values for SetupStateFirstAdmin.
+const (
+	True SetupStateFirstAdmin = true
+)
+
+// Valid indicates whether the value is a known member of the SetupStateFirstAdmin enum.
+func (e SetupStateFirstAdmin) Valid() bool {
+	switch e {
+	case True:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SetupStateReason.
 const (
 	NoCode SetupStateReason = "no_code"
@@ -491,6 +506,12 @@ type SetupState struct {
 	// Enroll The identity module's enroll questions, asked on the setup page in this order.
 	Enroll *SetupEnrollAsks `json:"enroll,omitempty"`
 
+	// FirstAdmin `true` only with a valid setup session while pending, when the identity module has a
+	// `first_admin` block (spec 0037). Absent otherwise, never `false`. The page shows
+	// "Create your admin account" when this is present and `enroll` is absent; the real link
+	// comes from `POST /api/v1/setup/identity-link`.
+	FirstAdmin SetupStateFirstAdmin `json:"firstAdmin,omitempty,omitzero"`
+
 	// ProviderReady Whether OIDC discovery against the issuer has succeeded. Only with a session.
 	ProviderReady bool `json:"providerReady,omitempty,omitzero"`
 
@@ -501,6 +522,12 @@ type SetupState struct {
 	Session bool            `json:"session,omitempty,omitzero"`
 	State   SetupStateState `json:"state"`
 }
+
+// SetupStateFirstAdmin `true` only with a valid setup session while pending, when the identity module has a
+// `first_admin` block (spec 0037). Absent otherwise, never `false`. The page shows
+// "Create your admin account" when this is present and `enroll` is absent; the real link
+// comes from `POST /api/v1/setup/identity-link`.
+type SetupStateFirstAdmin bool
 
 // SetupStateReason Only while pending. `no_code`: no code file exists, so remove `<state>/.setup-done` and restart the keeper.
 type SetupStateReason string
