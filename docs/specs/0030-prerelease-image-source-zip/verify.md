@@ -127,7 +127,7 @@ _Steps for the `oidc-job` image of spec 0037. Commands that already ran when tas
 ### Catalog and pins (AC-14f, AC-14g)
 - [x] `go test -race ./catalog/ -run 'TestJobImagesHaveDockerfiles|TestPlatformDockerfilesPinned'` → the job image has `images/oidc-job/Dockerfile`, no folder clashes with a module, every `FROM` and `# syntax=` is pinned, and the `apk add` line pins both versions → AC-14f, AC-14g
 - [x] `task lint:renovate` → `renovate.json` with both `includePaths` is valid → AC-14f
-- [ ] `go test -race -tags integration ./libs/ci/ -run TestRenovateDigests` → still one planned branch, now allowing `catalog/images/*/Dockerfile` → AC-14f
+- [x] `go test -race -tags integration ./libs/ci/ -run TestRenovateDigests` → still one planned branch, now allowing `catalog/images/*/Dockerfile` → AC-14f
 
 ### Image and release (AC-14c, AC-14e)
 - [x] `go test -race -tags integration ./libs/ci/ -run TestOIDCJobImageRuns` → the Dockerfile builds from its own folder, the label holds the ref, `curl` and `jq` run and the default command stays up under read only, no capabilities, no new privileges and a non root user → AC-14c
