@@ -162,3 +162,25 @@ _Steps derived from spec 0037 AC-14, AC-16 and AC-18. The adapter that reads and
 
 ## Acceptance-criteria coverage
 - AC-17 covered by every step above · AC-3 by the smoke run · AC-4 and AC-16 by the golden step
+
+---
+
+# Verify: sign up config and README · spec 0037 task 8 · updated 2026-11-21
+_Steps derived from spec 0037 AC-6 and AC-10. `/check verify` runs these; `/test` locks the durable ones._
+
+## Commands
+- [ ] `go test -race ./libs/render/ -run TestPlatformSignup` → the default is `disabled`; `withToken` and `open` change only the `ALLOW_USER_SIGNUPS` default in the compose file; `bogus` is refused at `modules.pocket-id.config.signup` with `invalid_config`     → AC-6
+- [ ] `go test -race ./libs/render/ -run TestPlatformREADMEIdentity` → the README names passkeys, the auth host DNS name, the static API key and why it stays, the lost passkey command, the sign up setting, and has no Authelia, admin email or admin password text     → AC-10
+- [ ] `go test -race ./libs/render/` → every golden README matches the template     → AC-10
+
+## UI / manual
+- [ ] Render the managed zip (`task managed:render`), put `MP_POCKET_ID__SIGNUP=bogus` in `.env`, run `sh setup.sh` → it stops and names the value     → AC-6
+- [ ] Same stack with the default, open `POST /api/signup` on the auth host without an invitation → 403 `open_signup_disabled`     → AC-6
+- [ ] Healthcheck: `docker compose up -d --wait` ends with `pocket-id` healthy     → AC-10
+- [ ] Run the README's lost passkey command on a running stack → it prints a `https://auth.<domain>/lc/<token>` link     → AC-10
+
+## Value sourcing
+- [ ] `signup` follows `.env`: set `MP_POCKET_ID__SIGNUP=withToken`, `up`, and read `ALLOW_USER_SIGNUPS` in the container → `withToken`     → AC-6 (render row `signup`)
+
+## Acceptance-criteria coverage
+- AC-6: the first, fourth, fifth and last steps · AC-10: the second, third, sixth and seventh steps (the idle memory of 14 to 18 MiB is in rationale.md)
