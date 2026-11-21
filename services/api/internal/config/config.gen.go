@@ -43,6 +43,9 @@ func (c Config) SetupSessionKey(ctx context.Context) (sdk.Secret, bool, error) {
 	return sdk.SetupFile(ctx, c.v, "session-key")
 }
 
+// SetupFolder is the folder of the module's lifetime: setup files, for the files it keeps itself.
+func (c Config) SetupFolder() sdk.SetupFolder { return sdk.NewSetupFolder(c.v) }
+
 // Uses holds the api module's bindings; read them only through the getters.
 type Uses struct{ b *sdk.Bindings }
 

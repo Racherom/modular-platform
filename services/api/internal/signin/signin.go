@@ -16,11 +16,10 @@ import (
 
 // Reasons a sign in is refused, shown on the signed out screen.
 const (
-	ReasonNotAdmin        = "not_admin"
-	ReasonEmailUnverified = "email_unverified"
-	ReasonStateMismatch   = "state_mismatch"
-	ReasonProviderError   = "provider_error"
-	ReasonSetupPending    = "setup_pending"
+	ReasonNotAdmin      = "not_admin"
+	ReasonStateMismatch = "state_mismatch"
+	ReasonProviderError = "provider_error"
+	ReasonSetupPending  = "setup_pending"
 )
 
 // ErrUnauthenticated reports a request without a valid session.

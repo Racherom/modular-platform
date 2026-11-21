@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/racherom/modular-platform/services/api/internal/clients"
 	"github.com/racherom/modular-platform/services/api/internal/config"
 	"github.com/racherom/modular-platform/services/api/internal/deploy"
+	"github.com/racherom/modular-platform/services/api/internal/setup"
 	"github.com/racherom/modular-platform/services/api/internal/signin"
 	"github.com/racherom/modular-platform/services/api/internal/store"
 )
@@ -20,7 +22,29 @@ import (
 // settings are api's checked config values.
 type settings struct {
 	signin.Config
-	oidc signin.OIDCConfig
+	oidc           signin.OIDCConfig
+	issuer         *url.URL
+	firstAdminPath *string // the provider's first admin page; nil when its binding has none
+	hops           int     // proxies in front of api that append X-Forwarded-For
+}
+
+// setupFiles reads the setup code and the session key fresh at each call (the setup.Files port).
+type setupFiles struct{ c config.Config }
+
+func (f setupFiles) Code(ctx context.Context) (string, bool, error) {
+	v, ok, err := f.c.SetupCode(ctx)
+	if err != nil || !ok {
+		return "", false, err
+	}
+	return v.Reveal(), true, nil
+}
+
+func (f setupFiles) Key(ctx context.Context) ([]byte, bool, error) {
+	v, ok, err := f.c.SetupSessionKey(ctx)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	return []byte(v.Reveal()), true, nil
 }
 
 // basePathRe is the shape of a base path: one or more /segments, no trailing slash.
@@ -60,6 +84,10 @@ func readSettings(ctx context.Context, m *sdk.Module[config.Config, config.Uses]
 	if s.Max, err = c.SessionMax(ctx); err != nil {
 		return s, err
 	}
+	if s.hops, err = c.ProxyHops(ctx); err != nil {
+		return s, err
+	}
+	s.issuer, s.firstAdminPath = oidc.Issuer, oidc.FirstAdminPath
 	if err := signin.CheckLifetimes(s.Idle, s.Max); err != nil {
 		m.Log.ErrorContext(ctx, "MP_SESSION_MAX: invalid: "+err.Error())
 		return s, fmt.Errorf("%w: %w", err, sdk.ErrStart)
@@ -110,7 +138,12 @@ func Setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 	}
 	m.AddReady(idp.Ready)
 
-	sessions := signin.New(s.Config, st, idp, m.Log)
+	files := setupFiles{c: m.Config}
+	setupSvc := setup.New(setup.Config{BasePath: s.BasePath, Hops: s.hops}, files,
+		setup.NewFileKeeper(m.Config.SetupFolder(), files), st, idp, m.Log).
+		WithIdentity(setup.NewIssuerIdentity(s.issuer, s.firstAdminPath))
+	go setupSvc.Run(ctx)
+	sessions := signin.New(s.Config, st, idp, m.Log).WithSetup(setupSvc)
 	go sessions.Sweep(ctx)
 	hub := deploy.NewHub()
 	stacks := deploy.NewService(ctx, st, renderer, target, hub, m.Log)
@@ -119,7 +152,7 @@ func Setup(ctx context.Context, m *sdk.Module[config.Config, config.Uses]) (http
 	}
 	m.Log.InfoContext(ctx, "api starting", slog.String("public_origin", s.PublicOrigin), slog.String("base_path", s.BasePath))
 	return NewHandler(Options{
-		Signin: sessions, Deploy: stacks, Hub: hub, Renderer: renderer,
+		Signin: sessions, Setup: setupSvc, Deploy: stacks, Hub: hub, Renderer: renderer,
 		PublicOrigin: s.PublicOrigin, BasePath: s.BasePath, Idle: s.Idle, Log: m.Log,
 	}), nil
 }

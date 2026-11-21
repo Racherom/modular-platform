@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,6 +21,8 @@ type setupConfig struct{ v *sdk.Values }
 func (c setupConfig) SetupCode(ctx context.Context) (sdk.Secret, bool, error) {
 	return sdk.SetupFile(ctx, c.v, "code")
 }
+
+func (c setupConfig) SetupFolder() sdk.SetupFolder { return sdk.NewSetupFolder(c.v) }
 
 func (c setupConfig) Undeclared(ctx context.Context) (sdk.Secret, bool, error) {
 	return sdk.SetupFile(ctx, c.v, "other")
@@ -130,5 +133,66 @@ func TestSetupDirRules(t *testing.T) {
 				t.Errorf("logs = %s, want a line for MP_SETUP_DIR with %q", logs.String(), tc.want)
 			}
 		})
+	}
+}
+
+// TestSetupFolder covers the folder helpers of spec 0037's interim holder: create never replaces,
+// write replaces in one step, remove is safe to repeat, and only plain names are taken.
+func TestSetupFolder(t *testing.T) {
+	dir := t.TempDir()
+	cfg, _, err := startSetupModule(t, map[string]string{"MP_INSTANCE": "holder", "MP_SETUP_DIR": dir})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	ctx := t.Context()
+	folder := cfg.SetupFolder()
+
+	if err := folder.Create(ctx, "code-used", []byte("abc")); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := folder.Create(ctx, "code-used", []byte("other")); !errors.Is(err, fs.ErrExist) {
+		t.Errorf("second Create = %v, want fs.ErrExist", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "code-used"))
+	if err != nil || string(got) != "abc" {
+		t.Errorf("code-used = %q, %v; want abc kept", got, err)
+	}
+	info, err := os.Stat(filepath.Join(dir, "code-used"))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("code-used mode = %v, %v; want 0600", info.Mode(), err)
+	}
+
+	if err := folder.Write(ctx, ".setup-done", []byte("1")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := folder.Write(ctx, ".setup-done", []byte("2")); err != nil {
+		t.Fatalf("second Write: %v", err)
+	}
+	if ok, err := folder.Exists(ctx, ".setup-done"); err != nil || !ok {
+		t.Errorf("Exists(.setup-done) = %v, %v; want true", ok, err)
+	}
+	if err := folder.Remove(ctx, ".setup-done"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if err := folder.Remove(ctx, ".setup-done"); err != nil {
+		t.Errorf("second Remove = %v, want nil", err)
+	}
+	if ok, err := folder.Exists(ctx, ".setup-done"); err != nil || ok {
+		t.Errorf("Exists after Remove = %v, %v; want false", ok, err)
+	}
+
+	for _, name := range []string{"", ".", "..", "../x", "a/b"} {
+		if err := folder.Create(ctx, name, nil); err == nil {
+			t.Errorf("Create(%q) = nil, want a name error", name)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".tmp-") {
+			t.Errorf("leftover temp file %s", e.Name())
+		}
 	}
 }

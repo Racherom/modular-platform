@@ -45,7 +45,6 @@ type Provider interface {
 type Config struct {
 	PublicOrigin string // scheme, host and port the browser sees
 	BasePath     string // empty at the site root, else like /platform
-	AdminEmail   string
 	Idle, Max    time.Duration
 }
 
@@ -56,7 +55,7 @@ type Service struct {
 	idp   Provider
 	log   *slog.Logger
 	now   func() time.Time
-	setup Setup // nil: the admin email rule of spec 0006 until the setup is wired in (spec 0036 task 4)
+	setup Setup // nil binds nobody
 }
 
 // New returns the service.
@@ -64,7 +63,7 @@ func New(cfg Config, store Store, idp Provider, log *slog.Logger) *Service {
 	return &Service{cfg: cfg, store: store, idp: idp, log: log, now: time.Now}
 }
 
-// WithSetup makes the first sign in need a setup session instead of the admin email. It returns s.
+// WithSetup sets the setup the first sign in needs a session of. It returns s.
 func (s *Service) WithSetup(setup Setup) *Service {
 	s.setup = setup
 	return s
@@ -205,10 +204,7 @@ func (s *Service) admit(r *http.Request, c Claims) (reason string, justBound boo
 		return "", false, err
 	}
 	if !ok {
-		switch {
-		case s.setup == nil:
-			return s.legacyBind(ctx, c)
-		case !s.setup.Session(r):
+		if s.setup == nil || !s.setup.Session(r) { // fail closed: no setup means nothing binds
 			return ReasonSetupPending, false, nil
 		}
 		if bound, err = s.store.BindAdmin(ctx, c.Identity, c.Email); err != nil {
@@ -223,26 +219,6 @@ func (s *Service) admit(r *http.Request, c Claims) (reason string, justBound boo
 		return ReasonNotAdmin, false, nil
 	}
 	return "", justBound, nil
-}
-
-// legacyBind is spec 0006's rule, kept only until the setup is wired in: the first verified sign
-// in with the admin email binds the admin.
-func (s *Service) legacyBind(ctx context.Context, c Claims) (string, bool, error) {
-	if s.cfg.AdminEmail == "" || !strings.EqualFold(c.Email, s.cfg.AdminEmail) {
-		return ReasonNotAdmin, false, nil
-	}
-	if !c.EmailVerified {
-		return ReasonEmailUnverified, false, nil
-	}
-	bound, err := s.store.BindAdmin(ctx, c.Identity, c.Email)
-	if err != nil {
-		return "", false, err
-	}
-	if bound != c.Identity {
-		return ReasonNotAdmin, false, nil
-	}
-	s.log.InfoContext(ctx, "admin bound", slog.String("iss", bound.Issuer), slog.String("sub", bound.Subject))
-	return "", false, nil
 }
 
 // Authenticate returns the request's session, recording its activity, or ErrUnauthenticated.

@@ -293,6 +293,7 @@ func TestGenerateSetupFiles(t *testing.T) {
 		`return sdk.SetupFile(ctx, c.v, "session-key")`,
 		`SetupFiles: []string{"code", "session-key"},`,
 		"type Config struct{ v *sdk.Values }",
+		"func (c Config) SetupFolder() sdk.SetupFolder { return sdk.NewSetupFolder(c.v) }",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("source lacks %q:\n%s", want, out)

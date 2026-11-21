@@ -96,8 +96,15 @@ func (g *generator) source(source, pkg string) []byte {
 	for _, name := range names {
 		g.getter(&body, name, manifest.GoName(name), g.entry.Config[name])
 	}
+	if len(setupFiles) > 0 {
+		getters["SetupFolder"] = "the setup folder"
+	}
 	for _, sf := range setupFiles {
 		g.setupGetter(&body, sf, getters)
+	}
+	if len(setupFiles) > 0 {
+		body.WriteString("// SetupFolder is the folder of the module's lifetime: setup files, for the files it keeps itself.\n")
+		body.WriteString("func (c Config) SetupFolder() sdk.SetupFolder { return sdk.NewSetupFolder(c.v) }\n\n")
 	}
 
 	var clients, fieldSlots []string
