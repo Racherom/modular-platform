@@ -123,7 +123,7 @@ For every instance in name order, then every slot of its entry in name order. `<
 | bound instance has no provide of `C` or yielding `C` | error `capability_not_provided` |
 | bound provide has `C` (or yields it) but a version outside `R` | error `version_mismatch`, message names the version and the range |
 | bound to an instance with two or more matching provides, written without `.provide` | error `ambiguous_provide`, `candidates` lists `instance.provide` |
-| named values on a binding whose provide does not yield `C` (a direct provide) | error `named_not_allowed` |
+| named values on a binding whose provide does not yield `C` (a direct provide) | error `invalid_binding` |
 | a named key the provisioner does not list | error `unknown_named_field` |
 | a named value breaking the field's `pattern` | error `invalid_named_value` |
 | required slot `null` | error `unbound_required` |
@@ -146,7 +146,7 @@ Table tests in `libs/check` over fixtures in `contracts/fixtures/graphs/` (all v
 - A required slot with range `>=15` and one provider at `18.6`: `binding_recommended` with that provider. With the provider at `14.2`: `version_mismatch` listing it.
 - An instance with provides `primary` and `replica`, both `postgresql`: bound as `postgres` gives `ambiguous_provide`; as `postgres.replica` binds; as `postgres.nope` gives `unknown_provide`.
 - Two slots of one capability on one consumer, bound to two different providers: two bindings (**AC-4**); bound to the same provide: `duplicate_binding`.
-- Named values on a direct `postgresql` provide: `named_not_allowed`. A named key `owner`: `unknown_named_field`. `database: Bad-Name`: `invalid_named_value`.
+- Named values on a direct `postgresql` provide: `invalid_binding`. A named key `owner`: `unknown_named_field`. `database: Bad-Name`: `invalid_named_value`.
 - An external `postgresql` provide with all fields: candidate and recommendation (**AC-15**); without `host`: `external_field_missing`.
 - A v0alpha1 graph: answered v1, warning `converted_from_v0alpha1`, digest equal to the same graph sent as v1 (**AC-14**). A graph with `formatVersion: "1.9"`: `format_too_new` (**AC-14**).
 - `per_caller` on a non sdk entry: catalog problem `per_caller_not_allowed` (**AC-13**).

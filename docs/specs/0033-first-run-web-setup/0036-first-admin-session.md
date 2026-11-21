@@ -57,7 +57,7 @@ Short rationale: your rule of 2026-11-20 (the code gives a session; once the ide
 | `/api/v1/auth/login` | GET | `return_to` (opt) | 302 to the provider | setup cookie while pending | 403 `setup_pending`, 503 `provider_unavailable` |
 | `/api/v1/auth/callback` | GET | `code`, `state` | 302 to `<base>/`; sets the session cookie, deletes the setup cookie on a bind | login cookie | 302 `?signed_out=setup_pending` |
 
-`POST /api/v1/setup/code`: compare the SHA 256 of `code` with the code file in constant time; on a match call the keeper's `code-used`; its 204 mints the cookie, its 409 (`code_used`, `code_changed`) becomes 401 `code_refused`. Every POST also needs a same origin request (`Sec-Fetch-Site: same-origin`, as the editor's other writes).
+`POST /api/v1/setup/code`: compare the SHA 256 of `code` with the code file in constant time; on a match call the keeper's `code-used`; its 204 mints the cookie, its 409 (`code_used`, `code_changed`) becomes 401 `code_refused`. Every POST also needs a same origin request: its `Origin` header must equal the configured public origin (principle 12, origin from config), or the api answers 403 `bad_origin`.
 
 ### Database
 
