@@ -31,6 +31,7 @@ yields:
     # on a command line. The job reaches the provider by its service name, not through the ingress.
     provision: |
       umask 077
+      trap 'rm -f /tmp/key.hdr /tmp/out /tmp/client.json /tmp/client-put.json /tmp/secret.json' EXIT
       printf 'X-API-KEY: %s\n' "$(cat "$MP_ADMIN_API_KEY_FILE")" > /tmp/key.hdr
       mark="mp-marker:$MP_MARKER"
       callback="${MP_ADMIN_ORIGIN%/}${MP_ADMIN_BASE_PATH:-}$MP_REDIRECT_PATH"
@@ -65,6 +66,7 @@ yields:
     # without our marker is never read as ours.
     revoke: |
       umask 077
+      trap 'rm -f /tmp/key.hdr /tmp/out /tmp/drop' EXIT
       printf 'X-API-KEY: %s\n' "$(cat "$MP_ADMIN_API_KEY_FILE")" > /tmp/key.hdr
       mark="mp-marker:$MP_MARKER"
       call() {
