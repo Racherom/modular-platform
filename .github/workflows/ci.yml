@@ -108,7 +108,7 @@ jobs:
       - run: pnpm --dir web install --frozen-lockfile
       - run: pnpm --dir web exec playwright install --with-deps chromium
       - run: task images IMAGE_TAG=ci
-      # setup.sh, sign in through Authelia, download the zip, deploy the sample from the editor,
+      # setup.sh, the first admin with the setup code and a virtual passkey on Pocket ID, download the zip, deploy the sample from the editor,
       # every module running, a Docker restart brings it back, remove with Delete data too, and
       # no secret value in any log
       - run: task smoke:managed

@@ -70,6 +70,9 @@ auth.{$INGRESS_DOMAIN} {
 	}
 	handle @enter-pocket-id {
 		reverse_proxy https://api.modular-platform.internal:8443 {
+			# api checks that the request is for this host, and an https upstream makes
+			# Caddy send its own name instead
+			header_up Host {host}
 			transport http {
 				tls_trust_pool file /etc/caddy/trust/root.crt
 				tls_server_name api.modular-platform.internal

@@ -173,6 +173,8 @@ func TestSetupFilesKeeperRender(t *testing.T) {
 	for _, want := range []string{
 		"@enter-pocket-id {\n\t\tmethod GET\n\t\tpath {$INGRESS_BASE_PATH}/api/v1/setup/identity-enter\n\t}",
 		"@gate-pocket-id path /setup* /signup/setup* /api/signup/setup*",
+		// Caddy sends the upstream's own name as Host to an https upstream; api checks the auth host
+		"\t\t\theader_up Host {host}\n",
 	} {
 		if !strings.Contains(caddy, want) {
 			t.Errorf("Caddyfile lacks %q", want)
