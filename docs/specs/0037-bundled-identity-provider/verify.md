@@ -86,3 +86,26 @@ _Steps derived from spec 0037 AC-7, AC-8, AC-12 and AC-13 for the managed flavor
 
 ## Acceptance-criteria coverage
 - AC-7 · AC-8 · AC-12 · AC-13: the steps above. Not covered here: the TLS connection from Pocket ID to Postgres (the Docker test turns it off; the spike in rationale.md covers it) and the passkey sign in (task 7).
+
+---
+
+# Verify: setup state and setup page · spec 0037 tasks 4 and 6 · updated 2026-11-21
+_Steps derived from spec 0037 AC-3 for the `firstAdmin` field and the editor's `/setup` route (which spec 0036 AC-31 and AC-32 also cover). The passkey sign in waits for the cut over (task 7)._
+
+## Commands
+- [x] `go test -race ./services/api/internal/setup/ ./services/api/internal/api/ -run 'TestStateFirstAdmin|TestSetupStateFirstAdmin'` → `firstAdmin` is `true` only with a session and a `first_admin` block, absent otherwise (never `false`), and a failed lookup is a 500 problem     → AC-3
+- [x] `task generate` then `git diff --exit-code` → no diff left in `api.gen.go` or `api.gen.ts`     → AC-3
+- [x] `pnpm --dir web exec vitest run src/test/setup-page.test.tsx src/test/setup-gate.test.tsx` → every state of the page, the enroll form wins over `firstAdmin`, a refusal marks its field, the answers are cleared after each request and storage stays empty, pending sends every page to `/setup` and done sends it home     → AC-3
+
+## UI / manual (after the cut over)
+- [ ] Fresh managed stack, open `<origin>/`, → lands on `/setup`; enter the code → "Waiting for the identity provider", then "Create your admin account" and "Sign in to finish the setup" on one page     → AC-3
+- [ ] Press "Create your admin account" → the browser goes to `auth.<domain>` with a `t` token; the setup call of the provider answers 200 now and 403 without the cookie     → AC-3, AC-4
+- [ ] Reload `/setup` with the setup cookie gone → the code field, not an error     → AC-3
+- [ ] `GET /api/v1/setup` with the setup cookie while the identity module is stopped → the page keeps its last state or shows the generic failure with Retry; it never hides the button by guessing     → AC-3
+
+## Value sourcing
+- [ ] `firstAdmin` follows the identity module's catalog entry: swap in a graph with `authelia` (an `enroll` block, no `first_admin`) → the enroll form shows, no create button     → AC-3, AC-9
+- [ ] The sign in link goes to `<base>/api/v1/auth/login?return_to=<base>/`; with base path `/platform` the return path carries it     → AC-3
+
+## Acceptance-criteria coverage
+- AC-3 (state and page halves): the steps above. The passkey flow and the bind are the managed smoke of task 7.
