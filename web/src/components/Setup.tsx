@@ -92,7 +92,8 @@ function Step({ state }: { state: SetupState }) {
       <section aria-labelledby="no-code" className={s.form}>
         <h2 id="no-code">There is no setup code</h2>
         <p>
-          Remove <code>.setup-done</code> from the platform's state folder and restart the keeper. It then makes a new code.
+          In the install folder, delete the files in <code>secrets/api/setup/</code> (the files, never the folder), then run{' '}
+          <code>sh setup.sh</code>. It makes a new code and prints it.
         </p>
       </section>
     )

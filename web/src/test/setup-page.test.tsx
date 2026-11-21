@@ -66,6 +66,10 @@ describe('SetupPage', () => {
     state = { state: 'pending', reason: 'no_code' }
     show()
     expect(await screen.findByText('There is no setup code')).toBeTruthy()
+    // the steps of the README until the keeper of #32 lands
+    expect(screen.getByText('secrets/api/setup/')).toBeTruthy()
+    expect(screen.getByText('sh setup.sh')).toBeTruthy()
+    expect(screen.queryByText(/keeper/)).toBeNull()
     expect(screen.queryByLabelText('Setup code')).toBeNull()
   })
 
