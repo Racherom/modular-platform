@@ -177,6 +177,25 @@ Run by hand: `ghcr.io/pocket-id/pocket-id:v2.19.3` alone on a Docker network (SQ
 
 **Job image: decided with you, build our own.** No existing image has `/bin/sh`, `curl`, `jq` and `sleep infinity` with a versioned tag. `badouralix/curl-jq` has all four but only the moving tags `latest` and `alpine`; `curlimages/curl` has a version but no `jq`; `nicolaka/netshoot` is too large. The platform builds a small image from `alpine:3.24` plus `curl` and `jq` (busybox `sleep infinity` works, rc 143 when stopped), published and tagged like its other images. Spec 0031's frozen list and the build and release files follow in task 5d. `/architect` should fold this into the *client step* section of index.md.
 
+## The interim setup holder (decided 2026-11-21, task 7)
+
+**The gap**: the code of tasks 4 and 6 needs a setup code, a session key and a keeper that records the code as used and says done. Spec 0034 gives those to the seed and 0035 and 0036 to the keeper, all in #32's thread, which waits for #37. The managed zip still installs through `setup.sh`, and `api` is not wired to its `Setup`. The smoke and the cut over need a real setup session now.
+
+**What was found** (2026-11-21): no catalog entry declares a `lifetime: setup` secret yet; the render ignores `lifetime: setup` everywhere (it would make a read only hex Compose secret), and `setup.sh` can make only hex; the SDK getters and `MP_SETUP_DIR` exist; the `Keeper` and `Identity` ports have no adapter; Pocket ID has no `enroll`, so only `CodeUsed` and `Done` need a stand in.
+
+| Question | Options | Choice |
+|---|---|---|
+| Who makes the files | a setup step of `api`'s entry run by `setup.sh` · `api` makes them at first start · a one shot Compose job | The first. It is how the platform makes every install time secret today, and it shows the code the way the scope text of #37 says until #32. Built as the `setup.sh` stage for generated secrets, not as a new `api` binary command (the contract refuses a `from` on a `lifetime: setup` secret, and the stage already makes hex files). |
+| Keeper stand in | a file based adapter in `api` · in memory only · a stub keeper container | The first. It keeps "a code is redeemed once" true across an `api` restart, uses the port that exists, and is one file to delete in #32. In memory would let a restart reopen the code; a stub container adds a service to build and delete. |
+| Smoke session | type the code from the file · mint the cookie from the key | Type the code. It proves the whole path the spec promises (AC-3), and the key never leaves the install folder. |
+| Showing the code | `setup.sh` prints it · README names the path | `setup.sh` prints it once, as scope #37 says for the time before #32. |
+
+**Settled while writing** (RECOMMEND items): the origin of the first admin page comes from `MP_OIDC_ISSUER` (already proven equal to `https://auth.<domain>` by G4), and only the path is new (the `oidc` field `first_admin_path`), so no second source for the host can drift; runner up, a rendered full URL. `api` gets a writable setup folder, the one exception to read only secrets, because `Done` must delete the files; runner up, `Done` only writes a marker and the keeper deletes later, which leaves a valid code on disk after the bind. Recovery before the bind has no command: nothing is deployed yet, so setup again is cheap; runner up, a `setup renew` command, which is more surface for a window that closes with #32.
+
+**Cross check by another model (2026-11-21)** found 9 decision gaps and 7 soundness points; you chose the recommended fixes, which are in AC-14 to AC-18: the render mount and `new_password`, `first_admin_path` and `enter` as contract fields, the `link()` write and hash order of `code-used`, `.setup-done` and owner checks in `setup.sh`, the smoke's named files, a separate MAC context for the gate cookie, prefix gate paths, and the accepted replay after an `api` restart.
+
+**Risks**: `api` can delete its own setup files; a bug there only costs a re run of `setup.sh` before the bind. A virtual authenticator exists only in the context that made the passkey, so the smoke saves the browser state once. Until #32, the printed code is on the terminal and in the shell history of whoever runs `setup.sh`; the README says to run it on the host you own and to read the file instead of copying the scrollback.
+
 ## References
 
 **Project sources**:

@@ -9,6 +9,12 @@ _Steps derived from the acceptance criteria of specs 0034 (AC-17 contract part),
 - [x] `go test -tags integration -race ./services/api/internal/store/` → `admin_binding.email` is null for an identity with no email; 8 racing binds leave one admin     → 0036 AC-38
 - [x] `grep` the `api` log lines in those tests for the code, the cookie value and an answer → none     → 0036 AC-39
 
+## Commands (task 5b: the oidc capability)
+- [ ] `go test -race ./libs/check/ -run TestOIDCCapability` → `oidc` has no `admin_email`, has the `to_provider` field `logout_path`, its `client_id` pattern takes `api_oidc`, and an `api` entry without `logout_path` is refused     → AC-9
+- [ ] `go test -race ./libs/render/` → the platform, keeper and managed goldens carry `logout_path`, `MP_LOGOUT_PATH` and `post_logout_redirect_uris`, and no `MP_ADMIN_EMAIL`     → AC-9
+- [ ] `go test -race -tags e2e -run TestOIDCClientEndToEnd ./libs/render/` (needs Docker) → the client at Pocket ID has the logout URI `<origin>/`, the redirect URI follows a base path change     → AC-8, AC-9
+- [ ] Known gap until task 7b: with the `authelia` graph, `api` no longer reads an admin email, so no sign in binds the admin until the setup is wired in     → AC-9
+
 ## UI / manual (after the cut over)
 - [ ] Fresh managed stack, `GET <base>/api/v1/catalog` without a session → 403 `setup_pending`     → 0036 AC-30
 - [ ] Redeem the code twice from two browsers → the first gets the cookie, the second 401 `code_refused`     → 0036 AC-36
