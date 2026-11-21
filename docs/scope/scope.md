@@ -342,7 +342,7 @@ spec [0037](../specs/0037-bundled-identity-provider/index.md) · code in `catalo
    - [x] Sign up config and README (AC-6, AC-10) (built 2026-11-21: `TestPlatformSignup` and `TestPlatformREADMEIdentity` in `libs/render/platform_test.go`; the platform README and the root README follow the passkey setup; fixed 2026-11-21: the connection string now sits in a file named by `DB_CONNECTION_STRING_FILE`, so the lost passkey command via `docker compose exec` reaches Postgres, checked on v2.19.3 and by `TestPlatformExecFindsDatabase`)
 - [x] Verify it: `/check verify bundled identity provider`
 - [x] Test it: `/test bundled identity provider` (2026-11-21: the build's Go and vitest tests cover the AC rows; added vitest for the setup page's refused code, unreadable state with Retry, refused identity link, the gate failing closed, and the sign in link under `/platform`)
-- [ ] Review it (fresh model): `/check review bundled identity provider`
+- [x] Review it (fresh model): `/check review bundled identity provider`
 - [ ] Document it: `/document bundled identity provider`
 
 ### 32. Start the platform from one container · in-progress
