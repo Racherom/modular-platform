@@ -1,0 +1,33 @@
+/* The first run setup page (specs 0036 and 0037): one narrow column, one heading, one action. */
+
+.form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.steps {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.step h2 {
+  font-size: var(--text-sm);
+}
+
+.step p {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}

@@ -21,7 +21,8 @@ export function SessionGate({ children }: { children: ReactNode }) {
   return <SessionContext.Provider value={session.data}>{children}</SessionContext.Provider>
 }
 
-const reasons: Record<string, string> = {
+/** What each `signed_out` reason tells the visitor; the setup page shows the same ones. */
+export const reasons: Record<string, string> = {
   not_admin: 'This account is not the platform admin. Sign in with the admin account.',
   email_unverified: 'The identity provider has not verified the admin email of this account yet.',
   state_mismatch: 'The sign in took too long or came from another tab. Try again.',
