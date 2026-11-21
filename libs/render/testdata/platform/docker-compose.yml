@@ -674,8 +674,11 @@ services:
       while :; do
         [ "$$(call GET "/api/oidc/clients?pagination%5Blimit%5D=50&pagination%5Bpage%5D=$$page")" = 200 ] || fail "listing clients failed"
         jq -r --arg mark "$$mark" --arg keep "$$MP_KEEP" \
-          '($$keep | split(",")) as $$k | .data[] | select(.description == $$mark and ((.id as $$i | $$k | index($$i)) == null)) | .id' /tmp/out >> /tmp/drop
-        [ "$$page" -lt "$$(jq -r '.pagination.totalPages // 1' /tmp/out)" ] || break
+          '($$keep | split(",")) as $$k | .data[] | select(.description == $$mark and ((.id as $$i | $$k | index($$i)) == null)) | .id' /tmp/out 2>/dev/null >> /tmp/drop \
+          || fail "reading the client list failed"
+        pages=$$(jq -r '.pagination.totalPages // 1' /tmp/out 2>/dev/null) || fail "reading the client list failed"
+        case $$pages in '' | *[!0-9]*) fail "reading the client list failed" ;; esac
+        [ "$$page" -lt "$$pages" ] || break
         page=$$((page + 1))
       done
       while read -r id; do

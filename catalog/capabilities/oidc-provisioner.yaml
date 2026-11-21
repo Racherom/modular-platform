@@ -63,7 +63,8 @@ yields:
       done
       echo "provision: client $MP_CLIENT_ID is ready"
     # Deletes where the postgres revoke only disables a login: a client holds no data. A client
-    # without our marker is never read as ours.
+    # without our marker is never read as ours. Every page is checked (status, body and page
+    # count) before the first delete, so a page that fails in any way deletes nothing (AC-12).
     revoke: |
       umask 077
       trap 'rm -f /tmp/key.hdr /tmp/out /tmp/drop' EXIT
@@ -81,8 +82,11 @@ yields:
       while :; do
         [ "$(call GET "/api/oidc/clients?pagination%5Blimit%5D=50&pagination%5Bpage%5D=$page")" = 200 ] || fail "listing clients failed"
         jq -r --arg mark "$mark" --arg keep "$MP_KEEP" \
-          '($keep | split(",")) as $k | .data[] | select(.description == $mark and ((.id as $i | $k | index($i)) == null)) | .id' /tmp/out >> /tmp/drop
-        [ "$page" -lt "$(jq -r '.pagination.totalPages // 1' /tmp/out)" ] || break
+          '($keep | split(",")) as $k | .data[] | select(.description == $mark and ((.id as $i | $k | index($i)) == null)) | .id' /tmp/out 2>/dev/null >> /tmp/drop \
+          || fail "reading the client list failed"
+        pages=$(jq -r '.pagination.totalPages // 1' /tmp/out 2>/dev/null) || fail "reading the client list failed"
+        case $pages in '' | *[!0-9]*) fail "reading the client list failed" ;; esac
+        [ "$page" -lt "$pages" ] || break
         page=$((page + 1))
       done
       while read -r id; do
