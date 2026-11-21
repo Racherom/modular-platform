@@ -142,3 +142,23 @@ _Steps derived from spec 0037 AC-14, AC-16 and AC-18. The adapter that reads and
 
 ## Acceptance-criteria coverage
 - AC-14 · AC-16 · AC-18: the steps above. AC-15 (the file adapter), AC-17 (the smoke) and the live handoff are 7b and 7d.
+
+# Verify: managed smoke · spec 0037 task 7d · updated 2026-11-21
+
+## Commands
+- [x] `task smoke:managed` (needs `task images IMAGE_TAG=ci` and Chromium) → passes: `@setup`, `@deploy` and `@after-restart` all green, and the log check finds no secret value, including the setup code and key     → AC-3, AC-17
+- [x] `go test -race ./libs/render/ ./catalog/...` → the handoff route carries `header_up Host {host}` in the gate, platform and keeper goldens     → AC-4, AC-16
+- [ ] `SMOKE_DOCKER_RESTART=1 task smoke:managed` (restarts your Docker with sudo) → `@after-restart` still loads the saved state and passes after the restart     → AC-17
+- [ ] `grep -rn 'SMOKE_ADMIN\|admin password' scripts/smoke-managed.sh web/smoke` → no hit     → AC-17
+
+## UI / manual
+- [ ] Run the smoke and read the `@setup` output → a line "consent screen: pressing ..." appears only if Pocket ID showed one; none means `skipConsent` is not needed     → AC-17
+- [ ] Before the code step `curl -k --resolve auth.platform.localhost:443:127.0.0.1 https://auth.platform.localhost/setup` → 403     → AC-17
+- [ ] After the bind, the old gate cookie sent to `POST /api/signup/setup` → 403 (the test asserts it)     → AC-5, AC-17
+
+## Value sourcing
+- [ ] `SMOKE_SETUP_CODE_FILE` is `secrets/api/setup/code` of the installed folder: delete the file before `@setup` → the test stops with a clear error, not a wrong code     → AC-17
+- [ ] `SMOKE_STATE_FILE` is the only session `@deploy` and `@after-restart` use: delete it between the runs → both fail at sign in, they never fall back to a password     → AC-17
+
+## Acceptance-criteria coverage
+- AC-17 covered by every step above · AC-3 by the smoke run · AC-4 and AC-16 by the golden step
