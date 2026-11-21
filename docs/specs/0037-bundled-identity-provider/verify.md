@@ -68,3 +68,21 @@ _Steps derived from spec 0037 AC-2, AC-4 and AC-5 for the api half. The ingress 
 
 ## Acceptance-criteria coverage
 - AC-2 (api half) · AC-4 · AC-5 (api half): the steps above. AC-8: not built (see the open decision).
+
+---
+
+# Verify: client step tests · spec 0037 task 5d · updated 2026-11-21
+_Steps derived from spec 0037 AC-7, AC-8, AC-12 and AC-13 for the managed flavor and the Docker test. The job image itself is verified in spec 0030._
+
+## Commands
+- [ ] `go test -race ./libs/render/ -run 'TestRenderManagedGolden|TestGuardAcceptsEveryRender'` → the `pocket-id-managed` graph renders in the managed flavor, the guard accepts it, and `app` waits on its provision job with `service_completed_successfully`     → AC-8
+- [ ] `go test -race -tags e2e ./libs/render/ -run TestOIDCClientEndToEnd` (needs Docker; about a minute) → passes: fresh database with no admin ends with the client job exited 0 and the consumer running; three `up` runs leave one secret; a base path change repoints the redirect URI; a client made by hand stays through a revoke; a provision job for a client id taken by hand fails and names it; an unbound consumer's client is deleted; a second fresh database works     → AC-8, AC-12, AC-13
+- [ ] `grep -n 'tmpfs' -A1 libs/render/testdata/pocket-id-managed/golden/docker-compose.yml` → each provision and revoke job has `/tmp` as tmpfs, and the root stays `read_only: true`     → AC-8
+- [ ] `grep -c 'static-api-key\|api_key' libs/render/testdata/pocket-id-managed/golden/docker-compose.yml` and read each hit → only secret paths, no key value     → AC-7
+
+## Value sourcing
+- [ ] Redirect URI follows `MP_ADMIN_ORIGIN` + `MP_EDGE__BASE_PATH` + the consumer's `redirect_path`: set `MP_EDGE__BASE_PATH=/platform` in `.env`, `up` → `https://pocket.example.test/platform/callback`     → AC-8
+- [ ] Client id follows the binding's `client_id` (`app_oidc` in the fixture); with it set to an id taken by hand the job fails with that id in its log     → AC-12
+
+## Acceptance-criteria coverage
+- AC-7 · AC-8 · AC-12 · AC-13: the steps above. Not covered here: the TLS connection from Pocket ID to Postgres (the Docker test turns it off; the spike in rationale.md covers it) and the passkey sign in (task 7).

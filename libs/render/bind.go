@@ -565,6 +565,8 @@ func (r *renderer) jobService(name string, e end, admin contract.Capability, adm
 		r.joinEgress(&svc)
 	}
 	r.harden(&svc, nil)
+	// the root is read only, and a job script keeps its scratch files in /tmp (spec 0037)
+	svc.Tmpfs = []string{"/tmp"}
 	setEnv(&svc, "MP_MARKER", marker(r.g.Name))
 	for _, f := range sortedKeys(adminValues) {
 		v := adminValues[f]

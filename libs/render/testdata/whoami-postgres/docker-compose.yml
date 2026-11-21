@@ -158,6 +158,8 @@ services:
       target: /run/secrets/bind/password
     security_opt:
     - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}
   postgres_revoke_server:
     cap_drop:
@@ -210,6 +212,8 @@ services:
       target: /run/secrets/admin/admin_password
     security_opt:
     - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}
   whoami:
     cap_drop:

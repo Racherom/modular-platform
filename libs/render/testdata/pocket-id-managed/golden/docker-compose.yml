@@ -1,0 +1,524 @@
+configs:
+  postgres_pg_hba.conf:
+    file: ./config/postgres/pg_hba.conf
+  postgres_postgresql.conf:
+    file: ./config/postgres/postgresql.conf
+name: mp-pocket-id-managed
+networks:
+  internal:
+    internal: true
+secrets:
+  app_uses_oidc_client_secret:
+    file: ./secrets/app/uses_oidc_client_secret
+  pocket-id_admin_oidc_api_key:
+    file: ./secrets/pocket-id/static-api-key
+  pocket-id_encryption-key:
+    file: ./secrets/pocket-id/encryption-key
+  pocket-id_static-api-key:
+    file: ./secrets/pocket-id/static-api-key
+  pocket-id_uses_db_password:
+    file: ./secrets/pocket-id/uses_db_password
+  postgres_admin_server_admin_password:
+    file: ./secrets/postgres/password
+  postgres_password:
+    file: ./secrets/postgres/password
+services:
+  app:
+    cap_drop:
+    - ALL
+    depends_on:
+      edge:
+        condition: service_started
+        required: true
+      pocket-id:
+        condition: service_healthy
+        required: true
+      pocket-id_provision_app_oidc:
+        condition: service_completed_successfully
+        required: true
+    environment:
+      APP_OIDC_CLIENT_ID: app_oidc
+      APP_OIDC_CLIENT_SECRET_FILE: /run/secrets/uses/oidc/client_secret
+      APP_OIDC_ISSUER: https://auth.${MP_EDGE__DOMAIN:-pocket.example.test}
+    image: example.test/oidcapp:1.0.0
+    labels:
+      io.github.racherom.modular-platform.graph: pocket-id-managed
+      io.github.racherom.modular-platform.instance: app
+      io.github.racherom.modular-platform.module: oidcapp
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      internal:
+        aliases:
+        - app.pocket-id-managed.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: app_uses_oidc_client_secret
+      target: /run/secrets/uses/oidc/client_secret
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  edge:
+    cap_drop:
+    - ALL
+    environment:
+      INGRESS_BASE_PATH: ${MP_EDGE__BASE_PATH:-}
+      INGRESS_DOMAIN: ${MP_EDGE__DOMAIN:-pocket.example.test}
+    image: example.test/edge:1.0.0
+    labels:
+      io.github.racherom.modular-platform.graph: pocket-id-managed
+      io.github.racherom.modular-platform.instance: edge
+      io.github.racherom.modular-platform.module: edge
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      internal:
+        aliases:
+        - edge.pocket-id-managed.internal
+        - auth.${MP_EDGE__DOMAIN:-pocket.example.test}
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  mp_jobs:
+    cap_drop:
+    - ALL
+    depends_on:
+      pocket-id_revoke_oidc:
+        condition: service_completed_successfully
+        required: true
+      postgres_revoke_server:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+    - sleep
+    - infinity
+    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0
+    init: true
+    labels:
+      io.github.racherom.modular-platform.graph: pocket-id-managed
+      io.github.racherom.modular-platform.job: wait
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    network_mode: none
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  pocket-id:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      set -eu
+      printf '%s:%s:%s:%s:%s\n' "$$DB_HOST" "$$DB_PORT" "$$DB_NAME" "$$DB_USER" "$$(cat "$$DB_PASSWORD_FILE")" > /tmp/pgpass
+      chmod 0600 /tmp/pgpass
+      export DB_CONNECTION_STRING="postgres://$$DB_USER@$$DB_HOST:$$DB_PORT/$$DB_NAME?sslmode=verify-full&sslrootcert=$$DB_CA_FILE"
+      exec /app/pocket-id
+    depends_on:
+      edge:
+        condition: service_started
+        required: true
+      postgres:
+        condition: service_healthy
+        required: true
+      postgres_provision_pocket-id_db:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+    - sh
+    - -c
+    environment:
+      ALLOW_USER_SIGNUPS: ${MP_POCKET_ID__SIGNUP:-disabled}
+      ANALYTICS_DISABLED: "true"
+      APP_URL: https://auth.${MP_EDGE__DOMAIN:-pocket.example.test}
+      DB_HOST: postgres.pocket-id-managed.internal
+      DB_NAME: pocket_id
+      DB_PASSWORD_FILE: /run/secrets/uses/db/password
+      DB_PORT: "5432"
+      DB_USER: pocket_id
+      ENCRYPTION_KEY_FILE: /run/secrets/pocket-id_encryption-key
+      FILE_BACKEND: database
+      PGPASSFILE: /tmp/pgpass
+      STATIC_API_KEY_FILE: /run/secrets/pocket-id_static-api-key
+      TRUST_PROXY: "true"
+      UI_CONFIG_DISABLED: "true"
+    healthcheck:
+      interval: 10s
+      retries: 10
+      start_period: 30s
+      test:
+      - CMD
+      - /app/pocket-id
+      - healthcheck
+      timeout: 3s
+    image: ghcr.io/pocket-id/pocket-id:v2.19.3
+    labels:
+      io.github.racherom.modular-platform.graph: pocket-id-managed
+      io.github.racherom.modular-platform.instance: pocket-id
+      io.github.racherom.modular-platform.module: pocket-id
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      internal:
+        aliases:
+        - pocket-id.pocket-id-managed.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: pocket-id_encryption-key
+      target: /run/secrets/pocket-id_encryption-key
+    - source: pocket-id_static-api-key
+      target: /run/secrets/pocket-id_static-api-key
+    - source: pocket-id_uses_db_password
+      target: /run/secrets/uses/db/password
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    - /app/data
+    user: ${MP_UID}:${MP_GID}
+  pocket-id_provision_app_oidc:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      umask 077
+      printf 'X-API-KEY: %s\n' "$$(cat "$$MP_ADMIN_API_KEY_FILE")" > /tmp/key.hdr
+      mark="mp-marker:$$MP_MARKER"
+      callback="$${MP_ADMIN_ORIGIN%/}$${MP_ADMIN_BASE_PATH:-}$$MP_REDIRECT_PATH"
+      call() { # method path [curl args]: the status code on stdout, the body in /tmp/out
+        m=$$1; p=$$2; shift 2
+        curl -sS -o /tmp/out -w '%{http_code}' --connect-timeout 5 --max-time 30 \
+          -X "$$m" -H @/tmp/key.hdr -H 'Content-Type: application/json' "$$@" "$$MP_ADMIN_URL$$p"
+      }
+      fail() { echo "provision: $$*" >&2; exit 1; }
+      echo "provision: oidc client $$MP_CLIENT_ID for $$MP_CONSUMER (slot $$MP_SLOT)"
+      jq -n --arg id "$$MP_CLIENT_ID" --arg mark "$$mark" --arg cb "$$callback" \
+        '{id: $$id, name: $$id, description: $$mark, callbackURLs: [$$cb], pkceEnabled: true, isPublic: false, skipConsent: true}' > /tmp/client.json
+      jq 'del(.id)' /tmp/client.json > /tmp/client-put.json
+      case $$(call GET "/api/oidc/clients/$$MP_CLIENT_ID") in
+        404) [ "$$(call POST /api/oidc/clients --data @/tmp/client.json)" = 201 ] || fail "creating client $$MP_CLIENT_ID failed" ;;
+        200)
+          [ "$$(jq -r .description /tmp/out)" = "$$mark" ] || fail "client $$MP_CLIENT_ID exists and was not made by the platform"
+          [ "$$(call PUT "/api/oidc/clients/$$MP_CLIENT_ID" --data @/tmp/client-put.json)" = 200 ] || fail "updating client $$MP_CLIENT_ID failed" ;;
+        *) fail "reading client $$MP_CLIENT_ID failed" ;;
+      esac
+      # the secret: add the one the consumer reads, then delete the ones that were there before
+      [ "$$(call GET "/api/oidc/clients/$$MP_CLIENT_ID")" = 200 ] || fail "reading client $$MP_CLIENT_ID failed"
+      old=$$(jq -r '.credentials.secrets[].id' /tmp/out)
+      jq -n --rawfile s "$$MP_CLIENT_SECRET_FILE" '{secret: ($$s | rtrimstr("\n"))}' > /tmp/secret.json
+      [ "$$(call POST "/api/oidc/clients/$$MP_CLIENT_ID/secrets" --data @/tmp/secret.json)" = 201 ] || fail "setting the secret of client $$MP_CLIENT_ID failed"
+      for id in $$old; do
+        [ "$$(call DELETE "/api/oidc/clients/$$MP_CLIENT_ID/secrets/$$id")" = 204 ] || fail "removing an old secret of client $$MP_CLIENT_ID failed"
+      done
+      echo "provision: client $$MP_CLIENT_ID is ready"
+    depends_on:
+      pocket-id:
+        condition: service_healthy
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_API_KEY_FILE: /run/secrets/admin/api_key
+      MP_ADMIN_BASE_PATH: ${MP_EDGE__BASE_PATH:-}
+      MP_ADMIN_ISSUER: https://auth.${MP_EDGE__DOMAIN:-pocket.example.test}
+      MP_ADMIN_ORIGIN: https://pocket.example.test
+      MP_ADMIN_URL: http://pocket-id.pocket-id-managed.internal:1411
+      MP_CLIENT_ID: app_oidc
+      MP_CLIENT_SECRET_FILE: /run/secrets/bind/client_secret
+      MP_CONSUMER: app
+      MP_CONSUMER_HOST: app.pocket-id-managed.internal
+      MP_MARKER: mp_provisioned_4caef02c
+      MP_REDIRECT_PATH: /callback
+      MP_SLOT: oidc
+    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0
+    labels:
+      io.github.racherom.modular-platform.graph: pocket-id-managed
+      io.github.racherom.modular-platform.instance: pocket-id
+      io.github.racherom.modular-platform.job: provision
+      io.github.racherom.modular-platform.module: pocket-id
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: pocket-id_admin_oidc_api_key
+      target: /run/secrets/admin/api_key
+    - source: app_uses_oidc_client_secret
+      target: /run/secrets/bind/client_secret
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+  pocket-id_revoke_oidc:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      umask 077
+      printf 'X-API-KEY: %s\n' "$$(cat "$$MP_ADMIN_API_KEY_FILE")" > /tmp/key.hdr
+      mark="mp-marker:$$MP_MARKER"
+      call() {
+        m=$$1; p=$$2; shift 2
+        curl -sS -o /tmp/out -w '%{http_code}' --connect-timeout 5 --max-time 30 \
+          -X "$$m" -H @/tmp/key.hdr -H 'Content-Type: application/json' "$$@" "$$MP_ADMIN_URL$$p"
+      }
+      fail() { echo "revoke: $$*" >&2; exit 1; }
+      echo "revoke: clients made by the platform that no binding keeps are deleted"
+      : > /tmp/drop
+      page=1
+      while :; do
+        [ "$$(call GET "/api/oidc/clients?pagination%5Blimit%5D=50&pagination%5Bpage%5D=$$page")" = 200 ] || fail "listing clients failed"
+        jq -r --arg mark "$$mark" --arg keep "$$MP_KEEP" \
+          '($$keep | split(",")) as $$k | .data[] | select(.description == $$mark and ((.id as $$i | $$k | index($$i)) == null)) | .id' /tmp/out >> /tmp/drop
+        [ "$$page" -lt "$$(jq -r '.pagination.totalPages // 1' /tmp/out)" ] || break
+        page=$$((page + 1))
+      done
+      while read -r id; do
+        [ -n "$$id" ] || continue
+        echo "revoke: deleting client $$id"
+        [ "$$(call DELETE "/api/oidc/clients/$$id")" = 204 ] || fail "deleting client $$id failed"
+      done < /tmp/drop
+    depends_on:
+      pocket-id:
+        condition: service_healthy
+        required: true
+      pocket-id_provision_app_oidc:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_API_KEY_FILE: /run/secrets/admin/api_key
+      MP_ADMIN_BASE_PATH: ${MP_EDGE__BASE_PATH:-}
+      MP_ADMIN_ISSUER: https://auth.${MP_EDGE__DOMAIN:-pocket.example.test}
+      MP_ADMIN_ORIGIN: https://pocket.example.test
+      MP_ADMIN_URL: http://pocket-id.pocket-id-managed.internal:1411
+      MP_KEEP: app_oidc
+      MP_MARKER: mp_provisioned_4caef02c
+    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0
+    labels:
+      io.github.racherom.modular-platform.graph: pocket-id-managed
+      io.github.racherom.modular-platform.instance: pocket-id
+      io.github.racherom.modular-platform.job: revoke
+      io.github.racherom.modular-platform.module: pocket-id
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: pocket-id_admin_oidc_api_key
+      target: /run/secrets/admin/api_key
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+  postgres:
+    cap_drop:
+    - ALL
+    command:
+    - postgres
+    - -c
+    - config_file=/etc/postgresql/postgresql.conf
+    configs:
+    - source: postgres_postgresql.conf
+      target: /etc/postgresql/postgresql.conf
+    - source: postgres_pg_hba.conf
+      target: /etc/postgresql/pg_hba.conf
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 30s
+      test:
+      - CMD
+      - pg_isready
+      - -h
+      - 127.0.0.1
+      - -U
+      - postgres
+      timeout: 3s
+    image: postgres:18.6-alpine3.24
+    labels:
+      io.github.racherom.modular-platform.graph: pocket-id-managed
+      io.github.racherom.modular-platform.instance: postgres
+      io.github.racherom.modular-platform.module: postgres
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      internal:
+        aliases:
+        - postgres.pocket-id-managed.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: postgres_password
+      target: /run/secrets/postgres_password
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /var/run/postgresql
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - source: ./data/postgres/data
+      target: /var/lib/postgresql
+      type: bind
+  postgres_provision_pocket-id_db:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      PGPASSWORD=$$(cat "$$MP_ADMIN_ADMIN_PASSWORD_FILE")
+      export PGPASSWORD PGHOST="$$MP_ADMIN_HOST" PGPORT="$$MP_ADMIN_PORT" PGUSER="$$MP_ADMIN_ADMIN_USER"
+      export PGDATABASE=postgres PGSSLMODE="$$MP_ADMIN_SSLMODE" PGCONNECT_TIMEOUT=10 PGAPPNAME=mp-provision
+      if [ -n "$${MP_ADMIN_CA_FILE:-}" ]; then export PGSSLROOTCERT="$$MP_ADMIN_CA_FILE"; fi
+      echo "provision: database $$MP_DATABASE and login $$MP_USER for $$MP_CONSUMER (slot $$MP_SLOT)"
+      psql -X -q -v ON_ERROR_STOP=1 -v marker="$$MP_MARKER" -v login="$$MP_USER" -v db="$$MP_DATABASE" <<'SQL'
+      \set pw `cat "$$MP_PASSWORD_FILE"`
+      SELECT pg_advisory_lock(hashtext('modular-platform provisioner')) \g /dev/null
+      SELECT format('CREATE ROLE %I NOLOGIN', :'marker')
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'marker') \gexec
+      SELECT CASE
+          WHEN r.oid IS NULL THEN 'create'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = r.oid AND g.rolname = :'marker') THEN 'update'
+          ELSE 'foreign' END AS role_state
+        FROM (SELECT CAST(:'login' AS name) AS n) x LEFT JOIN pg_roles r ON r.rolname = x.n \gset
+      SELECT format('CREATE ROLE %I LOGIN PASSWORD %L IN ROLE %I', :'login', :'pw', :'marker')
+        WHERE :'role_state' = 'create' \gexec
+      SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', :'login', :'pw')
+        WHERE :'role_state' = 'update' \gexec
+      SELECT format('DO $$mp$$ BEGIN RAISE EXCEPTION %L; END $$mp$$',
+                    format('role %s exists and was not made by the platform', :'login'))
+        WHERE :'role_state' = 'foreign' \gexec
+      SELECT CASE
+          WHEN d.oid IS NULL THEN 'create'
+          WHEN o.rolname = :'login' THEN 'keep'
+          WHEN EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+                       WHERE m.member = d.datdba AND g.rolname = :'marker') THEN 'reown'
+          ELSE 'foreign' END AS db_state
+        FROM (SELECT CAST(:'db' AS name) AS n) x
+        LEFT JOIN pg_database d ON d.datname = x.n LEFT JOIN pg_roles o ON o.oid = d.datdba \gset
+      SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'login') WHERE :'db_state' = 'create' \gexec
+      SELECT format('ALTER DATABASE %I OWNER TO %I', :'db', :'login') WHERE :'db_state' = 'reown' \gexec
+      SELECT format('DO $$mp$$ BEGIN RAISE EXCEPTION %L; END $$mp$$',
+                    format('database %s exists and its owner was not made by the platform', :'db'))
+        WHERE :'db_state' = 'foreign' \gexec
+      SELECT format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', :'db') \gexec
+      SELECT format('GRANT CONNECT ON DATABASE %I TO %I', :'db', :'login') \gexec
+      REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+      REVOKE CONNECT ON DATABASE template1 FROM PUBLIC;
+      SELECT pg_reload_conf() \g /dev/null
+      SQL
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
+      MP_ADMIN_ADMIN_USER: postgres
+      MP_ADMIN_HOST: postgres.pocket-id-managed.internal
+      MP_ADMIN_PORT: "5432"
+      MP_ADMIN_SSLMODE: disable
+      MP_ADMIN_URL: postgres://postgres.pocket-id-managed.internal:5432
+      MP_CONSUMER: pocket-id
+      MP_CONSUMER_HOST: pocket-id.pocket-id-managed.internal
+      MP_DATABASE: pocket_id
+      MP_MARKER: mp_provisioned_4caef02c
+      MP_PASSWORD_FILE: /run/secrets/bind/password
+      MP_SLOT: db
+      MP_USER: pocket_id
+    image: postgres:18.6
+    labels:
+      io.github.racherom.modular-platform.graph: pocket-id-managed
+      io.github.racherom.modular-platform.instance: postgres
+      io.github.racherom.modular-platform.job: provision
+      io.github.racherom.modular-platform.module: postgres
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: postgres_admin_server_admin_password
+      target: /run/secrets/admin/admin_password
+    - source: pocket-id_uses_db_password
+      target: /run/secrets/bind/password
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+  postgres_revoke_server:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      PGPASSWORD=$$(cat "$$MP_ADMIN_ADMIN_PASSWORD_FILE")
+      export PGPASSWORD PGHOST="$$MP_ADMIN_HOST" PGPORT="$$MP_ADMIN_PORT" PGUSER="$$MP_ADMIN_ADMIN_USER"
+      export PGDATABASE=postgres PGSSLMODE="$$MP_ADMIN_SSLMODE" PGCONNECT_TIMEOUT=10 PGAPPNAME=mp-revoke
+      if [ -n "$${MP_ADMIN_CA_FILE:-}" ]; then export PGSSLROOTCERT="$$MP_ADMIN_CA_FILE"; fi
+      echo "revoke: logins made by the platform that no binding keeps lose sign in"
+      psql -X -q -v ON_ERROR_STOP=1 -v marker="$$MP_MARKER" -v keep="$$MP_KEEP" <<'SQL'
+      SELECT pg_advisory_lock(hashtext('modular-platform provisioner')) \g /dev/null
+      SELECT format('ALTER ROLE %I NOLOGIN', r.rolname)
+        FROM pg_roles r JOIN pg_auth_members m ON m.member = r.oid JOIN pg_roles g ON g.oid = m.roleid
+        WHERE g.rolname = :'marker' AND r.rolcanlogin
+          AND NOT r.rolname = ANY (string_to_array(:'keep', ',')) \gexec
+      SELECT pg_terminate_backend(a.pid)
+        FROM pg_stat_activity a JOIN pg_roles r ON r.oid = a.usesysid
+        JOIN pg_auth_members m ON m.member = r.oid JOIN pg_roles g ON g.oid = m.roleid
+        WHERE g.rolname = :'marker' AND NOT r.rolcanlogin \g /dev/null
+      SQL
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+      postgres_provision_pocket-id_db:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_ADMIN_PASSWORD_FILE: /run/secrets/admin/admin_password
+      MP_ADMIN_ADMIN_USER: postgres
+      MP_ADMIN_HOST: postgres.pocket-id-managed.internal
+      MP_ADMIN_PORT: "5432"
+      MP_ADMIN_SSLMODE: disable
+      MP_ADMIN_URL: postgres://postgres.pocket-id-managed.internal:5432
+      MP_KEEP: pocket_id
+      MP_MARKER: mp_provisioned_4caef02c
+    image: postgres:18.6
+    labels:
+      io.github.racherom.modular-platform.graph: pocket-id-managed
+      io.github.racherom.modular-platform.instance: postgres
+      io.github.racherom.modular-platform.job: revoke
+      io.github.racherom.modular-platform.module: postgres
+      io.github.racherom.modular-platform.stack: 01960000-0000-7000-8000-000000000001
+    networks:
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: postgres_admin_server_admin_password
+      target: /run/secrets/admin/admin_password
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}

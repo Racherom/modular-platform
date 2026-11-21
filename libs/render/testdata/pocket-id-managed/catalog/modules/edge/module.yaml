@@ -1,0 +1,30 @@
+# Fixture of spec 0037, task 5d: an ingress that publishes no host port and needs no setup, the
+# only kind a deployed graph may hold, so the managed flavor can render pocket-id.
+apiVersion: modular-platform/v1
+kind: Module
+name: edge
+description: An ingress with fixed values and no published port.
+image: example.test/edge:1.0.0
+provides:
+  public:
+    capability: http-ingress
+    version: "1.0"
+    port: 443
+    fields:
+      origin: {value: "https://pocket.example.test"}
+      base_path: {config: base-path}
+      domain: {config: domain}
+      http_port: {value: "80"}
+      https_port: {value: "443"}
+config:
+  domain:
+    env: INGRESS_DOMAIN
+    type: string
+    default: pocket.example.test
+    description: The domain the fixture answers on.
+  base-path:
+    env: INGRESS_BASE_PATH
+    type: string
+    optional: true
+    pattern: "(/[A-Za-z0-9._~-]+)+"
+    description: Path the fixture is served under; unset at the site root.

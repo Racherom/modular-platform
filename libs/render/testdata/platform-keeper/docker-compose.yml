@@ -303,6 +303,8 @@ services:
       target: /run/secrets/admin/password
     security_opt:
     - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}
     volumes:
     - source: ./secrets/postgres/uses_tls_cert
@@ -556,6 +558,8 @@ services:
       target: /run/secrets/bind/client_secret
     security_opt:
     - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}
   pocket-id_revoke_oidc:
     cap_drop:
@@ -621,6 +625,8 @@ services:
       target: /run/secrets/admin/api_key
     security_opt:
     - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}
   postgres:
     cap_drop:
@@ -774,6 +780,8 @@ services:
       target: /run/secrets/bind/password
     security_opt:
     - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}
   postgres_provision_pocket-id_db:
     cap_drop:
@@ -865,6 +873,8 @@ services:
       target: /run/secrets/bind/password
     security_opt:
     - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}
   postgres_revoke_server:
     cap_drop:
@@ -929,6 +939,8 @@ services:
       target: /run/secrets/admin/ca
     security_opt:
     - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}
   renderer:
     cap_drop:

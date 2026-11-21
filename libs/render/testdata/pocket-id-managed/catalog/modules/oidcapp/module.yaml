@@ -1,0 +1,32 @@
+# Fixture of spec 0037, task 5d: a module that signs its users in with pocket-id and answers
+# the gate question of the identity provider's first admin page.
+apiVersion: modular-platform/v1
+kind: Module
+name: oidcapp
+description: An app that asks for an OpenID Connect client.
+image: example.test/oidcapp:1.0.0
+provides:
+  site:
+    capability: http
+    version: "1.0"
+    port: 8080
+    fields:
+      host: {platform: host}
+      port: {platform: port}
+      url: {platform: url}
+uses:
+  public:
+    capability: http-ingress
+    fields:
+      route: {value: /api}
+      upstream: {platform: url, provide: site}
+      guard: {value: /v1/setup/gate}
+  oidc:
+    capability: oidc
+    optional: true
+    env:
+      issuer: APP_OIDC_ISSUER
+      client_id: APP_OIDC_CLIENT_ID
+      client_secret: APP_OIDC_CLIENT_SECRET_FILE
+    fields:
+      redirect_path: {value: /callback}

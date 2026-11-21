@@ -24,15 +24,17 @@ const testStack = "01960000-0000-7000-8000-000000000001"
 func TestRenderManagedGolden(t *testing.T) {
 	for _, c := range []struct {
 		dir    string
-		result func(*testing.T) (contract.CheckResult, contract.Catalog)
+		result func(*testing.T) (contract.CheckResult, contract.Catalog, contract.Templates)
 	}{
-		{filepath.Join("testdata", "whoami-postgres-managed"), sampleResult},
-		{filepath.Join(pairDir, "golden-managed"), pairResult},
-		{filepath.Join("testdata", "bindings", "golden-managed"), bindingsResult},
+		{filepath.Join("testdata", "whoami-postgres-managed"), noTemplates(sampleResult)},
+		{filepath.Join(pairDir, "golden-managed"), noTemplates(pairResult)},
+		{filepath.Join("testdata", "bindings", "golden-managed"), noTemplates(bindingsResult)},
+		// spec 0037: pocket-id and its client job in a deployed graph
+		{filepath.Join("testdata", "pocket-id-managed", "golden"), pocketManagedResult},
 	} {
 		t.Run(c.dir, func(t *testing.T) {
-			result, catalog := c.result(t)
-			m, err := render.Managed(result, catalog, builtinTemplates(t), testStack, nil)
+			result, catalog, templates := c.result(t)
+			m, err := render.Managed(result, catalog, templates, testStack, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -307,4 +309,13 @@ func TestRenderManagedInvalidLock(t *testing.T) {
 	if !ok || len(refused.Problems) != 1 || refused.Problems[0].Code != contract.CodeInvalidLock || refused.Problems[0].Path != "lock[0]" {
 		t.Fatalf("err = %v, want one invalid_lock at lock[0]", err)
 	}
+}
+
+// pocketManagedResult checks the fixture graph of spec 0037 task 5d: pocket-id with its client
+// job and a consumer, beside an ingress that publishes no port, so a deployed graph may hold it.
+func pocketManagedResult(t *testing.T) (contract.CheckResult, contract.Catalog, contract.Templates) {
+	t.Helper()
+	catalog, templates := loadCatalogTemplates(t, "../../catalog",
+		filepath.Join(keeperDir, "catalog"), "testdata/pocket-id-managed/catalog")
+	return checkFile(t, "testdata/pocket-id-managed/graph.yaml", catalog), catalog, templates
 }
