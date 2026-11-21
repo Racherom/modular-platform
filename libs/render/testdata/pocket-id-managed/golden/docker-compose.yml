@@ -115,7 +115,7 @@ services:
       chmod 0600 /tmp/pgpass
       query="sslmode=$$DB_SSLMODE"
       if [ -n "$${DB_CA_FILE:-}" ]; then query="$$query&sslrootcert=$$DB_CA_FILE"; fi
-      export DB_CONNECTION_STRING="postgres://$$DB_USER@$$DB_HOST:$$DB_PORT/$$DB_NAME?$$query"
+      printf '%s' "postgres://$$DB_USER@$$DB_HOST:$$DB_PORT/$$DB_NAME?$$query" > /tmp/db-connection-string
       exec /app/pocket-id
     depends_on:
       edge:
@@ -134,6 +134,7 @@ services:
       ALLOW_USER_SIGNUPS: ${MP_POCKET_ID__SIGNUP:-disabled}
       ANALYTICS_DISABLED: "true"
       APP_URL: https://auth.${MP_EDGE__DOMAIN:-pocket.example.test}
+      DB_CONNECTION_STRING_FILE: /tmp/db-connection-string
       DB_HOST: postgres.pocket-id-managed.internal
       DB_NAME: pocket_id
       DB_PASSWORD_FILE: /run/secrets/uses/db/password

@@ -13,7 +13,7 @@ command:
     chmod 0600 /tmp/pgpass
     query="sslmode=$DB_SSLMODE"
     if [ -n "${DB_CA_FILE:-}" ]; then query="$query&sslrootcert=$DB_CA_FILE"; fi
-    export DB_CONNECTION_STRING="postgres://$DB_USER@$DB_HOST:$DB_PORT/$DB_NAME?$query"
+    printf '%s' "postgres://$DB_USER@$DB_HOST:$DB_PORT/$DB_NAME?$query" > /tmp/db-connection-string
     exec /app/pocket-id
 healthcheck:
   test: ["CMD", "/app/pocket-id", "healthcheck"]
@@ -67,6 +67,9 @@ uses:
 environment:
   APP_URL: "https://{public.host}"
   PGPASSFILE: /tmp/pgpass
+  # a file, not an export in the script: `docker compose exec` gets only this environment,
+  # so the lost passkey command (README) also opens Postgres, not an empty SQLite file
+  DB_CONNECTION_STRING_FILE: /tmp/db-connection-string
   FILE_BACKEND: database
   TRUST_PROXY: "true"
   UI_CONFIG_DISABLED: "true"

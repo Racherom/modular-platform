@@ -312,3 +312,28 @@ func TestPlatformREADMEIdentity(t *testing.T) {
 		}
 	}
 }
+
+// TestPlatformExecFindsDatabase checks that the provider's connection string sits in the
+// container's own environment (spec 0037, AC-10). `docker compose exec` gets only that
+// environment, not what the start script exports, so the README's lost passkey command
+// would open an empty SQLite file and answer "user not found".
+func TestPlatformExecFindsDatabase(t *testing.T) {
+	t.Parallel()
+	result, catalog, templates := platformResult(t)
+	out, err := render.Platform(result, catalog, templates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var compose string
+	for _, f := range out.Files {
+		if f.Path == "docker-compose.yml" {
+			compose = string(f.Data)
+		}
+	}
+	if !strings.Contains(compose, "DB_CONNECTION_STRING_FILE: /tmp/db-connection-string") {
+		t.Error("the pocket-id environment does not set DB_CONNECTION_STRING_FILE")
+	}
+	if strings.Contains(compose, "export DB_CONNECTION_STRING") {
+		t.Error("the pocket-id start script exports DB_CONNECTION_STRING, which exec does not see")
+	}
+}

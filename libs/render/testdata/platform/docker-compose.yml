@@ -503,7 +503,7 @@ services:
       chmod 0600 /tmp/pgpass
       query="sslmode=$$DB_SSLMODE"
       if [ -n "$${DB_CA_FILE:-}" ]; then query="$$query&sslrootcert=$$DB_CA_FILE"; fi
-      export DB_CONNECTION_STRING="postgres://$$DB_USER@$$DB_HOST:$$DB_PORT/$$DB_NAME?$$query"
+      printf '%s' "postgres://$$DB_USER@$$DB_HOST:$$DB_PORT/$$DB_NAME?$$query" > /tmp/db-connection-string
       exec /app/pocket-id
     depends_on:
       ingress:
@@ -523,6 +523,7 @@ services:
       ANALYTICS_DISABLED: "true"
       APP_URL: https://auth.${MP_INGRESS__DOMAIN}
       DB_CA_FILE: /run/secrets/uses/db/ca
+      DB_CONNECTION_STRING_FILE: /tmp/db-connection-string
       DB_HOST: postgres.modular-platform.internal
       DB_NAME: pocket_id
       DB_PASSWORD_FILE: /run/secrets/uses/db/password
