@@ -116,6 +116,56 @@ func TestFileKeeperDone(t *testing.T) {
 	}
 }
 
+// failingRemove is a folder whose Remove of one name fails, like a disk error halfway through Done.
+type failingRemove struct {
+	dirFolder
+	name string
+}
+
+func (f failingRemove) Remove(ctx context.Context, name string) error {
+	if name == f.name {
+		return errors.New("disk error")
+	}
+	return f.dirFolder.Remove(ctx, name)
+}
+
+// TestFileKeeperDoneCutShort: whichever removal fails, the marker is already written and the code
+// file is still there, so Run calls Done again after a restart.
+func TestFileKeeperDoneCutShort(t *testing.T) {
+	t.Parallel()
+	for _, failing := range []string{"session-key", "code-used", "code"} {
+		t.Run(failing, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			dir := t.TempDir()
+			for _, name := range []string{"code", "session-key", "code-used"} {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			files := &fakeFiles{}
+			files.set("code-1", "key")
+			if err := setup.NewFileKeeper(failingRemove{dirFolder{dir}, failing}, files).Done(ctx); err == nil {
+				t.Fatal("Done with a failing remove = nil, want an error")
+			}
+			if _, err := os.Stat(filepath.Join(dir, ".setup-done")); err != nil {
+				t.Errorf(".setup-done missing after a Done cut short: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "code")); err != nil {
+				t.Errorf("code gone after a Done cut short, so Run would not retry: %v", err)
+			}
+			if err := setup.NewFileKeeper(dirFolder{dir}, files).Done(ctx); err != nil {
+				t.Fatalf("Done again = %v", err)
+			}
+			for _, name := range []string{"code", "session-key", "code-used"} {
+				if _, err := os.Stat(filepath.Join(dir, name)); !errors.Is(err, fs.ErrNotExist) {
+					t.Errorf("%s still there after the retry: %v", name, err)
+				}
+			}
+		})
+	}
+}
+
 // TestFileKeeperNoEnroll covers AC-15: the file keeper has no enroll questions and refuses a run.
 func TestFileKeeperNoEnroll(t *testing.T) {
 	t.Parallel()

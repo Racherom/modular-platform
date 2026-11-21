@@ -203,6 +203,21 @@ func TestRedeemRefusals(t *testing.T) {
 			t.Errorf("err = %v", err)
 		}
 	})
+	t.Run("missing key keeps the code", func(t *testing.T) {
+		r := newRig(t, "")
+		key := r.files.key
+		r.files.set(r.files.code, "")
+		if _, err := r.svc.Redeem(request(http.MethodPost, "/", "192.0.2.1"), r.files.code); err == nil {
+			t.Fatal("redeem without a key succeeded")
+		}
+		if len(r.keeper.codeUsed) != 0 {
+			t.Error("a failed key read recorded the code as used")
+		}
+		r.files.set(r.files.code, key)
+		if _, err := r.svc.Redeem(request(http.MethodPost, "/", "192.0.2.1"), r.files.code); err != nil {
+			t.Errorf("redeem once the key is back = %v, want nil", err)
+		}
+	})
 	t.Run("admin bound", func(t *testing.T) {
 		r := newRig(t, "")
 		r.admins.bound = true

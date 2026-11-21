@@ -242,6 +242,15 @@ func (s *Service) Redeem(r *http.Request, code string) (*http.Cookie, error) {
 	if subtle.ConstantTimeCompare(got[:], wantSum[:]) != 1 {
 		return refuse("wrong")
 	}
+	// The key is read before the code is recorded as used, so a missing or unreadable key never
+	// burns the code: the same code works again once the key is back.
+	key, ok, err := s.files.Key(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading the session key: %w", err)
+	}
+	if !ok {
+		return nil, errors.New("setup: the session key file is missing")
+	}
 	switch err := s.keeper.CodeUsed(ctx, hex.EncodeToString(got[:])); {
 	case errors.Is(err, ErrCodeUsed), errors.Is(err, ErrCodeChanged):
 		return refuse("used")
@@ -249,13 +258,6 @@ func (s *Service) Redeem(r *http.Request, code string) (*http.Cookie, error) {
 		return nil, ErrDone
 	case err != nil:
 		return nil, fmt.Errorf("recording the used code: %w", err)
-	}
-	key, ok, err := s.files.Key(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("reading the session key: %w", err)
-	}
-	if !ok {
-		return nil, errors.New("setup: the session key file is missing")
 	}
 	value, expiry := setupsession.Mint(key, s.now())
 	s.log.InfoContext(ctx, "setup code accepted", slog.String("remote", remote))

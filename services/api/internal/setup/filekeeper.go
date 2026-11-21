@@ -80,16 +80,17 @@ func (k *FileKeeper) CodeUsed(ctx context.Context, codeSHA256 string) error {
 	return nil
 }
 
-// Done deletes the code, the session key and the used record, then writes the done marker. It is
-// safe to call again.
+// Done writes the done marker, then deletes the session key, the used record and the code. It is
+// safe to call again. The code goes last: while any setup file is left, the code file is still
+// there, so Run calls Done again after a restart and the marker is never missing.
 func (k *FileKeeper) Done(ctx context.Context) error {
-	for _, name := range []string{"code", "session-key", codeUsedFile} {
+	if err := k.folder.Write(ctx, setupDoneFile, nil); err != nil {
+		return fmt.Errorf("writing the done marker: %w", err)
+	}
+	for _, name := range []string{"session-key", codeUsedFile, "code"} {
 		if err := k.folder.Remove(ctx, name); err != nil {
 			return fmt.Errorf("deleting the setup files: %w", err)
 		}
-	}
-	if err := k.folder.Write(ctx, setupDoneFile, nil); err != nil {
-		return fmt.Errorf("writing the done marker: %w", err)
 	}
 	return nil
 }
