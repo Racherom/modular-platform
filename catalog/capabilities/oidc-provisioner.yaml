@@ -10,6 +10,7 @@ fields:
   origin: {type: url, description: "The public origin the browser sees."}
   base_path: {type: string, optional: true, description: Path the platform is served under; unset at the site root.}
   ca: {type: certificate, optional: true, description: Root CA that signs the provider's certificate.}
+  first_admin_path: {type: string, optional: true, description: "Path on the provider's own host of its first admin page; unset when it has none."}
 yields:
   capability: oidc
   named: [client_id]
@@ -19,6 +20,7 @@ yields:
     client_id: named
     client_secret: generate
     ca: {admin: ca}
+    first_admin_path: {admin: first_admin_path}
     redirect_path: consumer
     logout_path: consumer
   job:

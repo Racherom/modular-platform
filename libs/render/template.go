@@ -152,7 +152,7 @@ func (r *renderer) clientValues(b contract.Binding) (map[string]string, error) {
 		}
 		own := r.end(b.Consumer, src.Provide)
 		if src.Platform == contract.FieldSourcePlatformGate {
-			out[f] = strings.Join(own.provide.FirstAdmin.Gate, " ") // a Caddy path matcher takes them as they are
+			out[f] = gatePrefixes(own.provide.FirstAdmin.Gate)
 			continue
 		}
 		v, set, err := r.source(own, r.caps[own.offered], f, contract.FieldSource{Platform: src.Platform, Path: src.Path})
@@ -164,4 +164,15 @@ func (r *renderer) clientValues(b contract.Binding) (map[string]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// gatePrefixes writes the gate paths of a first_admin block as the prefixes a Caddy path matcher
+// takes, space separated: /setup becomes /setup*, so /setup/ and /setup/__data.json are guarded too
+// (spec 0037, AC-18). A prefix guards more than the page needs, never less.
+func gatePrefixes(paths []string) string {
+	prefixes := make([]string, len(paths))
+	for i, p := range paths {
+		prefixes[i] = p + "*"
+	}
+	return strings.Join(prefixes, " ")
 }

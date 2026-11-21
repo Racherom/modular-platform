@@ -28,6 +28,18 @@
   "formatVersion": 1,
   "generate": [
     {
+      "format": "password",
+      "path": "secrets/api/setup/code",
+      "readers": [],
+      "show": true
+    },
+    {
+      "format": "hex",
+      "path": "secrets/api/setup/session-key",
+      "readers": [],
+      "show": false
+    },
+    {
       "format": "hex",
       "path": "secrets/pocket-id/encryption-key",
       "readers": [],
@@ -95,7 +107,12 @@
     "instance": "deployer-docker",
     "module": "deployer-docker"
   },
-  "show": [],
+  "show": [
+    {
+      "description": "The setup code the first visitor of the web setup enters once.",
+      "path": "secrets/api/setup/code"
+    }
+  ],
   "steps": [
     {
       "askEnv": {},

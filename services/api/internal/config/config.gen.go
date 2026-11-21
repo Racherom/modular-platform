@@ -31,6 +31,18 @@ func (c Config) SessionMax(ctx context.Context) (time.Duration, error) {
 	return sdk.Value[time.Duration](ctx, c.v, "session-max")
 }
 
+// SetupCode is the setup code the first visitor of the web setup enters once.
+// It is read at every call; the bool is false while the setup file does not exist.
+func (c Config) SetupCode(ctx context.Context) (sdk.Secret, bool, error) {
+	return sdk.SetupFile(ctx, c.v, "code")
+}
+
+// SetupSessionKey is key the setup session cookie and the handoff token are signed with.
+// It is read at every call; the bool is false while the setup file does not exist.
+func (c Config) SetupSessionKey(ctx context.Context) (sdk.Secret, bool, error) {
+	return sdk.SetupFile(ctx, c.v, "session-key")
+}
+
 // Uses holds the api module's bindings; read them only through the getters.
 type Uses struct{ b *sdk.Bindings }
 
@@ -52,6 +64,8 @@ type OidcBinding struct {
 	ClientId string
 	// ClientSecret is client secret the consumer sends and the provider checks.
 	ClientSecret sdk.Secret
+	// FirstAdminPath is path on the provider's own host of its first admin page; unset when it has none. Nil when the binding does not deliver it.
+	FirstAdminPath *string
 	// Issuer is issuer URL of the provider.
 	Issuer *url.URL
 }
@@ -63,10 +77,11 @@ func (u Uses) Oidc(ctx context.Context) (OidcBinding, error) {
 		return OidcBinding{}, err
 	}
 	return OidcBinding{
-		Ca:           sdk.Field[[]byte](f, "ca"),
-		ClientId:     sdk.Field[string](f, "client_id"),
-		ClientSecret: sdk.Field[sdk.Secret](f, "client_secret"),
-		Issuer:       sdk.Field[*url.URL](f, "issuer"),
+		Ca:             sdk.Field[[]byte](f, "ca"),
+		ClientId:       sdk.Field[string](f, "client_id"),
+		ClientSecret:   sdk.Field[sdk.Secret](f, "client_secret"),
+		FirstAdminPath: sdk.OptionalField[string](f, "first_admin_path"),
+		Issuer:         sdk.Field[*url.URL](f, "issuer"),
 	}, nil
 }
 
@@ -106,10 +121,11 @@ var Module = sdk.Declaration[Config, Uses]{
 	Bindings: []sdk.BindingSpec{
 		{Capability: "deploy-target", Client: "http", Env: map[string]string{"ca_file": "MP_DEPLOY_TARGET_CA_FILE", "token_file": "MP_DEPLOY_TARGET_TOKEN_FILE", "url": "MP_DEPLOY_TARGET_URL"}, Open: httpclient.Open},
 		{Capability: "main-db", Client: "postgresql", Env: map[string]string{"ca_file": "MP_DATABASE_CA_FILE", "database": "MP_DATABASE_NAME", "password_file": "MP_DATABASE_PASSWORD_FILE", "sslmode": "MP_DATABASE_SSLMODE", "url": "MP_DATABASE_URL", "user": "MP_DATABASE_USER"}, Open: pg.Open},
-		{Capability: "oidc", Env: map[string]string{"ca_file": "MP_OIDC_CA_FILE", "client_id": "MP_OIDC_CLIENT_ID", "client_secret_file": "MP_OIDC_CLIENT_SECRET_FILE", "issuer": "MP_OIDC_ISSUER"}, Fields: []sdk.FieldSpec{{Name: "ca", Env: "MP_OIDC_CA_FILE", Type: "certificate", Optional: true}, {Name: "client_id", Env: "MP_OIDC_CLIENT_ID", Type: "string", Pattern: "[a-z0-9][a-z0-9_-]*"}, {Name: "client_secret", Env: "MP_OIDC_CLIENT_SECRET_FILE", Type: "secret"}, {Name: "issuer", Env: "MP_OIDC_ISSUER", Type: "url"}}},
+		{Capability: "oidc", Env: map[string]string{"ca_file": "MP_OIDC_CA_FILE", "client_id": "MP_OIDC_CLIENT_ID", "client_secret_file": "MP_OIDC_CLIENT_SECRET_FILE", "first_admin_path": "MP_OIDC_FIRST_ADMIN_PATH", "issuer": "MP_OIDC_ISSUER"}, Fields: []sdk.FieldSpec{{Name: "ca", Env: "MP_OIDC_CA_FILE", Type: "certificate", Optional: true}, {Name: "client_id", Env: "MP_OIDC_CLIENT_ID", Type: "string", Pattern: "[a-z0-9][a-z0-9_-]*"}, {Name: "client_secret", Env: "MP_OIDC_CLIENT_SECRET_FILE", Type: "secret"}, {Name: "first_admin_path", Env: "MP_OIDC_FIRST_ADMIN_PATH", Type: "string", Optional: true}, {Name: "issuer", Env: "MP_OIDC_ISSUER", Type: "url"}}},
 		{Capability: "public", Env: map[string]string{"base_path": "MP_BASE_PATH", "origin": "MP_PUBLIC_ORIGIN"}, Fields: []sdk.FieldSpec{{Name: "base_path", Env: "MP_BASE_PATH", Type: "string", Optional: true}, {Name: "origin", Env: "MP_PUBLIC_ORIGIN", Type: "url"}}},
 		{Capability: "renderer", Client: "http", Env: map[string]string{"ca_file": "MP_RENDERER_CA_FILE", "token_file": "MP_RENDERER_TOKEN_FILE", "url": "MP_RENDERER_URL"}, Open: httpclient.Open},
 	},
-	Provides: &sdk.ProvideSpec{Capability: "api"},
-	New:      func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },
+	Provides:   &sdk.ProvideSpec{Capability: "api"},
+	SetupFiles: []string{"code", "session-key"},
+	New:        func(v *sdk.Values, b *sdk.Bindings) (Config, Uses) { return Config{v}, Uses{b} },
 }

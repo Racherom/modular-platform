@@ -19,3 +19,4 @@ uses:
       route: {value: /api}
       upstream: {platform: url, provide: site}
       guard: {value: /v1/setup/gate}
+      enter: {value: /v1/setup/identity-enter}

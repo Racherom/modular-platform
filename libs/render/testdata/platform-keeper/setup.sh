@@ -242,5 +242,6 @@ until keeper_running --filter health=healthy && ! docker inspect "$seed" >/dev/n
 	waited=$((waited + 5))
 done
 echo
+printf '%s: %s\n' 'The setup code the first visitor of the web setup enters once.' "$(cat secrets/api/setup/code)"
 echo "Open $(env_get MP_INGRESS__ORIGIN) and sign in."
 : > .shown

@@ -142,7 +142,7 @@ func needsSetup(m contract.Module, set *contract.InstanceConfig) bool {
 		}
 	}
 	for _, s := range m.Secrets {
-		if s.From == contract.SecretFromAsk || s.From == contract.SecretFromSetup {
+		if s.From == contract.SecretFromAsk || s.From == contract.SecretFromSetup || s.Lifetime == contract.SecretLifetimeSetup {
 			return true
 		}
 	}
@@ -472,4 +472,33 @@ func (r *renderer) readFile(i string, m contract.Module, rd contract.SetupRead, 
 		return "", "", nil
 	}
 	return "secrets/" + client.Consumer + "/" + src.Secret, target, nil
+}
+
+// setupFolderTarget is where an instance finds its lifetime: setup files (MP_SETUP_DIR).
+const setupFolderTarget = "/run/secrets/setup"
+
+// setupFolder gives instance i its lifetime: setup files (spec 0037, the interim setup holder).
+// They are no Compose secret: the instance gets one read write bind of secrets/<i>/setup, which
+// the keeper's client or file adapter of the instance writes (the used code, the done marker), and
+// MP_SETUP_DIR names. setup.sh makes the files, or under the keeper (spec 0016) setup.json does; no
+// value is in any rendered file.
+func (r *renderer) setupFolder(svc *types.ServiceConfig, i string, files []contract.Secret) {
+	if len(files) == 0 {
+		return
+	}
+	dir := "secrets/" + i + "/setup"
+	svc.Volumes = append(svc.Volumes, types.ServiceVolumeConfig{Type: types.VolumeTypeBind, Source: "./" + dir, Target: setupFolderTarget})
+	setEnv(svc, "MP_SETUP_DIR", setupFolderTarget)
+	folder := setupFolder{Dir: dir}
+	for _, s := range files {
+		path := dir + "/" + s.Name
+		folder.Files = append(folder.Files, setupFile{Path: path, Format: s.Format, Show: s.Show == contract.SecretShowOnce})
+		r.generatedSecret(secret{
+			Instance: i, Path: path, Description: s.Description,
+			Format: s.Format, Show: s.Show == contract.SecretShowOnce, Setup: true,
+		})
+	}
+	r.data.SetupFolders = append(r.data.SetupFolders, folder)
+	r.data.NeedEnvGet = true // the address setup.sh prints comes from .env
+	r.data.OriginVar, r.data.BasePathVar = r.originVar(), r.providedVar("base_path")
 }

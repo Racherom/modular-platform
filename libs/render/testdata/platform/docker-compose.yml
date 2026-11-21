@@ -147,6 +147,7 @@ services:
       MP_RENDERER_CA_FILE: /run/secrets/uses/renderer/ca
       MP_RENDERER_TOKEN_FILE: /run/secrets/uses/renderer/token
       MP_RENDERER_URL: https://renderer.modular-platform.internal:8443
+      MP_SETUP_DIR: /run/secrets/setup
     healthcheck:
       interval: 5s
       retries: 10
@@ -193,6 +194,9 @@ services:
     - no-new-privileges:true
     user: ${MP_UID}:${MP_GID}
     volumes:
+    - source: ./secrets/api/setup
+      target: /run/secrets/setup
+      type: bind
     - read_only: true
       source: ./data/ingress/data/caddy/pki/authorities/local
       target: /run/volumes/oidc/ca/

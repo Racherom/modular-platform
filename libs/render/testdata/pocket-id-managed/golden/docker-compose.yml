@@ -224,6 +224,7 @@ services:
     environment:
       MP_ADMIN_API_KEY_FILE: /run/secrets/admin/api_key
       MP_ADMIN_BASE_PATH: ${MP_EDGE__BASE_PATH:-}
+      MP_ADMIN_FIRST_ADMIN_PATH: /setup
       MP_ADMIN_ISSUER: https://auth.${MP_EDGE__DOMAIN:-pocket.example.test}
       MP_ADMIN_ORIGIN: https://pocket.example.test
       MP_ADMIN_URL: http://pocket-id.pocket-id-managed.internal:1411
@@ -299,6 +300,7 @@ services:
     environment:
       MP_ADMIN_API_KEY_FILE: /run/secrets/admin/api_key
       MP_ADMIN_BASE_PATH: ${MP_EDGE__BASE_PATH:-}
+      MP_ADMIN_FIRST_ADMIN_PATH: /setup
       MP_ADMIN_ISSUER: https://auth.${MP_EDGE__DOMAIN:-pocket.example.test}
       MP_ADMIN_ORIGIN: https://pocket.example.test
       MP_ADMIN_URL: http://pocket-id.pocket-id-managed.internal:1411

@@ -628,7 +628,7 @@ components:
       properties:
         platform:
           type: string
-          enum: [host, port, url, ca, tls, consumer, gate]
+          enum: [host, port, url, ca, tls, consumer, gate, first_admin_path]
         path:
           type: string
           description: "With `platform: url`, a path to append; with `volume`, the file in the folder."

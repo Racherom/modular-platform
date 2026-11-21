@@ -14,5 +14,6 @@ fields:
   server_name: {type: string, direction: to_provider, optional: true, description: TLS name the ingress verifies for an https upstream.}
   stream: {type: bool, direction: to_provider, optional: true, description: Whether responses stream (server sent events) without buffering.}
   host: {type: string, direction: to_provider, optional: true, graph: true, pattern: "[a-z0-9-]+(\\.[a-z0-9-]+)+", description: "Host name the consumer is served at, at its root, instead of under the base path."}
-  gate: {type: string, direction: to_provider, optional: true, description: "Space separated paths the ingress guards: it asks the route that carries a guard before it passes a request for one of them on."}
+  gate: {type: string, direction: to_provider, optional: true, description: "Space separated path prefixes (a trailing * as Caddy reads it) the ingress guards: it asks the route that carries a guard before it passes a request for one of them on."}
+  enter: {type: string, direction: to_provider, optional: true, description: "Path under this route that is served on the host of a gated route, ahead of the provider: the one request of this consumer a visitor of that host may make."}
   guard: {type: string, direction: to_provider, optional: true, description: "Path under this route that answers the gate question: 204 lets the request through, anything else refuses it."}

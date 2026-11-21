@@ -114,13 +114,14 @@ func (e ConfigValueType) Valid() bool {
 
 // Defines values for FieldSourcePlatform.
 const (
-	FieldSourcePlatformCa       FieldSourcePlatform = "ca"
-	FieldSourcePlatformConsumer FieldSourcePlatform = "consumer"
-	FieldSourcePlatformGate     FieldSourcePlatform = "gate"
-	FieldSourcePlatformHost     FieldSourcePlatform = "host"
-	FieldSourcePlatformPort     FieldSourcePlatform = "port"
-	FieldSourcePlatformTls      FieldSourcePlatform = "tls"
-	FieldSourcePlatformUrl      FieldSourcePlatform = "url"
+	FieldSourcePlatformCa             FieldSourcePlatform = "ca"
+	FieldSourcePlatformConsumer       FieldSourcePlatform = "consumer"
+	FieldSourcePlatformFirstAdminPath FieldSourcePlatform = "first_admin_path"
+	FieldSourcePlatformGate           FieldSourcePlatform = "gate"
+	FieldSourcePlatformHost           FieldSourcePlatform = "host"
+	FieldSourcePlatformPort           FieldSourcePlatform = "port"
+	FieldSourcePlatformTls            FieldSourcePlatform = "tls"
+	FieldSourcePlatformUrl            FieldSourcePlatform = "url"
 )
 
 // Valid indicates whether the value is a known member of the FieldSourcePlatform enum.
@@ -129,6 +130,8 @@ func (e FieldSourcePlatform) Valid() bool {
 	case FieldSourcePlatformCa:
 		return true
 	case FieldSourcePlatformConsumer:
+		return true
+	case FieldSourcePlatformFirstAdminPath:
 		return true
 	case FieldSourcePlatformGate:
 		return true

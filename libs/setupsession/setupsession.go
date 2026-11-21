@@ -24,8 +24,11 @@ const Lifetime = 24 * time.Hour
 const (
 	version    = "v1"
 	macContext = "mp-setup|" + version + "|"
-	hostName   = "__Host-mp_setup"
-	secureName = "__Secure-mp_setup"
+	// gateContext keeps the auth host cookie apart from the setup session: the same key and the
+	// same value layout, but a gate cookie never verifies as a session, nor the reverse (spec 0037, AC-18).
+	gateContext = "mp-gate|" + version + "|"
+	hostName    = "__Host-mp_setup"
+	secureName  = "__Secure-mp_setup"
 )
 
 // ErrInvalid is wrapped by every refusal: the value is no session.
@@ -43,13 +46,33 @@ func Mint(key []byte, now time.Time) (value string, expiry time.Time) {
 // MintUntil returns the value of a session that ends at expiry (whole seconds). The probe of
 // phase 1 uses it to hand the session on to the platform's host with the same end.
 func MintUntil(key []byte, expiry time.Time) string {
+	return mint(key, macContext, expiry)
+}
+
+// MintGate returns the value of the auth host cookie that ends at expiry (whole seconds). It has the
+// layout of a session value but its own MAC context, so it is never a setup session (AC-18).
+func MintGate(key []byte, expiry time.Time) string {
+	return mint(key, gateContext, expiry)
+}
+
+func mint(key []byte, context string, expiry time.Time) string {
 	unix := strconv.FormatInt(expiry.Unix(), 10)
-	return version + "." + unix + "." + mac(key, unix)
+	return version + "." + unix + "." + mac(key, context, unix)
 }
 
 // Verify checks a cookie value against key at now and returns its expiry. Every refusal wraps
 // ErrInvalid; a value that is well formed and signed but past its expiry also wraps ErrExpired.
 func Verify(key []byte, value string, now time.Time) (time.Time, error) {
+	return verify(key, macContext, value, now)
+}
+
+// VerifyGate checks an auth host cookie value the way Verify checks a session value, under the
+// gate's own MAC context. A setup session value does not pass it.
+func VerifyGate(key []byte, value string, now time.Time) (time.Time, error) {
+	return verify(key, gateContext, value, now)
+}
+
+func verify(key []byte, context, value string, now time.Time) (time.Time, error) {
 	if len(key) == 0 {
 		return time.Time{}, fmt.Errorf("%w: no session key", ErrInvalid)
 	}
@@ -65,7 +88,7 @@ func Verify(key []byte, value string, now time.Time) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, fmt.Errorf("%w: malformed mac", ErrInvalid)
 	}
-	want, _ := base64.RawURLEncoding.DecodeString(mac(key, parts[1]))
+	want, _ := base64.RawURLEncoding.DecodeString(mac(key, context, parts[1]))
 	if !hmac.Equal(got, want) {
 		return time.Time{}, fmt.Errorf("%w: wrong mac", ErrInvalid)
 	}
@@ -76,9 +99,9 @@ func Verify(key []byte, value string, now time.Time) (time.Time, error) {
 	return expiry, nil
 }
 
-func mac(key []byte, expiry string) string {
+func mac(key []byte, context, expiry string) string {
 	h := hmac.New(sha256.New, key)
-	h.Write([]byte(macContext + expiry))
+	h.Write([]byte(context + expiry))
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
@@ -163,5 +186,5 @@ func handoffMAC(key []byte, host, exp, sess, nonce string) string {
 }
 
 // GateCookieName is the name of the auth host cookie the gate checks: host only, at the root.
-// Its value is a setup session value (MintUntil), so it ends with the session.
+// Its value is MintGate of the session's end, so it ends with the session.
 func GateCookieName() string { return gateCookieName }

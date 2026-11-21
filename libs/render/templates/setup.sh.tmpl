@@ -160,7 +160,12 @@ new_output() {
 }
 {{- end}}
 {{range .Secrets}}
+{{- if not .Setup}}
 {{if .Output}}new_output{{else}}new_secret{{end}} {{.Path}}
+{{- end}}
+{{- end}}
+{{- if .SetupFolders}}
+{{template "setup-files" .}}
 {{- end}}
 {{- if not (or .Secrets .Asked .AskedSecrets .Steps)}}
 echo "This stack needs no secret files."

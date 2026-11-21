@@ -9,3 +9,4 @@ fields:
   ca: {type: certificate, optional: true, description: Root CA that signs the provider's certificate.}
   redirect_path: {type: string, direction: to_provider, description: "The consumer's callback path under the public origin and base path."}
   logout_path: {type: string, direction: to_provider, description: "The path under the public origin and base path the provider sends the browser back to after sign out."}
+  first_admin_path: {type: string, optional: true, description: "Path on the provider's own host of its first admin page; unset when it has none."}

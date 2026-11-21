@@ -74,6 +74,23 @@ type secret struct {
 	// render reads them, from setup.json.
 	Format contract.SecretFormat
 	Show   bool
+	// Setup marks a lifetime: setup secret (spec 0037, the interim setup holder): a file in the
+	// instance's setup folder, which setup.sh makes in its own stage, not with new_secret.
+	Setup bool
+}
+
+// setupFolder is the folder of one instance's lifetime: setup files, which setup.sh makes before
+// the keeper of #32 exists.
+type setupFolder struct {
+	Dir   string // secrets/<instance>/setup
+	Files []setupFile
+}
+
+// setupFile is one file of a setupFolder, in name order.
+type setupFile struct {
+	Path   string
+	Format contract.SecretFormat // password makes 24 characters of A-Za-z0-9, else 32 bytes as hex
+	Show   bool                  // setup.sh prints the value once, when it made it
 }
 
 type templateData struct {
@@ -81,6 +98,9 @@ type templateData struct {
 	Asked        []askedValue    // asked config values, instances then values in name order
 	AskedSecrets []askedValue    // secrets with from: ask, in the same order
 	Secrets      []secret        // the secret files setup.sh generates
+	SetupFolders []setupFolder   // the setup files setup.sh makes in their own stage
+	OriginVar    string          // the .env variable of the public origin, for the address setup.sh prints
+	BasePathVar  string          // the .env variable of its base path
 	Steps        []installStep   // setup steps in binding order
 	Placed       []secret        // the files you place
 	EnvFiles     []string        // config/<instance>.env of each sdk instance
@@ -443,7 +463,12 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 		return svc, err
 	}
 
+	var setupFiles []contract.Secret
 	for _, s := range m.Secrets {
+		if s.Lifetime == contract.SecretLifetimeSetup {
+			setupFiles = append(setupFiles, s)
+			continue
+		}
 		if s.From == contract.SecretFromSetup {
 			r.setupSecrets(&svc, i, s)
 			continue
@@ -464,6 +489,7 @@ func (r *renderer) service(i string, m contract.Module) (types.ServiceConfig, er
 			})
 		}
 	}
+	r.setupFolder(&svc, i, setupFiles)
 	for _, n := range sortedKeys(m.Volumes) {
 		folder := "data/" + i + "/" + n
 		svc.Volumes = append(svc.Volumes, types.ServiceVolumeConfig{Type: types.VolumeTypeBind, Source: "./" + folder, Target: m.Volumes[n]})

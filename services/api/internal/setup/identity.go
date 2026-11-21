@@ -153,7 +153,7 @@ func (s *Service) Enter(r *http.Request, token string) (*http.Cookie, string, er
 	}
 	maxAge := int(h.SessionExpiry.Sub(s.now()).Seconds())
 	c := &http.Cookie{
-		Name: setupsession.GateCookieName(), Value: setupsession.MintUntil(key, h.SessionExpiry), Path: "/",
+		Name: setupsession.GateCookieName(), Value: setupsession.MintGate(key, h.SessionExpiry), Path: "/",
 		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: maxAge,
 	}
 	s.log.InfoContext(ctx, "setup handoff accepted")
@@ -176,7 +176,7 @@ func (s *Service) GateOpen(r *http.Request) bool {
 	if err != nil || !ok {
 		return false
 	}
-	_, err = setupsession.Verify(key, c.Value, s.now())
+	_, err = setupsession.VerifyGate(key, c.Value, s.now())
 	return err == nil
 }
 

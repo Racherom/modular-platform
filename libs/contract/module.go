@@ -242,6 +242,9 @@ func (c *moduleChecker) provide(p, name string, pr Provide) {
 			c.add(fp, CodeInvalidFieldSource, "%s is a to_provider field; the consumer gives its value", f)
 		default:
 			c.source(fp, k, f, field, pr.Fields[f])
+			if pr.Fields[f].Platform == FieldSourcePlatformFirstAdminPath {
+				c.want(fp, pr.FirstAdmin.Path != "", "platform: first_admin_path needs the provide to have a first_admin block")
+			}
 		}
 	}
 	if pr.Auth == BindingToken {
@@ -343,8 +346,10 @@ func (c *moduleChecker) source(p string, k Capability, name string, field Capabi
 			c.value(p, name, field, s.Off)
 		case FieldSourcePlatformGate:
 			c.add(p, CodeInvalidFieldSource, "platform: gate is a consumer's source for a to_provider field")
+		case FieldSourcePlatformFirstAdminPath:
+			c.want(p, text && field.Optional, "platform: first_admin_path fills an optional text field")
 		default:
-			c.add(p, CodeInvalidFieldSource, "platform %q is not host, port, url, ca, tls, consumer or gate", s.Platform)
+			c.add(p, CodeInvalidFieldSource, "platform %q is not host, port, url, ca, tls, consumer, gate or first_admin_path", s.Platform)
 		}
 		if s.Path != "" {
 			c.want(p, s.Platform == FieldSourcePlatformUrl && strings.HasPrefix(s.Path, "/"), "path goes with platform: url and starts with /")

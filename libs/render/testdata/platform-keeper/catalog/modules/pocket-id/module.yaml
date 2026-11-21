@@ -39,6 +39,7 @@ provides:
       origin: {uses: public, field: origin}
       base_path: {uses: public, field: base_path}
       ca: {uses: public, field: ca}
+      first_admin_path: {platform: first_admin_path}
   site:
     capability: http
     version: "1.0"

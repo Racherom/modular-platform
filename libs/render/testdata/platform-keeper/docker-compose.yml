@@ -128,11 +128,13 @@ services:
       MP_OIDC_CA_FILE: /run/volumes/oidc/ca/root.crt
       MP_OIDC_CLIENT_ID: api_oidc
       MP_OIDC_CLIENT_SECRET_FILE: /run/secrets/uses/oidc/client_secret
+      MP_OIDC_FIRST_ADMIN_PATH: /setup
       MP_OIDC_ISSUER: https://auth.${MP_INGRESS__DOMAIN}
       MP_PUBLIC_ORIGIN: ${MP_INGRESS__ORIGIN}
       MP_RENDERER_CA_FILE: /run/secrets/uses/renderer/ca
       MP_RENDERER_TOKEN_FILE: /run/secrets/uses/renderer/token
       MP_RENDERER_URL: https://renderer.modular-platform.internal:8443
+      MP_SETUP_DIR: /run/secrets/setup
     healthcheck:
       interval: 5s
       retries: 10
@@ -179,6 +181,9 @@ services:
     - no-new-privileges:true
     user: ${MP_UID}:${MP_GID}
     volumes:
+    - source: ./secrets/api/setup
+      target: /run/secrets/setup
+      type: bind
     - read_only: true
       source: ./data/ingress/data/caddy/pki/authorities/local
       target: /run/volumes/oidc/ca/
@@ -531,6 +536,7 @@ services:
     environment:
       MP_ADMIN_API_KEY_FILE: /run/secrets/admin/api_key
       MP_ADMIN_BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
+      MP_ADMIN_FIRST_ADMIN_PATH: /setup
       MP_ADMIN_ISSUER: https://auth.${MP_INGRESS__DOMAIN}
       MP_ADMIN_ORIGIN: ${MP_INGRESS__ORIGIN}
       MP_ADMIN_URL: http://pocket-id.modular-platform.internal:1411
@@ -606,6 +612,7 @@ services:
     environment:
       MP_ADMIN_API_KEY_FILE: /run/secrets/admin/api_key
       MP_ADMIN_BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
+      MP_ADMIN_FIRST_ADMIN_PATH: /setup
       MP_ADMIN_ISSUER: https://auth.${MP_INGRESS__DOMAIN}
       MP_ADMIN_ORIGIN: ${MP_INGRESS__ORIGIN}
       MP_ADMIN_URL: http://pocket-id.modular-platform.internal:1411

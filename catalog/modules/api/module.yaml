@@ -32,6 +32,8 @@ uses:
       stream: {value: "true"}
       # answers the identity provider's gate question (spec 0037): 204 lets a request through
       guard: {value: /v1/setup/gate}
+      # the one api route served on the identity provider's host: the handoff of the setup session (spec 0037)
+      enter: {value: /v1/setup/identity-enter}
   oidc:
     capability: oidc
     env:
@@ -39,6 +41,7 @@ uses:
       client_id: MP_OIDC_CLIENT_ID
       client_secret: MP_OIDC_CLIENT_SECRET_FILE
       ca: MP_OIDC_CA_FILE
+      first_admin_path: MP_OIDC_FIRST_ADMIN_PATH
     fields:
       redirect_path: {value: /api/v1/auth/callback}
       # the page api sends the browser to after sign out: its home path
@@ -72,6 +75,17 @@ uses:
     fields:
       caller_key: {secret: caller-public-key}
 secrets:
+  # the setup code and the key of the setup session live in one folder, which the platform mounts
+  # read write at MP_SETUP_DIR (spec 0037, the interim setup holder; spec 0033)
+  - name: code
+    lifetime: setup
+    format: password
+    show: once
+    description: The setup code the first visitor of the web setup enters once.
+  - name: session-key
+    lifetime: setup
+    format: hex
+    description: Key the setup session cookie and the handoff token are signed with.
   - name: caller-signing-key
     from: setup
     env: MP_CALLER_SIGNING_KEY_FILE

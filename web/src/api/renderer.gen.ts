@@ -341,7 +341,7 @@ export interface components {
          */
         FieldSource: {
             /** @enum {string} */
-            platform?: "host" | "port" | "url" | "ca" | "tls" | "consumer" | "gate";
+            platform?: "host" | "port" | "url" | "ca" | "tls" | "consumer" | "gate" | "first_admin_path";
             /** @description With `platform: url`, a path to append; with `volume`, the file in the folder. */
             path?: string;
             /** @description With `platform: tls`, the value when the provider serves TLS. */

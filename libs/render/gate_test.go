@@ -29,10 +29,14 @@ func TestRenderGateGolden(t *testing.T) {
 			continue
 		}
 		for _, want := range []string{
-			"@gate-idp path /setup /signup/setup /api/signup/setup",
+			"@gate-idp path /setup* /signup/setup* /api/signup/setup*",
 			"forward_auth http://guardapp",
 			"/api/v1/setup/gate",
 			"respond @gate-down-idp 403",
+			"@enter-idp {",
+			"method GET",
+			"path {$INGRESS_BASE_PATH}/api/v1/setup/identity-enter",
+			"handle @enter-idp {",
 		} {
 			if !strings.Contains(string(f.Data), want) {
 				t.Errorf("Caddyfile lacks %q", want)

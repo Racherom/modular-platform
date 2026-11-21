@@ -234,7 +234,11 @@ func (r *renderer) keeperScript(k string, s Setup) *keeperScript {
 
 // originVar is the .env variable of the platform's origin: the config value the first instance,
 // in name order, sources a provided origin field from. setup.sh prints it as the address to open.
-func (r *renderer) originVar() string {
+func (r *renderer) originVar() string { return r.providedVar("origin") }
+
+// providedVar is the .env variable of the config value the first instance, in name order, sources
+// a provided field of that name from, or "".
+func (r *renderer) providedVar(field string) string {
 	for _, i := range sortedKeys(r.g.Modules) {
 		gm := r.g.Modules[i]
 		if gm.External != nil {
@@ -242,7 +246,7 @@ func (r *renderer) originVar() string {
 		}
 		m := r.modules[gm.Module]
 		for _, q := range sortedKeys(m.Provides) {
-			if src, ok := m.Provides[q].Fields["origin"]; ok && src.Config != "" {
+			if src, ok := m.Provides[q].Fields[field]; ok && src.Config != "" {
 				return contract.ComposeVar(i, src.Config)
 			}
 		}

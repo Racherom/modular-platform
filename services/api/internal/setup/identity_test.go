@@ -216,6 +216,10 @@ func TestGateFailsClosed(t *testing.T) {
 	if r.svc.GateOpen(withCookie(&http.Cookie{Name: "__Host-mp_setup", Value: c.Value})) {
 		t.Error("the cookie under another name passes")
 	}
+	// a setup session value is no gate cookie (own MAC context, AC-18)
+	if sess := setupsession.MintUntil([]byte(r.files.key), now.Add(time.Hour)); r.svc.GateOpen(withCookie(&http.Cookie{Name: c.Name, Value: sess})) {
+		t.Error("a setup session value passes the gate")
+	}
 	r.files.set(r.files.code, "")
 	if r.svc.GateOpen(withCookie(c)) {
 		t.Error("a gone key still passes")
@@ -229,6 +233,22 @@ func TestGateFailsClosed(t *testing.T) {
 	r.admins.bound = true
 	if r.svc.GateOpen(withCookie(c)) {
 		t.Error("the cookie passes after an admin is bound")
+	}
+}
+
+// TestGateCookieIsNoSession pins spec 0037 AC-18: the gate cookie sent to the main host as the setup
+// cookie is no session.
+func TestGateCookieIsNoSession(t *testing.T) {
+	r, _ := identityRig(t, "")
+	token, _ := r.link(t, r.redeem(t))
+	gate, _, err := r.svc.Enter(authRequest(token), token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/setup/identity-link", nil)
+	req.AddCookie(&http.Cookie{Name: "__Host-mp_setup", Value: gate.Value})
+	if _, err := r.svc.IdentityLink(req); !errors.Is(err, setup.ErrNoSession) {
+		t.Errorf("IdentityLink with the gate value as the session = %v, want ErrNoSession", err)
 	}
 }
 

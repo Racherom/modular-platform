@@ -81,6 +81,30 @@ func TestMintUntilKeepsTheEnd(t *testing.T) {
 	}
 }
 
+// TestGateValueIsNoSession pins spec 0037 AC-18: the gate cookie and the setup session share a key
+// and a layout but not a MAC context, so neither verifies as the other.
+func TestGateValueIsNoSession(t *testing.T) {
+	_, expiry := setupsession.Mint(key, t0)
+	gate := setupsession.MintGate(key, expiry)
+	session := setupsession.MintUntil(key, expiry)
+	if gate == session {
+		t.Fatal("gate value equals the session value")
+	}
+	got, err := setupsession.VerifyGate(key, gate, t0)
+	if err != nil || !got.Equal(expiry) {
+		t.Fatalf("VerifyGate = %s, %v", got, err)
+	}
+	if _, err := setupsession.Verify(key, gate, t0); !errors.Is(err, setupsession.ErrInvalid) {
+		t.Errorf("a gate value verifies as a session: %v", err)
+	}
+	if _, err := setupsession.VerifyGate(key, session, t0); !errors.Is(err, setupsession.ErrInvalid) {
+		t.Errorf("a session value verifies as a gate: %v", err)
+	}
+	if _, err := setupsession.VerifyGate(key, gate, expiry); !errors.Is(err, setupsession.ErrExpired) {
+		t.Errorf("an expired gate value: %v", err)
+	}
+}
+
 func TestCookieName(t *testing.T) {
 	tests := []struct{ base, name, path string }{
 		{"", "__Host-mp_setup", "/"},

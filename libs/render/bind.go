@@ -298,6 +298,8 @@ func (r *renderer) source(e end, k contract.Capability, f string, src contract.F
 		return value{text: fmt.Sprintf("%s://%s:%d%s", scheme, r.host(p), port, src.Path)}, true, nil
 	case src.Platform == contract.FieldSourcePlatformConsumer:
 		return value{text: e.b.Consumer}, true, nil
+	case src.Platform == contract.FieldSourcePlatformFirstAdminPath:
+		return value{text: e.provide.FirstAdmin.Path}, e.provide.FirstAdmin.Path != "", nil
 	case src.Platform == contract.FieldSourcePlatformTls, src.Platform == contract.FieldSourcePlatformCa:
 		slot, tls, err := r.tlsSlot(p)
 		switch {

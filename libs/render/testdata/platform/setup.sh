@@ -269,6 +269,62 @@ new_secret secrets/authelia/uses_db_password
 new_output secrets/postgres/uses_tls_cert
 new_output secrets/postgres/uses_tls_key
 
+# The setup code and the key of the setup session (spec 0037). api reads them, writes the used code
+# beside them and, when the setup is done, deletes them and writes .setup-done. A kept code is not
+# printed again: read the file. The new code replaces any record of a used one.
+new_setup_file() {
+	made=0
+	if [ -e "$2" ]; then
+		echo "kept    $2"
+		return 0
+	fi
+	case $1 in
+	password)
+		value=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)
+		want=24
+		;;
+	*)
+		value=$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')
+		want=64
+		;;
+	esac
+	if [ "${#value}" -ne "$want" ]; then
+		echo "setup.sh: could not read random bytes for $2" >&2
+		exit 1
+	fi
+	# noclobber: the shell refuses to replace a file another run created meanwhile
+	(set -C && printf '%s' "$value" > "$2")
+	echo "created $2"
+	made=1
+}
+
+setup_code=
+if [ -e secrets/api/setup/.setup-done ]; then
+	echo "kept    secrets/api/setup (the setup is done)"
+else
+	# api runs as MP_UID and must write this folder, so setup.sh must run as that user
+	if [ "$(id -u)" != "$(sed -n 's/^MP_UID=//p' .env | tail -n 1)" ]; then
+		echo "setup.sh: run it as the user that owns this folder (MP_UID in .env is not $(id -u))" >&2
+		exit 1
+	fi
+	mkdir -p secrets/api/setup
+	chmod 0700 secrets/api/setup
+	new_setup_file password secrets/api/setup/code
+	code_file=secrets/api/setup/code
+	if [ "$made" = 1 ]; then
+		rm -f secrets/api/setup/code-used
+		setup_code=$value
+	fi
+	new_setup_file hex secrets/api/setup/session-key
+	if [ -n "${setup_code:-}" ]; then
+		echo
+		echo "Setup code (shown once): $setup_code"
+		echo "Open $(env_get MP_INGRESS__ORIGIN)$(env_get MP_INGRESS__BASE_PATH) and enter it."
+	else
+		echo "The setup code is in $code_file; read it from there."
+	fi
+fi
+
 # Setup steps run once each, in the module's own image, as you and with no network. A step whose
 # files all exist is skipped; one that fails, or leaves a file missing, stops setup.sh.
 missing() {

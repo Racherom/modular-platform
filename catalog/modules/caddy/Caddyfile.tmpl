@@ -80,6 +80,24 @@
 {{- $g := ""}}{{range $.Clients.public}}{{if index .Values "guard"}}{{$g = .}}{{end}}{{end}}
 {{- $gtls := and (index $g.Values "server_name") $.Uses.trust.Bound}}
 
+{{- $enter := index $g.Values "enter"}}{{if $enter}}
+
+	# the one request of {{$g.Instance}} this host serves: the handoff of the setup session, ahead of the
+	# provider's own routes. Nothing else of {{$g.Instance}} is reachable here (spec 0037, AC-16).
+	@enter-{{.Instance}} {
+		method GET
+		path {$INGRESS_BASE_PATH}{{index $g.Values "route"}}{{$enter}}
+	}
+	handle @enter-{{.Instance}} {
+		reverse_proxy {{index $g.Values "upstream"}}{{if $gtls}} {
+			transport http {
+				tls_trust_pool file /etc/caddy/trust/root.crt
+				tls_server_name {{index $g.Values "server_name"}}
+			}
+		}{{end}}
+	}
+{{- end}}
+
 	# these paths pass only when {{$g.Instance}} says so (spec 0037); no answer is a 403
 	@gate-{{.Instance}} path {{$gate}}
 	handle @gate-{{.Instance}} {

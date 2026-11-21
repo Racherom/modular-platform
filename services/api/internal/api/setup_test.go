@@ -44,6 +44,7 @@ func settingsEnv(t *testing.T, over map[string]string) map[string]string {
 		"MP_OIDC_ISSUER":              "https://platform.test/auth",
 		"MP_OIDC_CLIENT_ID":           "api",
 		"MP_OIDC_CLIENT_SECRET_FILE":  secret("client-secret"),
+		"MP_SETUP_DIR":                t.TempDir(),
 	}
 	for k, v := range over {
 		if v == "" {

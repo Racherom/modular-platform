@@ -297,8 +297,9 @@ func TestPlatformKeeperSetup(t *testing.T) {
 		tier = max(tier, t2)
 	}
 
-	if len(setup.Show) != 0 {
-		t.Errorf("show = %+v, want none: the bundled provider has no initial password", setup.Show)
+	// the bundled provider has no initial password; the only secret shown is api's setup code (spec 0037)
+	if len(setup.Show) != 1 || setup.Show[0].Path != "secrets/api/setup/code" {
+		t.Errorf("show = %+v, want only secrets/api/setup/code", setup.Show)
 	}
 	for _, s := range setup.Steps {
 		if s.Instance == "pocket-id" || len(s.AskEnv) > 0 {
