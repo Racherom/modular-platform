@@ -320,7 +320,7 @@ spec [0033](../specs/0033-first-run-web-setup/index.md) · code in `services/dep
    - [ ] Spike: Authelia's empty users file and reload through a folder mount; the probe, the cookie and the sign in callback in Chromium (AC-13, AC-23)
    - [ ] Phase 1 pieces (0034): `lifetime: setup`, `libs/setupsession`, the render's `setup` section, the `setup` command's pages (AC-10 to AC-18)
    - [ ] Enrollment seam (0035): `enroll` in the contract, the `platform-setup` capability and keeper calls, Authelia's enroll in the fixture catalog (AC-20 to AC-26)
-   - [ ] Phase 2 pieces (0036): migration `00003`, the SDK setup getters, the api's setup package and sign in changes, the editor's `/setup` route (AC-30 to AC-39)
+   - [x] Phase 2 pieces (0036): migration `00003`, the SDK setup getters, the api's setup package and sign in changes, the editor's `/setup` route (AC-30 to AC-39)
    - [ ] Cut over inside #32's keeper thread: the real entries, the seed's phase 1, the api wiring, dev and the Chromium smoke, the README (AC-1, AC-2, AC-3, AC-4)
 - [ ] Verify it: `/check verify first run setup on the web`
 - [ ] Test it: `/test first run setup on the web`

@@ -14,6 +14,9 @@ Turns a resolved graph into the files of a runnable Compose project: `docker-com
 | `install.go` | Install time: secrets, asked values, setup steps and the `setup.sh` assembly |
 | `template.go` | A module's `*.tmpl` files rendered into `config/<instance>/` after its bindings |
 | `platform.go` | `Platform`, the platform render flavor into the folder the managed zip ships (spec 0015); run by `catalog/cmd/render-platform` |
+| `keeper.go` | `WithKeeper()`, the keeper render: `keeper.yml` beside a `docker-compose.yml` without the keeper, and its refusals (spec 0016) |
+| `setup.go` | `setup.json` and its `SetupFormatVersion`, `MarshalSetup` and `DecodeSetup` (spec 0016, 0034) |
+| `graphfield.go` | The fields a graph may set on a binding, and `invalid_binding` for the rest (spec 0026) |
 | `testdata/<case>/golden/`, `testdata/platform/` | One golden folder per render case, and the rendered platform folder |
 | `templates/*.tmpl` | `setup.sh`, `.env` and `README.md`, embedded with `text/template` |
 | `testdata/whoami-postgres/`, `testdata/sdk-pair/golden/` | Golden files: every rendered file, byte for byte |

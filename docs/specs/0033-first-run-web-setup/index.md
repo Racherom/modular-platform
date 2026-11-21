@@ -1,7 +1,7 @@
 # 0033. First run setup on the web
 
 **Date**: 2026-11-20
-**Status**: Proposed
+**Status**: In Progress
 **Scope**: [#37 First run setup on the web](../../scope/scope.md)
 **Builds on**: [0016](../0016-platform-one-container/index.md) (the seed and the keeper), [0013](../0011-capability-module-contract/0013-module-manifest-v1.md) (install time, setup steps), [0015](../0011-capability-module-contract/0015-platform-graph-managed-zip.md) (the platform graph), [0026](../0001-platform-stack-architecture/0026-identity-provider-own-host.md) (Authelia on `auth.{domain}`), [0006](../0006-managed-mode-control-plane/index.md) (sign in and the admin binding)
 **Amends**: 0016 *Setup mode* (points 1 to 3 replaced, see *What this changes in 0016*)

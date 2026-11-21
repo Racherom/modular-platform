@@ -37,7 +37,7 @@ Stored in `docs/specs/`, one folder per spec: `docs/specs/NNNN-title/index.md`, 
 
 ## Rules
 
-- **Domain Driven Design, one package per bounded context**: `libs/contract` (module, capability, graph and catalog formats; the shared kernel), `libs/check` (the checks: match uses to provides, recommend a provider for a left out use), `libs/render` (resolved graph to Compose project and zip), `libs/target` (deploy targets), and each `services/<name>`. A context owns its model; others reach it only through its exported API. Follow the existing folder layout; service code lives in `services/<name>/internal/`.
+- **Domain Driven Design, one package per bounded context**: `libs/contract` (module, capability, graph and catalog formats; the shared kernel), `libs/check` (the checks: match uses to provides, recommend a provider for a left out use), `libs/render` (resolved graph to Compose project and zip), `libs/target` (deploy targets), `libs/setupsession` (mint and verify the setup session, spec 0034), and each `services/<name>`. A context owns its model; others reach it only through its exported API. Follow the existing folder layout; service code lives in `services/<name>/internal/`.
 - **Ubiquitous language**: name things with the domain's words: module, capability, provides, uses, binding, recommendation, graph, resolved graph, catalog, check, stack, renderer, render, zip, apply, target, fragment, provisioner. No synonyms such as plugin or dependency for these. The glossary in spec 0001 lists each word once and maps the retired names; `scripts/vocabulary.txt` holds the retired words.
 - **Value objects and aggregates**: domain types are validated when built and then treated as immutable; the graph is the aggregate root, and other contexts refer to its modules and bindings by name. Domain events (once NATS lands) are past tense facts, like `StackDeployed`.
 - **Pure domain, I/O at the edges**: `libs/check` and `libs/render` never touch network, disk, clock or env. Services are application services: parse input, call the domain, map to the contract; no domain logic in handlers. Persistence sits behind interfaces the domain defines; Docker, OIDC and compose-go types stay behind an adapter at the edge.
@@ -97,6 +97,7 @@ Git tracks only `skills-lock.json` (each skill's source and hash), not the skill
 - [securing-s3-buckets](.agents/skills/securing-s3-buckets/): `aws/agent-toolkit-for-aws`, S3 bucket access and encryption (#10)
 - [lefthook](.agents/skills/lefthook/): `fandhe-ai/agent-reference-skills`, `lefthook.yml` hooks (the skill text is in Japanese)
 - [docs](.agents/skills/docs/): `minio/skills`, plain language rules (ISO 24495-1) for READMEs, guides and doc comments
+- MCP servers: `pocket-id-mcp` (recommended), OIDC clients and a read only user list of the bundled Pocket ID (needs a Pocket ID API key)
 
 ## Context files
 
