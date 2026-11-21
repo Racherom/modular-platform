@@ -31,6 +31,7 @@ func TestGuardAcceptsEveryRender(t *testing.T) {
 		"sdk-pair":        {noTemplates(pairResult), nil},
 		"bindings":        {noTemplates(bindingsResult), nil},
 		"templates":       {templatesResult, nil},
+		"pocket-id":       {pocketManagedResult, nil}, // spec 0037: the provision job and pocket-id in a deployed graph
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

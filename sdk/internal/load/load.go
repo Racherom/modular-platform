@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -59,6 +60,7 @@ const (
 	EnvACMEURL          = "MP_ACME_URL"
 	EnvCAFile           = "MP_CA_FILE"
 	EnvCallerSigningKey = "MP_CALLER_SIGNING_KEY_FILE"
+	EnvSetupDir         = "MP_SETUP_DIR"
 )
 
 // ValueSpec declares one config value; sdkgen writes it from the catalog entry.
@@ -180,6 +182,8 @@ type Bootstrap struct {
 	ACMEURL, CAFile   string
 	Roots             *x509.CertPool // the certificates in CAFile; nil in plain mode
 	CallerSigningFile string
+	// SetupDir is the folder of the module's lifetime: setup files; empty when it is unset.
+	SetupDir string
 	// CallerSigner mints with the key in CallerSigningFile as Instance; nil when it is unset. Load
 	// reads it, and ReadBootstrap does not.
 	CallerSigner *caller.Signer
@@ -334,6 +338,9 @@ func (l *loader) bootstrap() {
 		}
 	}
 	b.CallerSigningFile = l.env(EnvCallerSigningKey)
+	if b.SetupDir = l.env(EnvSetupDir); b.SetupDir != "" && !filepath.IsAbs(b.SetupDir) {
+		l.problem(EnvSetupDir, EnvSetupDir, CodeInvalid, "must be an absolute path")
+	}
 
 	l.levels = append(l.levels, level{lookup: func(key string) (string, int, bool) {
 		v, ok := l.in.LookupEnv(key)

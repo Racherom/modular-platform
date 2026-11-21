@@ -8,8 +8,9 @@ import (
 
 // hostAccess checks publish and host_mounts (spec 0013, Fields): ports in range, a {config}
 // host port naming an int value, host paths absolute, {config} paths naming a text value,
-// {install} paths relative and inside the install folder, container paths absolute or {install}
-// and never mounted twice, and create only on an {install} host folder.
+// {install} paths relative and inside the install folder or the folder itself ({install: .}, spec
+// 0016), container paths absolute or {install} and never mounted twice, and create only on an
+// {install} host folder below the install folder, which already exists.
 func (c *moduleChecker) hostAccess() {
 	for i, p := range c.m.Publish {
 		pp := fmt.Sprintf("publish.%d", i)
@@ -34,13 +35,16 @@ func (c *moduleChecker) hostAccess() {
 			c.add(hp+".path", CodeInvalidMount, "the container path is an absolute path or {install: <path>}, not {config}")
 		case h.Path.Install != "":
 			if c.installPath(hp+".path", h.Path.Install) {
-				c.claim(hp+".path", "{install}/"+h.Path.Install)
+				c.claim(hp+".path", installKey(h.Path.Install))
 			}
 		default:
 			c.mount(hp+".path", h.Path.Path)
 		}
-		if h.Create && h.Host.Install == "" {
+		switch {
+		case h.Create && h.Host.Install == "":
 			c.add(hp+".create", CodeInvalidRule, "create makes an {install} folder; this host path is not one")
+		case h.Create && h.Host.Install == ".":
+			c.add(hp+".create", CodeInvalidRule, "create makes an {install} folder; the install folder itself already exists")
 		}
 	}
 }
@@ -60,13 +64,23 @@ func (c *moduleChecker) hostPath(p string, h HostPathRef) {
 	}
 }
 
-// installPath checks an {install} path: clean, relative and inside the install folder.
+// installPath checks an {install} path: clean, relative and inside the install folder, or "."
+// for the install folder itself (spec 0016).
 func (c *moduleChecker) installPath(p, rel string) bool {
-	if rel == "" || rel == "." || path.IsAbs(rel) || path.Clean(rel) != rel || rel == ".." || strings.HasPrefix(rel, "../") {
+	if rel == "" || path.IsAbs(rel) || path.Clean(rel) != rel || rel == ".." || strings.HasPrefix(rel, "../") {
 		c.add(p, CodeInvalidMount, "{install: %q} must be a clean relative path inside the install folder", rel)
 		return false
 	}
 	return true
+}
+
+// installKey is the claim key of the container path {install: rel}: {install} for the install
+// folder itself, else {install}/<rel>.
+func installKey(rel string) string {
+	if rel == "." {
+		return "{install}"
+	}
+	return "{install}/" + rel
 }
 
 // claim takes container path target for the dotted path p, refusing a second mount on it.
@@ -80,8 +94,8 @@ func (c *moduleChecker) claim(p, target string) {
 
 // HostAccess names every reason a deployed graph refuses an instance of m, joined into one
 // phrase such as "publishes host ports and adds the Linux capability SYS_ADMIN" (spec 0022):
-// publish, host_mounts, and the cap_add names UndeployableLinuxCaps lists. It is "" when a
-// deployed graph may run m.
+// publish, host_mounts, keeper (spec 0016), and the cap_add names UndeployableLinuxCaps lists.
+// It is "" when a deployed graph may run m.
 func (m Module) HostAccess() string {
 	var reasons []string
 	if len(m.Publish) > 0 {
@@ -89,6 +103,9 @@ func (m Module) HostAccess() string {
 	}
 	if len(m.HostMounts) > 0 {
 		reasons = append(reasons, "mounts host paths")
+	}
+	if m.Keeper != nil {
+		reasons = append(reasons, "keeps the platform's own containers")
 	}
 	switch caps := m.UndeployableLinuxCaps(); len(caps) {
 	case 0:

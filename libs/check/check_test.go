@@ -194,8 +194,23 @@ func TestCheck(t *testing.T) {
 		},
 		"named-direct": {problems: []problem{
 			errorAt(check.CodeUnboundRequired, "modules.reports.uses.audit-db"),
-			errorAt(check.CodeNamedNotAllowed, "modules.reports.uses.main-db"),
+			errorAt(check.CodeInvalidBinding, "modules.reports.uses.main-db.database"),
 		}},
+		"host-default": {
+			ok:       true,
+			bindings: []contract.Binding{bind("hosted", "public", "http-ingress", "ingress", "public")},
+		},
+		"host-graph": {
+			ok:       true,
+			bindings: []contract.Binding{bind("hosted", "public", "http-ingress", "ingress", "public")},
+		},
+		"host-literal-bad":   {problems: []problem{errorAt(check.CodeInvalidNamedValue, "modules.hosted.uses.public.host")}},
+		"host-token-unknown": {problems: []problem{errorAt(check.CodeInvalidBinding, "modules.hosted.uses.public.host")}},
+		"host-with-route": {
+			bindings: []contract.Binding{bind("routed", "public", "http-ingress", "ingress", "public")},
+			problems: []problem{errorAt(check.CodeInvalidBinding, "modules.routed.uses.public.host")},
+		},
+		"route-set-in-graph": {problems: []problem{errorAt(check.CodeInvalidBinding, "modules.routed.uses.public.route")}},
 		"named-unknown": {problems: []problem{
 			errorAt(check.CodeUnknownNamedField, "modules.whoami.uses.postgresql.owner"),
 		}},
@@ -289,8 +304,8 @@ func TestCheck(t *testing.T) {
 // bindingText writes a graph binding as "provider field=value ...", named values in name order.
 func bindingText(b contract.GraphBinding) string {
 	parts := []string{b.Provider}
-	for _, k := range slices.Sorted(maps.Keys(b.Named)) {
-		parts = append(parts, k+"="+b.Named[k])
+	for _, k := range slices.Sorted(maps.Keys(b.Values)) {
+		parts = append(parts, k+"="+b.Values[k])
 	}
 	return strings.Join(parts, " ")
 }

@@ -1,8 +1,8 @@
 #!/bin/sh
 # The smoke-managed job (spec 0006, AC-19; spec 0015, AC-16): install the managed platform from the
-# folder task managed:render wrote into build/managed with its setup.sh, start it, sign in as the admin, deploy the sample from the editor and see every module
+# folder task managed:render wrote into build/managed with its setup.sh, start it, make the first admin with the setup code and a virtual passkey (spec 0037), deploy the sample from the editor and see every module
 # running; restart Docker and see it running again without an apply (AC-12); remove it with
-# Delete data too; then check that no secret value reached a log. Needs the four platform images
+# Delete data too; then check that no secret value reached a log. Needs the five platform images
 # tagged ci (task images IMAGE_TAG=ci, as a Task variable: an env var loses to the Taskfile's default) and Chromium for Playwright. SMOKE_LOGS, when set, keeps
 # the logs. SMOKE_DOCKER_RESTART=1 restarts the Docker daemon with sudo systemctl (CI sets it);
 # without it the restart is skipped, so a local run never restarts your Docker.
@@ -14,7 +14,6 @@ exec </dev/null
 repo=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
 platform="$work/modular-platform"
-password=$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')
 
 compose() { docker compose --project-directory "$platform" -f "$platform/docker-compose.yml" -f "$repo/deploy/managed/compose.ci.yaml" "$@"; }
 
@@ -54,9 +53,9 @@ if [ ! -f "$repo/build/managed/docker-compose.yml" ]; then
 	exit 1
 fi
 cp -R "$repo/build/managed" "$platform"
-# spec 0015's questions: domain, origin (empty takes https://<domain>), admin email, admin user
-# name, admin password
-printf 'platform.localhost\n\nadmin@example.com\nadmin\n%s\n' "$password" | sh "$platform/setup.sh"
+# the two questions left: the domain and the origin (empty takes https://<domain>). The admin is
+# made later, in the browser, with the setup code setup.sh wrote (spec 0037)
+printf 'platform.localhost\n\n' | sh "$platform/setup.sh"
 
 # wait_healthy waits up to 5 minutes for the eight long running services to be healthy and every job
 # of the rendered project (today four: the certificate job of postgres, two database provision jobs
@@ -78,7 +77,7 @@ wait_healthy() {
 }
 
 # tls_checks proves AC-17 on the running platform (spec 0014): postgres refuses a plain connection,
-# api and authelia are on TLS, the certificate has about 90 days, and a certificate with under 30
+# api and pocket_id are on TLS, the certificate has about 90 days, and a certificate with under 30
 # days left is reissued by the next up and reaches the running server without a restart.
 tls_checks() {
 	net=modular-platform_internal
@@ -98,10 +97,10 @@ tls_checks() {
 		echo "postgres let a plain connection in" >&2
 		exit 1
 	fi
-	plain=$(pg "sslmode=verify-full sslrootcert=/ca" "select count(*) filter (where s.ssl), count(*) from pg_stat_ssl s join pg_stat_activity a using (pid) where a.usename in ('api', 'authelia')")
+	plain=$(pg "sslmode=verify-full sslrootcert=/ca" "select count(*) filter (where s.ssl), count(*) from pg_stat_ssl s join pg_stat_activity a using (pid) where a.usename in ('api', 'pocket_id')")
 	case $plain in
-	[1-9]*"|"*) [ "${plain%%|*}" = "${plain##*|}" ] || { echo "api or authelia is connected without TLS: $plain" >&2; exit 1; } ;;
-	*) echo "api and authelia are not connected to postgres: $plain" >&2; exit 1 ;;
+	[1-9]*"|"*) [ "${plain%%|*}" = "${plain##*|}" ] || { echo "api or pocket_id is connected without TLS: $plain" >&2; exit 1; } ;;
+	*) echo "api and pocket_id are not connected to postgres: $plain" >&2; exit 1 ;;
 	esac
 	server_cert "-checkend $((60 * 86400))" >/dev/null || { echo "the certificate of postgres has under 60 days left; want about 90" >&2; exit 1; }
 
@@ -124,7 +123,8 @@ tls_checks() {
 }
 
 browser() {
-	SMOKE_TLS=internal SMOKE_ADMIN_USER=admin SMOKE_ADMIN_PASSWORD="$password" SMOKE_ZIP="$work/whoami-postgres.zip" \
+	SMOKE_TLS=internal SMOKE_STATE_FILE="$work/admin-state.json" SMOKE_SETUP_CODE_FILE="$platform/secrets/api/setup/code" \
+		SMOKE_SETUP_COPY="$work/setup-secrets/secrets" SMOKE_ZIP="$work/whoami-postgres.zip" \
 		pnpm --dir "$repo/web" run smoke:managed --grep "$1"
 }
 
@@ -136,7 +136,16 @@ echo "== postgres serves TLS only, and a certificate near its end is reissued by
 tls_checks
 wait_healthy
 
-echo "== sign in, download the zip, deploy the sample, see it running"
+echo "== the first admin page is closed with no setup session (spec 0037, AC-17)"
+for path in /setup /signup/setup /api/signup/setup; do
+	status=$(curl -ks -o /dev/null -w '%{http_code}' --resolve auth.platform.localhost:443:127.0.0.1 "https://auth.platform.localhost$path")
+	[ "$status" = 403 ] || { echo "https://auth.platform.localhost$path answered $status with no cookie; want 403" >&2; exit 1; }
+done
+
+echo "== make the first admin with the setup code and a passkey, bind it"
+browser @setup
+
+echo "== download the zip, deploy the sample, see it running"
 browser @deploy
 # Delete data too deletes these at the end; the log check still needs their values
 cp -R "$platform/stacks/mp-whoami-postgres/secrets" "$work/stack-secrets"
@@ -190,7 +199,7 @@ leaks=0
 # chance; a setup step writes public material with mode 0644 (spec 0013), and a certificate job
 # writes the certificate of a binding to a *_cert file with mode 0600 (spec 0014), beside its
 # *_key file, which stays checked
-for f in $(find "$platform/secrets" "$platform/stacks" "$work/stack-secrets" -path '*secrets/*' -type f ! -name '*.crt' ! -name '*_cert' ! -perm -0044); do
+for f in $(find "$platform/secrets" "$platform/stacks" "$work/stack-secrets" "$work/setup-secrets" -path '*secrets/*' -type f ! -name '*.crt' ! -name '*_cert' ! -perm -0044); do
 	# every line of 16 characters or more that is not a PEM armour line
 	grep -v -e '^-----' "$f" | while IFS= read -r line; do
 		[ "${#line}" -ge 16 ] || continue
@@ -200,9 +209,5 @@ for f in $(find "$platform/secrets" "$platform/stacks" "$work/stack-secrets" -pa
 		fi
 	done || leaks=1
 done
-if printf '%s' "$password" | grep -qF -f - "$logs"; then
-	echo "the admin password appears in the logs" >&2
-	leaks=1
-fi
 [ "$leaks" -eq 0 ]
 echo "== smoke-managed passed"

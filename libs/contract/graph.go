@@ -100,7 +100,7 @@ func v0alpha1Only(g Graph) *Problem {
 			continue
 		}
 		for _, s := range sortedKeys(*m.Uses) {
-			if b := (*m.Uses)[s]; b != nil && len(b.Named) > 0 {
+			if b := (*m.Uses)[s]; b != nil && len(b.Values) > 0 {
 				return requestProblem(CodeInvalidGraph, "modules."+i+".uses."+s, "A v0alpha1 graph writes each binding as a string.")
 			}
 		}
@@ -121,7 +121,7 @@ func ConvertGraph(g Graph) (Graph, bool) {
 }
 
 // MarshalGraph writes the canonical text of a graph: keys in byte order, two space indent,
-// block style, no line wrapping, null written as null, a binding as a string unless it has named
+// block style, no line wrapping, null written as null, a binding as a string unless it has
 // values, each config value double quoted and an empty config left out (spec 0025), formatVersion
 // left out at 1.0, one trailing newline. The editor's writer matches it byte for byte (AC-19).
 func MarshalGraph(g Graph) ([]byte, error) {

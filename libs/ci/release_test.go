@@ -27,7 +27,10 @@ type job struct {
 	Strategy    struct {
 		FailFast *bool `json:"fail-fast"`
 		Matrix   struct {
-			Service []string `json:"service"`
+			Include []struct {
+				Service string `json:"service"`
+				Dir     string `json:"dir"`
+			} `json:"include"`
 		} `json:"matrix"`
 	} `json:"strategy"`
 	Steps []step `json:"steps"`
@@ -42,8 +45,24 @@ type step struct {
 	With map[string]any    `json:"with"`
 }
 
-// The four platform images every release pushes and checks.
-var releaseImages = []string{"api", "deployer-docker", "renderer", "web"}
+// releaseImage is one platform image every release pushes and checks, and the catalog folder
+// (modules or images) that holds its Dockerfile (spec 0030, AC-14e).
+type releaseImage struct{ Name, Dir string }
+
+// releaseImageList is the one list of the images a release pushes. The images job matrix, the
+// check script and task images are all tested against it.
+var releaseImageList = []releaseImage{
+	{"api", "modules"}, {"deployer-docker", "modules"}, {"oidc-job", "images"}, {"renderer", "modules"}, {"web", "modules"},
+}
+
+// releaseImages are the names of releaseImageList, sorted.
+var releaseImages = func() []string {
+	var out []string
+	for _, i := range releaseImageList {
+		out = append(out, i.Name)
+	}
+	return out
+}()
 
 func readWorkflow(t *testing.T, name string) (workflow, string) {
 	t.Helper()
@@ -98,9 +117,13 @@ func TestReleaseImagesJob(t *testing.T) {
 	if images.Strategy.FailFast == nil || *images.Strategy.FailFast {
 		t.Error("images matrix must set fail-fast: false, so one failed image does not cancel the others")
 	}
-	services := slices.Sorted(slices.Values(images.Strategy.Matrix.Service))
-	if !slices.Equal(services, releaseImages) {
-		t.Errorf("images matrix %v, want %v", services, releaseImages)
+	var matrix []releaseImage
+	for _, e := range images.Strategy.Matrix.Include {
+		matrix = append(matrix, releaseImage{e.Service, e.Dir})
+	}
+	slices.SortFunc(matrix, func(a, b releaseImage) int { return strings.Compare(a.Name, b.Name) })
+	if !slices.Equal(matrix, releaseImageList) {
+		t.Errorf("images matrix %v, want %v", matrix, releaseImageList)
 	}
 	if images.Env["VERSION"] != "${{ needs.release-please.outputs.version }}" {
 		t.Errorf("images job env VERSION = %q, want the version release-please names", images.Env["VERSION"])
@@ -138,7 +161,7 @@ func TestReleaseImagesJob(t *testing.T) {
 	}
 	checks := map[string]string{
 		"context":    ".",
-		"file":       "catalog/modules/${{ matrix.service }}/Dockerfile",
+		"file":       "catalog/${{ matrix.dir }}/${{ matrix.service }}/Dockerfile",
 		"platforms":  "linux/amd64,linux/arm64",
 		"provenance": "mode=max",
 		"tags":       "ghcr.io/racherom/modular-platform/${{ matrix.service }}:${{ env.VERSION }}",

@@ -125,3 +125,14 @@ After the merge of #46, every push to `main` failed in the Release workflow: `RE
 - **Chosen: off until the repository variable `RELEASES_ENABLED` is `true`, no `github.token` fallback.** The run passes with skipped jobs until then; turning releases on is one variable, and from then on release-please runs on every push as before. A job's `if` can read `vars` but not `secrets`, which is why the switch is a variable and the token check is a step.
 - Runner up: start the Release workflow by hand only (`workflow_dispatch`). It never fails on a push, but release-please creates the GitHub release on the run after the merge, so each release needs two manual starts.
 - Rejected: skip quietly when the token is missing. No setting needed, but a missing token at release time would pass unnoticed.
+
+## Job images (added 2026-11-21, AC-14)
+
+**Context**: spec 0037 gave the `oidc-provisioner` capability its own job image, `oidc-job:0.0.0`. It is no module, so the module based build of this spec never saw it: a pre release zip named an image nothing builds, and `render-platform -image-tag dev` left it at `0.0.0`, so `task dev:managed` could not start.
+
+**Options**:
+1. Build it like a module image (chosen): the Dockerfile goes into the zip, `setup.sh` or the README builds it, `-image-tag` retags it, the release pushes it. One mechanism, no new path for a reader to learn.
+2. A third party image with `curl` and `jq`, pinned by digest: no build step, but spec 0037 rejected it, because the job holds the provider's admin key and runs read only with no egress, so the image is part of the trust base.
+3. A Compose `build:` section: breaks the rule that services keep `image:` (the keeper and the deployer run `compose pull`).
+
+**Why option 1, and its three differences**: the image holds no repository code (the scripts live in the capability file), so it needs no source stage, no GitHub fetch and no `MP_SOURCE_PATH`; its context is the Dockerfile folder. It lives at `catalog/images/oidc-job/Dockerfile` (you chose this over a folder per capability or a file under `pocket-id`), because the job belongs to the capability and any provider of `oidc-provisioner` shares it. The key is the image's repository name, so a name clash with a module is a catalog test failure.

@@ -21,6 +21,7 @@ type Values struct {
 	specs   map[string]ValueSpec
 	snap    atomic.Pointer[snapshot]
 	callers *callerValues // nil without a CallerSource
+	setup   setupFiles
 }
 
 // snapshot is one complete set of values, by name.

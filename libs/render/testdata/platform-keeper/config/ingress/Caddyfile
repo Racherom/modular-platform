@@ -1,0 +1,103 @@
+# The ingress of modular-platform (spec 0015): one origin for every backend bound to it. Each route
+# keeps its path: a backend serves under <base path><route>.
+{
+	email "{$MP_ACME_EMAIL}"
+	servers {
+		# only TCP 80 and 443 are published
+		protocols h1 h2
+	}
+}
+
+# a real certificate: browsers may keep to HTTPS for this host
+(tls-acme) {
+	header Strict-Transport-Security "max-age=31536000"
+}
+
+(tls-internal) {
+	tls internal
+}
+
+# what every site shares: the certificate by tls-mode and the security headers. MP_TLS_MODE is
+# internal or acme, the caddy entry's tls-mode value
+(site-common) {
+	import tls-{$MP_TLS_MODE}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}
+
+{$INGRESS_DOMAIN} {
+	import site-common
+
+	@api path {$INGRESS_BASE_PATH}/api {$INGRESS_BASE_PATH}/api/*
+	handle @api {
+		reverse_proxy https://api.modular-platform.internal:8443 {
+			# the event stream reaches the browser as it is written
+			flush_interval -1
+			# an https upstream serves a certificate from the internal issuer: trust only its
+			# root and check the backend's own name
+			transport http {
+				tls_trust_pool file /etc/caddy/trust/root.crt
+				tls_server_name api.modular-platform.internal
+			}
+		}
+	}
+
+	# the site root; only the dev overlay sets MP_WEB_UPSTREAM, to the Vite dev server, so no
+	# catalog entry declares it
+	@web path {$INGRESS_BASE_PATH} {$INGRESS_BASE_PATH}/*
+	handle @web {
+		reverse_proxy {$MP_WEB_UPSTREAM:http://web.modular-platform.internal:8080}
+	}
+
+	handle {
+		respond 404
+	}
+}
+
+# pocket-id is served at the root of its own host, never under the base path
+auth.{$INGRESS_DOMAIN} {
+	import site-common
+
+	# the one request of api this host serves: the handoff of the setup session, ahead of the
+	# provider's own routes. Nothing else of api is reachable here (spec 0037, AC-16).
+	@enter-pocket-id {
+		method GET
+		path {$INGRESS_BASE_PATH}/api/v1/setup/identity-enter
+	}
+	handle @enter-pocket-id {
+		reverse_proxy https://api.modular-platform.internal:8443 {
+			# api checks that the request is for this host, and an https upstream makes
+			# Caddy send its own name instead
+			header_up Host {host}
+			transport http {
+				tls_trust_pool file /etc/caddy/trust/root.crt
+				tls_server_name api.modular-platform.internal
+			}
+		}
+	}
+
+	# these paths pass only when api says so (spec 0037); no answer is a 403
+	@gate-pocket-id path /setup* /signup/setup* /api/signup/setup*
+	handle @gate-pocket-id {
+		forward_auth https://api.modular-platform.internal:8443 {
+			uri {$INGRESS_BASE_PATH}/api/v1/setup/gate
+			transport http {
+				tls_trust_pool file /etc/caddy/trust/root.crt
+				tls_server_name api.modular-platform.internal
+			}
+		}
+		reverse_proxy http://pocket-id.modular-platform.internal:1411
+	}
+	handle_errors {
+		@gate-down-pocket-id {
+			path /setup* /signup/setup* /api/signup/setup*
+			expression {err.status_code} in [502, 503, 504]
+		}
+		respond @gate-down-pocket-id 403
+	}
+	reverse_proxy http://pocket-id.modular-platform.internal:1411
+}

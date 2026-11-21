@@ -12,7 +12,7 @@ set -eu
 version=${1:?usage: release-images-check.sh <version> [image prefix]}
 prefix=${2:-ghcr.io/racherom/modular-platform}
 
-for service in renderer web api deployer-docker; do
+for service in renderer web api deployer-docker oidc-job; do
 	image="$prefix/$service:$version"
 	manifest=$(docker buildx imagetools inspect "$image") || {
 		echo "::error::$image is not in the registry; did the images job of the Release workflow push it?"

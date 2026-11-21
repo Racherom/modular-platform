@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"testing"
@@ -83,33 +84,99 @@ func TestSchemaIsLive(t *testing.T) {
 	}
 }
 
+// TestAdminBindsOnce covers spec 0006 AC-2 (the admin binds once) and AC-6 (a reset lets the
+// next sign in bind again). One round of the race rarely makes two inserts collide, so it
+// repeats: each round releases every first sign in at once from a start barrier, then resets.
 func TestAdminBindsOnce(t *testing.T) {
+	const rounds, contenders = 50, 8
 	st, _ := startStore(t)
 	ctx := t.Context()
 	if _, ok, err := st.AdminBinding(ctx); err != nil || ok {
 		t.Fatalf("fresh database: bound %v, err %v", ok, err)
 	}
-	// two first sign ins at once: exactly one identity wins, and both see the winner
-	ids := []signin.Identity{{Issuer: "https://idp", Subject: "a"}, {Issuer: "https://idp", Subject: "b"}}
-	got := make([]signin.Identity, 2)
-	var wg sync.WaitGroup
-	for i, id := range ids {
-		wg.Go(func() {
-			var err error
-			if got[i], err = st.BindAdmin(ctx, id, "admin@example.com"); err != nil {
-				t.Error(err)
+	for round := range rounds {
+		ids := make([]signin.Identity, contenders)
+		for i := range ids {
+			ids[i] = signin.Identity{Issuer: "https://idp", Subject: fmt.Sprintf("r%d-c%d", round, i)}
+		}
+		got := make([]signin.Identity, contenders)
+		errs := make([]error, contenders)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i, id := range ids {
+			wg.Go(func() {
+				<-start
+				got[i], errs[i] = st.BindAdmin(ctx, id, "admin@example.com")
+			})
+		}
+		close(start)
+		wg.Wait()
+
+		// every first sign in gets an answer, and all of them name the same single winner
+		if err := errors.Join(errs...); err != nil {
+			t.Fatalf("round %d: a racing sign in failed: %v", round, err)
+		}
+		winner := got[0]
+		if !slices.Contains(ids, winner) {
+			t.Fatalf("round %d: bound %v, which no contender asked for", round, winner)
+		}
+		for i, g := range got {
+			if g != winner {
+				t.Fatalf("round %d: contender %d saw %v, contender 0 saw %v", round, i, g, winner)
 			}
-		})
+		}
+		stored, ok, err := st.AdminBinding(ctx)
+		if err != nil || !ok || stored != winner {
+			t.Fatalf("round %d: stored binding %v (bound %v, err %v), want %v", round, stored, ok, err, winner)
+		}
+
+		if err := st.ResetAdmin(ctx); err != nil {
+			t.Fatalf("round %d: reset: %v", round, err)
+		}
+		if _, ok, err := st.AdminBinding(ctx); err != nil || ok {
+			t.Fatalf("round %d: reset left an admin bound (err %v)", round, err)
+		}
 	}
-	wg.Wait()
-	if got[0] != got[1] || !slices.Contains(ids, got[0]) {
-		t.Errorf("bound %v and %v", got[0], got[1])
-	}
-	if err := st.ResetAdmin(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, _ := st.AdminBinding(ctx); ok {
-		t.Error("reset left an admin bound")
+}
+
+// TestAdminBindsWithoutEmail covers spec 0036 AC-38: an identity whose claims carry no email
+// binds with no email stored, and of several first sign ins at once exactly one wins.
+func TestAdminBindsWithoutEmail(t *testing.T) {
+	const rounds, contenders = 10, 8
+	st, pool := startStore(t)
+	ctx := t.Context()
+	for round := range rounds {
+		got := make([]signin.Identity, contenders)
+		errs := make([]error, contenders)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := range contenders {
+			wg.Go(func() {
+				<-start
+				got[i], errs[i] = st.BindAdmin(ctx, signin.Identity{Issuer: "https://idp", Subject: fmt.Sprintf("r%d-c%d", round, i)}, "")
+			})
+		}
+		close(start)
+		wg.Wait()
+		if err := errors.Join(errs...); err != nil {
+			t.Fatalf("round %d: a racing sign in failed: %v", round, err)
+		}
+		for i, g := range got {
+			if g != got[0] {
+				t.Fatalf("round %d: contender %d saw %v, contender 0 saw %v", round, i, g, got[0])
+			}
+		}
+		var rows int
+		var nullEmail bool
+		if err := pool.QueryRow(ctx, "SELECT count(*), bool_and(email IS NULL) FROM admin_binding").Scan(&rows, &nullEmail); err != nil {
+			t.Fatal(err)
+		}
+		if rows != 1 || !nullEmail {
+			t.Fatalf("round %d: %d admin rows, email null %v; want 1 and true", round, rows, nullEmail)
+		}
+		if err := st.ResetAdmin(ctx); err != nil {
+			t.Fatalf("round %d: reset: %v", round, err)
+		}
 	}
 }
 
@@ -141,6 +208,42 @@ func applyOp(id uuid.UUID) deploy.Operation {
 	return deploy.Operation{
 		StackID: id, Action: deploy.ActionApply, Graph: json.RawMessage(`{"name":"sample"}`), Digest: "sha256:x",
 		StartedBy: deploy.Starter{Issuer: "i", Subject: "s", Email: "a@b.c"},
+	}
+}
+
+// TestEnsureStackRace: first deploys of one new stack name at once all get the same stack, and
+// exactly one of them created it (only that one may drop it again). Each round uses a new name.
+func TestEnsureStackRace(t *testing.T) {
+	const rounds, contenders = 50, 8
+	st, _ := startStore(t)
+	ctx := t.Context()
+	for round := range rounds {
+		name := fmt.Sprintf("race-%d", round)
+		ids := make([]uuid.UUID, contenders)
+		created := make([]bool, contenders)
+		errs := make([]error, contenders)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := range contenders {
+			wg.Go(func() {
+				<-start
+				ids[i], _, created[i], errs[i] = st.EnsureStack(ctx, name)
+			})
+		}
+		close(start)
+		wg.Wait()
+
+		if err := errors.Join(errs...); err != nil {
+			t.Fatalf("round %d: a racing ensure failed: %v", round, err)
+		}
+		if n := len(slices.DeleteFunc(slices.Clone(created), func(c bool) bool { return !c })); n != 1 {
+			t.Fatalf("round %d: %d contenders created the stack, want 1", round, n)
+		}
+		for i, id := range ids {
+			if id != ids[0] {
+				t.Fatalf("round %d: contender %d got stack %v, contender 0 got %v", round, i, id, ids[0])
+			}
+		}
 	}
 }
 

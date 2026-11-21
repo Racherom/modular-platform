@@ -2,6 +2,7 @@ package render
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/compose-spec/compose-go/v2/types"
 
@@ -126,9 +127,20 @@ func (r *renderer) clientValues(b contract.Binding) (map[string]string, error) {
 	out := map[string]string{}
 	slot := r.modules[r.g.Modules[b.Consumer].Module].Slots()[b.Slot]
 	k := r.caps[b.Capability]
+	for _, f := range graphFields(k) {
+		text, ok := r.graphText(b, f)
+		if !ok {
+			continue
+		}
+		v, err := r.fill(b, text, true) // the ingress's file reads {$ENV} itself
+		if err != nil {
+			return nil, err
+		}
+		out[f] = v.text
+	}
 	for f, src := range slot.Fields {
 		field := k.Fields[f]
-		if field.IsFile() || field.Direction != contract.ToProvider {
+		if field.IsFile() || field.Direction != contract.ToProvider || field.Graph {
 			continue
 		}
 		switch {
@@ -139,6 +151,10 @@ func (r *renderer) clientValues(b contract.Binding) (map[string]string, error) {
 			continue // the catalog allows only a literal or a platform fact on a text field
 		}
 		own := r.end(b.Consumer, src.Provide)
+		if src.Platform == contract.FieldSourcePlatformGate {
+			out[f] = gatePrefixes(own.provide.FirstAdmin.Gate)
+			continue
+		}
 		v, set, err := r.source(own, r.caps[own.offered], f, contract.FieldSource{Platform: src.Platform, Path: src.Path})
 		if err != nil {
 			return nil, err
@@ -148,4 +164,15 @@ func (r *renderer) clientValues(b contract.Binding) (map[string]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// gatePrefixes writes the gate paths of a first_admin block as the prefixes a Caddy path matcher
+// takes, space separated: /setup becomes /setup*, so /setup/ and /setup/__data.json are guarded too
+// (spec 0037, AC-18). A prefix guards more than the page needs, never less.
+func gatePrefixes(paths []string) string {
+	prefixes := make([]string, len(paths))
+	for i, p := range paths {
+		prefixes[i] = p + "*"
+	}
+	return strings.Join(prefixes, " ")
 }

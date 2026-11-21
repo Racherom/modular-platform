@@ -63,7 +63,7 @@ func TestRun_SourceRef(t *testing.T) {
 		},
 		"local warns about MP_SOURCE_PATH": {
 			ref: "local", wantRef: "local",
-			warning: "warning: source ref local: this render comes from a local checkout, and a zip that builds a platform image builds only with MP_SOURCE_PATH",
+			warning: "warning: source ref local: this render comes from a local checkout, and a zip that builds a module image builds only with MP_SOURCE_PATH",
 		},
 		"a full commit gives no warning": {ref: testCommit, wantRef: testCommit},
 	} {
@@ -107,28 +107,33 @@ func TestRun_BadSourceRef(t *testing.T) {
 	}
 }
 
-// TestRun_UnreleasedBuildsFourPlatformImages covers spec 0030 AC-6 and the value sourcing step
-// "Managed render modules": with the catalog tag 0.0.0, exactly the four platform modules get a
-// Dockerfile, each the catalog's file byte for byte.
-func TestRun_UnreleasedBuildsFourPlatformImages(t *testing.T) {
+// TestRun_UnreleasedBuildsPlatformImages covers spec 0030 AC-6 and the value sourcing step
+// "Managed render modules": with the catalog tag 0.0.0, the four platform modules and the oidc job
+// image get a Dockerfile, each the catalog's file byte for byte.
+func TestRun_UnreleasedBuildsPlatformImages(t *testing.T) {
 	t.Parallel()
 	out, log, err := renderInto(t, "", testCommit)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, log)
 	}
-	want := []string{"build/api/Dockerfile", "build/deployer-docker/Dockerfile", "build/renderer/Dockerfile", "build/web/Dockerfile"}
+	want := []string{"build/api/Dockerfile", "build/deployer-docker/Dockerfile", "build/oidc-job/Dockerfile", "build/renderer/Dockerfile", "build/web/Dockerfile"}
 	got := builds(t, out)
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("Dockerfiles %v, want %v", got, want)
 	}
 	for _, f := range want {
 		module := filepath.Base(filepath.Dir(f))
-		if catalogFile := readFile(t, "../../modules/"+module, "Dockerfile"); readFile(t, out, f) != catalogFile {
-			t.Errorf("%s is not catalog/modules/%s/Dockerfile", f, module)
+		dir := "../../modules/" + module
+		if module == "oidc-job" {
+			dir = "../../images/oidc-job"
+		}
+		if catalogFile := readFile(t, dir, "Dockerfile"); readFile(t, out, f) != catalogFile {
+			t.Errorf("%s is not the catalog's Dockerfile in %s", f, dir)
 		}
 	}
-	if compose := readFile(t, out, "docker-compose.yml"); strings.Count(compose, "pull_policy: never") != 4 {
-		t.Errorf("docker-compose.yml has %d pull_policy never, want 4", strings.Count(compose, "pull_policy: never"))
+	if compose := readFile(t, out, "docker-compose.yml"); strings.Count(compose, "pull_policy: never") != 7 {
+		// the four platform services and the three jobs of the oidc job image
+		t.Errorf("docker-compose.yml has %d pull_policy never, want 7", strings.Count(compose, "pull_policy: never"))
 	}
 }
 

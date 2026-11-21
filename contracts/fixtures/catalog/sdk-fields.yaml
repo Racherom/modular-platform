@@ -610,3 +610,15 @@ cases:
           capability: web
           version: "1.0"
           fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}}
+  - name: setup lifetime secrets
+    want: []
+    body: |
+      secrets:
+        - {name: code, lifetime: setup, show: once, format: password, description: The setup code.}
+        - {name: session-key, lifetime: setup, description: The session key.}
+  - name: setup lifetime with env
+    want: [secrets.0.env invalid_secret]
+    check_only: true
+    body: |
+      secrets:
+        - {name: code, lifetime: setup, env: CODE_FILE, description: The setup code.}

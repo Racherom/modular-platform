@@ -21,22 +21,21 @@ WHERE expires_at <= now() OR last_seen_at <= now() - sqlc.arg(idle)::interval;
 SELECT * FROM admin_binding WHERE singleton;
 
 -- name: BindAdmin :one
--- atomic: of two first sign ins at once, one inserts and the other reads the winner
-WITH bound AS (
-    INSERT INTO admin_binding (iss, sub, email) VALUES ($1, $2, $3)
-    ON CONFLICT (singleton) DO NOTHING
-    RETURNING iss, sub
-)
-SELECT iss, sub FROM bound
-UNION ALL
-SELECT iss, sub FROM admin_binding WHERE singleton
-LIMIT 1;
+-- atomic: of two first sign ins at once, one inserts and the other gets the winner's row.
+-- DO UPDATE with a no-op SET, not DO NOTHING plus a SELECT: the loser waits for the winner's
+-- commit, then locks and returns the committed row, while a SELECT in the same statement would
+-- read the statement's snapshot from before that commit and find nothing.
+INSERT INTO admin_binding (iss, sub, email) VALUES ($1, $2, NULLIF(sqlc.arg(email)::text, ''))
+ON CONFLICT (singleton) DO UPDATE SET singleton = admin_binding.singleton
+RETURNING iss, sub;
 
 -- name: EnsureStack :one
--- returns the stack named $1, creating it when it does not exist yet
+-- returns the stack named $1, creating it when it does not exist yet. No conflict target: the
+-- generated compose_project is unique too, and only an arbiter index turns a racing insert into
+-- DO NOTHING. A loser can still get no row (its snapshot predates the winner); the store retries.
 WITH created AS (
     INSERT INTO stacks (name) VALUES ($1)
-    ON CONFLICT (name) DO NOTHING
+    ON CONFLICT DO NOTHING
     RETURNING id, compose_project, true AS created
 )
 SELECT id, compose_project, created FROM created

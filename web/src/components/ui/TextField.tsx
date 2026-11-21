@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { TextField as AriaTextField, Input, Label, Text } from 'react-aria-components'
+import { TextField as AriaTextField, FieldError, Input, Label, Text } from 'react-aria-components'
 import styles from './TextField.module.css'
 
 /** Props of {@link TextField}. */
@@ -19,6 +19,11 @@ export interface TextFieldProps {
   /** Shows the field as invalid; the reason is told beside it. */
   isInvalid?: boolean
   size?: 'md' | 'sm'
+  /** `password` hides what is typed. */
+  type?: 'text' | 'password'
+  autoComplete?: string
+  /** Why the field is invalid; shown below the control and linked to it for screen readers. */
+  errorMessage?: ReactNode
 }
 
 /** One line of text, on React Aria Components; keyboard and screen reader ready. */
@@ -33,6 +38,9 @@ export function TextField({
   isDisabled,
   isInvalid,
   size = 'md',
+  type = 'text',
+  autoComplete,
+  errorMessage,
 }: TextFieldProps) {
   return (
     <AriaTextField
@@ -45,6 +53,8 @@ export function TextField({
       }}
       isDisabled={isDisabled}
       isInvalid={isInvalid}
+      type={type}
+      autoComplete={autoComplete}
       data-size={size}
     >
       <Label className={hideLabel ? 'visually-hidden' : styles.label}>{label}</Label>
@@ -54,6 +64,7 @@ export function TextField({
           {description}
         </Text>
       )}
+      {errorMessage && <FieldError className={styles.error}>{errorMessage}</FieldError>}
     </AriaTextField>
   )
 }

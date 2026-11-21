@@ -19,7 +19,6 @@ provides:
       issuer: {uses: public, format: "{origin}{base_path}/auth"}
       client_id: {platform: consumer}
       client_secret: {generate: true}
-      admin_email: {config: admin-email}
       ca: {uses: public, field: ca}
   site:
     capability: http

@@ -50,6 +50,7 @@ yields:
     mode: {admin: mode}
     ca: output
     token: generate
+    owner: consumer
   job:
     image: example.test/job:1.0.0
     provision: echo provision
@@ -175,114 +176,131 @@ func TestModuleRules(t *testing.T) {
 	sdk := [2]string{"image: example.test/svc:1.0.0\n", "image: example.test/svc:1.0.0\nruntime: sdk\n"}
 	noPort := [2]string{"    port: 8080\n", ""}
 	tests := map[string]ruleCase{
-		"bad yaml":            one("kind: Module", "kind: [", ".", contract.CodeInvalidEntry),
-		"unknown key":         one("kind: Module", "kind: Module\nextra: 1", ".", contract.CodeInvalidEntry),
-		"duplicate key":       one("kind: Module", "kind: Module\nkind: Module", ".", contract.CodeInvalidEntry),
-		"v0alpha1 entry":      one("modular-platform/v1", "modular-platform/v0alpha1", "apiVersion", contract.CodeUnsupportedVersion),
-		"format too new":      one("kind: Module", "kind: Module\nformatVersion: \"1.9\"\nlater: 1", "formatVersion", contract.CodeFormatTooNew),
-		"kind":                one("kind: Module", "kind: Graph", "kind", contract.CodeWrongKind),
-		"name pattern":        one("name: svc", "name: Svc", "name", contract.CodeInvalidName),
-		"name reserved":       one("name: svc", "name: \"off\"", "name", contract.CodeInvalidName),
-		"name mismatch":       one("name: svc", "name: other", "name", contract.CodeNameMismatch),
-		"no description":      one("description: A service.", "description: \"\"", "description", contract.CodeMissingField),
-		"no image":            one("image: example.test/svc:1.0.0", "image: \"\"", "image", contract.CodeMissingField),
-		"bad image":           one("example.test/svc:1.0.0", "example.test/svc!:1.0.0", "image", contract.CodeInvalidImage),
-		"untagged image":      one("example.test/svc:1.0.0", "example.test/svc", "image", contract.CodeImageUntagged),
-		"latest image":        one("example.test/svc:1.0.0", "example.test/svc:latest", "image", contract.CodeImageLatest),
-		"digest image":        one("example.test/svc:1.0.0", "example.test/svc:1.0.0@sha256:"+strings.Repeat("a", 64), "image", contract.CodeImageDigest),
-		"provide name":        one("  web:", "  Web:", "provides.Web", contract.CodeInvalidName),
-		"unknown capability":  one("    capability: store\n    version", "    capability: nope\n    version", "provides.web.capability", contract.CodeUnknownCapability),
-		"invalid version":     one(`version: "1.0"`, `version: "one"`, "provides.web.version", contract.CodeInvalidVersion),
-		"port zero":           one("port: 8080", "port: 0", "provides.web.port", contract.CodeInvalidPort),
-		"port too high":       one("port: 8080", "port: 70000", "provides.web.port", contract.CodeInvalidPort),
-		"port on sdk":         {[][2]string{sdk}, "provides.web.port", contract.CodePortNotAllowed},
-		"sdk two provides":    {[][2]string{sdk, noPort, {"uses:\n", "  more:\n    capability: store\n    version: \"1.0\"\n    fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}, name: {value: a}, password: {secret: token}, mode: {value: fast}}\nuses:\n"}}, "provides", contract.CodeTooManyProvides},
-		"unknown field":       one("      mode: {value: fast}", "      mode: {value: fast}\n      speed: {value: x}", "provides.web.fields.speed", contract.CodeUnknownField),
-		"missing source":      one("      host: {platform: host}\n", "", "provides.web.fields.host", contract.CodeMissingFieldSource),
-		"source two kinds":    one("{value: main}", "{value: main, secret: token}", "provides.web.fields.name", contract.CodeInvalidFieldSource),
-		"source bad enum":     one("{value: fast}", "{value: medium}", "provides.web.fields.mode", contract.CodeInvalidFieldSource),
-		"source bad pattern":  one("{value: main}", "{value: Main}", "provides.web.fields.name", contract.CodeInvalidFieldSource),
-		"source file as text": one("{secret: token}", "{value: x}", "provides.web.fields.password", contract.CodeInvalidFieldSource),
-		"source no secret":    one("{secret: token}", "{secret: nope}", "provides.web.fields.password", contract.CodeInvalidFieldSource),
-		"source to_provider":  one("      ca: {platform: ca}\n", "      ca: {platform: ca}\n      owner: {value: x}\n", "provides.web.fields.owner", contract.CodeInvalidFieldSource),
-		"source no config":    one("{value: main}", "{config: nope}", "provides.web.fields.name", contract.CodeInvalidFieldSource),
-		"source no slot":      one("{value: main}", "{uses: nope, field: host}", "provides.web.fields.name", contract.CodeInvalidFieldSource),
-		"source no volume":    one("{secret: token}", "{volume: nope, path: x}", "provides.web.fields.password", contract.CodeInvalidFieldSource),
-		"source tls no off":   one("{value: fast}", "{platform: tls, \"on\": fast}", "provides.web.fields.mode", contract.CodeInvalidFieldSource),
-		"source path no url":  one("{platform: host}", "{platform: host, path: /x}", "provides.web.fields.host", contract.CodeInvalidFieldSource),
-		"auth without token":  one("    port: 8080\n", "    port: 8080\n    auth: binding-token\n    env: {token: SVC_CLIENTS_DIR}\n", "provides.web.auth", contract.CodeInvalidFieldSource),
-		"provide env field":   one("    port: 8080\n", "    port: 8080\n    env: {host: SVC_HOST}\n", "provides.web.env.host", contract.CodeInvalidRule),
-		"slot name":           one("  db:", "  d_b:", "uses.d_b", contract.CodeInvalidName),
-		"slot capability":     one("    capability: store\n    versions", "    capability: nope\n    versions", "uses.db.capability", contract.CodeUnknownCapability),
-		"invalid range":       one(`">=15, <19"`, `">=19, <15"`, "uses.db.versions", contract.CodeInvalidRange),
-		"range syntax":        one(`">=15, <19"`, `"~15"`, "uses.db.versions", contract.CodeInvalidRange),
-		"env unknown field":   one("host: DB_HOST", "nope: DB_HOST", "uses.db.env.nope", contract.CodeUnknownField),
-		"env to_provider":     one("host: DB_HOST", "owner: DB_HOST", "uses.db.env.owner", contract.CodeInvalidRule),
-		"env name":            one("host: DB_HOST", "host: DB-HOST", "uses.db.env.host", contract.CodeInvalidEnvName),
-		"env twice":           one("port: DB_PORT", "port: DB_HOST", "uses.db.env.port", contract.CodeDuplicateEnv),
-		"files text field":    one("ca: /run/ca.pem", "host: /run/host", "uses.db.files.host", contract.CodeInvalidFieldSource),
-		"files relative":      one("ca: /run/ca.pem", "ca: run/ca.pem", "uses.db.files.ca", contract.CodeInvalidMount),
-		"mount twice":         one("tmpfs: [/tmp]", "tmpfs: [/var/lib/svc]", "hardening.tmpfs.0", contract.CodeInvalidMount),
-		"cap lower case":      one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [net_bind_service]", "hardening.cap_add.0", contract.CodeInvalidHardening),
-		"cap prefix":          one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [CAP_NET_BIND_SERVICE]", "hardening.cap_add.0", contract.CodeInvalidHardening),
-		"cap all":             one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [ALL]", "hardening.cap_add.0", contract.CodeInvalidHardening),
-		"cap twice":           one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [NET_BIND_SERVICE, NET_BIND_SERVICE]", "hardening.cap_add.1", contract.CodeInvalidHardening),
-		"cap unknown":         one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [NOT_A_CAP]", "hardening.cap_add.0", contract.CodeInvalidHardening),
-		"consumer source":     one("owner: {value: svc}", "owner: {generate: true}", "uses.db.fields.owner", contract.CodeInvalidFieldSource),
-		"consumer to_cons":    one("owner: {value: svc}", "host: {value: svc}", "uses.db.fields.host", contract.CodeInvalidFieldSource),
-		"per caller":          one("    optional: true\n", "    optional: true\n    per_caller: true\n", "uses.db.per_caller", contract.CodePerCallerNotAllowed),
-		"client not sdk":      one("    optional: true\n", "    optional: true\n    client: http\n", "uses.db.client", contract.CodeClientNotAllowed),
-		"client field":        {[][2]string{sdk, noPort, {"    optional: true\n", "    optional: true\n    client: postgresql\n"}}, "uses.db.env.url", contract.CodeMissingField},
-		"reserved slot":       {[][2]string{sdk, noPort, {"  db:\n", "  acme:\n"}}, "uses.acme", contract.CodeReservedSlot},
-		"secret name":         one("name: token", "name: To_ken", "secrets.0.name", contract.CodeInvalidName),
-		"secret no target":    one("    env: TOKEN_FILE\n", "", "secrets.0", contract.CodeMissingField),
-		"secret description":  one("description: A token.", "description: \"\"", "secrets.0.description", contract.CodeMissingField),
-		"secret from":         one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    from: nowhere\n", "secrets.0.from", contract.CodeInvalidRule),
-		"secret twice":        one("    description: A token.\n", "    description: A token.\n  - name: token\n    env: OTHER_FILE\n    description: Again.\n", "secrets.1.name", contract.CodeDuplicateName),
-		"secret folder":       one("name: token\n", "name: certs/\n", "secrets.0", contract.CodeInvalidRule),
-		"secret env twice":    one("env: TOKEN_FILE", "env: DB_HOST", "secrets.0.env", contract.CodeDuplicateEnv),
-		"volume path":         one("data: /var/lib/svc", "data: var/lib", "volumes.data", contract.CodeInvalidMount),
-		"template file":       one("svc.conf.tmpl", "svc.conf", "templates.0.file", contract.CodeInvalidTemplate),
-		"template delims":     one("    path: /etc/svc.conf\n", "    path: /etc/svc.conf\n    delims: [\"[[\", \"\"]\n", "templates.0.delims", contract.CodeInvalidTemplate),
-		"setup no command":    one("command: [svc, init]", "command: []", "setup.0.command", contract.CodeInvalidSetupStep),
-		"setup for each":      one("    command: [svc, init]\n", "    command: [svc, init]\n    for_each: nope\n", "setup.0.for_each", contract.CodeInvalidSetupStep),
-		"client env":          one("    command: [svc, init]\n", "    command: [svc, init]\n    env: {X: \"{client}\"}\n", "setup.0.env.X", contract.CodeInvalidSetupStep),
-		"client command":      one("command: [svc, init]", "command: [svc, \"{client}\"]", "setup.0.command.1", contract.CodeInvalidSetupStep),
-		"client entrypoint":   one("    command: [svc, init]\n", "    entrypoint: [\"svc-{client}\"]\n    command: [svc, init]\n", "setup.0.entrypoint.0", contract.CodeInvalidSetupStep),
-		"client write":        one("writes: [{name: token}]", "writes: [{name: \"clients/{client}\"}]", "setup.0.writes.0.name", contract.CodeInvalidSetupStep),
-		"each bare folder":    one(`"clients/{client}"`, "clients/", "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
-		"each prefix":         one(`"clients/{client}"`, `"digest-{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
-		"each suffix":         one(`"clients/{client}"`, `"clients/{client}.pem"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
-		"each nested":         one(`"clients/{client}"`, `"a/b/{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
-		"each no folder":      one(`"clients/{client}"`, `"other/{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
-		"each file secret":    one(`"clients/{client}"`, `"token/{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
-		"folder not declared": one("writes: [{name: token}]", "writes: [{name: other/}]", "setup.0.writes.0.name", contract.CodeInvalidSetupStep),
-		"each asks":           one("    for_each: web\n", "    for_each: web\n    asks: [{name: who, description: Who.}]\n", "setup.1.asks", contract.CodeInvalidSetupStep),
-		"provide no for_each": one("writes: [{name: token}]", "writes: [{name: token}]\n    reads: [{provide: web, field: token}]", "setup.0.reads.0.provide", contract.CodeInvalidSetupStep),
-		"provide other":       one("reads: [{provide: web, field: token}]", "reads: [{provide: api, field: token}]", "setup.1.reads.0.provide", contract.CodeInvalidSetupStep),
-		"provide to_consumer": one("reads: [{provide: web, field: token}]", "reads: [{provide: web, field: host}]", "setup.1.reads.0.field", contract.CodeInvalidSetupStep),
-		"setup env MP_":       one(`env: {CLIENT: "{client}"}`, `env: {MP_INSTANCE: "{client}"}`, "setup.1.env.MP_INSTANCE", contract.CodeInvalidSetupStep),
-		"healthcheck form":    one(`["CMD", "svc", "check"]`, `["svc", "check"]`, "healthcheck.test", contract.CodeInvalidHealthcheck),
-		"duration":            one("interval: 5s", "interval: soon", "healthcheck.interval", contract.CodeInvalidDuration),
-		"retries":             one("retries: 3", "retries: 0", "healthcheck.retries", contract.CodeInvalidRetries),
-		"env placeholder":     one("secrets:\n", "environment:\n  SVC_DB: \"{nope.host}\"\nsecrets:\n", "environment.SVC_DB", contract.CodeInvalidFieldSource),
-		"env file field":      one("secrets:\n", "environment:\n  SVC_DB: \"{db.password}\"\nsecrets:\n", "environment.SVC_DB", contract.CodeInvalidFieldSource),
-		"env no config":       one("secrets:\n", "environment:\n  SVC_DB: \"{config.nope}\"\nsecrets:\n", "environment.SVC_DB", contract.CodeInvalidFieldSource),
-		"alias no config":     one("secrets:\n", "network:\n  aliases: [{config: nope}]\nsecrets:\n", "network.aliases.0", contract.CodeInvalidRule),
-		"publish port":        one("secrets:\n", "publish:\n  - {port: 0, host: 8080}\nsecrets:\n", "publish.0.port", contract.CodeInvalidPort),
-		"publish host port":   one("secrets:\n", "publish:\n  - {port: 80, host: 70000}\nsecrets:\n", "publish.0.host", contract.CodeInvalidPort),
-		"publish no config":   one("secrets:\n", "publish:\n  - {port: 80, host: {config: nope}}\nsecrets:\n", "publish.0.host", contract.CodeInvalidRule),
-		"publish text config": {[][2]string{{"secrets:\n", hostConfig + "publish:\n  - {port: 80, host: {config: data-dir}}\nsecrets:\n"}}, "publish.0.host", contract.CodeInvalidRule},
-		"mount host relative": one("secrets:\n", "host_mounts:\n  - {host: srv/svc, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidMount),
-		"mount host config":   one("secrets:\n", "host_mounts:\n  - {host: {config: nope}, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidRule),
-		"mount host secret":   {[][2]string{{"secrets:\n", hostConfig + "host_mounts:\n  - {host: {config: key}, path: /srv/svc}\nsecrets:\n"}}, "host_mounts.0.host", contract.CodeInvalidRule},
-		"mount install out":   one("secrets:\n", "host_mounts:\n  - {host: {install: ../etc}, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidMount),
-		"mount install root":  one("secrets:\n", "host_mounts:\n  - {host: {install: .}, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidMount),
-		"mount path config":   {[][2]string{{"secrets:\n", hostConfig + "host_mounts:\n  - {host: /srv/svc, path: {config: data-dir}}\nsecrets:\n"}}, "host_mounts.0.path", contract.CodeInvalidMount},
-		"mount path relative": one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: srv/svc}\nsecrets:\n", "host_mounts.0.path", contract.CodeInvalidMount),
-		"mount path twice":    one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: /var/lib/svc}\nsecrets:\n", "host_mounts.0.path", contract.CodeInvalidMount),
-		"mount install twice": one("secrets:\n", "host_mounts:\n  - {host: {install: a}, path: {install: a}}\n  - {host: {install: b}, path: {install: a}}\nsecrets:\n", "host_mounts.1.path", contract.CodeInvalidMount),
-		"mount create plain":  one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: /srv/svc, create: true}\nsecrets:\n", "host_mounts.0.create", contract.CodeInvalidRule),
+		"bad yaml":                  one("kind: Module", "kind: [", ".", contract.CodeInvalidEntry),
+		"unknown key":               one("kind: Module", "kind: Module\nextra: 1", ".", contract.CodeInvalidEntry),
+		"duplicate key":             one("kind: Module", "kind: Module\nkind: Module", ".", contract.CodeInvalidEntry),
+		"v0alpha1 entry":            one("modular-platform/v1", "modular-platform/v0alpha1", "apiVersion", contract.CodeUnsupportedVersion),
+		"format too new":            one("kind: Module", "kind: Module\nformatVersion: \"1.9\"\nlater: 1", "formatVersion", contract.CodeFormatTooNew),
+		"kind":                      one("kind: Module", "kind: Graph", "kind", contract.CodeWrongKind),
+		"name pattern":              one("name: svc", "name: Svc", "name", contract.CodeInvalidName),
+		"name reserved":             one("name: svc", "name: \"off\"", "name", contract.CodeInvalidName),
+		"name mismatch":             one("name: svc", "name: other", "name", contract.CodeNameMismatch),
+		"no description":            one("description: A service.", "description: \"\"", "description", contract.CodeMissingField),
+		"no image":                  one("image: example.test/svc:1.0.0", "image: \"\"", "image", contract.CodeMissingField),
+		"bad image":                 one("example.test/svc:1.0.0", "example.test/svc!:1.0.0", "image", contract.CodeInvalidImage),
+		"untagged image":            one("example.test/svc:1.0.0", "example.test/svc", "image", contract.CodeImageUntagged),
+		"latest image":              one("example.test/svc:1.0.0", "example.test/svc:latest", "image", contract.CodeImageLatest),
+		"digest image":              one("example.test/svc:1.0.0", "example.test/svc:1.0.0@sha256:"+strings.Repeat("a", 64), "image", contract.CodeImageDigest),
+		"provide name":              one("  web:", "  Web:", "provides.Web", contract.CodeInvalidName),
+		"unknown capability":        one("    capability: store\n    version", "    capability: nope\n    version", "provides.web.capability", contract.CodeUnknownCapability),
+		"invalid version":           one(`version: "1.0"`, `version: "one"`, "provides.web.version", contract.CodeInvalidVersion),
+		"port zero":                 one("port: 8080", "port: 0", "provides.web.port", contract.CodeInvalidPort),
+		"port too high":             one("port: 8080", "port: 70000", "provides.web.port", contract.CodeInvalidPort),
+		"port on sdk":               {[][2]string{sdk}, "provides.web.port", contract.CodePortNotAllowed},
+		"sdk two provides":          {[][2]string{sdk, noPort, {"uses:\n", "  more:\n    capability: store\n    version: \"1.0\"\n    fields: {host: {platform: host}, port: {platform: port}, url: {platform: url}, name: {value: a}, password: {secret: token}, mode: {value: fast}}\nuses:\n"}}, "provides", contract.CodeTooManyProvides},
+		"unknown field":             one("      mode: {value: fast}", "      mode: {value: fast}\n      speed: {value: x}", "provides.web.fields.speed", contract.CodeUnknownField),
+		"missing source":            one("      host: {platform: host}\n", "", "provides.web.fields.host", contract.CodeMissingFieldSource),
+		"source two kinds":          one("{value: main}", "{value: main, secret: token}", "provides.web.fields.name", contract.CodeInvalidFieldSource),
+		"source bad enum":           one("{value: fast}", "{value: medium}", "provides.web.fields.mode", contract.CodeInvalidFieldSource),
+		"source bad pattern":        one("{value: main}", "{value: Main}", "provides.web.fields.name", contract.CodeInvalidFieldSource),
+		"source file as text":       one("{secret: token}", "{value: x}", "provides.web.fields.password", contract.CodeInvalidFieldSource),
+		"source no secret":          one("{secret: token}", "{secret: nope}", "provides.web.fields.password", contract.CodeInvalidFieldSource),
+		"source to_provider":        one("      ca: {platform: ca}\n", "      ca: {platform: ca}\n      owner: {value: x}\n", "provides.web.fields.owner", contract.CodeInvalidFieldSource),
+		"source no config":          one("{value: main}", "{config: nope}", "provides.web.fields.name", contract.CodeInvalidFieldSource),
+		"source no slot":            one("{value: main}", "{uses: nope, field: host}", "provides.web.fields.name", contract.CodeInvalidFieldSource),
+		"source no volume":          one("{secret: token}", "{volume: nope, path: x}", "provides.web.fields.password", contract.CodeInvalidFieldSource),
+		"source tls no off":         one("{value: fast}", "{platform: tls, \"on\": fast}", "provides.web.fields.mode", contract.CodeInvalidFieldSource),
+		"source path no url":        one("{platform: host}", "{platform: host, path: /x}", "provides.web.fields.host", contract.CodeInvalidFieldSource),
+		"auth without token":        one("    port: 8080\n", "    port: 8080\n    auth: binding-token\n    env: {token: SVC_CLIENTS_DIR}\n", "provides.web.auth", contract.CodeInvalidFieldSource),
+		"provide env field":         one("    port: 8080\n", "    port: 8080\n    env: {host: SVC_HOST}\n", "provides.web.env.host", contract.CodeInvalidRule),
+		"slot name":                 one("  db:", "  d_b:", "uses.d_b", contract.CodeInvalidName),
+		"slot capability":           one("    capability: store\n    versions", "    capability: nope\n    versions", "uses.db.capability", contract.CodeUnknownCapability),
+		"invalid range":             one(`">=15, <19"`, `">=19, <15"`, "uses.db.versions", contract.CodeInvalidRange),
+		"range syntax":              one(`">=15, <19"`, `"~15"`, "uses.db.versions", contract.CodeInvalidRange),
+		"env unknown field":         one("host: DB_HOST", "nope: DB_HOST", "uses.db.env.nope", contract.CodeUnknownField),
+		"env to_provider":           one("host: DB_HOST", "owner: DB_HOST", "uses.db.env.owner", contract.CodeInvalidRule),
+		"env name":                  one("host: DB_HOST", "host: DB-HOST", "uses.db.env.host", contract.CodeInvalidEnvName),
+		"env twice":                 one("port: DB_PORT", "port: DB_HOST", "uses.db.env.port", contract.CodeDuplicateEnv),
+		"files text field":          one("ca: /run/ca.pem", "host: /run/host", "uses.db.files.host", contract.CodeInvalidFieldSource),
+		"files relative":            one("ca: /run/ca.pem", "ca: run/ca.pem", "uses.db.files.ca", contract.CodeInvalidMount),
+		"mount twice":               one("tmpfs: [/tmp]", "tmpfs: [/var/lib/svc]", "hardening.tmpfs.0", contract.CodeInvalidMount),
+		"cap lower case":            one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [net_bind_service]", "hardening.cap_add.0", contract.CodeInvalidHardening),
+		"cap prefix":                one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [CAP_NET_BIND_SERVICE]", "hardening.cap_add.0", contract.CodeInvalidHardening),
+		"cap all":                   one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [ALL]", "hardening.cap_add.0", contract.CodeInvalidHardening),
+		"cap twice":                 one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [NET_BIND_SERVICE, NET_BIND_SERVICE]", "hardening.cap_add.1", contract.CodeInvalidHardening),
+		"cap unknown":               one("tmpfs: [/tmp]", "tmpfs: [/tmp]\n  cap_add: [NOT_A_CAP]", "hardening.cap_add.0", contract.CodeInvalidHardening),
+		"consumer source":           one("owner: {value: svc}", "owner: {generate: true}", "uses.db.fields.owner", contract.CodeInvalidFieldSource),
+		"consumer to_cons":          one("owner: {value: svc}", "host: {value: svc}", "uses.db.fields.host", contract.CodeInvalidFieldSource),
+		"per caller":                one("    optional: true\n", "    optional: true\n    per_caller: true\n", "uses.db.per_caller", contract.CodePerCallerNotAllowed),
+		"client not sdk":            one("    optional: true\n", "    optional: true\n    client: http\n", "uses.db.client", contract.CodeClientNotAllowed),
+		"client field":              {[][2]string{sdk, noPort, {"    optional: true\n", "    optional: true\n    client: postgresql\n"}}, "uses.db.env.url", contract.CodeMissingField},
+		"reserved slot":             {[][2]string{sdk, noPort, {"  db:\n", "  acme:\n"}}, "uses.acme", contract.CodeReservedSlot},
+		"secret name":               one("name: token", "name: To_ken", "secrets.0.name", contract.CodeInvalidName),
+		"secret no target":          one("    env: TOKEN_FILE\n", "", "secrets.0", contract.CodeMissingField),
+		"secret description":        one("description: A token.", "description: \"\"", "secrets.0.description", contract.CodeMissingField),
+		"secret from":               one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    from: nowhere\n", "secrets.0.from", contract.CodeInvalidRule),
+		"secret twice":              one("    description: A token.\n", "    description: A token.\n  - name: token\n    env: OTHER_FILE\n    description: Again.\n", "secrets.1.name", contract.CodeDuplicateName),
+		"secret folder":             one("name: token\n", "name: certs/\n", "secrets.0", contract.CodeInvalidRule),
+		"secret env twice":          one("env: TOKEN_FILE", "env: DB_HOST", "secrets.0.env", contract.CodeDuplicateEnv),
+		"secret format":             one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    format: base32\n", "secrets.0.format", contract.CodeInvalidSecret),
+		"format not generate":       one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    from: ask\n    format: password\n", "secrets.0.format", contract.CodeInvalidSecret),
+		"secret show":               one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    show: twice\n", "secrets.0.show", contract.CodeInvalidSecret),
+		"show from setup":           one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    from: setup\n    show: once\n", "secrets.0.show", contract.CodeInvalidSecret),
+		"show from ask":             one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    from: ask\n    show: once\n", "secrets.0.show", contract.CodeInvalidSecret),
+		"lifetime value":            one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    lifetime: forever\n", "secrets.0.lifetime", contract.CodeInvalidSecret),
+		"setup lifetime from":       one("    env: TOKEN_FILE\n", "    lifetime: setup\n    from: ask\n", "secrets.0.from", contract.CodeInvalidSecret),
+		"setup lifetime env":        one("    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    lifetime: setup\n", "secrets.0.env", contract.CodeInvalidSecret),
+		"setup lifetime mount":      one("    env: TOKEN_FILE\n", "    mount: /run/token\n    lifetime: setup\n", "secrets.0.mount", contract.CodeInvalidSecret),
+		"setup lifetime folder":     {[][2]string{{"name: token\n", "name: token/\n    lifetime: setup\n"}}, "secrets.0", contract.CodeInvalidSecret},
+		"keeper no command":         one("volumes:\n", "keeper: {command: []}\nvolumes:\n", "keeper.command", contract.CodeMissingField),
+		"keeper empty arg":          one("volumes:\n", "keeper: {command: [seed, \" \"]}\nvolumes:\n", "keeper.command.1", contract.CodeInvalidRule),
+		"keeper unknown key":        one("volumes:\n", "keeper: {command: [seed], args: [x]}\nvolumes:\n", ".", contract.CodeInvalidEntry),
+		"volume path":               one("data: /var/lib/svc", "data: var/lib", "volumes.data", contract.CodeInvalidMount),
+		"template file":             one("svc.conf.tmpl", "svc.conf", "templates.0.file", contract.CodeInvalidTemplate),
+		"template delims":           one("    path: /etc/svc.conf\n", "    path: /etc/svc.conf\n    delims: [\"[[\", \"\"]\n", "templates.0.delims", contract.CodeInvalidTemplate),
+		"setup no command":          one("command: [svc, init]", "command: []", "setup.0.command", contract.CodeInvalidSetupStep),
+		"setup for each":            one("    command: [svc, init]\n", "    command: [svc, init]\n    for_each: nope\n", "setup.0.for_each", contract.CodeInvalidSetupStep),
+		"client env":                one("    command: [svc, init]\n", "    command: [svc, init]\n    env: {X: \"{client}\"}\n", "setup.0.env.X", contract.CodeInvalidSetupStep),
+		"client command":            one("command: [svc, init]", "command: [svc, \"{client}\"]", "setup.0.command.1", contract.CodeInvalidSetupStep),
+		"client entrypoint":         one("    command: [svc, init]\n", "    entrypoint: [\"svc-{client}\"]\n    command: [svc, init]\n", "setup.0.entrypoint.0", contract.CodeInvalidSetupStep),
+		"client write":              one("writes: [{name: token}]", "writes: [{name: \"clients/{client}\"}]", "setup.0.writes.0.name", contract.CodeInvalidSetupStep),
+		"each bare folder":          one(`"clients/{client}"`, "clients/", "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"each prefix":               one(`"clients/{client}"`, `"digest-{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"each suffix":               one(`"clients/{client}"`, `"clients/{client}.pem"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"each nested":               one(`"clients/{client}"`, `"a/b/{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"each no folder":            one(`"clients/{client}"`, `"other/{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"each file secret":          one(`"clients/{client}"`, `"token/{client}"`, "setup.1.writes.0.name", contract.CodeInvalidSetupStep),
+		"folder not declared":       one("writes: [{name: token}]", "writes: [{name: other/}]", "setup.0.writes.0.name", contract.CodeInvalidSetupStep),
+		"each asks":                 one("    for_each: web\n", "    for_each: web\n    asks: [{name: who, description: Who.}]\n", "setup.1.asks", contract.CodeInvalidSetupStep),
+		"provide no for_each":       one("writes: [{name: token}]", "writes: [{name: token}]\n    reads: [{provide: web, field: token}]", "setup.0.reads.0.provide", contract.CodeInvalidSetupStep),
+		"provide other":             one("reads: [{provide: web, field: token}]", "reads: [{provide: api, field: token}]", "setup.1.reads.0.provide", contract.CodeInvalidSetupStep),
+		"provide to_consumer":       one("reads: [{provide: web, field: token}]", "reads: [{provide: web, field: host}]", "setup.1.reads.0.field", contract.CodeInvalidSetupStep),
+		"setup env MP_":             one(`env: {CLIENT: "{client}"}`, `env: {MP_INSTANCE: "{client}"}`, "setup.1.env.MP_INSTANCE", contract.CodeInvalidSetupStep),
+		"healthcheck form":          one(`["CMD", "svc", "check"]`, `["svc", "check"]`, "healthcheck.test", contract.CodeInvalidHealthcheck),
+		"duration":                  one("interval: 5s", "interval: soon", "healthcheck.interval", contract.CodeInvalidDuration),
+		"retries":                   one("retries: 3", "retries: 0", "healthcheck.retries", contract.CodeInvalidRetries),
+		"env placeholder":           one("secrets:\n", "environment:\n  SVC_DB: \"{nope.host}\"\nsecrets:\n", "environment.SVC_DB", contract.CodeInvalidFieldSource),
+		"env file field":            one("secrets:\n", "environment:\n  SVC_DB: \"{db.password}\"\nsecrets:\n", "environment.SVC_DB", contract.CodeInvalidFieldSource),
+		"env no config":             one("secrets:\n", "environment:\n  SVC_DB: \"{config.nope}\"\nsecrets:\n", "environment.SVC_DB", contract.CodeInvalidFieldSource),
+		"alias no config":           one("secrets:\n", "network:\n  aliases: [{config: nope}]\nsecrets:\n", "network.aliases.0", contract.CodeInvalidRule),
+		"publish port":              one("secrets:\n", "publish:\n  - {port: 0, host: 8080}\nsecrets:\n", "publish.0.port", contract.CodeInvalidPort),
+		"publish host port":         one("secrets:\n", "publish:\n  - {port: 80, host: 70000}\nsecrets:\n", "publish.0.host", contract.CodeInvalidPort),
+		"publish no config":         one("secrets:\n", "publish:\n  - {port: 80, host: {config: nope}}\nsecrets:\n", "publish.0.host", contract.CodeInvalidRule),
+		"publish text config":       {[][2]string{{"secrets:\n", hostConfig + "publish:\n  - {port: 80, host: {config: data-dir}}\nsecrets:\n"}}, "publish.0.host", contract.CodeInvalidRule},
+		"mount host relative":       one("secrets:\n", "host_mounts:\n  - {host: srv/svc, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidMount),
+		"mount host config":         one("secrets:\n", "host_mounts:\n  - {host: {config: nope}, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidRule),
+		"mount host secret":         {[][2]string{{"secrets:\n", hostConfig + "host_mounts:\n  - {host: {config: key}, path: /srv/svc}\nsecrets:\n"}}, "host_mounts.0.host", contract.CodeInvalidRule},
+		"mount install out":         one("secrets:\n", "host_mounts:\n  - {host: {install: ../etc}, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidMount),
+		"mount install dotdot":      one("secrets:\n", "host_mounts:\n  - {host: {install: ./..}, path: /srv/svc}\nsecrets:\n", "host_mounts.0.host", contract.CodeInvalidMount),
+		"mount install root create": one("secrets:\n", "host_mounts:\n  - {host: {install: .}, path: {install: .}, create: true}\nsecrets:\n", "host_mounts.0.create", contract.CodeInvalidRule),
+		"mount install root twice":  one("secrets:\n", "host_mounts:\n  - {host: {install: .}, path: {install: .}}\n  - {host: /srv/svc, path: {install: .}}\nsecrets:\n", "host_mounts.1.path", contract.CodeInvalidMount),
+		"mount path config":         {[][2]string{{"secrets:\n", hostConfig + "host_mounts:\n  - {host: /srv/svc, path: {config: data-dir}}\nsecrets:\n"}}, "host_mounts.0.path", contract.CodeInvalidMount},
+		"mount path relative":       one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: srv/svc}\nsecrets:\n", "host_mounts.0.path", contract.CodeInvalidMount),
+		"mount path twice":          one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: /var/lib/svc}\nsecrets:\n", "host_mounts.0.path", contract.CodeInvalidMount),
+		"mount install twice":       one("secrets:\n", "host_mounts:\n  - {host: {install: a}, path: {install: a}}\n  - {host: {install: b}, path: {install: a}}\nsecrets:\n", "host_mounts.1.path", contract.CodeInvalidMount),
+		"first admin not oidc":      one("  web:\n    capability: store\n    version: \"1.0\"\n", "  web:\n    capability: store\n    version: \"1.0\"\n    first_admin: {path: /setup, gate: [/setup]}\n", "provides.web.first_admin", contract.CodeInvalidRule),
+		"setup network":             one("    command: [svc, init]\n", "    command: [svc, init]\n    network: host\n", "setup.0.network", contract.CodeInvalidSetupStep),
+		"mount create plain":        one("secrets:\n", "host_mounts:\n  - {host: /srv/svc, path: /srv/svc, create: true}\nsecrets:\n", "host_mounts.0.create", contract.CodeInvalidRule),
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -312,6 +330,7 @@ host_mounts:
   - {host: /var/run/svc.sock, path: /run/svc.sock}
   - {host: {config: data-dir}, path: /srv/svc, read_only: false}
   - {host: {install: state}, path: {install: state}, read_only: false, create: true}
+  - {host: {install: .}, path: {install: .}, read_only: false}
 secrets:
 `}})
 	if _, problems := contract.CheckModule("modules/svc/module.yaml", []byte(data), testCaps(t)); len(problems) > 0 {
@@ -366,7 +385,9 @@ func TestYieldsRules(t *testing.T) {
 		"login not named":    one("login: name", "login: host", "yields.login", contract.CodeInvalidYields),
 		"missing source":     one("    host: {admin: host}\n", "", "yields.fields.host", contract.CodeMissingFieldSource),
 		"unknown field":      one("    host: {admin: host}\n", "    host: {admin: host}\n    nope: generate\n", "yields.fields.nope", contract.CodeUnknownField),
-		"to_provider source": one("    host: {admin: host}\n", "    host: {admin: host}\n    owner: generate\n", "yields.fields.owner", contract.CodeInvalidFieldSource),
+		"to_provider source": one("    owner: consumer\n", "    owner: generate\n", "yields.fields.owner", contract.CodeInvalidFieldSource),
+		"consumer on text":   one("    host: {admin: host}\n", "    host: consumer\n", "yields.fields.host", contract.CodeInvalidFieldSource),
+		"consumer on both":   one("    token: generate\n", "    token: consumer\n", "yields.fields.token", contract.CodeInvalidFieldSource),
 		"generate on text":   one("    host: {admin: host}\n", "    host: generate\n", "yields.fields.host", contract.CodeInvalidFieldSource),
 		"output on text":     one("    host: {admin: host}\n", "    host: output\n", "yields.fields.host", contract.CodeInvalidFieldSource),
 		"admin no field":     one("{admin: host}", "{admin: nope}", "yields.fields.host", contract.CodeInvalidFieldSource),
@@ -542,6 +563,26 @@ func TestUndeployableLinuxCaps(t *testing.T) {
 	}
 }
 
+// TestKeeperAndShownSecret accepts the keeper field and a generated password shown once (spec
+// 0016, AC-10), and keeps what they say.
+func TestKeeperAndShownSecret(t *testing.T) {
+	t.Parallel()
+	text := edit(t, goodModule, [][2]string{
+		{"    env: TOKEN_FILE\n", "    env: TOKEN_FILE\n    format: password\n    show: once\n"},
+		{"volumes:\n", "keeper: {command: [seed]}\nvolumes:\n"},
+	})
+	m, problems := contract.CheckModule("modules/svc/module.yaml", []byte(text), testCaps(t))
+	if len(problems) > 0 {
+		t.Fatalf("problems = %v", problems)
+	}
+	if s := m.Secrets[0]; s.Format != contract.SecretFormatPassword || s.Show != contract.SecretShowOnce {
+		t.Errorf("secret = %+v, want format password and show once", s)
+	}
+	if m.Keeper == nil || !slices.Equal(m.Keeper.Command, []string{"seed"}) {
+		t.Errorf("keeper = %+v, want command [seed]", m.Keeper)
+	}
+}
+
 // TestModuleHostAccess joins every reason a deployed graph refuses into one phrase (spec 0022).
 func TestModuleHostAccess(t *testing.T) {
 	t.Parallel()
@@ -559,6 +600,7 @@ func TestModuleHostAccess(t *testing.T) {
 		"three reasons":  {contract.Module{Publish: publish, HostMounts: mounts, Hardening: caps("SYS_ADMIN")}, "publishes host ports, mounts host paths and adds the Linux capability SYS_ADMIN"},
 		"two caps":       {contract.Module{Hardening: caps("SYS_ADMIN", "NET_BIND_SERVICE", "NET_ADMIN")}, "adds the Linux capabilities SYS_ADMIN and NET_ADMIN"},
 		"three caps":     {contract.Module{Hardening: caps("CHOWN", "SETUID", "SETGID")}, "adds the Linux capabilities CHOWN, SETUID and SETGID"},
+		"keeper":         {contract.Module{HostMounts: mounts, Keeper: &contract.Keeper{Command: []string{"seed"}}}, "mounts host paths and keeps the platform's own containers"},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -567,5 +609,134 @@ func TestModuleHostAccess(t *testing.T) {
 				t.Errorf("HostAccess() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// firstAdminCaps is a minimal oidc capability for the first_admin cases.
+const oidcCapability = `apiVersion: modular-platform/v1
+kind: Capability
+name: oidc
+description: An OpenID Connect provider.
+fields:
+  issuer: {type: url, description: Issuer URL.}
+`
+
+func firstAdminModule(block string) string {
+	return `apiVersion: modular-platform/v1
+kind: Module
+name: svc
+description: A provider.
+image: example.test/svc:1.0.0
+provides:
+  oidc:
+    capability: oidc
+    version: "1.0"
+    port: 8080
+` + block + `    fields:
+      issuer: {value: "https://auth.example.test"}
+setup:
+  - name: clients
+    command: [svc, clients]
+    network: internal
+healthcheck:
+  test: ["CMD", "svc", "check"]
+  interval: 5s
+  retries: 3
+`
+}
+
+// TestFirstAdminRules checks the first_admin block and a step network of spec 0037, AC-9.
+func TestFirstAdminRules(t *testing.T) {
+	t.Parallel()
+	oidc, problems := contract.CheckCapability("capabilities/oidc.yaml", []byte(oidcCapability))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	caps := map[string]contract.Capability{"oidc": oidc}
+	good := "    first_admin: {path: /setup, gate: [/setup, /signup/setup, /api/signup/setup]}\n"
+	m, problems := contract.CheckModule("modules/svc/module.yaml", []byte(firstAdminModule(good)), caps)
+	if len(problems) > 0 {
+		t.Fatalf("a good first_admin block: %v", problems)
+	}
+	fa := m.Provides["oidc"].FirstAdmin
+	if fa.Path != "/setup" || len(fa.Gate) != 3 || m.Setup[0].Network != contract.Internal {
+		t.Errorf("first_admin %+v, network %q", fa, m.Setup[0].Network)
+	}
+	bad := map[string]struct{ block, path, code string }{
+		"relative path":    {"    first_admin: {path: setup, gate: [setup]}\n", "provides.oidc.first_admin.path", contract.CodeInvalidRule},
+		"path with query":  {"    first_admin: {path: \"/setup?x=1\", gate: [\"/setup?x=1\"]}\n", "provides.oidc.first_admin.path", contract.CodeInvalidRule},
+		"dot segment":      {"    first_admin: {path: /a/../b, gate: [/a/../b]}\n", "provides.oidc.first_admin.path", contract.CodeInvalidRule},
+		"trailing slash":   {"    first_admin: {path: /setup/, gate: [/setup/]}\n", "provides.oidc.first_admin.path", contract.CodeInvalidRule},
+		"matcher wildcard": {"    first_admin: {path: /setup, gate: [/setup, /api/*]}\n", "provides.oidc.first_admin.gate.1", contract.CodeInvalidRule},
+		"no gate":          {"    first_admin: {path: /setup, gate: []}\n", "provides.oidc.first_admin.gate", contract.CodeMissingField},
+		"page not gated":   {"    first_admin: {path: /setup, gate: [/signup/setup]}\n", "provides.oidc.first_admin.gate", contract.CodeInvalidRule},
+	}
+	for name, tc := range bad {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, problems := contract.CheckModule("modules/svc/module.yaml", []byte(firstAdminModule(tc.block)), caps)
+			wantProblem(t, problems, tc.path, tc.code)
+		})
+	}
+	t.Run("on a provisioner that yields oidc", func(t *testing.T) {
+		t.Parallel()
+		prov := `apiVersion: modular-platform/v1
+kind: Capability
+name: oidc-provisioner
+description: Admin access that makes an oidc client per consumer.
+fields:
+  url: {type: url, description: Address of the provider.}
+yields:
+  capability: oidc
+  fields:
+    issuer: {admin: url}
+  job:
+    image: example.test/job:1.0.0
+    provision: echo provision
+`
+		k, problems := contract.CheckCapability("capabilities/oidc-provisioner.yaml", []byte(prov))
+		if len(problems) > 0 {
+			t.Fatal(problems)
+		}
+		withProv := map[string]contract.Capability{"oidc": oidc, "oidc-provisioner": k}
+		data := strings.Replace(firstAdminModule(good), "capability: oidc\n", "capability: oidc-provisioner\n", 1)
+		data = strings.Replace(data, "issuer: {value: \"https://auth.example.test\"}", "url: {value: \"http://svc:8080\"}", 1)
+		if _, problems := contract.CheckModule("modules/svc/module.yaml", []byte(data), withProv); len(problems) > 0 {
+			t.Errorf("first_admin on an oidc-provisioner provide: %v", problems)
+		}
+	})
+	t.Run("unknown key", func(t *testing.T) {
+		t.Parallel()
+		_, problems := contract.CheckModule("modules/svc/module.yaml", []byte(firstAdminModule("    first_admin: {path: /setup, gate: [/setup], x: 1}\n")), caps)
+		if len(problems) == 0 {
+			t.Error("an unknown first_admin key is accepted")
+		}
+	})
+}
+
+// setupLifetimeSecrets are the code and the key a setup holder declares (spec 0033): no env, no
+// mount and no from, because the platform mounts the setup files as one folder.
+const setupLifetimeSecrets = `secrets:
+  - {name: code, lifetime: setup, show: once, format: password, description: The setup code.}
+  - {name: session-key, lifetime: setup, format: hex, description: The key of the setup session.}
+`
+
+// TestSetupLifetimeSecrets accepts generated lifetime: setup secrets that name no env or mount.
+func TestSetupLifetimeSecrets(t *testing.T) {
+	t.Parallel()
+	data := strings.Replace(goodModule, "secrets:\n  - name: token\n    env: TOKEN_FILE\n    description: A token.\n",
+		"secrets:\n  - name: token\n    env: TOKEN_FILE\n    description: A token.\n"+strings.TrimPrefix(setupLifetimeSecrets, "secrets:\n"), 1)
+	if data == goodModule {
+		t.Fatal("the edit did not apply")
+	}
+	m, problems := contract.CheckModule("modules/svc/module.yaml", []byte(data), testCaps(t))
+	if len(problems) > 0 {
+		t.Fatalf("problems = %v", problems)
+	}
+	if got := m.Secrets[1].Lifetime; got != contract.SecretLifetimeSetup {
+		t.Errorf("lifetime = %q, want setup", got)
+	}
+	if got := m.Secrets[0].Lifetime; got != "" {
+		t.Errorf("lifetime of an install secret = %q, want unset", got)
 	}
 }

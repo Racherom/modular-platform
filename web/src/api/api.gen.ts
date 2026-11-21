@@ -38,6 +38,135 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The state of the first run setup
+         * @description Public. Without a setup session it shows only `state` (and `reason`). `providerReady`
+         *     and `enroll` come only with a valid setup session.
+         */
+        get: operations["getSetup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trade the setup code for a setup session
+         * @description Public, rate limited to 10 tries a minute per client address (the last `X-Forwarded-For`
+         *     hop). The code is accepted once. Needs the public `Origin`.
+         */
+        post: operations["redeemSetupCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make the first user at the identity module
+         * @description Needs the setup cookie. Passes the answers to the keeper, which runs the identity
+         *     module's `enroll` block; enrolling again before the first sign in replaces the user.
+         */
+        post: operations["enrollSetup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/identity-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A link to the identity provider's first admin page
+         * @description Needs the setup cookie. Returns a link on the auth host with a handoff token (signed with
+         *     the setup session key, single use, valid 60 seconds). Only for an identity module with a
+         *     `first_admin` block.
+         */
+        post: operations["createIdentityLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/identity-enter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Trade a handoff token for the auth host cookie
+         * @description Routed on the auth host by the ingress, never reaching the identity provider. The token is
+         *     checked against the setup session key, the auth host, its expiry and its single use. Sets a
+         *     host only cookie and goes to the provider's first admin page; the response carries
+         *     `Referrer-Policy: no-referrer`.
+         */
+        get: operations["enterIdentity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup/gate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The ingress's question for a guarded provider path
+         * @description The ingress forwards the request's cookies. 204 lets the request through, 403 refuses. Fails
+         *     closed: while an admin is bound, with no valid auth host cookie, or on any error.
+         */
+        get: operations["setupGate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/logout": {
         parameters: {
             query?: never;
@@ -268,8 +397,55 @@ export interface components {
             /** @description The provider's sign out page, or `<base>/`. */
             redirect: string;
         };
+        SetupState: {
+            /** @enum {string} */
+            state: "pending" | "done";
+            /**
+             * @description Only while pending. `no_code`: no code file exists, so remove `<state>/.setup-done` and restart the keeper.
+             * @enum {string}
+             */
+            reason?: "no_code";
+            /** @description Whether the request carries a valid setup session. Only while pending. */
+            session?: boolean;
+            /** @description Whether OIDC discovery against the issuer has succeeded. Only with a session. */
+            providerReady?: boolean;
+            enroll?: components["schemas"]["SetupEnrollAsks"];
+            /**
+             * @description `true` only with a valid setup session while pending, when the identity module has a
+             *     `first_admin` block (spec 0037). Absent otherwise, never `false`. The page shows
+             *     "Create your admin account" when this is present and `enroll` is absent; the real link
+             *     comes from `POST /api/v1/setup/identity-link`.
+             * @enum {boolean}
+             */
+            firstAdmin?: true;
+        };
+        /** @description The identity module's enroll questions, asked on the setup page in this order. */
+        SetupEnrollAsks: {
+            asks: components["schemas"]["SetupAsk"][];
+        };
+        SetupAsk: {
+            name: string;
+            description: string;
+            secret: boolean;
+            pattern?: string;
+            minLength?: number;
+        };
+        SetupCode: {
+            code: string;
+        };
+        IdentityLink: {
+            /** @description Link on the auth host; valid 60 seconds, once. */
+            url: string;
+        };
+        SetupEnroll: {
+            /** @description Ask name to answer. */
+            answers: {
+                [key: string]: string;
+            };
+        };
         Session: {
-            email: string;
+            /** @description Absent when the identity provider's claims carry none. */
+            email?: string;
             /** Format: date-time */
             expiresAt: string;
             /** Format: date-time */
@@ -489,7 +665,7 @@ export interface components {
          */
         FieldSource: {
             /** @enum {string} */
-            platform?: "host" | "port" | "url" | "ca" | "tls" | "consumer";
+            platform?: "host" | "port" | "url" | "ca" | "tls" | "consumer" | "gate" | "first_admin_path";
             /** @description With `platform: url`, a path to append; with `volume`, the file in the folder. */
             path?: string;
             /** @description With `platform: tls`, the value when the provider serves TLS. */
@@ -508,6 +684,13 @@ export interface components {
             /** @description With `uses`, the field of that binding to pass through. */
             field?: string;
             volume?: string;
+        };
+        /** @description The provider's own first admin page (spec 0037), allowed only on a provide of the `oidc` capability. Until an admin is bound, the ingress asks the platform before it passes a request for one of the `gate` paths on to the provider. */
+        FirstAdmin: {
+            /** @description Absolute path of the first admin page on the provider's host. */
+            path: string;
+            /** @description Absolute paths the ingress guards until an admin is bound; `path` is one of them. */
+            gate: string[];
         };
         Provide: {
             capability: string;
@@ -528,6 +711,7 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
+            first_admin?: components["schemas"]["FirstAdmin"];
         };
         Slot: {
             capability: string;
@@ -568,16 +752,42 @@ export interface components {
              * @enum {string}
              */
             from: "generate" | "ask" | "setup";
+            /**
+             * @description How a `from: generate` value is made (spec 0016): `hex` is 32 random bytes as hex,
+             *     `password` is 24 characters drawn uniformly from `A` to `Z`, `a` to `z` and `0` to `9`.
+             * @default hex
+             * @enum {string}
+             */
+            format: "hex" | "password";
+            /**
+             * @description `once`: the platform's `setup.sh` prints the value one time at a fresh install
+             *     (spec 0016). Only with `from: generate`.
+             * @enum {string}
+             */
+            show?: "once";
+            /**
+             * @description `install` (default) is a secret as before. `setup` (spec 0033) is a generated file that
+             *     lives only while the web setup is not done: it lands in `secrets/<instance>/setup/<name>`,
+             *     and every such secret of the instance is mounted as one folder at `/run/secrets/setup/`
+             *     (so a replaced or deleted file shows inside). It takes no `from`, `env` or `mount`.
+             * @default install
+             * @enum {string}
+             */
+            lifetime: "install" | "setup";
             /** @description Env var set to the secret file's path inside the container. */
             env?: string;
             /** @description Absolute path to mount it at. */
             mount?: string;
         };
-        SetupAsk: {
+        "schemas-SetupAsk": {
             name: string;
             description: string;
             /** @default false */
             secret: boolean;
+            /** @description An RE2 pattern the whole answer must match. */
+            pattern?: string;
+            /** @description The fewest characters the answer may have; 1 or more. */
+            min_length?: number;
         };
         /** @description One of `{slot, field}`, `{provide, field}` or `{secret}`. A `{provide, field}` read belongs to a `for_each` step, names its own provide and a `to_provider` or `both` field, and gives that one client's file. */
         SetupRead: {
@@ -603,11 +813,41 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
+            /**
+             * @description `none` (default) runs the step with no network; `internal` joins it to the platform's `internal` network, for a step that calls another service (spec 0037).
+             * @default none
+             * @enum {string}
+             */
+            network: "none" | "internal";
             /** @description A provide; the step runs once per binding to it, in consumer instance name order. That instance name is the step's client: the exact text `{client}` in its `env` values, `command` and `entrypoint` items and `writes` names is replaced by it. A step with no `for_each` holds no `{client}`, and a `for_each` step has no `asks`. */
             for_each?: string;
-            asks?: components["schemas"]["SetupAsk"][];
+            asks?: components["schemas"]["schemas-SetupAsk"][];
             reads?: components["schemas"]["SetupRead"][];
             writes?: components["schemas"]["SetupWrite"][];
+        };
+        /**
+         * @description How an identity module (one that provides `oidc`) makes its first user (spec 0035). It has
+         *     the shape of a setup step, with questions the platform's setup page asks after the platform
+         *     runs. The keeper runs it on one call from the api, with the answers on standard input only,
+         *     for as long as no admin is bound. It runs with no network, so it has no `network` or
+         *     `for_each`.
+         */
+        Enroll: {
+            entrypoint?: string[];
+            command: string[];
+            /** @description Literal env for the run, never a secret; no name starts with `MP_`. */
+            env?: {
+                [key: string]: string;
+            };
+            /** @description Asked on the setup page, in this order. */
+            asks?: components["schemas"]["schemas-SetupAsk"][];
+            reads?: components["schemas"]["SetupRead"][];
+            writes?: components["schemas"]["SetupWrite"][];
+            /**
+             * @description `true`: the keeper restarts the module's containers after it moved the writes.
+             * @default false
+             */
+            restart: boolean;
         };
         Template: {
             /** @description A file in the module folder ending in `.tmpl`. */
@@ -624,7 +864,7 @@ export interface components {
             port: number;
             host: components["schemas"]["HostPort"];
         };
-        /** @description An absolute path, `{config: <value>}` or `{install: <relative path>}`. */
+        /** @description An absolute path, `{config: <value>}`, `{install: <relative path>}`, or `{install: .}` for the install folder itself (platform flavor; `create` is refused on it). */
         HostPath: string | {
             config?: string;
             install?: string;
@@ -653,6 +893,15 @@ export interface components {
             /** @description Linux capability names, upper case without `CAP_` (spec 0022); a deployed graph may add only `NET_BIND_SERVICE`. */
             cap_add?: string[];
             tmpfs?: string[];
+        };
+        /**
+         * @description Marks the module as the platform's keeper (spec 0016): the one service that keeps the
+         *     platform's own containers in line with its state folder. The platform's `setup.sh` starts
+         *     a seed container that runs `command` plus `--state <dir>`. A keeper is host access.
+         */
+        Keeper: {
+            /** @description The arguments a seed runs, after the image's entrypoint. */
+            command: string[];
         };
         /** @description A Compose healthcheck, copied as is into the service. */
         Healthcheck: {
@@ -701,6 +950,7 @@ export interface components {
             };
             secrets?: components["schemas"]["Secret"][];
             setup?: components["schemas"]["SetupStep"][];
+            enroll?: components["schemas"]["Enroll"];
             templates?: components["schemas"]["Template"][];
             /** @description Data folder name to its absolute path in the container. */
             volumes?: {
@@ -710,6 +960,7 @@ export interface components {
             host_mounts?: components["schemas"]["HostMount"][];
             network?: components["schemas"]["Network"];
             hardening?: components["schemas"]["Hardening"];
+            keeper?: components["schemas"]["Keeper"];
             healthcheck?: components["schemas"]["Healthcheck"];
         };
         CapabilityField: {
@@ -730,9 +981,14 @@ export interface components {
              * @enum {string}
              */
             direction: "to_consumer" | "to_provider" | "both";
+            /**
+             * @description The graph may set this field on a binding (spec 0026); only with `direction: to_provider` and a text type. The value may hold `{field}` tokens naming text fields the provider gives.
+             * @default false
+             */
+            graph: boolean;
         };
-        /** @description `named`, `generate`, `output`, or `{admin: <field of the provisioner>}`. */
-        YieldSource: ("named" | "generate" | "output") | {
+        /** @description `named`, `generate`, `output`, `consumer` (a to_provider field the consumer gives; the job gets its value), or `{admin: <field of the provisioner>}`. */
+        YieldSource: ("named" | "generate" | "output" | "consumer") | {
             admin: string;
         };
         Job: {
@@ -800,9 +1056,10 @@ export interface components {
             };
         };
         /**
-         * @description `instance` or `instance.provide`, or an object with that text as `provider` plus named
-         *     values (field name to value) for a binding to a provisioner. Written as a string when it
-         *     carries no named values.
+         * @description `instance` or `instance.provide`, or an object with that text as `provider` plus values
+         *     (field name to value): the named values of a binding to a provisioner, or the fields a
+         *     direct binding lets the graph set (spec 0026, `graph: true` on the capability's field).
+         *     Written as a string when it carries no values.
          */
         UseBinding: string | ({
             provider: string;
@@ -819,9 +1076,9 @@ export interface components {
         /**
          * @description Config value name to its text, for a module instance (spec 0025). Each value is a string,
          *     never expanded; it becomes the value's default in the render, and `.env` can still
-         *     override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
-         *     `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
-         *     empty map is left out.
+         *     override it. A secret value, a `{uid}`, `{gid}`, `{install}` or `{install}/...` default and
+         *     a value a `host_mounts` source names cannot be set here. Written double quoted, keys
+         *     sorted; an empty map is left out.
          */
         ModuleConfig: {
             [key: string]: string;
@@ -1023,13 +1280,263 @@ export interface operations {
         requestBody?: never;
         responses: {
             /**
-             * @description Signed in: sets the session cookie and goes to the return path. Refused: goes to
-             *     `<base>/?signed_out=<reason>`, reason `not_admin`, `email_unverified`,
-             *     `state_mismatch` or `provider_error`.
+             * @description Signed in: sets the session cookie and goes to the return path. The sign in that
+             *     binds the first admin also deletes the setup cookie. Refused: goes to
+             *     `<base>/?signed_out=<reason>`, reason `not_admin`, `state_mismatch`, `provider_error`
+             *     or `setup_pending` (no valid setup session while no admin is bound).
              */
             302: {
                 headers: {
                     Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The setup state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupState"];
+                };
+            };
+        };
+    };
+    redeemSetupCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupCode"];
+            };
+        };
+        responses: {
+            /** @description Sets the setup cookie (`__Host-mp_setup`, or `__Secure-mp_setup` under a base path; 24 hours). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The code is not accepted (`code_refused`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            403: components["responses"]["BadOrigin"];
+            /** @description The setup is done (`setup_done`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description Too many tries (`too_many_tries`). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+        };
+    };
+    enrollSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupEnroll"];
+            };
+        };
+        responses: {
+            /** @description The user exists. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No valid setup session (`no_session`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            403: components["responses"]["BadOrigin"];
+            /** @description The setup is done (`setup_done`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description An answer breaks a rule (`invalid_answer`, at `answers.<name>`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description The enroll run failed (`enroll_failed`). */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description The keeper is busy (`busy`). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+        };
+    };
+    createIdentityLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The link. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityLink"];
+                };
+            };
+            /** @description No valid setup session (`setup_pending`) or the request is not from the platform's origin (`bad_origin`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description The identity module has no first admin page (`no_first_admin`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description The setup is done (`setup_done`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+            /** @description The identity provider is not ready (`provider_unavailable`). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+        };
+    };
+    enterIdentity: {
+        parameters: {
+            query: {
+                t: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cookie is set; goes to the provider's first admin page. */
+            302: {
+                headers: {
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The token is wrong, expired, used, for another host, or the session is retired (`handoff_refused`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemList"];
+                };
+            };
+        };
+    };
+    setupGate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A valid auth host cookie and no admin bound yet. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Refused. */
+            403: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content?: never;

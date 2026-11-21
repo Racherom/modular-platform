@@ -249,9 +249,9 @@ components:
       description: |
         Config value name to its text, for a module instance (spec 0025). Each value is a string,
         never expanded; it becomes the value's default in the render, and `.env` can still
-        override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
-        `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
-        empty map is left out.
+        override it. A secret value, a `{uid}`, `{gid}`, `{install}` or `{install}/...` default and
+        a value a `host_mounts` source names cannot be set here. Written double quoted, keys
+        sorted; an empty map is left out.
       additionalProperties:
         type: string
     Uses:
@@ -264,9 +264,10 @@ components:
     UseBinding:
       x-go-type: GraphBinding
       description: |
-        `instance` or `instance.provide`, or an object with that text as `provider` plus named
-        values (field name to value) for a binding to a provisioner. Written as a string when it
-        carries no named values.
+        `instance` or `instance.provide`, or an object with that text as `provider` plus values
+        (field name to value): the named values of a binding to a provisioner, or the fields a
+        direct binding lets the graph set (spec 0026, `graph: true` on the capability's field).
+        Written as a string when it carries no values.
       oneOf:
         - type: string
         - type: object
@@ -376,6 +377,12 @@ components:
           type: string
           enum: [to_consumer, to_provider, both]
           default: to_consumer
+        graph:
+          type: boolean
+          default: false
+          description: >-
+            The graph may set this field on a binding (spec 0026); only with `direction: to_provider`
+            and a text type. The value may hold `{field}` tokens naming text fields the provider gives.
     Yields:
       type: object
       description: What a provisioner makes per binding (spec 0014).
@@ -402,10 +409,10 @@ components:
           $ref: "#/components/schemas/Job"
     YieldSource:
       x-go-type: YieldFieldSource
-      description: "`named`, `generate`, `output`, or `{admin: <field of the provisioner>}`."
+      description: "`named`, `generate`, `output`, `consumer` (a to_provider field the consumer gives; the job gets its value), or `{admin: <field of the provisioner>}`."
       oneOf:
         - type: string
-          enum: [named, generate, output]
+          enum: [named, generate, output, consumer]
         - type: object
           additionalProperties: false
           required: [admin]
@@ -490,6 +497,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SetupStep"
+        enroll:
+          $ref: "#/components/schemas/Enroll"
+          # keep the pointer: most entries declare none
+          x-go-type-skip-optional-pointer: false
         templates:
           type: array
           items:
@@ -514,6 +525,10 @@ components:
         hardening:
           $ref: "#/components/schemas/Hardening"
           # keep the pointer: most entries declare none
+          x-go-type-skip-optional-pointer: false
+        keeper:
+          $ref: "#/components/schemas/Keeper"
+          # keep the pointer: only the platform's keeper declares it
           x-go-type-skip-optional-pointer: false
         healthcheck:
           $ref: "#/components/schemas/Healthcheck"
@@ -548,6 +563,26 @@ components:
           description: "`to_provider` and `both` fields to the env var that gets their clients directory."
           additionalProperties:
             type: string
+        first_admin:
+          $ref: "#/components/schemas/FirstAdmin"
+    FirstAdmin:
+      type: object
+      description: >-
+        The provider's own first admin page (spec 0037), allowed only on a provide of the `oidc`
+        capability. Until an admin is bound, the ingress asks the platform before it passes a
+        request for one of the `gate` paths on to the provider.
+      additionalProperties: false
+      required: [path, gate]
+      properties:
+        path:
+          type: string
+          description: Absolute path of the first admin page on the provider's host.
+        gate:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: Absolute paths the ingress guards until an admin is bound; `path` is one of them.
     Slot:
       type: object
       additionalProperties: false
@@ -593,7 +628,7 @@ components:
       properties:
         platform:
           type: string
-          enum: [host, port, url, ca, tls, consumer]
+          enum: [host, port, url, ca, tls, consumer, gate, first_admin_path]
         path:
           type: string
           description: "With `platform: url`, a path to append; with `volume`, the file in the folder."
@@ -639,12 +674,52 @@ components:
           type: string
           enum: [generate, ask, setup]
           default: generate
+        format:
+          type: string
+          enum: [hex, password]
+          x-enum-varnames: [SecretFormatHex, SecretFormatPassword]
+          default: hex
+          description: |
+            How a `from: generate` value is made (spec 0016): `hex` is 32 random bytes as hex,
+            `password` is 24 characters drawn uniformly from `A` to `Z`, `a` to `z` and `0` to `9`.
+        show:
+          type: string
+          enum: [once]
+          x-enum-varnames: [SecretShowOnce]
+          description: |
+            `once`: the platform's `setup.sh` prints the value one time at a fresh install
+            (spec 0016). Only with `from: generate`.
+        lifetime:
+          type: string
+          enum: [install, setup]
+          x-enum-varnames: [SecretLifetimeInstall, SecretLifetimeSetup]
+          default: install
+          description: |
+            `install` (default) is a secret as before. `setup` (spec 0033) is a generated file that
+            lives only while the web setup is not done: it lands in `secrets/<instance>/setup/<name>`,
+            and every such secret of the instance is mounted as one folder at `/run/secrets/setup/`
+            (so a replaced or deleted file shows inside). It takes no `from`, `env` or `mount`.
         env:
           type: string
           description: Env var set to the secret file's path inside the container.
         mount:
           type: string
           description: Absolute path to mount it at.
+    Keeper:
+      type: object
+      description: |
+        Marks the module as the platform's keeper (spec 0016): the one service that keeps the
+        platform's own containers in line with its state folder. The platform's `setup.sh` starts
+        a seed container that runs `command` plus `--state <dir>`. A keeper is host access.
+      additionalProperties: false
+      required: [command]
+      properties:
+        command:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: The arguments a seed runs, after the image's entrypoint.
     SetupStep:
       type: object
       additionalProperties: false
@@ -665,6 +740,13 @@ components:
           description: Literal env for the step, never a secret; no name starts with `MP_`.
           additionalProperties:
             type: string
+        network:
+          type: string
+          enum: [none, internal]
+          default: none
+          description: >-
+            `none` (default) runs the step with no network; `internal` joins it to the platform's
+            `internal` network, for a step that calls another service (spec 0037).
         for_each:
           type: string
           description: >-
@@ -684,6 +766,47 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SetupWrite"
+    Enroll:
+      type: object
+      description: |
+        How an identity module (one that provides `oidc`) makes its first user (spec 0035). It has
+        the shape of a setup step, with questions the platform's setup page asks after the platform
+        runs. The keeper runs it on one call from the api, with the answers on standard input only,
+        for as long as no admin is bound. It runs with no network, so it has no `network` or
+        `for_each`.
+      additionalProperties: false
+      required: [command]
+      properties:
+        entrypoint:
+          type: array
+          items:
+            type: string
+        command:
+          type: array
+          items:
+            type: string
+        env:
+          type: object
+          description: Literal env for the run, never a secret; no name starts with `MP_`.
+          additionalProperties:
+            type: string
+        asks:
+          type: array
+          description: Asked on the setup page, in this order.
+          items:
+            $ref: "#/components/schemas/SetupAsk"
+        reads:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetupRead"
+        writes:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetupWrite"
+        restart:
+          type: boolean
+          default: false
+          description: "`true`: the keeper restarts the module's containers after it moved the writes."
     SetupAsk:
       type: object
       additionalProperties: false
@@ -696,6 +819,14 @@ components:
         secret:
           type: boolean
           default: false
+        pattern:
+          type: string
+          description: An RE2 pattern the whole answer must match.
+        min_length:
+          type: integer
+          description: The fewest characters the answer may have; 1 or more.
+          # keep the pointer: 0 is a value the catalog refuses, absent is none
+          x-go-type-skip-optional-pointer: false
     SetupRead:
       type: object
       description: >-
@@ -787,7 +918,7 @@ components:
           default: false
     HostPath:
       x-go-type: HostPathRef
-      description: "An absolute path, `{config: <value>}` or `{install: <relative path>}`."
+      description: "An absolute path, `{config: <value>}`, `{install: <relative path>}`, or `{install: .}` for the install folder itself (platform flavor; `create` is refused on it)."
       oneOf:
         - type: string
         - type: object

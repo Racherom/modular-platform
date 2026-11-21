@@ -52,3 +52,8 @@
   color: var(--color-text-muted);
   font-size: var(--text-xs);
 }
+
+.error {
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+}

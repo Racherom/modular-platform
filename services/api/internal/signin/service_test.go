@@ -85,12 +85,21 @@ func (f *fakeIDP) EndSessionURL() string { return f.endSession }
 
 const admin = "Admin@Example.com"
 
+// openSetup is a setup whose session every request has, for the tests that are not about the setup.
+type openSetup struct{}
+
+func (openSetup) Session(*http.Request) bool { return true }
+func (openSetup) ClearCookie() *http.Cookie {
+	return &http.Cookie{Name: "setup", Path: "/", MaxAge: -1}
+}
+func (openSetup) Bound() {}
+
 func newService(t *testing.T, idp *fakeIDP, st *memStore) (*signin.Service, *bytes.Buffer) {
 	t.Helper()
 	var logs bytes.Buffer
 	return signin.New(signin.Config{
-		PublicOrigin: "https://platform.localhost", AdminEmail: admin, Idle: time.Hour, Max: 12 * time.Hour,
-	}, st, idp, slog.New(slog.NewJSONHandler(&logs, nil))), &logs
+		PublicOrigin: "https://platform.localhost", Idle: time.Hour, Max: 12 * time.Hour,
+	}, st, idp, slog.New(slog.NewJSONHandler(&logs, nil))).WithSetup(openSetup{}), &logs
 }
 
 // signIn runs login then callback in one cookie jar and returns the callback's answer.
@@ -108,6 +117,9 @@ func signIn(t *testing.T, s *signin.Service, cookies []*http.Cookie) *httptest.R
 	u, _ := url.Parse(login.Header().Get("Location"))
 	cb := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/auth/callback?code=c&state="+u.Query().Get("state"), nil)
 	for _, c := range login.Result().Cookies() {
+		cb.AddCookie(c)
+	}
+	for _, c := range cookies { // the browser sends its other cookies to the callback too
 		cb.AddCookie(c)
 	}
 	rec := httptest.NewRecorder()
@@ -134,11 +146,10 @@ func TestAdminBinding(t *testing.T) {
 		session  bool
 		wantBind bool
 	}{
-		"first verified admin email binds": {nil, signin.Claims{Identity: first, Email: "admin@example.COM", EmailVerified: true}, "/stacks", true, true},
-		"unverified admin email":           {nil, signin.Claims{Identity: first, Email: admin}, "/?signed_out=email_unverified", false, false},
-		"another email":                    {nil, signin.Claims{Identity: first, Email: "x@example.com", EmailVerified: true}, "/?signed_out=not_admin", false, false},
-		"the bound admin":                  {&first, signin.Claims{Identity: first, Email: "changed@example.com"}, "/stacks", true, false},
-		"admin email, other subject":       {&first, signin.Claims{Identity: signin.Identity{Issuer: first.Issuer, Subject: "u2"}, Email: admin, EmailVerified: true}, "/?signed_out=not_admin", false, false},
+		"first sign in binds, with an email":   {nil, signin.Claims{Identity: first, Email: "x@example.COM"}, "/stacks", true, true},
+		"first sign in binds, with no email":   {nil, signin.Claims{Identity: first}, "/stacks", true, true},
+		"the bound admin":                      {&first, signin.Claims{Identity: first, Email: "changed@example.com"}, "/stacks", true, false},
+		"another subject at the same provider": {&first, signin.Claims{Identity: signin.Identity{Issuer: first.Issuer, Subject: "u2"}, Email: admin, EmailVerified: true}, "/?signed_out=not_admin", false, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

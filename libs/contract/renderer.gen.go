@@ -114,12 +114,14 @@ func (e ConfigValueType) Valid() bool {
 
 // Defines values for FieldSourcePlatform.
 const (
-	FieldSourcePlatformCa       FieldSourcePlatform = "ca"
-	FieldSourcePlatformConsumer FieldSourcePlatform = "consumer"
-	FieldSourcePlatformHost     FieldSourcePlatform = "host"
-	FieldSourcePlatformPort     FieldSourcePlatform = "port"
-	FieldSourcePlatformTls      FieldSourcePlatform = "tls"
-	FieldSourcePlatformUrl      FieldSourcePlatform = "url"
+	FieldSourcePlatformCa             FieldSourcePlatform = "ca"
+	FieldSourcePlatformConsumer       FieldSourcePlatform = "consumer"
+	FieldSourcePlatformFirstAdminPath FieldSourcePlatform = "first_admin_path"
+	FieldSourcePlatformGate           FieldSourcePlatform = "gate"
+	FieldSourcePlatformHost           FieldSourcePlatform = "host"
+	FieldSourcePlatformPort           FieldSourcePlatform = "port"
+	FieldSourcePlatformTls            FieldSourcePlatform = "tls"
+	FieldSourcePlatformUrl            FieldSourcePlatform = "url"
 )
 
 // Valid indicates whether the value is a known member of the FieldSourcePlatform enum.
@@ -128,6 +130,10 @@ func (e FieldSourcePlatform) Valid() bool {
 	case FieldSourcePlatformCa:
 		return true
 	case FieldSourcePlatformConsumer:
+		return true
+	case FieldSourcePlatformFirstAdminPath:
+		return true
+	case FieldSourcePlatformGate:
 		return true
 	case FieldSourcePlatformHost:
 		return true
@@ -250,6 +256,24 @@ func (e RenderedSecretKind) Valid() bool {
 	}
 }
 
+// Defines values for SecretFormat.
+const (
+	SecretFormatHex      SecretFormat = "hex"
+	SecretFormatPassword SecretFormat = "password"
+)
+
+// Valid indicates whether the value is a known member of the SecretFormat enum.
+func (e SecretFormat) Valid() bool {
+	switch e {
+	case SecretFormatHex:
+		return true
+	case SecretFormatPassword:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SecretFrom.
 const (
 	SecretFromAsk      SecretFrom = "ask"
@@ -265,6 +289,57 @@ func (e SecretFrom) Valid() bool {
 	case SecretFromGenerate:
 		return true
 	case SecretFromSetup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SecretLifetime.
+const (
+	SecretLifetimeInstall SecretLifetime = "install"
+	SecretLifetimeSetup   SecretLifetime = "setup"
+)
+
+// Valid indicates whether the value is a known member of the SecretLifetime enum.
+func (e SecretLifetime) Valid() bool {
+	switch e {
+	case SecretLifetimeInstall:
+		return true
+	case SecretLifetimeSetup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SecretShow.
+const (
+	SecretShowOnce SecretShow = "once"
+)
+
+// Valid indicates whether the value is a known member of the SecretShow enum.
+func (e SecretShow) Valid() bool {
+	switch e {
+	case SecretShowOnce:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetupStepNetwork.
+const (
+	Internal SetupStepNetwork = "internal"
+	None     SetupStepNetwork = "none"
+)
+
+// Valid indicates whether the value is a known member of the SetupStepNetwork enum.
+func (e SetupStepNetwork) Valid() bool {
+	switch e {
+	case Internal:
+		return true
+	case None:
 		return true
 	default:
 		return false
@@ -355,7 +430,10 @@ type Capability struct {
 type CapabilityField struct {
 	Description string                   `json:"description"`
 	Direction   CapabilityFieldDirection `json:"direction,omitempty"`
-	Optional    bool                     `json:"optional,omitempty"`
+
+	// Graph The graph may set this field on a binding (spec 0026); only with `direction: to_provider` and a text type. The value may hold `{field}` tokens naming text fields the provider gives.
+	Graph    bool `json:"graph,omitempty"`
+	Optional bool `json:"optional,omitempty"`
 
 	// Pattern RE2, matched against the whole value; string only.
 	Pattern string `json:"pattern,omitempty"`
@@ -453,6 +531,26 @@ type ConfigValueSetup string
 // ConfigValueType defines model for ConfigValue.Type.
 type ConfigValueType string
 
+// Enroll How an identity module (one that provides `oidc`) makes its first user (spec 0035). It has
+// the shape of a setup step, with questions the platform's setup page asks after the platform
+// runs. The keeper runs it on one call from the api, with the answers on standard input only,
+// for as long as no admin is bound. It runs with no network, so it has no `network` or
+// `for_each`.
+type Enroll struct {
+	// Asks Asked on the setup page, in this order.
+	Asks       []SetupAsk `json:"asks,omitempty"`
+	Command    []string   `json:"command"`
+	Entrypoint []string   `json:"entrypoint,omitempty"`
+
+	// Env Literal env for the run, never a secret; no name starts with `MP_`.
+	Env   map[string]string `json:"env,omitempty"`
+	Reads []SetupRead       `json:"reads,omitempty"`
+
+	// Restart `true`: the keeper restarts the module's containers after it moved the writes.
+	Restart bool         `json:"restart,omitempty"`
+	Writes  []SetupWrite `json:"writes,omitempty"`
+}
+
 // ExternalInstance defines model for ExternalInstance.
 type ExternalInstance struct {
 	// Provides Provide name to what the external service offers.
@@ -504,6 +602,15 @@ type FieldSource struct {
 // FieldSourcePlatform defines model for FieldSource.Platform.
 type FieldSourcePlatform string
 
+// FirstAdmin The provider's own first admin page (spec 0037), allowed only on a provide of the `oidc` capability. Until an admin is bound, the ingress asks the platform before it passes a request for one of the `gate` paths on to the provider.
+type FirstAdmin struct {
+	// Gate Absolute paths the ingress guards until an admin is bound; `path` is one of them.
+	Gate []string `json:"gate"`
+
+	// Path Absolute path of the first admin page on the provider's host.
+	Path string `json:"path"`
+}
+
 // Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
 type Graph struct {
 	// ApiVersion `modular-platform/v1`. A `modular-platform/v0alpha1` graph is still read: the renderer
@@ -527,9 +634,9 @@ type Graph struct {
 type GraphModule struct {
 	// Config Config value name to its text, for a module instance (spec 0025). Each value is a string,
 	// never expanded; it becomes the value's default in the render, and `.env` can still
-	// override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
-	// `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
-	// empty map is left out.
+	// override it. A secret value, a `{uid}`, `{gid}`, `{install}` or `{install}/...` default and
+	// a value a `host_mounts` source names cannot be set here. Written double quoted, keys
+	// sorted; an empty map is left out.
 	Config   *ModuleConfig     `json:"config,omitempty"`
 	External *ExternalInstance `json:"external,omitempty"`
 
@@ -568,15 +675,15 @@ type Healthcheck struct {
 type HostMount struct {
 	Create bool `json:"create,omitempty"`
 
-	// Host An absolute path, `{config: <value>}` or `{install: <relative path>}`.
+	// Host An absolute path, `{config: <value>}`, `{install: <relative path>}`, or `{install: .}` for the install folder itself (platform flavor; `create` is refused on it).
 	Host HostPath `json:"host"`
 
-	// Path An absolute path, `{config: <value>}` or `{install: <relative path>}`.
+	// Path An absolute path, `{config: <value>}`, `{install: <relative path>}`, or `{install: .}` for the install folder itself (platform flavor; `create` is refused on it).
 	Path     HostPath `json:"path"`
 	ReadOnly *bool    `json:"read_only,omitempty"`
 }
 
-// HostPath An absolute path, `{config: <value>}` or `{install: <relative path>}`.
+// HostPath An absolute path, `{config: <value>}`, `{install: <relative path>}`, or `{install: .}` for the install folder itself (platform flavor; `create` is refused on it).
 type HostPath = HostPathRef
 
 // HostPort A host port number, or `{config: <int value>}`.
@@ -631,6 +738,14 @@ type Job struct {
 	Revoke string `json:"revoke,omitempty"`
 }
 
+// Keeper Marks the module as the platform's keeper (spec 0016): the one service that keeps the
+// platform's own containers in line with its state folder. The platform's `setup.sh` starts
+// a seed container that runs `command` plus `--state <dir>`. A keeper is host access.
+type Keeper struct {
+	// Command The arguments a seed runs, after the image's entrypoint.
+	Command []string `json:"command"`
+}
+
 // ManagedRenderRequest defines model for ManagedRenderRequest.
 type ManagedRenderRequest struct {
 	// Graph A stack, as saved in `graph.yaml`. Holds no positions, no settings and never a secret value.
@@ -654,7 +769,14 @@ type Module struct {
 	// Config Value name to one declared config value (spec 0005).
 	Config      map[string]ConfigValue `json:"config,omitempty"`
 	Description string                 `json:"description"`
-	Entrypoint  []string               `json:"entrypoint,omitempty"`
+
+	// Enroll How an identity module (one that provides `oidc`) makes its first user (spec 0035). It has
+	// the shape of a setup step, with questions the platform's setup page asks after the platform
+	// runs. The keeper runs it on one call from the api, with the answers on standard input only,
+	// for as long as no admin is bound. It runs with no network, so it has no `network` or
+	// `for_each`.
+	Enroll     *Enroll  `json:"enroll,omitempty"`
+	Entrypoint []string `json:"entrypoint,omitempty"`
 
 	// Environment Fixed env, with `{<slot>.<field>}`, `{config.<value>}`, `{uid}`, `{gid}` and `{install}` placeholders.
 	Environment   map[string]string `json:"environment,omitempty"`
@@ -667,6 +789,11 @@ type Module struct {
 
 	// Image An image reference with a tag other than `latest`, optionally followed by a digest.
 	Image string `json:"image"`
+
+	// Keeper Marks the module as the platform's keeper (spec 0016): the one service that keeps the
+	// platform's own containers in line with its state folder. The platform's `setup.sh` starts
+	// a seed container that runs `command` plus `--state <dir>`. A keeper is host access.
+	Keeper *Keeper `json:"keeper,omitempty"`
 
 	// Kind Exactly `Module`.
 	Kind string `json:"kind"`
@@ -699,9 +826,9 @@ type ModuleRuntime string
 
 // ModuleConfig Config value name to its text, for a module instance (spec 0025). Each value is a string,
 // never expanded; it becomes the value's default in the render, and `.env` can still
-// override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
-// `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
-// empty map is left out.
+// override it. A secret value, a `{uid}`, `{gid}`, `{install}` or `{install}/...` default and
+// a value a `host_mounts` source names cannot be set here. Written double quoted, keys
+// sorted; an empty map is left out.
 type ModuleConfig = InstanceConfig
 
 // ModuleImage defines model for ModuleImage.
@@ -749,6 +876,9 @@ type Provide struct {
 
 	// Fields Field of the capability to where its value comes from.
 	Fields map[string]FieldSource `json:"fields,omitempty"`
+
+	// FirstAdmin The provider's own first admin page (spec 0037), allowed only on a provide of the `oidc` capability. Until an admin is bound, the ingress asks the platform before it passes a request for one of the `gate` paths on to the provider.
+	FirstAdmin FirstAdmin `json:"first_admin,omitempty"`
 
 	// Port Required, except on a `runtime: sdk` entry, which must not set it.
 	Port int `json:"port,omitempty"`
@@ -832,24 +962,58 @@ type Secret struct {
 	Description string `json:"description"`
 
 	// Env Env var set to the secret file's path inside the container.
-	Env  string     `json:"env,omitempty"`
-	From SecretFrom `json:"from,omitempty"`
+	Env string `json:"env,omitempty"`
+
+	// Format How a `from: generate` value is made (spec 0016): `hex` is 32 random bytes as hex,
+	// `password` is 24 characters drawn uniformly from `A` to `Z`, `a` to `z` and `0` to `9`.
+	Format SecretFormat `json:"format,omitempty"`
+	From   SecretFrom   `json:"from,omitempty"`
+
+	// Lifetime `install` (default) is a secret as before. `setup` (spec 0033) is a generated file that
+	// lives only while the web setup is not done: it lands in `secrets/<instance>/setup/<name>`,
+	// and every such secret of the instance is mounted as one folder at `/run/secrets/setup/`
+	// (so a replaced or deleted file shows inside). It takes no `from`, `env` or `mount`.
+	Lifetime SecretLifetime `json:"lifetime,omitempty"`
 
 	// Mount Absolute path to mount it at.
 	Mount string `json:"mount,omitempty"`
 
 	// Name A name ending in `/` is a folder a setup step writes.
 	Name string `json:"name"`
+
+	// Show `once`: the platform's `setup.sh` prints the value one time at a fresh install
+	// (spec 0016). Only with `from: generate`.
+	Show SecretShow `json:"show,omitempty"`
 }
+
+// SecretFormat How a `from: generate` value is made (spec 0016): `hex` is 32 random bytes as hex,
+// `password` is 24 characters drawn uniformly from `A` to `Z`, `a` to `z` and `0` to `9`.
+type SecretFormat string
 
 // SecretFrom defines model for Secret.From.
 type SecretFrom string
 
+// SecretLifetime `install` (default) is a secret as before. `setup` (spec 0033) is a generated file that
+// lives only while the web setup is not done: it lands in `secrets/<instance>/setup/<name>`,
+// and every such secret of the instance is mounted as one folder at `/run/secrets/setup/`
+// (so a replaced or deleted file shows inside). It takes no `from`, `env` or `mount`.
+type SecretLifetime string
+
+// SecretShow `once`: the platform's `setup.sh` prints the value one time at a fresh install
+// (spec 0016). Only with `from: generate`.
+type SecretShow string
+
 // SetupAsk defines model for SetupAsk.
 type SetupAsk struct {
 	Description string `json:"description"`
-	Name        string `json:"name"`
-	Secret      bool   `json:"secret,omitempty"`
+
+	// MinLength The fewest characters the answer may have; 1 or more.
+	MinLength *int   `json:"min_length,omitempty"`
+	Name      string `json:"name"`
+
+	// Pattern An RE2 pattern the whole answer must match.
+	Pattern string `json:"pattern,omitempty"`
+	Secret  bool   `json:"secret,omitempty"`
 }
 
 // SetupRead One of `{slot, field}`, `{provide, field}` or `{secret}`. A `{provide, field}` read belongs to a `for_each` step, names its own provide and a `to_provider` or `both` field, and gives that one client's file.
@@ -870,11 +1034,17 @@ type SetupStep struct {
 	Env map[string]string `json:"env,omitempty"`
 
 	// ForEach A provide; the step runs once per binding to it, in consumer instance name order. That instance name is the step's client: the exact text `{client}` in its `env` values, `command` and `entrypoint` items and `writes` names is replaced by it. A step with no `for_each` holds no `{client}`, and a `for_each` step has no `asks`.
-	ForEach string       `json:"for_each,omitempty"`
-	Name    string       `json:"name"`
-	Reads   []SetupRead  `json:"reads,omitempty"`
-	Writes  []SetupWrite `json:"writes,omitempty"`
+	ForEach string `json:"for_each,omitempty"`
+	Name    string `json:"name"`
+
+	// Network `none` (default) runs the step with no network; `internal` joins it to the platform's `internal` network, for a step that calls another service (spec 0037).
+	Network SetupStepNetwork `json:"network,omitempty"`
+	Reads   []SetupRead      `json:"reads,omitempty"`
+	Writes  []SetupWrite     `json:"writes,omitempty"`
 }
+
+// SetupStepNetwork `none` (default) runs the step with no network; `internal` joins it to the platform's `internal` network, for a step that calls another service (spec 0037).
+type SetupStepNetwork string
 
 // SetupWrite defines model for SetupWrite.
 type SetupWrite struct {
@@ -925,16 +1095,17 @@ type Template struct {
 	Path string `json:"path"`
 }
 
-// UseBinding `instance` or `instance.provide`, or an object with that text as `provider` plus named
-// values (field name to value) for a binding to a provisioner. Written as a string when it
-// carries no named values.
+// UseBinding `instance` or `instance.provide`, or an object with that text as `provider` plus values
+// (field name to value): the named values of a binding to a provisioner, or the fields a
+// direct binding lets the graph set (spec 0026, `graph: true` on the capability's field).
+// Written as a string when it carries no values.
 type UseBinding = GraphBinding
 
 // Uses Slot name to its binding. `null` leaves an optional slot unbound on purpose. A missing key
 // means not decided: the renderer may bind a required slot or warn about an optional one.
 type Uses map[string]*UseBinding
 
-// YieldSource `named`, `generate`, `output`, or `{admin: <field of the provisioner>}`.
+// YieldSource `named`, `generate`, `output`, `consumer` (a to_provider field the consumer gives; the job gets its value), or `{admin: <field of the provisioner>}`.
 type YieldSource = YieldFieldSource
 
 // Yields What a provisioner makes per binding (spec 0014).

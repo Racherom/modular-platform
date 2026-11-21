@@ -44,7 +44,7 @@ func settingsEnv(t *testing.T, over map[string]string) map[string]string {
 		"MP_OIDC_ISSUER":              "https://platform.test/auth",
 		"MP_OIDC_CLIENT_ID":           "api",
 		"MP_OIDC_CLIENT_SECRET_FILE":  secret("client-secret"),
-		"MP_ADMIN_EMAIL":              "admin@platform.test",
+		"MP_SETUP_DIR":                t.TempDir(),
 	}
 	for k, v := range over {
 		if v == "" {
@@ -88,8 +88,8 @@ func TestReadSettings(t *testing.T) {
 		t.Fatalf("start refused: %v %q", err, lines)
 	}
 	switch {
-	case s.PublicOrigin != "https://platform.test", s.BasePath != "", s.AdminEmail != "admin@platform.test":
-		t.Errorf("settings = %q %q %q", s.PublicOrigin, s.BasePath, s.AdminEmail)
+	case s.PublicOrigin != "https://platform.test", s.BasePath != "":
+		t.Errorf("settings = %q %q", s.PublicOrigin, s.BasePath)
 	case s.oidc.Issuer != "https://platform.test/auth", s.oidc.ClientID != "api", s.oidc.ClientSecret != "client-secret":
 		t.Errorf("oidc = %q %q, secret right: %v", s.oidc.Issuer, s.oidc.ClientID, s.oidc.ClientSecret == "client-secret")
 	case s.oidc.RedirectURL != "https://platform.test/api/v1/auth/callback", s.oidc.CA != nil:
@@ -115,7 +115,6 @@ func TestReadSettingsRefused(t *testing.T) {
 		"no origin":         {map[string]string{"MP_PUBLIC_ORIGIN": ""}, "config: uses.public.origin (MP_PUBLIC_ORIGIN): missing: "},
 		"an origin path":    {map[string]string{"MP_PUBLIC_ORIGIN": "https://platform.test/x"}, "config: uses.public.origin (MP_PUBLIC_ORIGIN): invalid: "},
 		"a bad base path":   {map[string]string{"MP_BASE_PATH": "/platform/"}, "config: uses.public.base_path (MP_BASE_PATH): no_match: "},
-		"no admin email":    {map[string]string{"MP_ADMIN_EMAIL": ""}, "config: uses.oidc.admin_email (MP_ADMIN_EMAIL): missing: "},
 		"a CA that is text": {map[string]string{"MP_OIDC_CA_FILE": "/no/such/ca.pem"}, "config: uses.oidc.ca (MP_OIDC_CA_FILE): invalid: "},
 	} {
 		t.Run(name, func(t *testing.T) {

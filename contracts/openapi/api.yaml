@@ -64,13 +64,197 @@ paths:
       responses:
         "302":
           description: |
-            Signed in: sets the session cookie and goes to the return path. Refused: goes to
-            `<base>/?signed_out=<reason>`, reason `not_admin`, `email_unverified`,
-            `state_mismatch` or `provider_error`.
+            Signed in: sets the session cookie and goes to the return path. The sign in that
+            binds the first admin also deletes the setup cookie. Refused: goes to
+            `<base>/?signed_out=<reason>`, reason `not_admin`, `state_mismatch`, `provider_error`
+            or `setup_pending` (no valid setup session while no admin is bound).
           headers:
             Location:
               schema:
                 type: string
+  /api/v1/setup:
+    get:
+      operationId: getSetup
+      summary: The state of the first run setup
+      description: |
+        Public. Without a setup session it shows only `state` (and `reason`). `providerReady`
+        and `enroll` come only with a valid setup session.
+      security: []
+      responses:
+        "200":
+          description: The setup state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupState"
+  /api/v1/setup/code:
+    post:
+      operationId: redeemSetupCode
+      summary: Trade the setup code for a setup session
+      description: |
+        Public, rate limited to 10 tries a minute per client address (the last `X-Forwarded-For`
+        hop). The code is accepted once. Needs the public `Origin`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupCode"
+      responses:
+        "204":
+          description: Sets the setup cookie (`__Host-mp_setup`, or `__Secure-mp_setup` under a base path; 24 hours).
+        "401":
+          description: The code is not accepted (`code_refused`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "403":
+          $ref: "#/components/responses/BadOrigin"
+        "409":
+          description: The setup is done (`setup_done`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "429":
+          description: Too many tries (`too_many_tries`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+  /api/v1/setup/enroll:
+    post:
+      operationId: enrollSetup
+      summary: Make the first user at the identity module
+      description: |
+        Needs the setup cookie. Passes the answers to the keeper, which runs the identity
+        module's `enroll` block; enrolling again before the first sign in replaces the user.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupEnroll"
+      responses:
+        "204":
+          description: The user exists.
+        "401":
+          description: No valid setup session (`no_session`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "403":
+          $ref: "#/components/responses/BadOrigin"
+        "409":
+          description: The setup is done (`setup_done`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "422":
+          description: An answer breaks a rule (`invalid_answer`, at `answers.<name>`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "502":
+          description: The enroll run failed (`enroll_failed`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "503":
+          description: The keeper is busy (`busy`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+  /api/v1/setup/identity-link:
+    post:
+      operationId: createIdentityLink
+      summary: A link to the identity provider's first admin page
+      description: |
+        Needs the setup cookie. Returns a link on the auth host with a handoff token (signed with
+        the setup session key, single use, valid 60 seconds). Only for an identity module with a
+        `first_admin` block.
+      security: []
+      responses:
+        "200":
+          description: The link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityLink"
+        "403":
+          description: No valid setup session (`setup_pending`) or the request is not from the platform's origin (`bad_origin`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "404":
+          description: The identity module has no first admin page (`no_first_admin`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "409":
+          description: The setup is done (`setup_done`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+        "503":
+          description: The identity provider is not ready (`provider_unavailable`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+  /api/v1/setup/identity-enter:
+    get:
+      operationId: enterIdentity
+      summary: Trade a handoff token for the auth host cookie
+      description: |
+        Routed on the auth host by the ingress, never reaching the identity provider. The token is
+        checked against the setup session key, the auth host, its expiry and its single use. Sets a
+        host only cookie and goes to the provider's first admin page; the response carries
+        `Referrer-Policy: no-referrer`.
+      security: []
+      parameters:
+        - name: t
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "302":
+          description: The cookie is set; goes to the provider's first admin page.
+          headers:
+            Location:
+              schema:
+                type: string
+        "403":
+          description: The token is wrong, expired, used, for another host, or the session is retired (`handoff_refused`).
+          content:
+            application/json:
+              schema:
+                $ref: "./renderer.yaml#/components/schemas/ProblemList"
+  /api/v1/setup/gate:
+    get:
+      operationId: setupGate
+      summary: The ingress's question for a guarded provider path
+      description: |
+        The ingress forwards the request's cookies. 204 lets the request through, 403 refuses. Fails
+        closed: while an admin is bound, with no valid auth host cookie, or on any error.
+      security: []
+      responses:
+        "204":
+          description: A valid auth host cookie and no admin bound yet.
+        "403":
+          description: Refused.
   /api/v1/auth/logout:
     post:
       operationId: logout
@@ -501,13 +685,94 @@ components:
         redirect:
           type: string
           description: The provider's sign out page, or `<base>/`.
+    SetupState:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [pending, done]
+        reason:
+          type: string
+          enum: [no_code]
+          description: "Only while pending. `no_code`: no code file exists, so remove `<state>/.setup-done` and restart the keeper."
+        session:
+          type: boolean
+          description: Whether the request carries a valid setup session. Only while pending.
+        providerReady:
+          type: boolean
+          description: Whether OIDC discovery against the issuer has succeeded. Only with a session.
+        enroll:
+          $ref: "#/components/schemas/SetupEnrollAsks"
+          # keep the pointer: absent means the identity module has no enroll block
+          x-go-type-skip-optional-pointer: false
+        firstAdmin:
+          type: boolean
+          enum: [true]
+          description: |
+            `true` only with a valid setup session while pending, when the identity module has a
+            `first_admin` block (spec 0037). Absent otherwise, never `false`. The page shows
+            "Create your admin account" when this is present and `enroll` is absent; the real link
+            comes from `POST /api/v1/setup/identity-link`.
+    SetupEnrollAsks:
+      type: object
+      additionalProperties: false
+      required: [asks]
+      description: The identity module's enroll questions, asked on the setup page in this order.
+      properties:
+        asks:
+          type: array
+          items:
+            $ref: "#/components/schemas/SetupAsk"
+    SetupAsk:
+      type: object
+      additionalProperties: false
+      required: [name, description, secret]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        secret:
+          type: boolean
+        pattern:
+          type: string
+        minLength:
+          type: integer
+    SetupCode:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+    IdentityLink:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: Link on the auth host; valid 60 seconds, once.
+    SetupEnroll:
+      type: object
+      additionalProperties: false
+      required: [answers]
+      properties:
+        answers:
+          type: object
+          description: Ask name to answer.
+          additionalProperties:
+            type: string
     Session:
       type: object
       additionalProperties: false
-      required: [email, expiresAt, idleExpiresAt]
+      required: [expiresAt, idleExpiresAt]
       properties:
         email:
           type: string
+          description: Absent when the identity provider's claims carry none.
         expiresAt:
           type: string
           format: date-time

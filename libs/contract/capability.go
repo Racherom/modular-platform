@@ -100,6 +100,22 @@ func (c *checker) capabilityField(p, name string, f CapabilityField) {
 	default:
 		c.add(p+".direction", CodeInvalidDirection, "direction %q is not to_consumer, to_provider or both", f.Direction)
 	}
+	if f.Graph && (f.Direction != ToProvider || f.IsFile() || f.Type == CapabilityFieldTypeEnum) {
+		c.add(p+".graph", CodeInvalidRule, "graph applies to a to_provider text field (string, int, bool or url) only")
+	}
+}
+
+// TokenSample replaces each {field} token of a graph value with x.example, the text the checks
+// test the value's rules against (spec 0026).
+func TokenSample(v string) string { return formatFieldRe.ReplaceAllString(v, "x.example") }
+
+// Tokens lists the field names a graph value's {field} tokens name, in order of appearance.
+func Tokens(v string) []string {
+	var out []string
+	for _, m := range formatFieldRe.FindAllStringSubmatch(v, -1) {
+		out = append(out, m[1])
+	}
+	return out
 }
 
 // CheckYields checks the yields of capability k against the capabilities by name (spec 0014).
@@ -133,22 +149,29 @@ func CheckYields(file string, k Capability, byName map[string]Capability) []Cata
 		c.add("yields.login", CodeInvalidYields, "login %s must be one of the named fields", y.Login)
 	}
 	for _, f := range sortedKeys(target.Fields) {
-		if _, ok := y.Fields[f]; !ok && target.Fields[f].ToConsumer() {
+		if _, ok := y.Fields[f]; !ok && target.Fields[f].ToConsumer() && !target.Fields[f].Optional {
 			c.add("yields.fields."+f, CodeMissingFieldSource, "field %s of %s needs a source", f, y.Capability)
 		}
 	}
 	for _, f := range sortedKeys(y.Fields) {
 		p := "yields.fields." + f
 		field, ok := target.Fields[f]
-		switch {
-		case !ok:
+		if !ok {
 			c.add(p, CodeUnknownField, "capability %s has no field %s", y.Capability, f)
-			continue
-		case !field.ToConsumer():
-			c.add(p, CodeInvalidFieldSource, "%s is a to_provider field; the consumer gives its value", f)
 			continue
 		}
 		src := y.Fields[f]
+		if src.Kind == YieldConsumer {
+			// the job gets the value the consumer gives; the consumer never receives it back
+			if field.Direction != ToProvider || field.IsFile() {
+				c.add(p, CodeInvalidFieldSource, "consumer is the source of a to_provider text field, but %s is not one", f)
+			}
+			continue
+		}
+		if !field.ToConsumer() {
+			c.add(p, CodeInvalidFieldSource, "%s is a to_provider field; its source is consumer", f)
+			continue
+		}
 		named := slices.Contains(y.Named, f)
 		switch src.Kind {
 		case YieldNamed:

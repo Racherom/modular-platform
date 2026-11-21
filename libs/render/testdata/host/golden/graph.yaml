@@ -1,0 +1,14 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  cert-issuer:
+    module: cert-issuer
+  hostapp:
+    module: hostapp
+    uses:
+      public: ingress
+  ingress:
+    module: caddy
+    uses:
+      trust: cert-issuer.acme
+name: host

@@ -110,9 +110,9 @@ export interface components {
         /**
          * @description Config value name to its text, for a module instance (spec 0025). Each value is a string,
          *     never expanded; it becomes the value's default in the render, and `.env` can still
-         *     override it. A secret value, a `{uid}`, `{gid}` or `{install}/...` default and a value a
-         *     `host_mounts` source names cannot be set here. Written double quoted, keys sorted; an
-         *     empty map is left out.
+         *     override it. A secret value, a `{uid}`, `{gid}`, `{install}` or `{install}/...` default and
+         *     a value a `host_mounts` source names cannot be set here. Written double quoted, keys
+         *     sorted; an empty map is left out.
          */
         ModuleConfig: {
             [key: string]: string;
@@ -125,9 +125,10 @@ export interface components {
             [key: string]: components["schemas"]["UseBinding"];
         };
         /**
-         * @description `instance` or `instance.provide`, or an object with that text as `provider` plus named
-         *     values (field name to value) for a binding to a provisioner. Written as a string when it
-         *     carries no named values.
+         * @description `instance` or `instance.provide`, or an object with that text as `provider` plus values
+         *     (field name to value): the named values of a binding to a provisioner, or the fields a
+         *     direct binding lets the graph set (spec 0026, `graph: true` on the capability's field).
+         *     Written as a string when it carries no values.
          */
         UseBinding: string | ({
             provider: string;
@@ -194,6 +195,11 @@ export interface components {
              * @enum {string}
              */
             direction: "to_consumer" | "to_provider" | "both";
+            /**
+             * @description The graph may set this field on a binding (spec 0026); only with `direction: to_provider` and a text type. The value may hold `{field}` tokens naming text fields the provider gives.
+             * @default false
+             */
+            graph: boolean;
         };
         /** @description What a provisioner makes per binding (spec 0014). */
         Yields: {
@@ -209,8 +215,8 @@ export interface components {
             };
             job: components["schemas"]["Job"];
         };
-        /** @description `named`, `generate`, `output`, or `{admin: <field of the provisioner>}`. */
-        YieldSource: ("named" | "generate" | "output") | {
+        /** @description `named`, `generate`, `output`, `consumer` (a to_provider field the consumer gives; the job gets its value), or `{admin: <field of the provisioner>}`. */
+        YieldSource: ("named" | "generate" | "output" | "consumer") | {
             admin: string;
         };
         Job: {
@@ -259,6 +265,7 @@ export interface components {
             };
             secrets?: components["schemas"]["Secret"][];
             setup?: components["schemas"]["SetupStep"][];
+            enroll?: components["schemas"]["Enroll"];
             templates?: components["schemas"]["Template"][];
             /** @description Data folder name to its absolute path in the container. */
             volumes?: {
@@ -268,6 +275,7 @@ export interface components {
             host_mounts?: components["schemas"]["HostMount"][];
             network?: components["schemas"]["Network"];
             hardening?: components["schemas"]["Hardening"];
+            keeper?: components["schemas"]["Keeper"];
             healthcheck?: components["schemas"]["Healthcheck"];
         };
         Provide: {
@@ -289,6 +297,14 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
+            first_admin?: components["schemas"]["FirstAdmin"];
+        };
+        /** @description The provider's own first admin page (spec 0037), allowed only on a provide of the `oidc` capability. Until an admin is bound, the ingress asks the platform before it passes a request for one of the `gate` paths on to the provider. */
+        FirstAdmin: {
+            /** @description Absolute path of the first admin page on the provider's host. */
+            path: string;
+            /** @description Absolute paths the ingress guards until an admin is bound; `path` is one of them. */
+            gate: string[];
         };
         Slot: {
             capability: string;
@@ -325,7 +341,7 @@ export interface components {
          */
         FieldSource: {
             /** @enum {string} */
-            platform?: "host" | "port" | "url" | "ca" | "tls" | "consumer";
+            platform?: "host" | "port" | "url" | "ca" | "tls" | "consumer" | "gate" | "first_admin_path";
             /** @description With `platform: url`, a path to append; with `volume`, the file in the folder. */
             path?: string;
             /** @description With `platform: tls`, the value when the provider serves TLS. */
@@ -355,10 +371,41 @@ export interface components {
              * @enum {string}
              */
             from: "generate" | "ask" | "setup";
+            /**
+             * @description How a `from: generate` value is made (spec 0016): `hex` is 32 random bytes as hex,
+             *     `password` is 24 characters drawn uniformly from `A` to `Z`, `a` to `z` and `0` to `9`.
+             * @default hex
+             * @enum {string}
+             */
+            format: "hex" | "password";
+            /**
+             * @description `once`: the platform's `setup.sh` prints the value one time at a fresh install
+             *     (spec 0016). Only with `from: generate`.
+             * @enum {string}
+             */
+            show?: "once";
+            /**
+             * @description `install` (default) is a secret as before. `setup` (spec 0033) is a generated file that
+             *     lives only while the web setup is not done: it lands in `secrets/<instance>/setup/<name>`,
+             *     and every such secret of the instance is mounted as one folder at `/run/secrets/setup/`
+             *     (so a replaced or deleted file shows inside). It takes no `from`, `env` or `mount`.
+             * @default install
+             * @enum {string}
+             */
+            lifetime: "install" | "setup";
             /** @description Env var set to the secret file's path inside the container. */
             env?: string;
             /** @description Absolute path to mount it at. */
             mount?: string;
+        };
+        /**
+         * @description Marks the module as the platform's keeper (spec 0016): the one service that keeps the
+         *     platform's own containers in line with its state folder. The platform's `setup.sh` starts
+         *     a seed container that runs `command` plus `--state <dir>`. A keeper is host access.
+         */
+        Keeper: {
+            /** @description The arguments a seed runs, after the image's entrypoint. */
+            command: string[];
         };
         SetupStep: {
             name: string;
@@ -368,17 +415,51 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
+            /**
+             * @description `none` (default) runs the step with no network; `internal` joins it to the platform's `internal` network, for a step that calls another service (spec 0037).
+             * @default none
+             * @enum {string}
+             */
+            network: "none" | "internal";
             /** @description A provide; the step runs once per binding to it, in consumer instance name order. That instance name is the step's client: the exact text `{client}` in its `env` values, `command` and `entrypoint` items and `writes` names is replaced by it. A step with no `for_each` holds no `{client}`, and a `for_each` step has no `asks`. */
             for_each?: string;
             asks?: components["schemas"]["SetupAsk"][];
             reads?: components["schemas"]["SetupRead"][];
             writes?: components["schemas"]["SetupWrite"][];
         };
+        /**
+         * @description How an identity module (one that provides `oidc`) makes its first user (spec 0035). It has
+         *     the shape of a setup step, with questions the platform's setup page asks after the platform
+         *     runs. The keeper runs it on one call from the api, with the answers on standard input only,
+         *     for as long as no admin is bound. It runs with no network, so it has no `network` or
+         *     `for_each`.
+         */
+        Enroll: {
+            entrypoint?: string[];
+            command: string[];
+            /** @description Literal env for the run, never a secret; no name starts with `MP_`. */
+            env?: {
+                [key: string]: string;
+            };
+            /** @description Asked on the setup page, in this order. */
+            asks?: components["schemas"]["SetupAsk"][];
+            reads?: components["schemas"]["SetupRead"][];
+            writes?: components["schemas"]["SetupWrite"][];
+            /**
+             * @description `true`: the keeper restarts the module's containers after it moved the writes.
+             * @default false
+             */
+            restart: boolean;
+        };
         SetupAsk: {
             name: string;
             description: string;
             /** @default false */
             secret: boolean;
+            /** @description An RE2 pattern the whole answer must match. */
+            pattern?: string;
+            /** @description The fewest characters the answer may have; 1 or more. */
+            min_length?: number;
         };
         /** @description One of `{slot, field}`, `{provide, field}` or `{secret}`. A `{provide, field}` read belongs to a `for_each` step, names its own provide and a `to_provider` or `both` field, and gives that one client's file. */
         SetupRead: {
@@ -419,7 +500,7 @@ export interface components {
             /** @default false */
             create: boolean;
         };
-        /** @description An absolute path, `{config: <value>}` or `{install: <relative path>}`. */
+        /** @description An absolute path, `{config: <value>}`, `{install: <relative path>}`, or `{install: .}` for the install folder itself (platform flavor; `create` is refused on it). */
         HostPath: string | {
             config?: string;
             install?: string;

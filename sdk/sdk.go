@@ -69,7 +69,10 @@ type Declaration[C, U any] struct {
 	Values   []ValueSpec
 	Bindings []BindingSpec
 	Provides *ProvideSpec
-	New      func(*Values, *Bindings) (C, U)
+	// SetupFiles names the entry's lifetime: setup secrets; the module reads each with SetupFile
+	// from the folder MP_SETUP_DIR names, which a module that has any must set.
+	SetupFiles []string
+	New        func(*Values, *Bindings) (C, U)
 }
 
 // Module is what setup gets: the module's config and bindings, its logger, and the switches it
@@ -327,6 +330,12 @@ func loadModule[C, U any](ctx context.Context, d Declaration[C, U], o options, q
 			problems = append(problems, Problem{Value: "provides." + p.Capability + ".caller_keys_dir", Env: p.CallerKeysDirEnv, Code: load.CodeInvalidBinding, Message: err.Error()})
 		}
 	}
+	if len(d.SetupFiles) > 0 && res.Bootstrap.SetupDir == "" {
+		problems = append(problems, Problem{
+			Value: "setup", Env: load.EnvSetupDir, Code: load.CodeMissing,
+			Message: load.EnvSetupDir + " is required: the module has lifetime: setup secrets",
+		})
+	}
 	opened, openProblems := open(d.Bindings, res.Bindings)
 	problems = append(problems, openProblems...)
 	load.SortProblems(problems)
@@ -337,6 +346,7 @@ func loadModule[C, U any](ctx context.Context, d Declaration[C, U], o options, q
 	context.AfterFunc(ctx, func() { closeAll(opened) })
 
 	values := newValues(d.Values, res.Values, o)
+	values.setup = setupFiles{dir: res.Bootstrap.SetupDir, names: d.SetupFiles}
 	bindings := &Bindings{m: map[string]any{}, fields: map[string]map[string]any{}}
 	for _, b := range res.Bindings {
 		if b.Client == "" {

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DesignRouteImport } from './routes/design'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SamplesNameRouteImport } from './routes/samples.$name'
 import { Route as StacksIndexRouteImport } from './routes/stacks.index'
 import { Route as StacksNameRouteImport } from './routes/stacks.$name'
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const DesignRoute = DesignRouteImport.update({
   id: '/design',
   path: '/design',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SamplesNameRoute = SamplesNameRouteImport.update({
@@ -44,6 +50,7 @@ const StacksNameRoute = StacksNameRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
+  '/setup': typeof SetupRoute
   '/samples/$name': typeof SamplesNameRoute
   '/stacks/$name': typeof StacksNameRoute
   '/stacks/': typeof StacksIndexRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
+  '/setup': typeof SetupRoute
   '/samples/$name': typeof SamplesNameRoute
   '/stacks/$name': typeof StacksNameRoute
   '/stacks': typeof StacksIndexRoute
@@ -59,19 +67,23 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
+  '/setup': typeof SetupRoute
   '/samples/$name': typeof SamplesNameRoute
   '/stacks/$name': typeof StacksNameRoute
   '/stacks/': typeof StacksIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/design' | '/samples/$name' | '/stacks/$name' | '/stacks/'
+  fullPaths:
+    '/' | '/design' | '/setup' | '/samples/$name' | '/stacks/$name' | '/stacks/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/design' | '/samples/$name' | '/stacks/$name' | '/stacks'
+  to:
+    '/' | '/design' | '/setup' | '/samples/$name' | '/stacks/$name' | '/stacks'
   id:
     | '__root__'
     | '/'
     | '/design'
+    | '/setup'
     | '/samples/$name'
     | '/stacks/$name'
     | '/stacks/'
@@ -80,6 +92,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DesignRoute: typeof DesignRoute
+  SetupRoute: typeof SetupRoute
   SamplesNameRoute: typeof SamplesNameRoute
   StacksNameRoute: typeof StacksNameRoute
   StacksIndexRoute: typeof StacksIndexRoute
@@ -99,6 +112,13 @@ declare module '@tanstack/react-router' {
       path: '/design'
       fullPath: '/design'
       preLoaderRoute: typeof DesignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/samples/$name': {
@@ -128,6 +148,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DesignRoute: DesignRoute,
+  SetupRoute: SetupRoute,
   SamplesNameRoute: SamplesNameRoute,
   StacksNameRoute: StacksNameRoute,
   StacksIndexRoute: StacksIndexRoute,

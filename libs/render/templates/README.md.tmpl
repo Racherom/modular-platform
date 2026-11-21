@@ -52,9 +52,9 @@ On Windows, run `setup.sh` in WSL or Git Bash.
 {{- if .Builds}}
 
 ## Images built on this host
-{{if .SourceLocal}}
+{{if not .SourceNeeded}}{{else if .SourceLocal}}
 These platform images are not released yet, so no registry holds them. This zip was made by a renderer built from a local checkout of Modular Platform (source ref `local`), so no commit on GitHub holds its code. `setup.sh` builds each image first, from the checkout you name in `MP_SOURCE_PATH`, with the Dockerfile in `build/<module>/`:
-{{range .Builds}}
+{{range .ModuleBuilds}}
 - `{{.Image}}`, from `{{.Dockerfile}}`
 {{- end}}
 
@@ -65,7 +65,7 @@ MP_SOURCE_PATH=path/to/modular-platform sh setup.sh
 ```
 {{- else}}
 These platform images are not released yet, so no registry holds them. `setup.sh` builds each one first, from Modular Platform at `{{.SourceRef}}`, with the Dockerfile in `build/<module>/`:
-{{range .Builds}}
+{{range .ModuleBuilds}}
 - `{{.Image}}`, from `{{.Dockerfile}}`
 {{- end}}
 
@@ -77,6 +77,13 @@ To build from a checkout of Modular Platform on this machine instead of GitHub (
 ```sh
 MP_SOURCE_PATH=path/to/modular-platform sh setup.sh
 ```
+{{- end}}
+{{- if .JobBuilds}}
+
+Job images are built from the Dockerfile in this zip alone (it needs Docker Hub and the Alpine package mirror, not GitHub, and no `MP_SOURCE_PATH`):
+{{range .JobBuilds}}
+- `{{.Image}}`, from `{{.Dockerfile}}`
+{{- end}}
 {{- end}}
 {{- end}}
 

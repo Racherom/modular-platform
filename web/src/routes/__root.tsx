@@ -5,6 +5,7 @@ import { logout } from '../api/platform'
 import { AppShell } from '../components/AppShell'
 import m from '../components/Managed.module.css'
 import { SessionGate, useSession } from '../components/SessionGate'
+import { SetupGate } from '../components/Setup'
 import { Button } from '../components/ui/Button'
 import { EmptyState } from '../components/ui/EmptyState'
 import { mode } from '../lib/config'
@@ -23,9 +24,11 @@ export const Route = createRootRoute({
 function Root() {
   if (mode === 'managed') {
     return (
-      <SessionGate>
-        <Shell />
-      </SessionGate>
+      <SetupGate>
+        <SessionGate>
+          <Shell />
+        </SessionGate>
+      </SetupGate>
     )
   }
   return <Shell />

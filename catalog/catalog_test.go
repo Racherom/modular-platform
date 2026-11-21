@@ -8,6 +8,7 @@ import (
 
 	"github.com/racherom/modular-platform/catalog"
 	"github.com/racherom/modular-platform/libs/contract"
+	"github.com/racherom/modular-platform/libs/render"
 )
 
 // TestBuiltInCatalog runs the same checks the renderer runs at start (AC-2).
@@ -107,13 +108,66 @@ func unpinned(dockerfile string) []string {
 // frontend and base images.
 func TestPlatformDockerfilesPinned(t *testing.T) {
 	t.Parallel()
-	for _, m := range []string{"api", "deployer-docker", "renderer", "web"} {
-		data, err := fs.ReadFile(catalog.FS, "modules/"+m+"/Dockerfile")
+	files, err := fs.Glob(catalog.FS, "*/*/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) < 5 {
+		t.Fatalf("found %d catalog Dockerfiles, want the four module images and the job image", len(files))
+	}
+	for _, f := range files {
+		data, err := fs.ReadFile(catalog.FS, f)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, line := range unpinned(string(data)) {
-			t.Errorf("modules/%s/Dockerfile: %q has no @sha256: digest", m, line)
+			t.Errorf("%s: %q has no @sha256: digest", f, line)
+		}
+		for line := range strings.Lines(string(data)) {
+			if !strings.Contains(line, "apk add") {
+				continue
+			}
+			for _, pkg := range strings.Fields(line)[2:] {
+				if strings.HasPrefix(pkg, "-") || pkg == "apk" || pkg == "add" || strings.HasPrefix(pkg, "RUN") {
+					continue
+				}
+				if !strings.Contains(pkg, "=") {
+					t.Errorf("%s: apk package %q is not pinned to a version", f, pkg)
+				}
+			}
+		}
+	}
+}
+
+// TestJobImagesHaveDockerfiles covers spec 0030 AC-14g: every platform image that a capability's
+// job names has its Dockerfile at images/<name>/Dockerfile, and no folder under images/ shares a
+// name with a module (the zip path build/<name> must be unique).
+func TestJobImagesHaveDockerfiles(t *testing.T) {
+	t.Parallel()
+	c, _ := contract.LoadCatalog(catalog.FS)
+	n := 0
+	for _, k := range c.Capabilities {
+		if k.Yields == nil || !render.Unreleased(k.Yields.Job.Image) {
+			continue
+		}
+		n++
+		name, _, _ := strings.Cut(strings.TrimPrefix(k.Yields.Job.Image, render.PlatformImages), ":")
+		if _, err := fs.Stat(catalog.FS, "images/"+name+"/Dockerfile"); err != nil {
+			t.Errorf("capability %s (job image %s) has no images/%s/Dockerfile: %v", k.Name, k.Yields.Job.Image, name, err)
+		}
+	}
+	if n == 0 {
+		t.Fatal("no capability names an unreleased job image")
+	}
+	dirs, err := fs.ReadDir(catalog.FS, "images")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range dirs {
+		for _, m := range c.Modules {
+			if m.Name == d.Name() {
+				t.Errorf("images/%s shares its name with module %s", d.Name(), m.Name)
+			}
 		}
 	}
 }

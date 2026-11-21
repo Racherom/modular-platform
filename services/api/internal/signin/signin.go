@@ -1,6 +1,6 @@
 // Package signin signs the one admin in through OIDC Authorization Code with PKCE and keeps
-// their server side sessions (spec 0006). The first verified sign in with the admin email binds
-// that issuer plus subject as the admin; after that only they get a session. Tokens from the
+// their server side sessions (spec 0006). The first sign in that carries a valid setup session
+// (spec 0036) binds that issuer plus subject as the admin; after that only they get a session. Tokens from the
 // provider never reach the browser: it holds only the session cookie and the login cookies.
 package signin
 
@@ -10,15 +10,16 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"net/http"
 	"time"
 )
 
 // Reasons a sign in is refused, shown on the signed out screen.
 const (
-	ReasonNotAdmin        = "not_admin"
-	ReasonEmailUnverified = "email_unverified"
-	ReasonStateMismatch   = "state_mismatch"
-	ReasonProviderError   = "provider_error"
+	ReasonNotAdmin      = "not_admin"
+	ReasonStateMismatch = "state_mismatch"
+	ReasonProviderError = "provider_error"
+	ReasonSetupPending  = "setup_pending"
 )
 
 // ErrUnauthenticated reports a request without a valid session.
@@ -42,6 +43,18 @@ type Session struct {
 
 // IdleExpiresAt is when the session ends without another request.
 func (s Session) IdleExpiresAt(idle time.Duration) time.Time { return s.LastSeenAt.Add(idle) }
+
+// Setup is the first run setup, as the sign in sees it (spec 0036): while no admin is bound, only
+// a request with a valid setup session may sign in, and the sign in that binds the admin ends the
+// setup session.
+type Setup interface {
+	// Session reports whether the request carries a valid setup session.
+	Session(r *http.Request) bool
+	// ClearCookie is the cookie that deletes the setup cookie.
+	ClearCookie() *http.Cookie
+	// Bound is told that this process just bound the admin.
+	Bound()
+}
 
 // Store keeps sessions and the admin binding.
 type Store interface {

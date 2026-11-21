@@ -1,0 +1,183 @@
+configs:
+  ingress_Caddyfile:
+    file: ./config/ingress/Caddyfile
+name: host-login
+networks:
+  egress: {}
+  internal:
+    internal: true
+secrets:
+  cert-issuer_ca-json:
+    file: ./secrets/cert-issuer/ca-json
+  cert-issuer_intermediate-ca:
+    file: ./secrets/cert-issuer/intermediate-ca
+  cert-issuer_intermediate-ca-key:
+    file: ./secrets/cert-issuer/intermediate-ca-key
+  cert-issuer_jobs-password:
+    file: ./secrets/cert-issuer/jobs-password
+  cert-issuer_password:
+    file: ./secrets/cert-issuer/password
+  cert-issuer_root-ca:
+    file: ./secrets/cert-issuer/root-ca
+  cert-issuer_root-ca-key:
+    file: ./secrets/cert-issuer/root-ca-key
+  ingress_uses_trust_ca:
+    file: ./secrets/cert-issuer/root-ca
+services:
+  cert-issuer:
+    cap_add:
+    - NET_BIND_SERVICE
+    cap_drop:
+    - ALL
+    command:
+    - /home/step/config/ca.json
+    - --password-file=/home/step/secrets/password
+    - --insecure
+    - --acme-tls-port=8443
+    entrypoint:
+    - step-ca
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 30s
+      test:
+      - CMD
+      - step
+      - ca
+      - health
+      - --ca-url
+      - https://localhost:9000
+      - --root
+      - /home/step/certs/root_ca.crt
+      timeout: 3s
+    image: smallstep/step-ca:0.30.2
+    labels:
+      io.github.racherom.modular-platform.graph: host-login
+      io.github.racherom.modular-platform.instance: cert-issuer
+      io.github.racherom.modular-platform.module: cert-issuer
+      io.github.racherom.modular-platform.stack: platform
+    networks:
+      internal:
+        aliases:
+        - cert-issuer.host-login.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: cert-issuer_password
+      target: /home/step/secrets/password
+    - source: cert-issuer_root-ca
+      target: /home/step/certs/root_ca.crt
+    - source: cert-issuer_root-ca-key
+      target: /home/step/secrets/root_ca_key
+    - source: cert-issuer_intermediate-ca
+      target: /home/step/certs/intermediate_ca.crt
+    - source: cert-issuer_intermediate-ca-key
+      target: /home/step/secrets/intermediate_ca_key
+    - source: cert-issuer_jobs-password
+      target: /home/step/secrets/jobs-password
+    - source: cert-issuer_ca-json
+      target: /home/step/config/ca.json
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - source: ./data/cert-issuer/db
+      target: /home/step/db
+      type: bind
+  hostapp:
+    cap_drop:
+    - ALL
+    depends_on:
+      ingress:
+        condition: service_healthy
+        required: true
+    environment:
+      APP_HOST: login.example.org
+    image: example.test/hostapp:1.0.0
+    labels:
+      io.github.racherom.modular-platform.graph: host-login
+      io.github.racherom.modular-platform.instance: hostapp
+      io.github.racherom.modular-platform.module: hostapp
+      io.github.racherom.modular-platform.stack: platform
+    networks:
+      internal:
+        aliases:
+        - hostapp.host-login.internal
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+    - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  ingress:
+    cap_add:
+    - NET_BIND_SERVICE
+    cap_drop:
+    - ALL
+    configs:
+    - source: ingress_Caddyfile
+      target: /etc/caddy/Caddyfile
+    depends_on:
+      cert-issuer:
+        condition: service_healthy
+        required: true
+    environment:
+      INGRESS_BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
+      INGRESS_DOMAIN: ${MP_INGRESS__DOMAIN}
+      INGRESS_HTTP_PORT: ${MP_INGRESS__HTTP_PORT:-80}
+      INGRESS_HTTPS_PORT: ${MP_INGRESS__HTTPS_PORT:-443}
+      INGRESS_ORIGIN: ${MP_INGRESS__ORIGIN}
+      MP_ACME_EMAIL: ${MP_INGRESS__ACME_EMAIL:-}
+      MP_TLS_MODE: ${MP_INGRESS__TLS_MODE:-internal}
+    healthcheck:
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      test:
+      - CMD
+      - wget
+      - -q
+      - -O
+      - /dev/null
+      - http://127.0.0.1:2019/config/
+      timeout: 3s
+    image: caddy:2.11.7-alpine
+    labels:
+      io.github.racherom.modular-platform.graph: host-login
+      io.github.racherom.modular-platform.instance: ingress
+      io.github.racherom.modular-platform.module: caddy
+      io.github.racherom.modular-platform.stack: platform
+    networks:
+      egress:
+        aliases:
+        - ingress.host-login.internal
+        - ${MP_INGRESS__DOMAIN}
+        - login.example.org
+      internal:
+        aliases:
+        - ingress.host-login.internal
+        - ${MP_INGRESS__DOMAIN}
+        - login.example.org
+    ports:
+    - published: ${MP_INGRESS__HTTPS_PORT:-443}
+      target: 443
+    - published: ${MP_INGRESS__HTTP_PORT:-80}
+      target: 80
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: ingress_uses_trust_ca
+      target: /etc/caddy/trust/root.crt
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+    volumes:
+    - source: ./data/ingress/config
+      target: /config
+      type: bind
+    - source: ./data/ingress/data
+      target: /data
+      type: bind

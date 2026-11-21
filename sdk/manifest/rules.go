@@ -454,10 +454,11 @@ func (c *checker) value(path string, v Value) {
 }
 
 // InstallToken reports whether a default is one the render fills at install time (spec 0013):
-// exactly {uid} or {gid} (the setup user), or a path starting with {install}/ (the platform's
-// install folder). Its own rules apply to the value it becomes, not to the token.
+// exactly {uid} or {gid} (the setup user), or the platform's install folder: {install} itself
+// (spec 0016) or a path starting with {install}/. Its own rules apply to the value it becomes,
+// not to the token.
 func InstallToken(s string) bool {
-	return s == "{uid}" || s == "{gid}" || strings.HasPrefix(s, "{install}/")
+	return s == "{uid}" || s == "{gid}" || s == "{install}" || strings.HasPrefix(s, "{install}/")
 }
 
 func (c *checker) enumValues(path string, values []string) bool {

@@ -9,29 +9,26 @@ Every file here is rendered from `graph.yaml`, the platform's own graph: each pl
 ## Install
 
 1. Unzip `modular-platform-<version>.zip` where the platform should live, for example `/opt/modular-platform`, and open that folder.
-2. Run `sh setup.sh`. It asks five things, in this order:
+2. Run `sh setup.sh`. It asks two things, in this order:
    - the domain the platform answers on (it must contain a dot, like `platform.localhost`),
-   - the origin your browser sees (press Enter for `https://<domain>`),
-   - the admin email,
-   - the admin user name,
-   - the admin password (it is not shown as you type).
+   - the origin your browser sees (press Enter for `https://<domain>`).
 
-   It writes `.env` and creates every secret in `secrets/` and every data folder in `data/`. It never prints a secret. Running it again changes no file that exists and asks nothing it asked before. To answer without a terminal, pipe the answers in, one per line, in the order above.
+   It writes `.env`, creates every secret in `secrets/` and every data folder in `data/`, and prints the setup code once. Write it down, or read it later from `secrets/api/setup/code`; the file stays until the setup is done, so read the file and not your terminal scrollback. Apart from the setup code, it never prints a secret. Running it again changes no file that exists and asks nothing it asked before. To answer without a terminal, pipe the answers in, one per line, in the order above.
 3. Run `docker compose up -d --wait`.
-4. Open the origin and sign in.
+4. Open the origin, enter the setup code, and make the admin account (see *Sign in*).
 {{- if .Builds}}
 
 ### Images built on this host
-{{if .SourceLocal}}
+{{if not .SourceNeeded}}{{else if .SourceLocal}}
 This version's platform images are not released yet, so no registry holds them. This folder was rendered from a local checkout of Modular Platform (source ref `local`), so no commit on GitHub holds its code. Before it asks anything, `setup.sh` builds each image from the checkout you name in `MP_SOURCE_PATH`, with the Dockerfile in `build/<module>/`:
-{{range .Builds}}
+{{range .ModuleBuilds}}
 - `{{.Image}}`, from `{{.Dockerfile}}`
 {{- end}}
 
 The build needs Docker 23 or newer with BuildKit (`docker buildx`), access to Docker Hub, and a few minutes. Without `MP_SOURCE_PATH`, `setup.sh` stops before it makes any file: run `MP_SOURCE_PATH=path/to/modular-platform sh setup.sh`. These services carry `pull_policy: never`, so the platform never tries to pull them. When a rerun of `setup.sh` builds different code, the platform sees new images and hands over to them, as on an upgrade.
 {{- else}}
 This version's platform images are not released yet, so no registry holds them. Before it asks anything, `setup.sh` builds each one from Modular Platform at `{{.SourceRef}}`, with the Dockerfile in `build/<module>/`:
-{{range .Builds}}
+{{range .ModuleBuilds}}
 - `{{.Image}}`, from `{{.Dockerfile}}`
 {{- end}}
 
@@ -39,6 +36,13 @@ The build needs Docker 23 or newer with BuildKit (`docker buildx`), access to Gi
 {{- if .SourceMoves}} `{{.SourceRef}}` is a branch, not a commit, so a later run of `setup.sh` builds whatever the branch holds then.{{end}} When a rerun of `setup.sh` builds different code, the platform sees new images and hands over to them, as on an upgrade.
 
 To build from a checkout of Modular Platform on this machine instead of GitHub, point `MP_SOURCE_PATH` at it: `MP_SOURCE_PATH=path/to/modular-platform sh setup.sh`.
+{{- end}}
+{{- if .JobBuilds}}
+
+Job images are built from the Dockerfile in this zip alone (it needs Docker Hub and the Alpine package mirror, not GitHub, and no `MP_SOURCE_PATH`):
+{{range .JobBuilds}}
+- `{{.Image}}`, from `{{.Dockerfile}}`
+{{- end}}
 {{- end}}
 {{- end}}
 
@@ -48,21 +52,59 @@ The settings of the ingress, the editor and the identity provider are in `.env`;
 
 ## Sign in
 
-Choose *Sign in* and sign in with the admin user name and password you gave `setup.sh`.
+The bundled identity provider is Pocket ID. It signs people in with passkeys only, so there is no password to type or to lose. You need a device that can make a passkey (a phone, a security key, or a browser or password manager that stores them).
 
-The first sign in whose email equals the admin email (`MP_AUTHELIA__ADMIN_EMAIL` in `.env`) and is verified becomes the admin. From then on only that account gets in. Nobody else gets a session, even with a valid account at the identity provider.
+The first visit makes the admin account:
 
-A session ends after `MP_SESSION_IDLE` without a request (default 1 hour), or `MP_SESSION_MAX` after sign in (default 12 hours), whichever comes first. Both are in `config/api.env`.
+1. Open the origin. The page asks for the setup code that `setup.sh` printed. A code works once, and more than ten tries in a minute from one address are refused.
+2. Choose *Create your admin account*. It opens Pocket ID's own page on the auth host. Make the account there and register a passkey. Pocket ID has no way back to the platform, so open the origin again yourself afterwards.
+3. The setup page now says *Sign in to finish the setup*. Sign in with your passkey. That account becomes the admin, and the setup code and its files are deleted.
 
-*Sign out* ends your session at once, and the next sign in asks for your password again. The bundled identity provider (Authelia) has no sign out of its own, so its own session cookie stays in the browser until it expires. On a shared computer, close the browser after you sign out.
+Pocket ID's page for the first account is open to anyone who reaches it until an admin exists, so the ingress answers 403 for it unless the request comes from the setup page. Make the admin account soon after `up`.
+
+From then on only the admin gets a session at the platform. Nobody else gets in, even with a valid account at Pocket ID.
+
+A session ends after `MP_SESSION_IDLE` without a request (default 1 hour), or `MP_SESSION_MAX` after sign in (default 12 hours), whichever comes first. Both are in `config/api.env`. *Sign out* ends your session at once.
+
+### The auth host
+
+Pocket ID answers on its own host name, `auth.<domain>`, never on a path of the main host. Give it its own DNS name: a record for `auth.<domain>` that points to this host, next to the record for `<domain>`. With `platform.localhost`, browsers already resolve `auth.platform.localhost` to this machine. With `MP_INGRESS__TLS_MODE=acme`, the certificate authority must reach both names, so make the record before you run `docker compose up`.
+
+### Who may make an account
+
+Only the admin can make accounts: other people need an invitation. To change this, set `MP_POCKET_ID__SIGNUP` in `.env` to `withToken` (people with a sign up link) or `open` (anyone), run `sh setup.sh` again, which checks the value, then `docker compose up -d`. The default is `disabled`. Any other value stops `setup.sh`. This only decides who may make an account at Pocket ID; the platform still lets in only the admin.
+
+### Lost the setup code, before an admin exists
+
+Nothing is deployed yet, so start the setup again. Delete the files in `secrets/api/setup/` (the files, never the folder), then run `sh setup.sh`. It makes a new code and prints it. `api` reads the files at every call, so it needs no restart.
+
+### Lost the passkey
+
+Pocket ID prints a one hour sign in link for an account:
+
+```sh
+docker compose exec pocket-id /app/pocket-id one-time-access-token <user name or email>
+```
+
+Open the link it prints (`https://auth.<domain>/lc/<token>`), then register a new passkey. The same command helps if you stopped after making the account and before registering a passkey.
+
+### The static API key
+
+`secrets/pocket-id/static-api-key` is Pocket ID's admin API key. The platform needs it on every `docker compose up`: a short job per client of the platform (the service `pocket-id_provision_api_oidc`, and `pocket-id_revoke_oidc`) uses it to register the platform's own client at Pocket ID. So the file stays after the setup, and every client job mounts it. Anyone who reads it has full admin rights at Pocket ID, so treat it like the CA password: keep `secrets/` private and out of backups you share.
+
+### The client jobs
+
+The jobs above run before `api` starts. When one fails, `api` and the setup page do not start, and `docker compose logs pocket-id_provision_api_oidc` is the only place that says why (the log names the client, never a secret).
+
+A client the platform made carries a marker, and `up` deletes it when its consumer leaves the graph. Make clients you create by hand without that marker, and the platform leaves them alone. A job also removes a secret you added by hand to a client that carries the marker. A client that already exists under the same name without the marker makes the job fail and name it: delete that client in Pocket ID, or name another client id in the graph.
 
 ## Change the admin
 
-The admin is bound once. Changing the admin email alone does nothing. To bind a new admin:
+The admin is bound once. To bind a new admin:
 
-1. Change `MP_AUTHELIA__ADMIN_EMAIL` in `.env` if the admin email changes, then run `docker compose up -d`.
-2. Run `docker compose exec api /api admin reset`. It deletes the admin binding and every session and prints one line. Open screens sign out within 30 seconds.
-3. Sign in with the account whose verified email is the new admin email. It becomes the admin.
+1. Run `docker compose exec api /api admin reset`. It deletes the admin binding and every session. Open screens sign out within 30 seconds.
+2. Remove `secrets/api/setup/.setup-done`, run `sh setup.sh` again, which prints a new setup code, then run `docker compose restart api`.
+3. Open the origin and go through *Sign in* again. Pocket ID keeps its accounts, so you can use an account that exists.
 
 ## Deploy a stack
 
@@ -89,7 +131,7 @@ The `deployer-docker` service holds the Docker socket and runs as root. That giv
 - It never joins a deployed stack to the platform's own networks.
 - No route from the internet reaches it. Only `api` can call it, with a token and the signed in admin's identity.
 
-Anyone who controls the admin account can run containers on this host. Keep the admin password strong.
+Anyone who controls the admin account can run containers on this host. Keep the admin's passkey safe, and register more than one.
 
 ## Back up
 

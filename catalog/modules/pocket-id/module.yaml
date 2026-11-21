@@ -1,0 +1,88 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: pocket-id
+description: The platform's identity provider, Pocket ID; the admin makes the first account on its own page and signs in with a passkey.
+image: ghcr.io/pocket-id/pocket-id:v2.19.3
+# the image has a shell, so the entry builds the Postgres password file there: the password
+# never sits in the Compose file (spec 0037, soft gate on the connection string)
+entrypoint: [sh, -c]
+command:
+  - |
+    set -eu
+    printf '%s:%s:%s:%s:%s\n' "$DB_HOST" "$DB_PORT" "$DB_NAME" "$DB_USER" "$(cat "$DB_PASSWORD_FILE")" > /tmp/pgpass
+    chmod 0600 /tmp/pgpass
+    query="sslmode=$DB_SSLMODE"
+    if [ -n "${DB_CA_FILE:-}" ]; then query="$query&sslrootcert=$DB_CA_FILE"; fi
+    printf '%s' "postgres://$DB_USER@$DB_HOST:$DB_PORT/$DB_NAME?$query" > /tmp/db-connection-string
+    exec /app/pocket-id
+healthcheck:
+  test: ["CMD", "/app/pocket-id", "healthcheck"]
+  interval: 10s
+  timeout: 3s
+  retries: 10
+  start_period: 30s
+provides:
+  oidc:
+    # a provisioner: a job per binding registers the client at the provider (spec 0037, task 5)
+    capability: oidc-provisioner
+    version: "1.0"
+    port: 1411
+    # the provider's own first admin page, guarded by the ingress until an admin is bound
+    first_admin:
+      path: /setup
+      gate: [/setup, /signup/setup, /api/signup/setup]
+    fields:
+      url: {platform: url}
+      api_key: {secret: static-api-key}
+      issuer: {uses: public, format: "https://{host}"}
+      origin: {uses: public, field: origin}
+      base_path: {uses: public, field: base_path}
+      ca: {uses: public, field: ca}
+      first_admin_path: {platform: first_admin_path}
+  site:
+    capability: http
+    version: "1.0"
+    port: 1411
+    fields:
+      host: {platform: host}
+      port: {platform: port}
+      url: {platform: url}
+uses:
+  public:
+    capability: http-ingress
+    fields:
+      host: {value: "auth.{domain}"}
+      upstream: {platform: url, provide: site}
+      gate: {platform: gate, provide: oidc}
+  db:
+    capability: postgresql
+    env:
+      password: DB_PASSWORD_FILE
+      host: DB_HOST
+      port: DB_PORT
+      database: DB_NAME
+      user: DB_USER
+      sslmode: DB_SSLMODE
+      ca: DB_CA_FILE
+environment:
+  APP_URL: "https://{public.host}"
+  PGPASSFILE: /tmp/pgpass
+  # a file, not an export in the script: `docker compose exec` gets only this environment,
+  # so the lost passkey command (README) also opens Postgres, not an empty SQLite file
+  DB_CONNECTION_STRING_FILE: /tmp/db-connection-string
+  FILE_BACKEND: database
+  TRUST_PROXY: "true"
+  UI_CONFIG_DISABLED: "true"
+  ANALYTICS_DISABLED: "true"
+config:
+  signup:
+    env: ALLOW_USER_SIGNUPS
+    type: enum
+    values: [disabled, withToken, open]
+    default: disabled
+    description: Who may make an account without the admin; disabled means an invitation is needed.
+secrets:
+  - {name: encryption-key, env: ENCRYPTION_KEY_FILE, description: Key that encrypts the provider's stored secrets.}
+  - {name: static-api-key, env: STATIC_API_KEY_FILE, description: "Admin API key of the provider, for the client step."}
+hardening:
+  tmpfs: [/tmp, /app/data]

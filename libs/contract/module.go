@@ -68,8 +68,10 @@ func CheckModule(file string, data []byte, caps map[string]Capability) (Module, 
 	mc.network()
 	mc.volumes()
 	mc.hostAccess()
+	mc.keeper()
 	mc.templates()
 	mc.setup()
+	mc.enroll()
 	if m.Hardening != nil {
 		for i, t := range m.Hardening.Tmpfs {
 			mc.mount(fmt.Sprintf("hardening.tmpfs.%d", i), t)
@@ -133,14 +135,75 @@ func (c *moduleChecker) secrets() {
 		default:
 			c.add(p+".from", CodeInvalidRule, "from %q is not generate, ask or setup", s.From)
 		}
-		if s.Env == "" && s.Mount == "" {
+		setupLife := s.Lifetime == SecretLifetimeSetup
+		switch {
+		case s.Lifetime != "" && !s.Lifetime.Valid():
+			c.add(p+".lifetime", CodeInvalidSecret, "lifetime %q is not install or setup", s.Lifetime)
+		case setupLife:
+			c.setupLifetime(p, s, folder)
+		case s.Env == "" && s.Mount == "":
 			c.add(p, CodeMissingField, "a secret needs env, mount or both")
 		}
-		if folder && (s.From != SecretFromSetup || s.Mount == "" || s.Env != "") {
+		if folder && !setupLife && (s.From != SecretFromSetup || s.Mount == "" || s.Env != "") {
 			c.add(p, CodeInvalidRule, "a secret folder needs from: setup and a mount, and takes no env")
 		}
 		if s.Mount != "" {
 			c.mount(p+".mount", s.Mount)
+		}
+		c.generated(p, s)
+	}
+}
+
+// setupLifetime checks a lifetime: setup secret (spec 0033): a generated file that lives only
+// while the web setup is not done. The platform mounts every such secret of the instance as one
+// folder, so the secret has no from, env, mount or folder name of its own.
+func (c *moduleChecker) setupLifetime(p string, s Secret, folder bool) {
+	const why = "a lifetime: setup secret is generated, so it takes no "
+	switch {
+	case folder:
+		c.add(p, CodeInvalidSecret, "a lifetime: setup secret is a file, not a folder")
+	case s.From != "":
+		c.add(p+".from", CodeInvalidSecret, why+"from")
+	}
+	if s.Env != "" {
+		c.add(p+".env", CodeInvalidSecret, why+"env: the platform mounts the setup files as one folder")
+	}
+	if s.Mount != "" {
+		c.add(p+".mount", CodeInvalidSecret, why+"mount: the platform mounts the setup files as one folder")
+	}
+}
+
+// generated checks format and show (spec 0016): both apply only to a from: generate secret,
+// format is hex or password, and show is once.
+func (c *moduleChecker) generated(p string, s Secret) {
+	generated := s.From == "" || s.From == SecretFromGenerate
+	switch {
+	case s.Format != "" && !s.Format.Valid():
+		c.add(p+".format", CodeInvalidSecret, "format %q is not hex or password", s.Format)
+	case s.Format != "" && !generated:
+		c.add(p+".format", CodeInvalidSecret, "format applies only to a secret with from: generate")
+	}
+	switch {
+	case s.Show != "" && !s.Show.Valid():
+		c.add(p+".show", CodeInvalidSecret, "show %q is not once", s.Show)
+	case s.Show != "" && !generated:
+		c.add(p+".show", CodeInvalidSecret, "show: once applies only to a secret with from: generate")
+	}
+}
+
+// keeper checks the keeper field (spec 0016): a seed runs its command, so it names at least one
+// argument and no argument is empty.
+func (c *moduleChecker) keeper() {
+	k := c.m.Keeper
+	if k == nil {
+		return
+	}
+	if len(k.Command) == 0 {
+		c.add("keeper.command", CodeMissingField, "a keeper names the command a seed runs, with at least one argument")
+	}
+	for i, a := range k.Command {
+		if strings.TrimSpace(a) == "" {
+			c.add(fmt.Sprintf("keeper.command.%d", i), CodeInvalidRule, "an argument of the keeper command is empty")
 		}
 	}
 }
@@ -158,6 +221,7 @@ func (c *moduleChecker) provide(p, name string, pr Provide) {
 	if c.m.Runtime != Sdk && (pr.Port < 1 || pr.Port > 65535) {
 		c.add(p+".port", CodeInvalidPort, "port %d is not between 1 and 65535", pr.Port)
 	}
+	c.firstAdmin(p, pr)
 	k, known := c.caps[pr.Capability]
 	if !known {
 		return // sdk/manifest reports unknown_capability
@@ -178,6 +242,9 @@ func (c *moduleChecker) provide(p, name string, pr Provide) {
 			c.add(fp, CodeInvalidFieldSource, "%s is a to_provider field; the consumer gives its value", f)
 		default:
 			c.source(fp, k, f, field, pr.Fields[f])
+			if pr.Fields[f].Platform == FieldSourcePlatformFirstAdminPath {
+				c.want(fp, pr.FirstAdmin.Path != "", "platform: first_admin_path needs the provide to have a first_admin block")
+			}
 		}
 	}
 	if pr.Auth == BindingToken {
@@ -186,6 +253,64 @@ func (c *moduleChecker) provide(p, name string, pr Provide) {
 			c.add(p+".auth", CodeInvalidFieldSource, "auth: binding-token needs a field token of direction both with source {generate: true}")
 		}
 	}
+}
+
+// firstAdmin checks the first_admin block of a provide (spec 0037): only on an oidc provide (or one
+// of a provisioner that yields oidc), a
+// clean absolute path and at least one clean absolute gate path, and the page path is gated.
+func (c *moduleChecker) firstAdmin(p string, pr Provide) {
+	fa := pr.FirstAdmin
+	if fa.Path == "" && len(fa.Gate) == 0 {
+		return // no block
+	}
+	p += ".first_admin"
+	if !c.providesOIDC(pr) {
+		c.add(p, CodeInvalidRule, "first_admin belongs to a provide of the oidc capability, or of a provisioner that yields it")
+	}
+	if !cleanURLPath(fa.Path) {
+		c.add(p+".path", CodeInvalidRule, "path %q is not a clean absolute path like /setup", fa.Path)
+	}
+	if len(fa.Gate) == 0 {
+		c.add(p+".gate", CodeMissingField, "first_admin needs at least one gate path")
+	}
+	for i, g := range fa.Gate {
+		if !cleanURLPath(g) {
+			c.add(fmt.Sprintf("%s.gate.%d", p, i), CodeInvalidRule, "gate path %q is not a clean absolute path like /setup", g)
+		}
+	}
+	if cleanURLPath(fa.Path) && len(fa.Gate) > 0 && !slices.Contains(fa.Gate, fa.Path) {
+		c.add(p+".gate", CodeInvalidRule, "gate must list the page path %s", fa.Path)
+	}
+}
+
+// providesOIDC reports whether pr makes oidc clients: it provides oidc, or it provides a
+// provisioner whose yields name oidc (spec 0037).
+func (c *moduleChecker) providesOIDC(pr Provide) bool {
+	if pr.Capability == "oidc" {
+		return true
+	}
+	y := c.caps[pr.Capability].Yields
+	return y != nil && y.Capability == "oidc"
+}
+
+// cleanURLPath reports whether s is an absolute URL path with no query, fragment, dot segment,
+// empty segment, trailing slash (except "/") or character a Caddy matcher would read as a pattern.
+func cleanURLPath(s string) bool {
+	if !strings.HasPrefix(s, "/") || s == "/" || strings.HasSuffix(s, "/") {
+		return false
+	}
+	for seg := range strings.SplitSeq(s[1:], "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+		for _, r := range seg {
+			plain := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-._~", r)
+			if !plain {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // source checks a provider side field source: exactly one kind, the keys that kind takes, and a
@@ -219,8 +344,12 @@ func (c *moduleChecker) source(p string, k Capability, name string, field Capabi
 			c.want(p, text && s.On != "" && s.Off != "", "platform: tls needs on and off text values")
 			c.value(p, name, field, s.On)
 			c.value(p, name, field, s.Off)
+		case FieldSourcePlatformGate:
+			c.add(p, CodeInvalidFieldSource, "platform: gate is a consumer's source for a to_provider field")
+		case FieldSourcePlatformFirstAdminPath:
+			c.want(p, text && field.Optional, "platform: first_admin_path fills an optional text field")
 		default:
-			c.add(p, CodeInvalidFieldSource, "platform %q is not host, port, url, ca, tls or consumer", s.Platform)
+			c.add(p, CodeInvalidFieldSource, "platform %q is not host, port, url, ca, tls, consumer, gate or first_admin_path", s.Platform)
 		}
 		if s.Path != "" {
 			c.want(p, s.Platform == FieldSourcePlatformUrl && strings.HasPrefix(s.Path, "/"), "path goes with platform: url and starts with /")
@@ -231,7 +360,11 @@ func (c *moduleChecker) source(p string, k Capability, name string, field Capabi
 	case "value":
 		extra("value")
 		c.want(p, text, "value gives text, but %s is a %s", name, field.Type)
-		c.value(p, name, field, s.Value)
+		if field.Graph {
+			c.graphValue(p, name, field, s.Value)
+		} else {
+			c.value(p, name, field, s.Value)
+		}
 	case "config":
 		extra("config", "format")
 		c.want(p, text, "config gives text, but %s is a %s", name, field.Type)
@@ -285,6 +418,15 @@ func (c *moduleChecker) want(p string, ok bool, format string, args ...any) bool
 // value checks a literal against the field's type and rules.
 func (c *moduleChecker) value(p, name string, field CapabilityField, v string) {
 	if msg := FieldValueProblem(field, v); msg != "" {
+		c.add(p, CodeInvalidFieldSource, "%s: %s", name, msg)
+	}
+}
+
+// graphValue checks a literal of a graph field: each {field} token must name a text field of the
+// slot's capability that reaches the consumer, and the value with the tokens filled in must meet
+// the field's rules (spec 0026).
+func (c *moduleChecker) graphValue(p, name string, field CapabilityField, v string) {
+	if msg := FieldValueProblem(field, TokenSample(v)); msg != "" {
 		c.add(p, CodeInvalidFieldSource, "%s: %s", name, msg)
 	}
 }
@@ -420,13 +562,20 @@ func (c *moduleChecker) consumerSource(p, name string, field CapabilityField, s 
 		c.want(p, c.secret(s.Secret), "secret %q is not declared", s.Secret)
 	case s.Value != "" && len(keys) == 1:
 		c.want(p, !field.IsFile(), "value gives text, but %s is a %s", name, field.Type)
-		c.value(p, name, field, s.Value)
+		if field.Graph {
+			c.graphValue(p, name, field, s.Value)
+		} else {
+			c.value(p, name, field, s.Value)
+		}
 	case s.Platform != "" && s.Provide != "" && len(keys) == 2:
 		c.want(p, !field.IsFile(), "platform gives text, but %s is a %s", name, field.Type)
-		c.want(p, slices.Contains([]FieldSourcePlatform{FieldSourcePlatformUrl, FieldSourcePlatformHost, FieldSourcePlatformPort}, s.Platform),
-			"a consumer's platform source is url, host or port")
-		_, ok := c.m.Provides[s.Provide]
+		c.want(p, slices.Contains([]FieldSourcePlatform{FieldSourcePlatformUrl, FieldSourcePlatformHost, FieldSourcePlatformPort, FieldSourcePlatformGate}, s.Platform),
+			"a consumer's platform source is url, host, port or gate")
+		pr, ok := c.m.Provides[s.Provide]
 		c.want(p, ok, "provide %q is not declared", s.Provide)
+		if ok && s.Platform == FieldSourcePlatformGate {
+			c.want(p, len(pr.FirstAdmin.Gate) > 0, "platform: gate needs provide %q to have a first_admin block", s.Provide)
+		}
 	default:
 		c.add(p, CodeInvalidFieldSource, "a consumer source is {secret}, {value} or {platform, provide}")
 	}
@@ -463,6 +612,9 @@ func (c *moduleChecker) setup() {
 		names[s.Name] = true
 		if len(s.Command) == 0 {
 			c.add(p+".command", CodeInvalidSetupStep, "a setup step needs a command")
+		}
+		if s.Network != "" && !s.Network.Valid() {
+			c.add(p+".network", CodeInvalidSetupStep, "network %q is not none or internal", s.Network)
 		}
 		if s.ForEach != "" {
 			if _, ok := c.m.Provides[s.ForEach]; !ok {
@@ -612,5 +764,90 @@ func (c *checker) healthcheck(h Healthcheck) {
 	}
 	if h.Retries != nil && *h.Retries < 1 {
 		c.add("healthcheck.retries", CodeInvalidRetries, "retries must be 1 or more")
+	}
+}
+
+// enroll checks the enroll block (spec 0035): only an identity module (one that provides oidc)
+// has one, it runs once, so it has no for_each, and its asks and writes are well formed.
+func (c *moduleChecker) enroll() {
+	e := c.m.Enroll
+	if e == nil {
+		return
+	}
+	const p = "enroll"
+	if !c.providesCapability("oidc") {
+		c.add(p, CodeInvalidEnroll, "enroll belongs to a module that provides oidc")
+	}
+	if len(e.Command) == 0 {
+		c.add(p+".command", CodeInvalidEnroll, "an enroll needs a command")
+	}
+	for _, k := range sortedKeys(e.Env) {
+		if strings.HasPrefix(k, "MP_") {
+			c.add(p+".env."+k, CodeInvalidEnroll, "env names starting with MP_ belong to the platform")
+		}
+	}
+	c.enrollAsks(p, e.Asks)
+	c.enrollReads(p, e.Reads)
+	c.enrollWrites(p, e.Writes)
+}
+
+// providesCapability reports whether any provide of the entry offers the capability.
+func (c *moduleChecker) providesCapability(capability string) bool {
+	for _, pr := range c.m.Provides {
+		if pr.Capability == capability {
+			return true
+		}
+	}
+	return false
+}
+
+// enrollAsks checks the questions: a name once each, a pattern that compiles (RE2), a min_length
+// of 1 or more.
+func (c *moduleChecker) enrollAsks(p string, asks []SetupAsk) {
+	seen := map[string]bool{}
+	for i, a := range asks {
+		ap := fmt.Sprintf("%s.asks.%d", p, i)
+		c.name(ap+".name", a.Name)
+		if seen[a.Name] && a.Name != "" {
+			c.add(ap+".name", CodeInvalidEnroll, "ask %q is declared twice", a.Name)
+		}
+		seen[a.Name] = true
+		c.description(ap+".description", a.Description)
+		if a.Pattern != "" {
+			if _, err := regexp.Compile(a.Pattern); err != nil {
+				c.add(ap+".pattern", CodeInvalidEnroll, "pattern %q is not an RE2 pattern: %s", a.Pattern, oneLine(err))
+			}
+		}
+		if a.MinLength != nil && *a.MinLength < 1 {
+			c.add(ap+".min_length", CodeInvalidEnroll, "min_length must be 1 or more")
+		}
+	}
+}
+
+// enrollReads checks the reads: an enroll runs once, so a {provide, field} read (one file per
+// client) does not belong to it.
+func (c *moduleChecker) enrollReads(p string, reads []SetupRead) {
+	for i, r := range reads {
+		if r.Provide != "" {
+			c.add(fmt.Sprintf("%s.reads.%d.provide", p, i), CodeInvalidEnroll, "an enroll has no for_each, so it takes no {provide} read")
+		}
+	}
+}
+
+// enrollWrites checks the writes: each lands in a from: setup secret of the module, either the
+// secret itself or a file inside its folder (users/users.yml in the folder users/).
+func (c *moduleChecker) enrollWrites(p string, writes []SetupWrite) {
+	for i, w := range writes {
+		wp := fmt.Sprintf("%s.writes.%d.name", p, i)
+		secret := w.Name
+		if first, _, nested := strings.Cut(w.Name, "/"); nested {
+			secret = first + "/"
+		}
+		if !slices.ContainsFunc(c.m.Secrets, func(s Secret) bool { return s.Name == secret && s.From == SecretFromSetup }) {
+			c.add(wp, CodeInvalidEnroll, "write %q names no secret of the module with from: setup", w.Name)
+		}
+		if strings.Contains(w.Name, clientToken) {
+			c.add(wp, CodeInvalidEnroll, "an enroll has no for_each, so a write takes no {client}")
+		}
 	}
 }

@@ -2,7 +2,9 @@ package check_test
 
 import (
 	"os"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/racherom/modular-platform/libs/check"
@@ -19,7 +21,7 @@ const platformGraph = "../../deploy/managed/graph.yaml"
 func TestPlatformGraph(t *testing.T) {
 	t.Parallel()
 	catalog := testCatalog(t)
-	for _, name := range []string{"api", "authelia", "caddy", "cert-issuer", "deployer-docker", "postgres", "renderer", "web"} {
+	for _, name := range []string{"api", "caddy", "cert-issuer", "deployer-docker", "pocket-id", "postgres", "renderer", "web"} {
 		if !slices.ContainsFunc(catalog.Modules, func(m contract.Module) bool { return m.Name == name }) {
 			t.Errorf("the built in catalog has no module %s", name)
 		}
@@ -48,10 +50,10 @@ func TestPlatformGraph(t *testing.T) {
 	}
 	want := []string{
 		"api.acme cert-issuer.acme", "api.deploy-target deployer-docker.deploy", "api.main-db postgres.server",
-		"api.oidc authelia.oidc", "api.public ingress.public", "api.renderer renderer.renderer",
-		"authelia.db postgres.server", "authelia.public ingress.public",
+		"api.oidc pocket-id.oidc", "api.public ingress.public", "api.renderer renderer.renderer",
 		"deployer-docker.acme cert-issuer.acme", "deployer-docker.ingress ingress.public",
 		"ingress.trust cert-issuer.acme",
+		"pocket-id.db postgres.server", "pocket-id.public ingress.public",
 		"postgres.tls cert-issuer.certs",
 		"renderer.acme cert-issuer.acme", "renderer.ingress ingress.public",
 		"web.public ingress.public",
@@ -62,5 +64,49 @@ func TestPlatformGraph(t *testing.T) {
 	// the graph file is in canonical form, so the editor and the render write it back unchanged
 	if text, err := contract.MarshalGraph(g); err != nil || string(text) != string(data) {
 		t.Errorf("deploy/managed/graph.yaml is not in canonical form:\n%s", text)
+	}
+}
+
+// TestOIDCCapability covers the changes of spec 0037, task 5b (AC-9): the oidc capability has no
+// admin_email and a to_provider logout_path, its client_id pattern takes the default id of the
+// client step, and a consumer that leaves out logout_path is refused.
+func TestOIDCCapability(t *testing.T) {
+	t.Parallel()
+	catalog := testCatalog(t)
+	var oidc contract.Capability
+	for _, k := range catalog.Capabilities {
+		if k.Name == "oidc" {
+			oidc = k
+		}
+	}
+	if _, ok := oidc.Fields["admin_email"]; ok {
+		t.Error("oidc still has the field admin_email")
+	}
+	if f, ok := oidc.Fields["logout_path"]; !ok || f.Direction != contract.ToProvider {
+		t.Errorf("oidc logout_path = %+v, want a to_provider field", f)
+	}
+	re := regexp.MustCompile(`^(?:` + oidc.Fields["client_id"].Pattern + `)$`)
+	for id, ok := range map[string]bool{"api_oidc": true, "my-app": true, "Api": false, "_x": false, "a b": false} {
+		if re.MatchString(id) != ok {
+			t.Errorf("client_id pattern on %q: got %v, want %v", id, !ok, ok)
+		}
+	}
+	data, err := os.ReadFile("../../catalog/modules/api/module.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps := map[string]contract.Capability{}
+	for _, k := range catalog.Capabilities {
+		caps[k.Name] = k
+	}
+	without := strings.Replace(string(data), "      logout_path: {value: /}\n", "", 1)
+	if without == string(data) {
+		t.Fatal("the api entry has no logout_path to remove")
+	}
+	_, problems := contract.CheckModule("modules/api/module.yaml", []byte(without), caps)
+	if !slices.ContainsFunc(problems, func(p contract.CatalogProblem) bool {
+		return p.Code == contract.CodeMissingFieldSource && p.Path == "uses.oidc.fields.logout_path"
+	}) {
+		t.Errorf("an api entry without logout_path: problems %v", problems)
 	}
 }

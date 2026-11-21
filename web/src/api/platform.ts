@@ -11,6 +11,8 @@ export type Operation = components['schemas']['Operation']
 export type ModuleState = components['schemas']['ModuleState']
 export type Review = components['schemas']['Review']
 export type PlacedInput = components['schemas']['PlacedInput']
+export type SetupState = components['schemas']['SetupState']
+export type SetupAsk = components['schemas']['SetupAsk']
 
 // the managed platform's api, on the page's own origin under the base path; its paths start with /api/v1
 const client = createClient<paths>({ baseUrl: new URL(basePath || '/', window.location.origin).href.replace(/\/$/, '') })
@@ -131,4 +133,34 @@ export async function removeStack(name: string, deleteData: boolean, confirmName
 export function eventsURL(stack?: string): string {
   const query = stack ? `?stack=${encodeURIComponent(stack)}` : ''
   return `${basePath}/api/v1/events${query}`
+}
+
+/**
+ * The first run setup state (spec 0036). A 404 is an api from before the setup existed, which has
+ * no setup to show, so it reads as done.
+ */
+export async function fetchSetup(): Promise<SetupState> {
+  const { data, error, response } = await client.GET('/api/v1/setup')
+  if (response.status === 404) return { state: 'done' }
+  if (!data) throw failure(response.status, error)
+  return data
+}
+
+/** Trades the setup code for the setup cookie. */
+export async function redeemSetupCode(code: string): Promise<void> {
+  const { error, response } = await client.POST('/api/v1/setup/code', { body: { code } })
+  if (!response.ok) throw failure(response.status, error)
+}
+
+/** Passes the identity module's enroll answers on. The caller clears them after the call. */
+export async function enrollSetup(answers: Record<string, string>): Promise<void> {
+  const { error, response } = await client.POST('/api/v1/setup/enroll', { body: { answers } })
+  if (!response.ok) throw failure(response.status, error)
+}
+
+/** A link to the identity provider's first admin page; valid 60 seconds, once. */
+export async function createIdentityLink(): Promise<string> {
+  const { data, error, response } = await client.POST('/api/v1/setup/identity-link')
+  if (!data) throw failure(response.status, error)
+  return data.url
 }

@@ -1,0 +1,20 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: routed
+description: Served under a path of the public origin.
+image: example.test/routed:1.0.0
+provides:
+  site:
+    capability: http
+    version: "1.0"
+    port: 8080
+    fields:
+      host: {platform: host}
+      port: {platform: port}
+      url: {platform: url}
+uses:
+  public:
+    capability: http-ingress
+    fields:
+      route: {value: /app}
+      upstream: {platform: url, provide: site}

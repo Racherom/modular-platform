@@ -43,9 +43,12 @@ func (r *renderer) hostAccess(svc *types.ServiceConfig, i string, m contract.Mod
 }
 
 // hostPath writes one side of a host mount: an absolute path, a config value's Compose variable,
-// or ${MP_DIR}/<relative> for an {install} path.
+// ${MP_DIR} for the install folder itself ({install: .}, spec 0016), or ${MP_DIR}/<relative> for
+// another {install} path.
 func (r *renderer) hostPath(i string, m contract.Module, p contract.HostPath) string {
 	switch {
+	case p.Install == ".":
+		return "${MP_DIR}"
 	case p.Install != "":
 		return "${MP_DIR}/" + escape(p.Install)
 	case p.Config != "":

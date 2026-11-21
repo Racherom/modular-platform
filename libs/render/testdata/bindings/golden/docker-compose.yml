@@ -188,6 +188,8 @@ services:
       target: /run/secrets/bind/password
     security_opt:
     - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}
   shared_revoke_admin:
     cap_drop:
@@ -238,4 +240,6 @@ services:
       target: /run/secrets/admin/admin_password
     security_opt:
     - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}

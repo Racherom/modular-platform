@@ -10,16 +10,16 @@ After #3's milestone 4 (spec 0015) the managed platform is a rendered folder: a 
 
 The forces: the only service with the Docker socket is the deployer, which is root equivalent, so anything added there is host level risk (0007). Secrets made by a shell script run as your user end up owned by your user in the folder you unzipped, readable by anything that runs as that account. The platform must never touch deployed stacks, which rely on Docker's restart policy and their own Compose projects. Hosts reboot and Docker restarts; the platform must come back the same way every time, with no duplicates and no lost volumes. A small team operates and tests all of this in CI.
 
-On a managed network, you said, all secrets are handled internally: `setup.sh` should create nothing, only place the starting files and start the first container, which can then update the configuration and starts itself again with the host.
+On a managed network, you said, all secrets are handled internally: `setup.sh` should create nothing, only place the starting files and start the first container, which can then update the configuration and starts itself again with the host. On 2026-11-20 you went one step further: the web setup (#37) comes before this feature, and the platform has no `setup.sh` at all; you install with `docker run` (before the first release, `docker build` and then `docker run`).
 
 ## Options considered
 
 ### Option 1: The deployer as keeper, started from a seed, with a self handover
 
-`setup.sh` copies the rendered files to a root only state folder and creates one seed container with `docker run` (socket, state folder, autostart). The seed runs the keeper's start pipeline: lock, prepare (secrets, setup steps, folders), reconcile the platform project with Compose, then self check against `keeper.yml`, a separate Compose project for the deployer alone. When its own container does not match, it starts a successor, waits for it to be healthy and removes itself. The serving keeper runs the same pipeline at every start.
+You create one seed container with `docker run` (socket, state folder, the unzipped folder, autostart). The seed copies the rendered files into a root only state folder and runs the keeper's start pipeline: lock, prepare (secrets, setup steps, folders), reconcile the platform project with Compose, then self check against `keeper.yml`, a separate Compose project for the deployer alone. When its own container does not match, it starts a successor, waits for it to be healthy and removes itself. The serving keeper runs the same pipeline at every start.
 
 **Pros**:
-- One container to start, exactly as you asked, and it starts again with the host by its restart policy.
+- One container to start, exactly as you asked, and the keeper it hands over to starts again with the host by its restart policy.
 - The deployer can never stop itself through Compose, since it is not in the platform project; replacing itself is an explicit, health gated handover.
 - Secrets and setup steps move into the service that already creates deployed stacks' secrets (0007).
 - The handover is what #25 needs for an upgrade.
@@ -27,7 +27,7 @@ On a managed network, you said, all secrets are handled internally: `setup.sh` s
 **Cons**:
 - The most code of all options, in the root equivalent service: a lock, a step runner, a hash, a handover.
 - A second rendered Compose file and a new `setup.json` format.
-- `setup.sh` needs root.
+- The install is one long `docker run` line, pasted by hand.
 
 ### Option 2: A Compose managed deployer that reconciles the rest
 
@@ -73,6 +73,8 @@ The extra code of Option 1 is bounded on purpose. The platform project uses Comp
 
 The seed exists because the deployer's real definition needs things only the first start creates: its binding token, the CA from `cert-issuer`'s setup step, the `internal` network. A seed with just the socket and the state folder creates them, then hands over to the rendered keeper, which uses the same handover any later definition change uses. One mechanism covers install, a changed keeper definition, and later an upgrade.
 
+**No `setup.sh` (revised 2026-11-20).** With `setup.sh` gone, its jobs were weighed one by one. The root check and the state path check become the seed's mounts check (it finds its own container and compares the state mount's two sides). Copying the zip and writing `.env` become the seed's install, from the unzipped folder mounted read only at `/install`. Starting the seed is the command you type; a second run meets Docker's name check. Asking the domain, origin and admin email moves to the web setup (#37), now built first. Printing the initial password had no good home in a container: anything a container prints goes through Docker's log driver, and a journald or remote driver keeps it. With #37 first there is no generated admin password, and its setup code is shown by path only (README and keeper log, read with `sudo cat`). Only the pre release image build needs the host, because the keeper image must exist before any container runs; it becomes `docker build` lines in the README and ends at the first release. The cost: a long `docker run` line typed by hand, which the seed's mounts check guards.
+
 The cross check asked about a lighter variant of Option 2: keep the deployer in the platform project and have it start a short lived helper container that runs `docker compose up -d deployer-docker`, so a process that outlives the deployer recreates it. It saves the second project and the hash, but Compose recreates by stopping the old container before the new one runs, so a deployer whose new definition fails stays down with nobody left to undo it. The handover keeps the old keeper until the new one is healthy, and the seed is still needed to create the secrets the deployer's own definition mounts. So Option 1 stays.
 
 ### Smaller choices
@@ -83,20 +85,31 @@ The cross check asked about a lighter variant of Option 2: keep the deployer in 
 | What counts as no longer matching | Compose's rule (config hash, image ID) | your choice; no second notion of drift, and the hand fallback agrees with the keeper | Compose's rule plus a live check of restart policy, networks and pause state |
 | Reconcile failure | serve and retry, 1 second doubling to 5 minutes | a registry outage heals itself, and deployed stacks stay visible meanwhile | exit and let Docker restart it (the deployer is down meanwhile) |
 | How the deployer gets its own wiring | the render describes it in `keeper.yml`; the deployer creates its own binding tokens and hands them to the containers it deploys, gets its certificate after `cert-issuer` runs, and replaces itself by a second, updated container that takes over once connected | your design; no special config path in the SDK | the deployer joins the network and reads an env file itself at start |
-| How `setup.sh` copies | runs as root (`sudo sh setup.sh`) | your choice; no extra subcommand | a `docker run --rm` install subcommand of the keeper image (no sudo) |
+| How the install runs | one `docker run` of the seed with the unzipped folder at `/install`; before the first release, `docker build` first | your choice (2026-11-20); no script on the host, the checks live in Go under test, and you, dev and smoke install the same way | a root `setup.sh` that copies and starts the seed (the earlier pick; it was left only to ask the install answers and print the password, which #37 now owns) |
 | Overlays in dev and CI | in the state folder, named by `COMPOSE_FILE`; keeper image by `MP_KEEPER_IMAGE` | the smoke job tests the real start path | render dev and CI variants of the files |
 | Handover with running operations | drain then hand over | your choice; at start nothing runs yet, so it is built when #25 triggers a handover on a serving keeper | stop at once and let `api` treat the new boot id as an unknown outcome |
-| First admin | a generated `show: once` password for the bundled Authelia's user `admin`, printed once by `setup.sh` | works end to end now; the web setup feature replaces it | `setup.sh` asks a password and hands it over in a one time file |
+| First admin | the web setup of #37, built before this feature | your choice (2026-11-20); with it first, the install asks nothing and prints nothing | a generated `show: once` Authelia password printed once by `setup.sh` (the earlier pick) |
 | How a module says "show this secret" | generic `show: once` and `format: password` on a generated secret | a replacement identity module (#23) gets the same treatment, and the platform names no image | a special case for Authelia's file |
 | Web setup | its own scope feature, designed with #28 | its enrollment seam must work for any sign in method, which #28 decides | an umbrella with this spec |
 | Sequencing | after milestone 4, which ships as planned | each merge stays green and smoke proven | fold this into milestone 4 |
-| `MP_UID`, `MP_GID` | fixed `65532` | `setup.sh` runs as root, so `id -u` is 0; `65532` is the distroless `nonroot` user | the `SUDO_UID` of the person running it (missing when root logs in directly) |
+| `MP_UID`, `MP_GID` | fixed `65532` | the seed runs as root and knows no installing user; `65532` is the distroless `nonroot` user | a `-e` value on the `docker run` (one more thing to type) |
 | Finding itself | the host name (Docker sets it to the short container ID) | no extra setting; the render never sets `hostname` | an env var with the container name, set at create |
 | Lock | `flock` on a file in the state folder | every keeper mounts the same host folder on one kernel, so the lock holds across containers and frees itself when a process dies | a Docker label used as a lease (needs expiry handling) |
 | Partial writes | write in a scratch folder, move into place with a rename that never replaces | a crash never leaves a cut secret, and a half finished step never swaps a key already in use | write in place and accept the risk |
-| Printing the password | a `.shown` marker; print after the keeper is healthy | a rerun after an interrupted install still shows it, and the origin works when you read it | print when the file appears |
+| Seed restart policy | none; only the keeper restarts with the host | your choice (2026-11-20); a refused seed stays stopped with a short log, a host restart after the successor exists is cleaned up by the successor, and before that `docker start` goes on | `unless-stopped` on the seed (the earlier pick; a refused seed would loop) |
+| A rerun with other files or another image | refuse (`installed_differs`) | your choice (2026-11-20); for now, taking a newer install is an update you accept later in the running stack (#25) | warn and go on, or stay silent |
+| Before the install answers exist | a setup mode on a self signed certificate with no domain, then a certificate for the domain from the setup; the answers reach `.env` through one keeper call | your choice (2026-11-20); the keeper stays the only writer of the state folder, and its own internal certificate needs no domain | the answers as `-e` values on the `docker run` until #37 |
+| Placed files | allowed for any external, kept to a minimum (typically an external authentication service's key, its URL in the graph); a missing one that the setup mode does not need is asked in the setup | your choice (2026-11-20); the deployer must know where an external sign in service is before the setup can enroll the first admin | only an external authentication service may place files |
+| Showing a `show: once` file | its path in the README and in the keeper's log, read with `sudo cat` | a container's output passes through Docker's log driver, which may keep it, and reading it needs root on the host, which shows that you own the host | a `.shown` marker and a print from `setup.sh` (the earlier pick, gone with `setup.sh`) |
 | Platform files and the guard | trusted, no `render.Guard` | writing them already takes root; the guard protects the host from `api`'s input, which never reaches this folder | run the guard with a wider allow list (adds code that protects nothing) |
 
 ## Spike results
 
-_Task 1 of the build plan writes its findings here: `COMPOSE_FILE` from the project `.env`, a second keeper project beside a running one, removing its own container, and Compose's handling of a changed `configs` file._
+Run on 2026-11-20 inside `docker:29.9.2-cli` (Docker Compose v5.6.1) against Docker Engine 29.9.2, with the state folder mounted at the same path as on the host.
+
+| Check | Result | What the build does with it |
+|---|---|---|
+| `COMPOSE_FILE` from `<dir>/.env`, no `-f` | Works, but only with the state folder as the working directory. Compose reads `.env` from `--project-directory`, yet resolves a relative `COMPOSE_FILE` entry against the working directory: from `/` it fails with `stat /docker-compose.yml`. | Reconcile and both handover commands set the command's working directory to the state folder, as the spec already says; a test pins it. |
+| A second keeper project beside a running one | Works. Two projects from one `keeper.yml`, on the external network `<platform>_internal` with the alias `keeper`, both run; the alias resolves to both containers (round robin) while both run. `up -d --remove-orphans` on the platform project leaves both keeper projects alone. | Nothing extra. During a handover a caller may reach either keeper; both serve the same API, and `api` already treats a new `bootId` as a restart. |
+| Removing its own container with `force` | Works. Events: `kill`, `die` (exit 137), `destroy`; `restart: unless-stopped` does not bring it back, and no line after the remove call runs. | The keeper logs `handover done` before it calls the remove; the process ends with exit 137 from the kill, never with its own exit. |
+| A `configs` file whose content changes | Compose does **not** recreate the service: the config hash and the container ID stay the same. With `file:` Compose bind mounts the file, so the container sees the new content at once, but its process is not restarted. | The managed README's drift note says that a changed config file reaches a module only when the module rereads it or its container is recreated for another reason. |

@@ -34,6 +34,7 @@ Bootstrap names are fixed. A module never declares them, and the SDK reads them 
 | `MP_ACME_URL` | with `MP_CA_FILE` | the issuer's ACME directory URL, `https` only | [`TestTLSProblems`](tls_test.go) |
 | `MP_CA_FILE` | with `MP_ACME_URL` | the root CA (PEM) of the issuer and of every module certificate | [`TestTLSProblems`](tls_test.go), [`TestTLSBindingTrust`](tls_test.go) |
 | `MP_CALLER_SIGNING_KEY_FILE` | no | PEM (PKCS 8) Ed25519 private key; only `api` gets it | [`TestCallerEndToEnd`](caller_test.go), [`TestCallerKeyFileProblems`](caller_test.go) |
+| `MP_SETUP_DIR` | with `lifetime: setup` secrets | absolute folder of the entry's setup files (spec 0033); `Declaration.SetupFiles` names them, the generated `Setup<Name>` getters read each at every call and report a missing file as absent | [`TestSetupFile`](setupfile_test.go), [`TestSetupDirRules`](setupfile_test.go) |
 
 - **BOOT-1**: No entry may use a bootstrap name as a value's `env`, and with a push source set the SDK still reads the bootstrap names from the process env (and only them). Tests: [`TestCheckFixtures`](manifest/manifest_test.go), [`TestPushManagedEnv`](sources_test.go)
 - **BOOT-2**: An unset or empty `MP_INSTANCE` is `missing`; one that breaks the instance naming rule is `invalid`. Tests: [`TestStartProblems`](sdk_test.go)

@@ -1,0 +1,18 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  cert-issuer:
+    module: cert-issuer
+  guardapp:
+    module: guardapp
+    uses:
+      public: ingress
+  idp:
+    module: idp
+    uses:
+      public: ingress
+  ingress:
+    module: caddy
+    uses:
+      trust: cert-issuer.acme
+name: gate

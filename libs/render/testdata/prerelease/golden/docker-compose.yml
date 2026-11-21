@@ -127,6 +127,8 @@ services:
       target: /run/secrets/admin/admin_password
     security_opt:
     - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}
   renderer:
     cap_drop:

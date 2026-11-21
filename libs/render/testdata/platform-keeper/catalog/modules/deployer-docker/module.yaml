@@ -1,0 +1,104 @@
+# Fixture of spec 0016, task 3: the task 4 shape of catalog/modules/deployer-docker/module.yaml
+# (the state folder mount, state-dir and handover-timeout). Task 4 moves it into the catalog.
+apiVersion: modular-platform/v1
+kind: Module
+name: deployer-docker
+description: Applies a rendered project to this host with Docker Compose and reports container state; holds the Docker socket.
+# release-please bumps the version on this line
+image: ghcr.io/racherom/modular-platform/deployer-docker:0.0.0 # x-release-please-version
+runtime: sdk
+# the platform's keeper (spec 0016): setup.sh starts a seed that runs this command plus --state <dir>
+keeper:
+  command: [seed]
+healthcheck:
+  test: ["CMD", "/deployer-docker", "healthcheck"]
+  interval: 5s
+  timeout: 3s
+  retries: 10
+  start_period: 30s
+uses:
+  ingress:
+    capability: http-ingress
+    env:
+      http_port: MP_PLATFORM_HTTP_PORT
+      https_port: MP_PLATFORM_HTTPS_PORT
+provides:
+  deploy:
+    capability: deploy-target
+    version: "1.0"
+    auth: binding-token
+    fields:
+      url: {platform: url}
+      token: {generate: true}
+      ca: {platform: ca}
+    env:
+      token: MP_DEPLOY_TARGET_CLIENTS_DIR
+      caller_key: MP_CALLER_KEYS_DIR
+config:
+  state-dir:
+    env: MP_STATE_DIR
+    type: string
+    pattern: "/.+"
+    default: "{install}"
+    description: Absolute path of the platform's state folder, the same path on the host and in the keeper.
+  handover-timeout:
+    env: MP_HANDOVER_TIMEOUT
+    type: duration
+    default: 10m
+    description: Longest time a keeper waits for its successor to get healthy; at least wait-timeout plus 5 minutes.
+  stacks-dir:
+    env: MP_DEPLOYER_STACKS_DIR
+    type: string
+    pattern: "/.+"
+    default: "{install}/stacks"
+    description: Absolute path of the stacks folder, the same path on the host and in the deployer.
+  platform-uid:
+    env: MP_PLATFORM_UID
+    type: int
+    default: "{uid}"
+    min: 0
+    description: User id that owns deployed files and secrets and runs deployed sdk modules.
+  platform-gid:
+    env: MP_PLATFORM_GID
+    type: int
+    default: "{gid}"
+    min: 0
+    description: Group id that owns deployed files and secrets and runs deployed sdk modules.
+  pull-timeout:
+    env: MP_PULL_TIMEOUT
+    type: duration
+    default: 10m
+    min: 1m
+    description: Longest time an apply may spend pulling images.
+  wait-timeout:
+    env: MP_WAIT_TIMEOUT
+    type: duration
+    default: 5m
+    min: 10s
+    description: Longest time an apply waits for every service to run and pass its healthcheck.
+  resolve-timeout:
+    env: MP_RESOLVE_TIMEOUT
+    type: duration
+    default: 30s
+    min: 5s
+    max: 50s
+    description: Longest time one call may spend asking registries which digest each image tag names.
+host_mounts:
+  - host: /var/run/docker.sock
+    path: /var/run/docker.sock
+    read_only: false
+  # the state folder at the same path: the keeper writes secrets, step outputs and stacks there
+  - host: {install: .}
+    path: {install: .}
+    read_only: false
+  - host: {install: stacks}
+    path: {install: stacks}
+    read_only: false
+    create: true
+hardening:
+  # root: it holds the Docker socket, which is root equivalent anyway (spec 0001). Every other
+  # capability stays dropped: CHOWN and FOWNER give each deployed file to the platform user, and
+  # DAC_OVERRIDE reads its secrets and writes the stacks folder, which that user owns
+  user: root
+  cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+  tmpfs: [/tmp]

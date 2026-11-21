@@ -1,0 +1,143 @@
+{
+  "Images": [
+    {
+      "Instance": "app",
+      "Module": "oidcapp",
+      "Image": "example.test/oidcapp:1.0.0"
+    },
+    {
+      "Instance": "edge",
+      "Module": "edge",
+      "Image": "example.test/edge:1.0.0"
+    },
+    {
+      "Instance": "pocket-id",
+      "Module": "pocket-id",
+      "Image": "ghcr.io/pocket-id/pocket-id:v2.19.3"
+    },
+    {
+      "Instance": "postgres",
+      "Module": "postgres",
+      "Image": "postgres:18.6-alpine3.24"
+    }
+  ],
+  "References": [
+    {
+      "reference": "example.test/edge:1.0.0",
+      "usedBy": [
+        {
+          "instance": "edge",
+          "kind": "module",
+          "service": "edge"
+        }
+      ]
+    },
+    {
+      "reference": "example.test/oidcapp:1.0.0",
+      "usedBy": [
+        {
+          "instance": "app",
+          "kind": "module",
+          "service": "app"
+        }
+      ]
+    },
+    {
+      "reference": "ghcr.io/pocket-id/pocket-id:v2.19.3",
+      "usedBy": [
+        {
+          "instance": "pocket-id",
+          "kind": "module",
+          "service": "pocket-id"
+        }
+      ]
+    },
+    {
+      "reference": "ghcr.io/racherom/modular-platform/oidc-job:0.0.0",
+      "usedBy": [
+        {
+          "kind": "wait",
+          "service": "mp_jobs"
+        },
+        {
+          "capability": "oidc-provisioner",
+          "consumer": "app",
+          "instance": "pocket-id",
+          "kind": "provision",
+          "service": "pocket-id_provision_app_oidc"
+        },
+        {
+          "capability": "oidc-provisioner",
+          "instance": "pocket-id",
+          "kind": "revoke",
+          "service": "pocket-id_revoke_oidc"
+        }
+      ]
+    },
+    {
+      "reference": "postgres:18.6",
+      "usedBy": [
+        {
+          "capability": "postgresql-provisioner",
+          "consumer": "pocket-id",
+          "instance": "postgres",
+          "kind": "provision",
+          "service": "postgres_provision_pocket-id_db"
+        },
+        {
+          "capability": "postgresql-provisioner",
+          "instance": "postgres",
+          "kind": "revoke",
+          "service": "postgres_revoke_server"
+        }
+      ]
+    },
+    {
+      "reference": "postgres:18.6-alpine3.24",
+      "usedBy": [
+        {
+          "instance": "postgres",
+          "kind": "module",
+          "service": "postgres"
+        }
+      ]
+    }
+  ],
+  "Secrets": [
+    {
+      "Path": "secrets/app/uses_oidc_client_secret",
+      "Kind": "generated",
+      "Instance": "app",
+      "Capability": "",
+      "Field": ""
+    },
+    {
+      "Path": "secrets/pocket-id/encryption-key",
+      "Kind": "generated",
+      "Instance": "pocket-id",
+      "Capability": "",
+      "Field": ""
+    },
+    {
+      "Path": "secrets/pocket-id/static-api-key",
+      "Kind": "generated",
+      "Instance": "pocket-id",
+      "Capability": "",
+      "Field": ""
+    },
+    {
+      "Path": "secrets/pocket-id/uses_db_password",
+      "Kind": "generated",
+      "Instance": "pocket-id",
+      "Capability": "",
+      "Field": ""
+    },
+    {
+      "Path": "secrets/postgres/password",
+      "Kind": "generated",
+      "Instance": "postgres",
+      "Capability": "",
+      "Field": ""
+    }
+  ]
+}

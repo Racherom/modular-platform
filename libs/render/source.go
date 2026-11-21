@@ -117,10 +117,22 @@ func Unreleased(image string) bool {
 type options struct {
 	source      SourceRef
 	dockerfiles map[string][]byte // module name to its Dockerfile; nil without WithSource
+	keeper      bool              // the platform flavor renders for the keeper (WithKeeper)
 }
 
 // Option changes one render.
 type Option func(*options)
+
+// optionsOf applies opts in order; a nil Option is skipped.
+func optionsOf(opts []Option) options {
+	var o options
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	return o
+}
 
 // WithSource lets a render build the unreleased platform images it names (spec 0030): each such
 // module's Dockerfile, from dockerfiles by module name, goes into the zip as
@@ -136,23 +148,28 @@ func WithSource(ref SourceRef, dockerfiles map[string][]byte) Option {
 
 // imageBuild is one image setup.sh builds before anything else.
 type imageBuild struct {
-	Module string // the module name, which names its folder under build/
+	Module string // the module name, or the repository name of a job image; names its folder under build/
 	Image  string // the catalog image, the tag the build gets
+	Job    bool   // a capability's job image (spec 0030, AC-14): it holds no repository code, so its context is its own folder
 }
 
 // Dockerfile is the path of the build's Dockerfile inside the zip.
 func (b imageBuild) Dockerfile() string { return "build/" + b.Module + "/Dockerfile" }
 
+// imageRepo is the repository name of a platform image: PlatformImages and the tag removed.
+func imageRepo(image string) string {
+	name := strings.TrimPrefix(image, PlatformImages)
+	repo, _, _ := strings.Cut(name, ":")
+	return repo
+}
+
 // imageBuilds collects, once per module, the unreleased platform images of the placed modules,
-// sorted by module name, and the Dockerfile file of each. It walks the instances in name order,
-// so a missing Dockerfile always names the same module. It does nothing without WithSource.
-func (r *renderer) imageBuilds(opts []Option) ([]File, error) {
-	var o options
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&o)
-		}
-	}
+// sorted by module name, then once per image the unreleased job images of the jobs, sorted by
+// name, and the Dockerfile file of each. It runs after the jobs exist, and walks names in order,
+// so a missing Dockerfile always names the same module or capability. It does nothing without
+// WithSource.
+func (r *renderer) imageBuilds() ([]File, error) {
+	o := r.opts
 	if o.dockerfiles == nil {
 		return nil, nil
 	}
@@ -174,26 +191,55 @@ func (r *renderer) imageBuilds(opts []Option) ([]File, error) {
 		files = append(files, File{Path: b.Dockerfile(), Mode: 0o644, Data: data})
 	}
 	slices.SortFunc(r.data.Builds, func(a, b imageBuild) int { return strings.Compare(a.Module, b.Module) })
+	modules := len(r.data.Builds)
+	for _, name := range sortedKeys(r.jobs) {
+		j := r.jobs[name]
+		image := r.project.Services[name].Image
+		if j.kind == jobWait && image == "" {
+			continue
+		}
+		if !Unreleased(image) {
+			continue
+		}
+		repo := imageRepo(image)
+		if seen["job:"+repo] {
+			continue
+		}
+		seen["job:"+repo] = true
+		data, ok := o.dockerfiles[repo]
+		if !ok {
+			what := "the job of capability " + j.capability
+			if j.capability == "" {
+				what = "the wait anchor"
+			}
+			return nil, fmt.Errorf("render: %s names the unreleased image %s and has no Dockerfile", what, image)
+		}
+		b := imageBuild{Module: repo, Image: image, Job: true}
+		r.data.Builds = append(r.data.Builds, b)
+		files = append(files, File{Path: b.Dockerfile(), Mode: 0o644, Data: data})
+	}
+	slices.SortFunc(r.data.Builds[modules:], func(a, b imageBuild) int { return strings.Compare(a.Module, b.Module) })
 	if len(r.data.Builds) > 0 {
 		r.data.SourceRef = o.source.String()
-		r.data.SourceLocal = o.source.Local()
-		r.data.SourceMoves = o.source.Moves()
+		r.data.SourceNeeded = modules > 0
+		r.data.SourceLocal = modules > 0 && o.source.Local()
+		r.data.SourceMoves = modules > 0 && o.source.Moves()
 	}
 	return files, nil
 }
 
 // neverPull gives every service of an image setup.sh builds pull_policy: never, in the platform
 // flavor only: the keeper and the apply path run compose pull, which fails on an image that
-// exists only on the host (spec 0030, AC-6). It changes nothing when no image is built.
+// exists only on the host (spec 0030, AC-6). Module services and job services (mp_jobs
+// included) both count. It changes nothing when no image is built.
 func (r *renderer) neverPull() {
 	if r.flavor != flavorPlatform || len(r.data.Builds) == 0 {
 		return
 	}
-	for i, gm := range r.g.Modules {
-		if gm.External != nil || !Unreleased(r.modules[gm.Module].Image) {
+	for i, svc := range r.project.Services {
+		if !Unreleased(svc.Image) {
 			continue
 		}
-		svc := r.project.Services[i]
 		svc.PullPolicy = types.PullPolicyNever
 		r.project.Services[i] = svc
 	}

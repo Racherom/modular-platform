@@ -1,0 +1,32 @@
+apiVersion: modular-platform/v1
+kind: Module
+name: idp
+description: An identity provider with its own first admin page, served at auth.{domain}.
+image: example.test/idp:1.0.0
+provides:
+  oidc:
+    capability: oidc
+    version: "1.0"
+    port: 1411
+    first_admin:
+      path: /setup
+      gate: [/setup, /signup/setup, /api/signup/setup]
+    fields:
+      issuer: {uses: public, format: "https://{domain}"}
+      client_id: {platform: consumer}
+      client_secret: {generate: true}
+  site:
+    capability: http
+    version: "1.0"
+    port: 1411
+    fields:
+      host: {platform: host}
+      port: {platform: port}
+      url: {platform: url}
+uses:
+  public:
+    capability: http-ingress
+    fields:
+      host: {value: "auth.{domain}"}
+      upstream: {platform: url, provide: site}
+      gate: {platform: gate, provide: oidc}

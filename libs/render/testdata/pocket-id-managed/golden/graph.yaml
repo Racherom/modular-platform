@@ -1,0 +1,23 @@
+apiVersion: modular-platform/v1
+kind: Graph
+modules:
+  app:
+    module: oidcapp
+    uses:
+      oidc:
+        client_id: app_oidc
+        provider: pocket-id.oidc
+      public: edge
+  edge:
+    module: edge
+  pocket-id:
+    module: pocket-id
+    uses:
+      db:
+        database: pocket_id
+        provider: postgres
+        user: pocket_id
+      public: edge
+  postgres:
+    module: postgres
+name: pocket-id-managed

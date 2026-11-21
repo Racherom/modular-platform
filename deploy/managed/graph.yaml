@@ -10,17 +10,11 @@ modules:
         database: platform_api
         provider: postgres
         user: api
-      oidc: authelia.oidc
+      oidc:
+        client_id: api_oidc
+        provider: pocket-id.oidc
       public: ingress
       renderer: renderer
-  authelia:
-    module: authelia
-    uses:
-      db:
-        database: authelia
-        provider: postgres
-        user: authelia
-      public: ingress
   cert-issuer:
     module: cert-issuer
   deployer-docker:
@@ -32,6 +26,14 @@ modules:
     module: caddy
     uses:
       trust: cert-issuer.acme
+  pocket-id:
+    module: pocket-id
+    uses:
+      db:
+        database: pocket_id
+        provider: postgres
+        user: pocket_id
+      public: ingress
   postgres:
     module: postgres
     uses:

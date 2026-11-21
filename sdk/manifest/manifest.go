@@ -48,6 +48,7 @@ var BootstrapNames = []string{
 	"MP_ACME_URL",
 	"MP_CA_FILE",
 	"MP_CALLER_SIGNING_KEY_FILE",
+	"MP_SETUP_DIR",
 }
 
 // clientFields lists the capability fields a slot with that client kind must map in env, so the
@@ -152,12 +153,14 @@ type Entry struct {
 	Secrets       []Secret           `json:"secrets,omitempty"`
 	Config        map[string]Value   `json:"config,omitempty"`
 	Setup         json.RawMessage    `json:"setup,omitempty"`
+	Enroll        json.RawMessage    `json:"enroll,omitempty"`
 	Templates     json.RawMessage    `json:"templates,omitempty"`
 	Volumes       json.RawMessage    `json:"volumes,omitempty"`
 	Publish       json.RawMessage    `json:"publish,omitempty"`
 	HostMounts    json.RawMessage    `json:"host_mounts,omitempty"`
 	Network       json.RawMessage    `json:"network,omitempty"`
 	Hardening     json.RawMessage    `json:"hardening,omitempty"`
+	Keeper        json.RawMessage    `json:"keeper,omitempty"`
 }
 
 // Provide is one named provide of the entry.
@@ -168,6 +171,7 @@ type Provide struct {
 	Auth       string            `json:"auth,omitempty"`
 	Fields     json.RawMessage   `json:"fields,omitempty"`
 	Env        map[string]string `json:"env,omitempty"`
+	FirstAdmin json.RawMessage   `json:"first_admin,omitempty"`
 }
 
 // Use is one slot of the entry: a named need of a capability.
@@ -187,6 +191,9 @@ type Secret struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	From        string `json:"from,omitempty"`
+	Format      string `json:"format,omitempty"`
+	Show        string `json:"show,omitempty"`
+	Lifetime    string `json:"lifetime,omitempty"`
 	Env         string `json:"env,omitempty"`
 	Mount       string `json:"mount,omitempty"`
 }

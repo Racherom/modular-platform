@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
 	"slices"
@@ -93,6 +94,11 @@ func (r *renderer) binding(b contract.Binding) error {
 	if err != nil {
 		return err
 	}
+	own, err := r.toProviderValues(b, k)
+	if err != nil {
+		return err
+	}
+	maps.Copy(values, own) // the consumer's own to_provider text; the delivery below skips it
 	if r.bound[b.Consumer] == nil {
 		r.bound[b.Consumer] = map[string]map[string]value{}
 	}
@@ -192,7 +198,7 @@ func (r *renderer) provisioned(e end) (map[string]value, error) {
 		return nil, err
 	}
 	y := admin.Yields
-	named := (*r.g.Modules[e.b.Consumer].Uses)[e.b.Slot].Named
+	named := (*r.g.Modules[e.b.Consumer].Uses)[e.b.Slot].Values
 	values := map[string]value{}
 	for _, f := range sortedKeys(y.Fields) {
 		switch src := y.Fields[f]; src.Kind {
@@ -216,7 +222,9 @@ func (r *renderer) provisioned(e end) (map[string]value, error) {
 		r.keep[key] = append(r.keep[key], named[y.Login])
 	}
 	r.provisions[key] = append(r.provisions[key], provisionJobName(e.b))
-	r.provisionJob(e, admin, adminValues, named)
+	if err := r.provisionJob(e, admin, adminValues, named); err != nil {
+		return nil, err
+	}
 	return values, nil
 }
 
@@ -290,6 +298,8 @@ func (r *renderer) source(e end, k contract.Capability, f string, src contract.F
 		return value{text: fmt.Sprintf("%s://%s:%d%s", scheme, r.host(p), port, src.Path)}, true, nil
 	case src.Platform == contract.FieldSourcePlatformConsumer:
 		return value{text: e.b.Consumer}, true, nil
+	case src.Platform == contract.FieldSourcePlatformFirstAdminPath:
+		return value{text: e.provide.FirstAdmin.Path}, e.provide.FirstAdmin.Path != "", nil
 	case src.Platform == contract.FieldSourcePlatformTls, src.Platform == contract.FieldSourcePlatformCa:
 		slot, tls, err := r.tlsSlot(p)
 		switch {
@@ -465,13 +475,14 @@ func revokeJobName(p, q string) string { return p + "_revoke_" + q }
 
 // provisionJob adds the one shot service that makes what binding e.b names (spec 0014): the
 // admin fields, the binding's consumer, slot and named values, and its generated files.
-func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues map[string]value, named map[string]string) {
+func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues map[string]value, named map[string]string) error {
 	b, y := e.b, admin.Yields
 	name := provisionJobName(b)
 	svc := r.jobService(name, e, admin, adminValues, y.Job.Provision)
 	setEnv(&svc, "MP_CONSUMER", b.Consumer)
 	setEnv(&svc, "MP_SLOT", b.Slot)
 	setEnv(&svc, "MP_CONSUMER_HOST", r.host(b.Consumer))
+	var consumer map[string]string
 	for _, f := range y.Named {
 		setEnv(&svc, "MP_"+strings.ToUpper(f), named[f])
 	}
@@ -481,6 +492,15 @@ func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues ma
 			target := "/run/secrets/bind/" + f
 			r.mountSecret(&svc, b.Consumer+"_uses_"+b.Slot+"_"+f, r.perBinding(b, f), target)
 			setEnv(&svc, "MP_"+strings.ToUpper(f)+"_FILE", target)
+		case contract.YieldConsumer:
+			// the value the consumer gives, like a redirect path (spec 0037)
+			if consumer == nil {
+				var err error
+				if consumer, err = r.clientValues(b); err != nil {
+					return fmt.Errorf("values of %s for the job of %s: %w", b.Consumer, admin.Name, err)
+				}
+			}
+			setEnv(&svc, "MP_"+strings.ToUpper(f), consumer[f])
 		case contract.YieldOutput:
 			// a bind mount, not a secret: the job writes it
 			svc.Volumes = append(svc.Volumes, types.ServiceVolumeConfig{
@@ -490,6 +510,7 @@ func (r *renderer) provisionJob(e end, admin contract.Capability, adminValues ma
 	}
 	r.project.Services[name] = svc
 	r.jobs[name] = job{instance: b.Provider, module: e.module.Name, kind: jobProvision, capability: admin.Name, consumer: b.Consumer}
+	return nil
 }
 
 // revokeJobs adds one revoke job per provisioner provide whose capability names a login,
@@ -546,11 +567,15 @@ func (r *renderer) jobService(name string, e end, admin contract.Capability, adm
 		r.joinEgress(&svc)
 	}
 	r.harden(&svc, nil)
+	// the root is read only, and a job script keeps its scratch files in /tmp (spec 0037)
+	svc.Tmpfs = []string{"/tmp"}
 	setEnv(&svc, "MP_MARKER", marker(r.g.Name))
 	for _, f := range sortedKeys(adminValues) {
 		v := adminValues[f]
 		env := "MP_ADMIN_" + strings.ToUpper(f)
 		switch {
+		case v.folder != "":
+			continue // a file in another instance's volume: the consumer mounts it; a job reaches the provider inside the stack and needs none
 		case admin.Fields[f].IsFile():
 			target := "/run/secrets/admin/" + f
 			r.mountSecret(&svc, b.Provider+"_admin_"+b.Provide+"_"+f, v.file, target)

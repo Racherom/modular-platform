@@ -68,12 +68,13 @@ tasks:
       - pnpm --dir web run build
 
   images:
-    desc: Build the web, renderer, api and deployer-docker images, tagged {{.IMAGE_TAG}}
+    desc: Build the web, renderer, api, deployer-docker and oidc-job images, tagged {{.IMAGE_TAG}}
     cmds:
       - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/renderer/Dockerfile -t {{.IMAGE_PREFIX}}/renderer:{{.IMAGE_TAG}} .
       - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:{{.IMAGE_TAG}} .
       - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/deployer-docker/Dockerfile -t {{.IMAGE_PREFIX}}/deployer-docker:{{.IMAGE_TAG}} .
       - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/web/Dockerfile -t {{.IMAGE_PREFIX}}/web:{{.IMAGE_TAG}} .
+      - docker build --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/images/oidc-job/Dockerfile -t {{.IMAGE_PREFIX}}/oidc-job:{{.IMAGE_TAG}} catalog/images/oidc-job
 
   test:
     desc: Run the Go and editor tests
@@ -239,14 +240,14 @@ tasks:
       - cp -R build/managed/. .dev/managed/
       # setup.sh runs api's caller-key step in the api image, before up builds it
       - docker build -q --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:dev . >/dev/null
+      - docker build -q --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/images/oidc-job/Dockerfile -t {{.IMAGE_PREFIX}}/oidc-job:dev catalog/images/oidc-job >/dev/null
       - |
-        if [ -f .dev/managed/.env ] && [ -f .dev/managed/secrets/authelia/users ]; then
+        if [ -f .dev/managed/.env ] && [ -f .dev/managed/secrets/api/setup/session-key ]; then
           sh .dev/managed/setup.sh </dev/null >/dev/null
         else
-          password=$(od -An -tx1 -N12 /dev/urandom | tr -d ' \n')
-          # domain, origin (empty: https://<domain>), admin email, admin user name, admin password
-          printf 'platform.localhost\n\nadmin@platform.localhost\nadmin\n%s\n' "$password" | sh .dev/managed/setup.sh
-          echo "Sign in as admin with the password $password (kept nowhere else; delete .dev/managed to start over)."
+          # domain, origin (empty: https://<domain>); the admin makes the account in the browser
+          printf 'platform.localhost\n\n' | sh .dev/managed/setup.sh
+          echo "Open the setup link from the first admin path with the code in .dev/managed/secrets/api/setup/code (delete .dev/managed to start over)."
         fi
 
   managed:render:
@@ -273,7 +274,7 @@ tasks:
       - python3 scripts/managed_zip.py build/managed "modular-platform-{{.VERSION}}" "dist/modular-platform-{{.VERSION}}.zip"
 
   smoke:managed:
-    desc: Install the managed platform with setup.sh, sign in, deploy the sample, see it running, remove it with its data (needs the images tagged ci and Chromium; SMOKE_DOCKER_RESTART=1 also restarts Docker in between)
+    desc: Install the managed platform with setup.sh, make the first admin with a virtual passkey, deploy the sample, see it running, remove it with its data (needs the images tagged ci and Chromium; SMOKE_DOCKER_RESTART=1 also restarts Docker in between)
     deps: [web:install, {task: managed:render, vars: {MANAGED_IMAGE_TAG: ci}}]
     cmds:
       - sh scripts/smoke-managed.sh
