@@ -3,6 +3,7 @@ package render_test
 import (
 	"bytes"
 	"errors"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -11,6 +12,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
+	"github.com/racherom/modular-platform/libs/check"
 	"github.com/racherom/modular-platform/libs/contract"
 	"github.com/racherom/modular-platform/libs/render"
 )
@@ -193,6 +195,120 @@ func TestPlatformOnlyFeatures(t *testing.T) {
 	for _, want := range []string{"host_access modules.deployer-docker", "host_access modules.ingress", "setup_required modules.cert-issuer"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("managed refusals %q lack %q", got, want)
+		}
+	}
+}
+
+// pocketGraphWithSignup is deploy/managed/graph.yaml with the config signup set on pocket-id.
+func pocketGraphWithSignup(t *testing.T, value string) string {
+	t.Helper()
+	data, err := os.ReadFile("../../deploy/managed/graph.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const anchor = "  pocket-id:\n    module: pocket-id\n"
+	text := string(data)
+	if !strings.Contains(text, anchor) {
+		t.Fatal("deploy/managed/graph.yaml has no pocket-id instance in the expected shape")
+	}
+	return strings.Replace(text, anchor, anchor+"    config:\n      signup: "+value+"\n", 1)
+}
+
+// TestPlatformSignup checks the sign up mode of the bundled provider (spec 0037, AC-6): the
+// default is disabled, each listed value only changes the provider's setting, and any other
+// value is refused at modules.pocket-id.config.signup with invalid_config.
+func TestPlatformSignup(t *testing.T) {
+	t.Parallel()
+	_, catalog, templates := platformResult(t)
+	const setting = "ALLOW_USER_SIGNUPS: ${MP_POCKET_ID__SIGNUP:-disabled}"
+
+	base, err := render.Platform(checkFile(t, "../../deploy/managed/graph.yaml", catalog), catalog, templates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseFiles := map[string]string{}
+	for _, f := range base.Files {
+		baseFiles[f.Path] = string(f.Data)
+	}
+	if !strings.Contains(baseFiles["docker-compose.yml"], setting) {
+		t.Errorf("the compose file does not map %s", setting)
+	}
+	if !strings.Contains(baseFiles[".env.example"], "# MP_POCKET_ID__SIGNUP=disabled") {
+		t.Error(".env.example does not list MP_POCKET_ID__SIGNUP with the default disabled")
+	}
+
+	for _, value := range []string{"disabled", "withToken", "open"} {
+		out, err := render.Platform(resultText(t, pocketGraphWithSignup(t, value), catalog), catalog, templates)
+		if err != nil {
+			t.Fatalf("signup %s: %v", value, err)
+		}
+		for _, f := range out.Files {
+			want, ok := baseFiles[f.Path]
+			if !ok {
+				t.Errorf("signup %s adds the file %s", value, f.Path)
+				continue
+			}
+			// the graph text itself and the .env.example default are the only files that may differ
+			if f.Path == "graph.yaml" || f.Path == ".env.example" {
+				continue
+			}
+			// the graph's value becomes the default of the setting, and nothing else moves
+			got := strings.Replace(string(f.Data), "${MP_POCKET_ID__SIGNUP:-"+value+"}", "${MP_POCKET_ID__SIGNUP:-disabled}", 1)
+			if got != want {
+				t.Errorf("signup %s changes %s beyond the sign up setting", value, f.Path)
+			}
+		}
+	}
+
+	g, p := contract.DecodeGraph([]byte(pocketGraphWithSignup(t, "bogus")))
+	if p != nil {
+		t.Fatal(p.Message)
+	}
+	result := check.Graph(g, catalog)
+	if result.Ok {
+		t.Fatal("signup: bogus passed the check")
+	}
+	found := slices.ContainsFunc(result.Problems, func(p contract.Problem) bool {
+		return p.Path == "modules.pocket-id.config.signup" && p.Code == check.CodeInvalidConfig
+	})
+	if !found {
+		t.Errorf("no invalid_config problem at modules.pocket-id.config.signup: %+v", result.Problems)
+	}
+}
+
+// TestPlatformREADMEIdentity checks that the README of the platform folder says what spec 0037
+// AC-10 asks, and that nothing in it still describes the old password sign in.
+func TestPlatformREADMEIdentity(t *testing.T) {
+	t.Parallel()
+	result, catalog, templates := platformResult(t)
+	out, err := render.Platform(result, catalog, templates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var readme string
+	for _, f := range out.Files {
+		if f.Path == "README.md" {
+			readme = string(f.Data)
+		}
+	}
+	for name, want := range map[string]string{
+		"passkeys":           "signs people in with passkeys only",
+		"the auth host DNS":  "Give it its own DNS name",
+		"the api key file":   "secrets/pocket-id/static-api-key",
+		"why the key stays":  "on every `docker compose up`",
+		"lost passkey":       "one-time-access-token",
+		"sign up setting":    "MP_POCKET_ID__SIGNUP",
+		"lost setup code":    "Delete the files in `secrets/api/setup/`",
+		"the client job log": "docker compose logs pocket-id_provision_api_oidc",
+		"the marker":         "carries a marker",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Errorf("README has no text for %s (%q)", name, want)
+		}
+	}
+	for _, gone := range []string{"Authelia", "ADMIN_EMAIL", "admin password", "admin user name"} {
+		if strings.Contains(readme, gone) {
+			t.Errorf("README still mentions %q", gone)
 		}
 	}
 }

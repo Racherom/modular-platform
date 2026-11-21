@@ -99,16 +99,17 @@ Each release carries `modular-platform-<version>.zip`. To install it, we recomme
 
 1. Unzip it where the platform should live, for example `/opt/modular-platform`, and open that
    folder.
-2. Run `sh setup.sh`. It asks for the domain (it must contain a dot, like `platform.localhost`),
-   the origin your browser sees (press Enter for `https://<domain>`), the admin email, the admin
-   user name, and the admin password (at least 12 characters). It writes `.env`, every secret in
-   `secrets/` and every data folder in `data/`, and never prints a secret.
+2. Run `sh setup.sh`. It asks for the domain (it must contain a dot, like `platform.localhost`) and
+   the origin your browser sees (press Enter for `https://<domain>`). It writes `.env`, every secret
+   in `secrets/` and every data folder in `data/`, and prints a setup code once (it is also in
+   `secrets/api/setup/code`).
 3. Run `docker compose up -d --wait`.
-4. Open the origin and sign in with the admin user name and password.
+4. Open the origin, enter the setup code, make the admin account on the identity provider's page
+   (Pocket ID, passkeys only), and sign in.
 
 The platform makes its own certificate authority, so your browser warns about the certificate on
 first visit. The `README.md` in the unzipped folder covers the rest: a public certificate,
-deploying a stack, changing the admin, backups, and upgrades. Every file in that folder is
+deploying a stack, the sign up setting, a lost passkey, changing the admin, backups, and upgrades. Every file in that folder is
 rendered from [deploy/managed/graph.yaml](deploy/managed/graph.yaml), the platform's own graph,
 with the built in catalog (`task managed:render` writes it into `build/managed/`).
 
