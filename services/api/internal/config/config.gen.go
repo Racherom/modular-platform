@@ -46,8 +46,6 @@ func (u Uses) MainDb(ctx context.Context) (*pgxpool.Pool, error) {
 
 // OidcBinding holds the fields of the oidc binding (capability oidc).
 type OidcBinding struct {
-	// AdminEmail is email of the provider's bootstrap admin. Nil when the binding does not deliver it.
-	AdminEmail *string
 	// Ca is root CA that signs the provider's certificate. Nil when the binding does not deliver it.
 	Ca []byte
 	// ClientId is client id of the consumer at the provider.
@@ -65,7 +63,6 @@ func (u Uses) Oidc(ctx context.Context) (OidcBinding, error) {
 		return OidcBinding{}, err
 	}
 	return OidcBinding{
-		AdminEmail:   sdk.OptionalField[string](f, "admin_email"),
 		Ca:           sdk.Field[[]byte](f, "ca"),
 		ClientId:     sdk.Field[string](f, "client_id"),
 		ClientSecret: sdk.Field[sdk.Secret](f, "client_secret"),
@@ -109,7 +106,7 @@ var Module = sdk.Declaration[Config, Uses]{
 	Bindings: []sdk.BindingSpec{
 		{Capability: "deploy-target", Client: "http", Env: map[string]string{"ca_file": "MP_DEPLOY_TARGET_CA_FILE", "token_file": "MP_DEPLOY_TARGET_TOKEN_FILE", "url": "MP_DEPLOY_TARGET_URL"}, Open: httpclient.Open},
 		{Capability: "main-db", Client: "postgresql", Env: map[string]string{"ca_file": "MP_DATABASE_CA_FILE", "database": "MP_DATABASE_NAME", "password_file": "MP_DATABASE_PASSWORD_FILE", "sslmode": "MP_DATABASE_SSLMODE", "url": "MP_DATABASE_URL", "user": "MP_DATABASE_USER"}, Open: pg.Open},
-		{Capability: "oidc", Env: map[string]string{"admin_email": "MP_ADMIN_EMAIL", "ca_file": "MP_OIDC_CA_FILE", "client_id": "MP_OIDC_CLIENT_ID", "client_secret_file": "MP_OIDC_CLIENT_SECRET_FILE", "issuer": "MP_OIDC_ISSUER"}, Fields: []sdk.FieldSpec{{Name: "admin_email", Env: "MP_ADMIN_EMAIL", Type: "string", Optional: true}, {Name: "ca", Env: "MP_OIDC_CA_FILE", Type: "certificate", Optional: true}, {Name: "client_id", Env: "MP_OIDC_CLIENT_ID", Type: "string", Pattern: "[a-z0-9][a-z0-9_-]*"}, {Name: "client_secret", Env: "MP_OIDC_CLIENT_SECRET_FILE", Type: "secret"}, {Name: "issuer", Env: "MP_OIDC_ISSUER", Type: "url"}}},
+		{Capability: "oidc", Env: map[string]string{"ca_file": "MP_OIDC_CA_FILE", "client_id": "MP_OIDC_CLIENT_ID", "client_secret_file": "MP_OIDC_CLIENT_SECRET_FILE", "issuer": "MP_OIDC_ISSUER"}, Fields: []sdk.FieldSpec{{Name: "ca", Env: "MP_OIDC_CA_FILE", Type: "certificate", Optional: true}, {Name: "client_id", Env: "MP_OIDC_CLIENT_ID", Type: "string", Pattern: "[a-z0-9][a-z0-9_-]*"}, {Name: "client_secret", Env: "MP_OIDC_CLIENT_SECRET_FILE", Type: "secret"}, {Name: "issuer", Env: "MP_OIDC_ISSUER", Type: "url"}}},
 		{Capability: "public", Env: map[string]string{"base_path": "MP_BASE_PATH", "origin": "MP_PUBLIC_ORIGIN"}, Fields: []sdk.FieldSpec{{Name: "base_path", Env: "MP_BASE_PATH", Type: "string", Optional: true}, {Name: "origin", Env: "MP_PUBLIC_ORIGIN", Type: "url"}}},
 		{Capability: "renderer", Client: "http", Env: map[string]string{"ca_file": "MP_RENDERER_CA_FILE", "token_file": "MP_RENDERER_TOKEN_FILE", "url": "MP_RENDERER_URL"}, Open: httpclient.Open},
 	},

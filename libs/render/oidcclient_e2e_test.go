@@ -180,6 +180,9 @@ func TestOIDCClientEndToEnd(t *testing.T) {
 	if got := callback("app_oidc"); got != want {
 		t.Errorf("redirect URI = %q, want %q", got, want)
 	}
+	if c, _ := client("app_oidc"); fmt.Sprint(c["logoutCallbackURLs"]) != "[https://pocket.example.test/]" {
+		t.Errorf("logout URIs = %v, want the home page", c["logoutCallbackURLs"])
+	}
 	if c, _ := client("app_oidc"); !strings.HasPrefix(fmt.Sprint(c["description"]), "mp-marker:") {
 		t.Errorf("client description %v lacks the marker", c["description"])
 	}

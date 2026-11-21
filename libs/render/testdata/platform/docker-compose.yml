@@ -124,7 +124,6 @@ services:
         required: true
     environment:
       MP_ACME_URL: https://cert-issuer.modular-platform.internal:9000/acme/acme/directory
-      MP_ADMIN_EMAIL: ${MP_AUTHELIA__ADMIN_EMAIL}
       MP_BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
       MP_CA_FILE: /run/secrets/uses/acme/ca
       MP_CALLER_SIGNING_KEY_FILE: /run/secrets/api_caller-signing-key

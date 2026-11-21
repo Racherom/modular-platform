@@ -20,6 +20,7 @@ yields:
     client_secret: generate
     ca: {admin: ca}
     redirect_path: consumer
+    logout_path: consumer
   job:
     # The platform's own small image: busybox sh and sleep, curl and jq (spec 0037, task 5a).
     image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0 # x-release-please-version
@@ -31,6 +32,7 @@ yields:
       printf 'X-API-KEY: %s\n' "$(cat "$MP_ADMIN_API_KEY_FILE")" > /tmp/key.hdr
       mark="mp-marker:$MP_MARKER"
       callback="${MP_ADMIN_ORIGIN%/}${MP_ADMIN_BASE_PATH:-}$MP_REDIRECT_PATH"
+      logout="${MP_ADMIN_ORIGIN%/}${MP_ADMIN_BASE_PATH:-}$MP_LOGOUT_PATH"
       call() { # method path [curl args]: the status code on stdout, the body in /tmp/out
         m=$1; p=$2; shift 2
         curl -sS -o /tmp/out -w '%{http_code}' --connect-timeout 5 --max-time 30 \
@@ -38,8 +40,8 @@ yields:
       }
       fail() { echo "provision: $*" >&2; exit 1; }
       echo "provision: oidc client $MP_CLIENT_ID for $MP_CONSUMER (slot $MP_SLOT)"
-      jq -n --arg id "$MP_CLIENT_ID" --arg mark "$mark" --arg cb "$callback" \
-        '{id: $id, name: $id, description: $mark, callbackURLs: [$cb], pkceEnabled: true, isPublic: false, skipConsent: true}' > /tmp/client.json
+      jq -n --arg id "$MP_CLIENT_ID" --arg mark "$mark" --arg cb "$callback" --arg lo "$logout" \
+        '{id: $id, name: $id, description: $mark, callbackURLs: [$cb], logoutCallbackURLs: [$lo], pkceEnabled: true, isPublic: false, skipConsent: true}' > /tmp/client.json
       jq 'del(.id)' /tmp/client.json > /tmp/client-put.json
       case $(call GET "/api/oidc/clients/$MP_CLIENT_ID") in
         404) [ "$(call POST /api/oidc/clients --data @/tmp/client.json)" = 201 ] || fail "creating client $MP_CLIENT_ID failed" ;;

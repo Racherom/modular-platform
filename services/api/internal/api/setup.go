@@ -54,12 +54,6 @@ func readSettings(ctx context.Context, m *sdk.Module[config.Config, config.Uses]
 		}
 		s.BasePath = *public.BasePath
 	}
-	if oidc.AdminEmail == nil {
-		// the first verified sign in with this email binds the admin, so api cannot run without it
-		m.Log.ErrorContext(ctx, "config: uses.oidc.admin_email (MP_ADMIN_EMAIL): missing: api needs the admin email; set MP_ADMIN_EMAIL")
-		return s, fmt.Errorf("admin email: %w", sdk.ErrStart)
-	}
-	s.AdminEmail = *oidc.AdminEmail
 	if s.Idle, err = c.SessionIdle(ctx); err != nil {
 		return s, err
 	}

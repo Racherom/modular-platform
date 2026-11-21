@@ -71,6 +71,8 @@ identity_providers:
         pkce_challenge_method: S256
         redirect_uris:
           - '{{ env "ORIGIN" }}{{ env "BASE_PATH" }}[[ index .Values "redirect_path" ]]'
+        post_logout_redirect_uris:
+          - '{{ env "ORIGIN" }}{{ env "BASE_PATH" }}[[ index .Values "logout_path" ]]'
         scopes: [openid, profile, email, groups]
         response_types: [code]
         grant_types: [authorization_code]

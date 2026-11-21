@@ -228,7 +228,7 @@ func (s *Service) admit(r *http.Request, c Claims) (reason string, justBound boo
 // legacyBind is spec 0006's rule, kept only until the setup is wired in: the first verified sign
 // in with the admin email binds the admin.
 func (s *Service) legacyBind(ctx context.Context, c Claims) (string, bool, error) {
-	if !strings.EqualFold(c.Email, s.cfg.AdminEmail) {
+	if s.cfg.AdminEmail == "" || !strings.EqualFold(c.Email, s.cfg.AdminEmail) {
 		return ReasonNotAdmin, false, nil
 	}
 	if !c.EmailVerified {

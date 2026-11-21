@@ -30,3 +30,4 @@ uses:
       client_secret: APP_OIDC_CLIENT_SECRET_FILE
     fields:
       redirect_path: {value: /callback}
+      logout_path: {value: /}
