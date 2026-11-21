@@ -155,6 +155,61 @@ describe('SetupPage', () => {
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Registration failed; check your answers and try again.')
   })
 
+  it('marks the code field when the code is refused and clears it (0036 AC-36)', async () => {
+    state = { state: 'pending', session: false }
+    const answer = fetchHandler.current
+    fetchHandler.current = async (req) =>
+      new URL(req.url).pathname === '/api/v1/setup/code'
+        ? Response.json(
+            { problems: [{ severity: 'error', code: 'code_refused', message: 'The setup code is not accepted.' }] },
+            { status: 401 },
+          )
+        : answer(req)
+    show()
+    fireEvent.change(await screen.findByLabelText('Setup code'), { target: { value: 'a-wrong-code' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(await screen.findByText('The setup code is not accepted.')).toBeTruthy()
+    const field = screen.getByLabelText('Setup code') as HTMLInputElement
+    expect(field.getAttribute('aria-invalid')).toBe('true')
+    expect(field.value).toBe('')
+    expect(localStorage.length + sessionStorage.length).toBe(0)
+  })
+
+  it('shows the failure with Retry when the setup state cannot be read, and never guesses the next step (AC-3)', async () => {
+    let up = false
+    const answer = fetchHandler.current
+    fetchHandler.current = async (req) =>
+      !up && new URL(req.url).pathname === '/api/v1/setup'
+        ? Response.json({ problems: [{ severity: 'error', code: 'unavailable', message: 'The platform is not ready.' }] }, { status: 503 })
+        : answer(req)
+    state = { state: 'pending', session: true, providerReady: true, firstAdmin: true }
+    show()
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'The platform is not ready.Retry')
+    expect(screen.queryByRole('button', { name: 'Create your admin account' })).toBeNull()
+    expect(screen.queryByLabelText('Setup code')).toBeNull()
+
+    up = true
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByRole('button', { name: 'Create your admin account' })).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('says why the identity link was refused and stays on the page (AC-3, AC-4)', async () => {
+    state = { state: 'pending', session: true, providerReady: true, firstAdmin: true }
+    const answer = fetchHandler.current
+    fetchHandler.current = async (req) =>
+      new URL(req.url).pathname === '/api/v1/setup/identity-link'
+        ? Response.json({ problems: [{ severity: 'error', code: 'setup_done', message: 'The setup is done.' }] }, { status: 409 })
+        : answer(req)
+    show()
+    fireEvent.click(await screen.findByRole('button', { name: 'Create your admin account' }))
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'The setup is done.')
+    expect(assign).not.toHaveBeenCalled()
+    // the button stays usable for another try, and the sign in is still there
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create your admin account' }).hasAttribute('disabled')).toBe(false))
+    expect(screen.getByRole('link', { name: 'Sign in to finish the setup' })).toBeTruthy()
+  })
+
   it('treats a 404 from an older api as done and shows nothing', async () => {
     fetchHandler.current = async () => new Response('not found', { status: 404 })
     const { container } = show()

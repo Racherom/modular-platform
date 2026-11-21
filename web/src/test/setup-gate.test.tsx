@@ -9,8 +9,16 @@ import { fetchHandler } from './setup'
 // While the setup is pending every page leads to /setup, and once it is done /setup leads home
 // (spec 0036, editor).
 
-function open(path: string, state: SetupState | 404) {
-  fetchHandler.current = async () => (state === 404 ? new Response('not found', { status: 404 }) : Response.json(state))
+function open(path: string, state: SetupState | 404 | 503) {
+  fetchHandler.current = async () => {
+    if (state === 404) return new Response('not found', { status: 404 })
+    if (state === 503)
+      return Response.json(
+        { problems: [{ severity: 'error', code: 'unavailable', message: 'The platform is not ready.' }] },
+        { status: 503 },
+      )
+    return Response.json(state)
+  }
   const root = createRootRoute({
     component: () => (
       <SetupGate>
@@ -45,5 +53,12 @@ describe('SetupGate', () => {
   it('treats a 404 as done', async () => {
     open('/', 404)
     expect(await screen.findByText('the editor')).toBeTruthy()
+  })
+
+  it('fails closed: a setup state it cannot read shows the failure with Retry, never the editor', async () => {
+    const router = open('/', 503)
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'The platform is not ready.Retry')
+    expect(screen.queryByText('the editor')).toBeNull()
+    expect(router.state.location.pathname).toBe('/')
   })
 })
