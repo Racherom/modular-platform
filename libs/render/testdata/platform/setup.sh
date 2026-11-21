@@ -95,7 +95,6 @@ check_env() {
 		MP_API__PROXY_HOPS) ;;
 		MP_API__SESSION_IDLE) ;;
 		MP_API__SESSION_MAX) ;;
-		MP_AUTHELIA__ADMIN_EMAIL) check_value MP_AUTHELIA__ADMIN_EMAIL 'string' '' '' '^((([]\001-\010\013\016-\037!-,.-?A-\\_-\177^-]|[\302-\364][\200-\277]{1,3}))+@(([]\001-\010\013\016-\037!-,.-?A-\\_-\177^-]|[\302-\364][\200-\277]{1,3}))+)$' false ;;
 		MP_DEPLOYER_DOCKER__PLATFORM_GID) ;;
 		MP_DEPLOYER_DOCKER__PLATFORM_UID) ;;
 		MP_DEPLOYER_DOCKER__PULL_TIMEOUT) ;;
@@ -109,15 +108,16 @@ check_env() {
 		MP_INGRESS__HTTPS_PORT) check_value MP_INGRESS__HTTPS_PORT 'int' '1' '65535' '' false ;;
 		MP_INGRESS__ORIGIN) check_value MP_INGRESS__ORIGIN 'string' '' '' '^(http(s)?://(([]\001-\011\013-,.-\\_-\177^-]|[\302-\364][\200-\277]{1,3}))+)$' false ;;
 		MP_INGRESS__TLS_MODE) check_value MP_INGRESS__TLS_MODE 'enum' '' '' '' false 'internal' 'acme' ;;
+		MP_POCKET_ID__SIGNUP) check_value MP_POCKET_ID__SIGNUP 'enum' '' '' '' false 'disabled' 'withToken' 'open' ;;
 		MP_RENDERER__PROXY_HOPS) ;;
 		MP_RENDERER__RENDERER_MODE) ;;
 		MP_RENDERER__RENDERER_RATE) ;;
 		MP_WEB__SIGNED_OUT) check_value MP_WEB__SIGNED_OUT 'enum' '' '' '' false 'index' 'sign-in' ;;
 		MP_API__*) echo "setup.sh: warning: $var in .env names no value of api" >&2 ;;
-		MP_AUTHELIA__*) echo "setup.sh: warning: $var in .env names no value of authelia" >&2 ;;
 		MP_CERT_ISSUER__*) echo "setup.sh: warning: $var in .env names no value of cert-issuer" >&2 ;;
 		MP_DEPLOYER_DOCKER__*) echo "setup.sh: warning: $var in .env names no value of deployer-docker" >&2 ;;
 		MP_INGRESS__*) echo "setup.sh: warning: $var in .env names no value of ingress" >&2 ;;
+		MP_POCKET_ID__*) echo "setup.sh: warning: $var in .env names no value of pocket-id" >&2 ;;
 		MP_POSTGRES__*) echo "setup.sh: warning: $var in .env names no value of postgres" >&2 ;;
 		MP_RENDERER__*) echo "setup.sh: warning: $var in .env names no value of renderer" >&2 ;;
 		MP_WEB__*) echo "setup.sh: warning: $var in .env names no value of web" >&2 ;;
@@ -226,7 +226,6 @@ ask_secret() {
 # Values the modules ask you, written into .env.
 ask MP_INGRESS__DOMAIN 'string' '' '' '^(([0-9a-z-])+((\\.([0-9a-z-])+))+)$' false 'The domain the platform answers on, with at least one dot (Authelia needs one).' ""
 ask MP_INGRESS__ORIGIN 'string' '' '' '^(http(s)?://(([]\001-\011\013-,.-\\_-\177^-]|[\302-\364][\200-\277]{1,3}))+)$' false 'Scheme, host and port the browser sees.' "https://$(env_get MP_INGRESS__DOMAIN)"
-ask MP_AUTHELIA__ADMIN_EMAIL 'string' '' '' '^((([]\001-\010\013\016-\037!-,.-?A-\\_-\177^-]|[\302-\364][\200-\277]{1,3}))+@(([]\001-\010\013\016-\037!-,.-?A-\\_-\177^-]|[\302-\364][\200-\277]{1,3}))+)$' false 'Email of the admin (the first verified sign in with it becomes the admin).' ""
 
 new_secret() {
 	if [ -e "$1" ]; then
@@ -256,16 +255,14 @@ new_output() {
 	echo "created $1"
 }
 
-new_secret secrets/authelia/jwt-secret
-new_secret secrets/authelia/oidc-hmac
-new_secret secrets/authelia/session-secret
-new_secret secrets/authelia/storage-key
+new_secret secrets/pocket-id/encryption-key
+new_secret secrets/pocket-id/static-api-key
 new_secret secrets/postgres/password
 new_secret secrets/api/uses_deploy-target_token
 new_secret secrets/api/uses_main-db_password
 new_secret secrets/api/uses_oidc_client_secret
 new_secret secrets/api/uses_renderer_token
-new_secret secrets/authelia/uses_db_password
+new_secret secrets/pocket-id/uses_db_password
 new_output secrets/postgres/uses_tls_cert
 new_output secrets/postgres/uses_tls_key
 
@@ -437,77 +434,6 @@ JSON
 	wrote 0600 secrets/cert-issuer/ca-json
 else
 	echo "kept    the files of setup step config of cert-issuer"
-fi
-
-# Setup step users of authelia
-if missing secrets/authelia/users; then
-	echo "running setup step users of authelia"
-	step_folder secrets/authelia
-	answers=
-	step_ask 'Admin user name (you sign in with it)' false
-	step_ask 'Admin password (at least 12 characters, not shown)' true
-	printf '%s' "$answers" | docker run --rm -i --network none \
-		--user "$(id -u):$(id -g)" \
-		-v "$PWD/secrets/authelia:/out" \
-		-e 'MP_GRAPH=modular-platform' \
-		-e 'MP_INSTANCE=authelia' \
-		-e "MP_ASK_ADMIN_EMAIL=$(env_get MP_AUTHELIA__ADMIN_EMAIL)" \
-		--entrypoint 'sh' \
-		'authelia/authelia:4.39.28' '-c' 'set -eu
-IFS= read -r user
-IFS= read -r pass
-case $user in
-*[!a-z0-9._-]* | "") echo "the admin user name may hold only a to z, 0 to 9, dot, underscore and hyphen" >&2; exit 1 ;;
-esac
-if [ "${#pass}" -lt 12 ]; then echo "the admin password must have at least 12 characters" >&2; exit 1; fi
-hash=$(authelia crypto hash generate argon2 --password "$pass" | sed -n '\''s/^Digest: //p'\'')
-[ -n "$hash" ]
-printf "users:\n  %s:\n    displayname: %s\n    password: '\''%s'\''\n    email: %s\n" "$user" "$user" "$hash" "$MP_ASK_ADMIN_EMAIL" > /out/users
-'
-	wrote 0600 secrets/authelia/users
-else
-	echo "kept    the files of setup step users of authelia"
-fi
-
-# Setup step signing-key of authelia
-if missing secrets/authelia/signing-key; then
-	echo "running setup step signing-key of authelia"
-	step_folder secrets/authelia
-	docker run --rm -i --network none \
-		--user "$(id -u):$(id -g)" \
-		-v "$PWD/secrets/authelia:/out" \
-		-e 'MP_GRAPH=modular-platform' \
-		-e 'MP_INSTANCE=authelia' \
-		-e "MP_ASK_ADMIN_EMAIL=$(env_get MP_AUTHELIA__ADMIN_EMAIL)" \
-		'authelia/authelia:4.39.28' 'authelia' 'crypto' 'pair' 'rsa' 'generate' '--bits' '2048' '--directory' '/out' '--file.private-key' 'signing-key' '--file.public-key' 'signing-key.pub' </dev/null
-	wrote 0600 secrets/authelia/signing-key
-else
-	echo "kept    the files of setup step signing-key of authelia"
-fi
-
-# Setup step client-digest of authelia
-step_folder secrets/authelia/client-digests
-if missing secrets/authelia/client-digests/api; then
-	echo "running setup step client-digest of authelia for api"
-	step_folder secrets/authelia
-	need_read secrets/api/uses_oidc_client_secret
-	docker run --rm -i --network none \
-		--user "$(id -u):$(id -g)" \
-		-v "$PWD/secrets/authelia:/out" \
-		-v "$PWD/secrets/api/uses_oidc_client_secret:/in/oidc/client_secret:ro" \
-		-e 'MP_GRAPH=modular-platform' \
-		-e 'MP_INSTANCE=authelia' \
-		-e "MP_ASK_ADMIN_EMAIL=$(env_get MP_AUTHELIA__ADMIN_EMAIL)" \
-		-e 'CLIENT=api' \
-		--entrypoint 'sh' \
-		'authelia/authelia:4.39.28' '-c' 'set -eu
-digest=$(authelia crypto hash generate pbkdf2 --variant sha512 --password "$(cat /in/oidc/client_secret)" | sed -n '\''s/^Digest: //p'\'')
-[ -n "$digest" ]
-printf '\''%s'\'' "$digest" > "/out/client-digests/$CLIENT"
-' </dev/null
-	wrote 0600 secrets/authelia/client-digests/api
-else
-	echo "kept    the files of setup step client-digest of authelia for api"
 fi
 
 # Setup step caller-key of api

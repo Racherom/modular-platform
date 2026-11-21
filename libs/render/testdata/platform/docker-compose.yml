@@ -1,8 +1,6 @@
 configs:
   api_env:
     file: ./config/api.env
-  authelia_configuration.yml:
-    file: ./config/authelia/configuration.yml
   deployer-docker_env:
     file: ./config/deployer-docker.env
   ingress_Caddyfile:
@@ -43,22 +41,6 @@ secrets:
     file: ./secrets/api/caller-public-key
   api_uses_renderer_token:
     file: ./secrets/api/uses_renderer_token
-  authelia_jwt-secret:
-    file: ./secrets/authelia/jwt-secret
-  authelia_oidc-hmac:
-    file: ./secrets/authelia/oidc-hmac
-  authelia_session-secret:
-    file: ./secrets/authelia/session-secret
-  authelia_signing-key:
-    file: ./secrets/authelia/signing-key
-  authelia_storage-key:
-    file: ./secrets/authelia/storage-key
-  authelia_users:
-    file: ./secrets/authelia/users
-  authelia_uses_db_ca:
-    file: ./secrets/cert-issuer/root-ca
-  authelia_uses_db_password:
-    file: ./secrets/authelia/uses_db_password
   cert-issuer_admin_certs_ca:
     file: ./secrets/cert-issuer/root-ca
   cert-issuer_admin_certs_password:
@@ -81,6 +63,16 @@ secrets:
     file: ./secrets/cert-issuer/root-ca
   ingress_uses_trust_ca:
     file: ./secrets/cert-issuer/root-ca
+  pocket-id_admin_oidc_api_key:
+    file: ./secrets/pocket-id/static-api-key
+  pocket-id_encryption-key:
+    file: ./secrets/pocket-id/encryption-key
+  pocket-id_static-api-key:
+    file: ./secrets/pocket-id/static-api-key
+  pocket-id_uses_db_ca:
+    file: ./secrets/cert-issuer/root-ca
+  pocket-id_uses_db_password:
+    file: ./secrets/pocket-id/uses_db_password
   postgres_admin_server_admin_password:
     file: ./secrets/postgres/password
   postgres_admin_server_ca:
@@ -101,9 +93,6 @@ services:
     - source: api_env
       target: /etc/modular-platform/module.env
     depends_on:
-      authelia:
-        condition: service_healthy
-        required: true
       cert-issuer:
         condition: service_healthy
         required: true
@@ -112,6 +101,12 @@ services:
         required: true
       ingress:
         condition: service_healthy
+        required: true
+      pocket-id:
+        condition: service_healthy
+        required: true
+      pocket-id_provision_api_oidc:
+        condition: service_completed_successfully
         required: true
       postgres:
         condition: service_healthy
@@ -140,9 +135,10 @@ services:
       MP_ENV_FILE: /etc/modular-platform/module.env
       MP_INSTANCE: api
       MP_OIDC_CA_FILE: /run/volumes/oidc/ca/root.crt
-      MP_OIDC_CLIENT_ID: api
+      MP_OIDC_CLIENT_ID: api_oidc
       MP_OIDC_CLIENT_SECRET_FILE: /run/secrets/uses/oidc/client_secret
-      MP_OIDC_ISSUER: ${MP_INGRESS__ORIGIN}${MP_INGRESS__BASE_PATH:-}/auth
+      MP_OIDC_FIRST_ADMIN_PATH: /setup
+      MP_OIDC_ISSUER: https://auth.${MP_INGRESS__DOMAIN}
       MP_PUBLIC_ORIGIN: ${MP_INGRESS__ORIGIN}
       MP_RENDERER_CA_FILE: /run/secrets/uses/renderer/ca
       MP_RENDERER_TOKEN_FILE: /run/secrets/uses/renderer/token
@@ -200,81 +196,6 @@ services:
     - read_only: true
       source: ./data/ingress/data/caddy/pki/authorities/local
       target: /run/volumes/oidc/ca/
-      type: bind
-  authelia:
-    cap_drop:
-    - ALL
-    configs:
-    - source: authelia_configuration.yml
-      target: /config/configuration.yml
-    depends_on:
-      ingress:
-        condition: service_healthy
-        required: true
-      postgres:
-        condition: service_healthy
-        required: true
-      postgres_provision_authelia_db:
-        condition: service_completed_successfully
-        required: true
-    environment:
-      AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE: /run/secrets/authelia_oidc-hmac
-      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /run/secrets/authelia_jwt-secret
-      AUTHELIA_SESSION_SECRET_FILE: /run/secrets/authelia_session-secret
-      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /run/secrets/authelia_storage-key
-      AUTHELIA_STORAGE_POSTGRES_PASSWORD_FILE: /run/secrets/uses/db/password
-      BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
-      DOMAIN: ${MP_INGRESS__DOMAIN}
-      ORIGIN: ${MP_INGRESS__ORIGIN}
-      X_ADMIN_EMAIL: ${MP_AUTHELIA__ADMIN_EMAIL}
-      X_AUTHELIA_CONFIG_FILTERS: template
-    healthcheck:
-      interval: 10s
-      retries: 10
-      start_period: 30s
-      test:
-      - CMD
-      - /app/healthcheck.sh
-      timeout: 3s
-    image: authelia/authelia:4.39.28
-    labels:
-      io.github.racherom.modular-platform.graph: modular-platform
-      io.github.racherom.modular-platform.instance: authelia
-      io.github.racherom.modular-platform.module: authelia
-      io.github.racherom.modular-platform.stack: platform
-    networks:
-      internal:
-        aliases:
-        - authelia.modular-platform.internal
-    restart: unless-stopped
-    secrets:
-    - source: authelia_session-secret
-      target: /run/secrets/authelia_session-secret
-    - source: authelia_storage-key
-      target: /run/secrets/authelia_storage-key
-    - source: authelia_jwt-secret
-      target: /run/secrets/authelia_jwt-secret
-    - source: authelia_oidc-hmac
-      target: /run/secrets/authelia_oidc-hmac
-    - source: authelia_users
-      target: /config/users.yml
-    - source: authelia_signing-key
-      target: /run/secrets/oidc-signing-key
-    - source: authelia_uses_db_ca
-      target: /run/secrets/db/ca.crt
-    - source: authelia_uses_db_password
-      target: /run/secrets/uses/db/password
-    - source: api_uses_oidc_client_secret
-      target: /run/secrets/clients/oidc/client_secret/api
-    security_opt:
-    - no-new-privileges:true
-    tmpfs:
-    - /tmp
-    user: ${MP_UID}:${MP_GID}
-    volumes:
-    - read_only: true
-      source: ./secrets/authelia/client-digests
-      target: /run/secrets/client-digests
       type: bind
   cert-issuer:
     cap_add:
@@ -519,10 +440,12 @@ services:
         aliases:
         - ingress.modular-platform.internal
         - ${MP_INGRESS__DOMAIN}
+        - auth.${MP_INGRESS__DOMAIN}
       internal:
         aliases:
         - ingress.modular-platform.internal
         - ${MP_INGRESS__DOMAIN}
+        - auth.${MP_INGRESS__DOMAIN}
     ports:
     - published: ${MP_INGRESS__HTTPS_PORT:-443}
       target: 443
@@ -549,13 +472,16 @@ services:
     cap_drop:
     - ALL
     depends_on:
+      pocket-id_revoke_oidc:
+        condition: service_completed_successfully
+        required: true
       postgres_revoke_server:
         condition: service_completed_successfully
         required: true
     entrypoint:
     - sleep
     - infinity
-    image: postgres:18.6
+    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0-test
     init: true
     labels:
       io.github.racherom.modular-platform.graph: modular-platform
@@ -566,6 +492,232 @@ services:
     restart: unless-stopped
     security_opt:
     - no-new-privileges:true
+    user: ${MP_UID}:${MP_GID}
+  pocket-id:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      set -eu
+      printf '%s:%s:%s:%s:%s\n' "$$DB_HOST" "$$DB_PORT" "$$DB_NAME" "$$DB_USER" "$$(cat "$$DB_PASSWORD_FILE")" > /tmp/pgpass
+      chmod 0600 /tmp/pgpass
+      query="sslmode=$$DB_SSLMODE"
+      if [ -n "$${DB_CA_FILE:-}" ]; then query="$$query&sslrootcert=$$DB_CA_FILE"; fi
+      export DB_CONNECTION_STRING="postgres://$$DB_USER@$$DB_HOST:$$DB_PORT/$$DB_NAME?$$query"
+      exec /app/pocket-id
+    depends_on:
+      ingress:
+        condition: service_healthy
+        required: true
+      postgres:
+        condition: service_healthy
+        required: true
+      postgres_provision_pocket-id_db:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+    - sh
+    - -c
+    environment:
+      ALLOW_USER_SIGNUPS: ${MP_POCKET_ID__SIGNUP:-disabled}
+      ANALYTICS_DISABLED: "true"
+      APP_URL: https://auth.${MP_INGRESS__DOMAIN}
+      DB_CA_FILE: /run/secrets/uses/db/ca
+      DB_HOST: postgres.modular-platform.internal
+      DB_NAME: pocket_id
+      DB_PASSWORD_FILE: /run/secrets/uses/db/password
+      DB_PORT: "5432"
+      DB_SSLMODE: verify-full
+      DB_USER: pocket_id
+      ENCRYPTION_KEY_FILE: /run/secrets/pocket-id_encryption-key
+      FILE_BACKEND: database
+      PGPASSFILE: /tmp/pgpass
+      STATIC_API_KEY_FILE: /run/secrets/pocket-id_static-api-key
+      TRUST_PROXY: "true"
+      UI_CONFIG_DISABLED: "true"
+    healthcheck:
+      interval: 10s
+      retries: 10
+      start_period: 30s
+      test:
+      - CMD
+      - /app/pocket-id
+      - healthcheck
+      timeout: 3s
+    image: ghcr.io/pocket-id/pocket-id:v2.19.3
+    labels:
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: pocket-id
+      io.github.racherom.modular-platform.module: pocket-id
+      io.github.racherom.modular-platform.stack: platform
+    networks:
+      internal:
+        aliases:
+        - pocket-id.modular-platform.internal
+    read_only: true
+    restart: unless-stopped
+    secrets:
+    - source: pocket-id_encryption-key
+      target: /run/secrets/pocket-id_encryption-key
+    - source: pocket-id_static-api-key
+      target: /run/secrets/pocket-id_static-api-key
+    - source: pocket-id_uses_db_ca
+      target: /run/secrets/uses/db/ca
+    - source: pocket-id_uses_db_password
+      target: /run/secrets/uses/db/password
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    - /app/data
+    user: ${MP_UID}:${MP_GID}
+  pocket-id_provision_api_oidc:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      umask 077
+      printf 'X-API-KEY: %s\n' "$$(cat "$$MP_ADMIN_API_KEY_FILE")" > /tmp/key.hdr
+      mark="mp-marker:$$MP_MARKER"
+      callback="$${MP_ADMIN_ORIGIN%/}$${MP_ADMIN_BASE_PATH:-}$$MP_REDIRECT_PATH"
+      logout="$${MP_ADMIN_ORIGIN%/}$${MP_ADMIN_BASE_PATH:-}$$MP_LOGOUT_PATH"
+      call() { # method path [curl args]: the status code on stdout, the body in /tmp/out
+        m=$$1; p=$$2; shift 2
+        curl -sS -o /tmp/out -w '%{http_code}' --connect-timeout 5 --max-time 30 \
+          -X "$$m" -H @/tmp/key.hdr -H 'Content-Type: application/json' "$$@" "$$MP_ADMIN_URL$$p"
+      }
+      fail() { echo "provision: $$*" >&2; exit 1; }
+      echo "provision: oidc client $$MP_CLIENT_ID for $$MP_CONSUMER (slot $$MP_SLOT)"
+      jq -n --arg id "$$MP_CLIENT_ID" --arg mark "$$mark" --arg cb "$$callback" --arg lo "$$logout" \
+        '{id: $$id, name: $$id, description: $$mark, callbackURLs: [$$cb], logoutCallbackURLs: [$$lo], pkceEnabled: true, isPublic: false, skipConsent: true}' > /tmp/client.json
+      jq 'del(.id)' /tmp/client.json > /tmp/client-put.json
+      case $$(call GET "/api/oidc/clients/$$MP_CLIENT_ID") in
+        404) [ "$$(call POST /api/oidc/clients --data @/tmp/client.json)" = 201 ] || fail "creating client $$MP_CLIENT_ID failed" ;;
+        200)
+          [ "$$(jq -r .description /tmp/out)" = "$$mark" ] || fail "client $$MP_CLIENT_ID exists and was not made by the platform"
+          [ "$$(call PUT "/api/oidc/clients/$$MP_CLIENT_ID" --data @/tmp/client-put.json)" = 200 ] || fail "updating client $$MP_CLIENT_ID failed" ;;
+        *) fail "reading client $$MP_CLIENT_ID failed" ;;
+      esac
+      # the secret: add the one the consumer reads, then delete the ones that were there before
+      [ "$$(call GET "/api/oidc/clients/$$MP_CLIENT_ID")" = 200 ] || fail "reading client $$MP_CLIENT_ID failed"
+      old=$$(jq -r '.credentials.secrets[].id' /tmp/out)
+      jq -n --rawfile s "$$MP_CLIENT_SECRET_FILE" '{secret: ($$s | rtrimstr("\n"))}' > /tmp/secret.json
+      [ "$$(call POST "/api/oidc/clients/$$MP_CLIENT_ID/secrets" --data @/tmp/secret.json)" = 201 ] || fail "setting the secret of client $$MP_CLIENT_ID failed"
+      for id in $$old; do
+        [ "$$(call DELETE "/api/oidc/clients/$$MP_CLIENT_ID/secrets/$$id")" = 204 ] || fail "removing an old secret of client $$MP_CLIENT_ID failed"
+      done
+      echo "provision: client $$MP_CLIENT_ID is ready"
+    depends_on:
+      pocket-id:
+        condition: service_healthy
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_API_KEY_FILE: /run/secrets/admin/api_key
+      MP_ADMIN_BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
+      MP_ADMIN_FIRST_ADMIN_PATH: /setup
+      MP_ADMIN_ISSUER: https://auth.${MP_INGRESS__DOMAIN}
+      MP_ADMIN_ORIGIN: ${MP_INGRESS__ORIGIN}
+      MP_ADMIN_URL: http://pocket-id.modular-platform.internal:1411
+      MP_CLIENT_ID: api_oidc
+      MP_CLIENT_SECRET_FILE: /run/secrets/bind/client_secret
+      MP_CONSUMER: api
+      MP_CONSUMER_HOST: api.modular-platform.internal
+      MP_LOGOUT_PATH: /
+      MP_MARKER: mp_provisioned_52d73175
+      MP_REDIRECT_PATH: /api/v1/auth/callback
+      MP_SLOT: oidc
+    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0-test
+    labels:
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: pocket-id
+      io.github.racherom.modular-platform.job: provision
+      io.github.racherom.modular-platform.module: pocket-id
+      io.github.racherom.modular-platform.stack: platform
+    networks:
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: pocket-id_admin_oidc_api_key
+      target: /run/secrets/admin/api_key
+    - source: api_uses_oidc_client_secret
+      target: /run/secrets/bind/client_secret
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
+    user: ${MP_UID}:${MP_GID}
+  pocket-id_revoke_oidc:
+    cap_drop:
+    - ALL
+    command:
+    - |
+      umask 077
+      printf 'X-API-KEY: %s\n' "$$(cat "$$MP_ADMIN_API_KEY_FILE")" > /tmp/key.hdr
+      mark="mp-marker:$$MP_MARKER"
+      call() {
+        m=$$1; p=$$2; shift 2
+        curl -sS -o /tmp/out -w '%{http_code}' --connect-timeout 5 --max-time 30 \
+          -X "$$m" -H @/tmp/key.hdr -H 'Content-Type: application/json' "$$@" "$$MP_ADMIN_URL$$p"
+      }
+      fail() { echo "revoke: $$*" >&2; exit 1; }
+      echo "revoke: clients made by the platform that no binding keeps are deleted"
+      : > /tmp/drop
+      page=1
+      while :; do
+        [ "$$(call GET "/api/oidc/clients?pagination%5Blimit%5D=50&pagination%5Bpage%5D=$$page")" = 200 ] || fail "listing clients failed"
+        jq -r --arg mark "$$mark" --arg keep "$$MP_KEEP" \
+          '($$keep | split(",")) as $$k | .data[] | select(.description == $$mark and ((.id as $$i | $$k | index($$i)) == null)) | .id' /tmp/out >> /tmp/drop
+        [ "$$page" -lt "$$(jq -r '.pagination.totalPages // 1' /tmp/out)" ] || break
+        page=$$((page + 1))
+      done
+      while read -r id; do
+        [ -n "$$id" ] || continue
+        echo "revoke: deleting client $$id"
+        [ "$$(call DELETE "/api/oidc/clients/$$id")" = 204 ] || fail "deleting client $$id failed"
+      done < /tmp/drop
+    depends_on:
+      pocket-id:
+        condition: service_healthy
+        required: true
+      pocket-id_provision_api_oidc:
+        condition: service_completed_successfully
+        required: true
+    entrypoint:
+    - /bin/sh
+    - -eu
+    - -c
+    environment:
+      MP_ADMIN_API_KEY_FILE: /run/secrets/admin/api_key
+      MP_ADMIN_BASE_PATH: ${MP_INGRESS__BASE_PATH:-}
+      MP_ADMIN_FIRST_ADMIN_PATH: /setup
+      MP_ADMIN_ISSUER: https://auth.${MP_INGRESS__DOMAIN}
+      MP_ADMIN_ORIGIN: ${MP_INGRESS__ORIGIN}
+      MP_ADMIN_URL: http://pocket-id.modular-platform.internal:1411
+      MP_KEEP: api_oidc
+      MP_MARKER: mp_provisioned_52d73175
+    image: ghcr.io/racherom/modular-platform/oidc-job:0.0.0-test
+    labels:
+      io.github.racherom.modular-platform.graph: modular-platform
+      io.github.racherom.modular-platform.instance: pocket-id
+      io.github.racherom.modular-platform.job: revoke
+      io.github.racherom.modular-platform.module: pocket-id
+      io.github.racherom.modular-platform.stack: platform
+    networks:
+      internal: {}
+    read_only: true
+    restart: "no"
+    secrets:
+    - source: pocket-id_admin_oidc_api_key
+      target: /run/secrets/admin/api_key
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - /tmp
     user: ${MP_UID}:${MP_GID}
   postgres:
     cap_drop:
@@ -722,7 +874,7 @@ services:
     tmpfs:
     - /tmp
     user: ${MP_UID}:${MP_GID}
-  postgres_provision_authelia_db:
+  postgres_provision_pocket-id_db:
     cap_drop:
     - ALL
     command:
@@ -785,13 +937,13 @@ services:
       MP_ADMIN_PORT: "5432"
       MP_ADMIN_SSLMODE: verify-full
       MP_ADMIN_URL: postgres://postgres.modular-platform.internal:5432
-      MP_CONSUMER: authelia
-      MP_CONSUMER_HOST: authelia.modular-platform.internal
-      MP_DATABASE: authelia
+      MP_CONSUMER: pocket-id
+      MP_CONSUMER_HOST: pocket-id.modular-platform.internal
+      MP_DATABASE: pocket_id
       MP_MARKER: mp_provisioned_52d73175
       MP_PASSWORD_FILE: /run/secrets/bind/password
       MP_SLOT: db
-      MP_USER: authelia
+      MP_USER: pocket_id
     image: postgres:18.6
     labels:
       io.github.racherom.modular-platform.graph: modular-platform
@@ -808,7 +960,7 @@ services:
       target: /run/secrets/admin/admin_password
     - source: postgres_admin_server_ca
       target: /run/secrets/admin/ca
-    - source: authelia_uses_db_password
+    - source: pocket-id_uses_db_password
       target: /run/secrets/bind/password
     security_opt:
     - no-new-privileges:true
@@ -843,7 +995,7 @@ services:
       postgres_provision_api_main-db:
         condition: service_completed_successfully
         required: true
-      postgres_provision_authelia_db:
+      postgres_provision_pocket-id_db:
         condition: service_completed_successfully
         required: true
     entrypoint:
@@ -858,7 +1010,7 @@ services:
       MP_ADMIN_PORT: "5432"
       MP_ADMIN_SSLMODE: verify-full
       MP_ADMIN_URL: postgres://postgres.modular-platform.internal:5432
-      MP_KEEP: api,authelia
+      MP_KEEP: api,pocket_id
       MP_MARKER: mp_provisioned_52d73175
     image: postgres:18.6
     labels:

@@ -113,7 +113,9 @@ services:
       set -eu
       printf '%s:%s:%s:%s:%s\n' "$$DB_HOST" "$$DB_PORT" "$$DB_NAME" "$$DB_USER" "$$(cat "$$DB_PASSWORD_FILE")" > /tmp/pgpass
       chmod 0600 /tmp/pgpass
-      export DB_CONNECTION_STRING="postgres://$$DB_USER@$$DB_HOST:$$DB_PORT/$$DB_NAME?sslmode=verify-full&sslrootcert=$$DB_CA_FILE"
+      query="sslmode=$$DB_SSLMODE"
+      if [ -n "$${DB_CA_FILE:-}" ]; then query="$$query&sslrootcert=$$DB_CA_FILE"; fi
+      export DB_CONNECTION_STRING="postgres://$$DB_USER@$$DB_HOST:$$DB_PORT/$$DB_NAME?$$query"
       exec /app/pocket-id
     depends_on:
       edge:
@@ -136,6 +138,7 @@ services:
       DB_NAME: pocket_id
       DB_PASSWORD_FILE: /run/secrets/uses/db/password
       DB_PORT: "5432"
+      DB_SSLMODE: disable
       DB_USER: pocket_id
       ENCRYPTION_KEY_FILE: /run/secrets/pocket-id_encryption-key
       FILE_BACKEND: database

@@ -2,6 +2,7 @@ package render_test
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -77,8 +78,8 @@ func checkSetupMount(t *testing.T, files map[string]string) {
 }
 
 // TestSetupFilesPlatformRender covers AC-14 in the render with setup.sh: the files are no Compose
-// secret, setup.sh makes them in their own stage and no value is rendered. The platform graph
-// still holds authelia, which has no first admin page, so none of the pocket-id additions show.
+// secret, setup.sh makes them in their own stage and no value is rendered. A graph with
+// authelia, which has no first admin page, shows none of the pocket-id additions.
 func TestSetupFilesPlatformRender(t *testing.T) {
 	t.Parallel()
 	result, catalog, templates := platformResult(t)
@@ -107,14 +108,41 @@ func TestSetupFilesPlatformRender(t *testing.T) {
 		t.Error("setup.sh makes a setup file with new_secret, which would print nothing and keep no used code")
 	}
 	// a render with authelia has no first admin page, no handoff route and no gate
-	if strings.Contains(files["docker-compose.yml"], "MP_OIDC_FIRST_ADMIN_PATH") {
+	autheliaFiles := autheliaPlatformFiles(t)
+	if strings.Contains(autheliaFiles["docker-compose.yml"], "MP_OIDC_FIRST_ADMIN_PATH") {
 		t.Error("an authelia render gives api a first admin path")
 	}
 	for _, marker := range []string{"@enter-", "@gate-"} {
-		if strings.Contains(files["config/ingress/Caddyfile"], marker) {
+		if strings.Contains(autheliaFiles["config/ingress/Caddyfile"], marker) {
 			t.Errorf("an authelia render has %s in the Caddyfile", marker)
 		}
 	}
+}
+
+// autheliaPlatformFiles renders the managed graph with authelia in place of pocket-id, the
+// optional identity provider that stays in the catalog (spec 0037, task 7c).
+func autheliaPlatformFiles(t *testing.T) map[string]string {
+	t.Helper()
+	_, catalog, templates := platformResult(t)
+	data, err := os.ReadFile("../../deploy/managed/graph.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	text = strings.Replace(text, "      oidc:\n        client_id: api_oidc\n        provider: pocket-id.oidc\n", "      oidc: authelia.oidc\n", 1)
+	text = strings.Replace(text, "  pocket-id:\n    module: pocket-id\n    uses:\n      db:\n        database: pocket_id\n        provider: postgres\n        user: pocket_id\n      public: ingress\n", "  authelia:\n    module: authelia\n    uses:\n      db:\n        database: authelia\n        provider: postgres\n        user: authelia\n      public: ingress\n", 1)
+	if strings.Contains(text, "pocket-id") {
+		t.Fatal("deploy/managed/graph.yaml changed shape; update autheliaPlatformFiles")
+	}
+	out, err := render.Platform(resultText(t, text, catalog), catalog, templates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	for _, f := range out.Files {
+		files[f.Path] = string(f.Data)
+	}
+	return files
 }
 
 // TestSetupFilesKeeperRender covers AC-14 and AC-16 in the keeper render: the same mount, the

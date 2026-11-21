@@ -16,13 +16,12 @@ import (
 	"github.com/racherom/modular-platform/libs/render"
 )
 
-// keeperDir holds the keeper render's goldens, the graph and, under catalog/, the pocket-id and
-// deployer-docker entries, which replace the real authelia and deployer-docker ones in
-// keeperResult (spec 0016, "Task 3 golden"; spec 0037, task 2). The cut over moves the entries
-// into catalog/modules/ and removes this folder.
+// keeperDir holds the keeper render's goldens, the graph and, under catalog/, the deployer-docker
+// entry, which replaces the real one in keeperResult (spec 0016, "Task 3 golden"). The pocket-id
+// entry moved into the real catalog with the cut over (spec 0037, task 7c).
 const keeperDir = "testdata/platform-keeper"
 
-// keeperResult checks the fixture graph with the built in catalog and the two fixture entries, the platform's own images tagged testTag as platformResult does.
+// keeperResult checks the fixture graph with the built in catalog and the fixture deployer-docker entry, the platform's own images tagged testTag as platformResult does.
 func keeperResult(t *testing.T) (contract.CheckResult, contract.Catalog, contract.Templates) {
 	t.Helper()
 	catalog, templates := loadCatalogTemplates(t, "../../catalog", filepath.Join(keeperDir, "catalog"))
@@ -418,12 +417,11 @@ func TestPlatformKeeperRefusals(t *testing.T) {
 		})
 	}
 
-	// the real authelia entry still asks the admin password until task 4, so the option refuses it
+	// the real catalog has no asked value and no step since the cut over (spec 0037, task 7c),
+	// so the option takes the managed graph
 	result, catalog, templates := platformResult(t)
-	_, err := render.Platform(result, catalog, templates, render.WithKeeper())
-	var refused *render.RefusedError
-	if !errors.As(err, &refused) || len(refused.Problems) != 1 || refused.Problems[0].Path != "modules.authelia" {
-		t.Errorf("keeper render of the milestone 4 catalog: %v, want setup_required at modules.authelia", err)
+	if _, err := render.Platform(result, catalog, templates, render.WithKeeper()); err != nil {
+		t.Errorf("keeper render of the managed graph: %v", err)
 	}
 }
 

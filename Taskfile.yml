@@ -242,13 +242,12 @@ tasks:
       - docker build -q --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/modules/api/Dockerfile -t {{.IMAGE_PREFIX}}/api:dev . >/dev/null
       - docker build -q --build-arg MP_SOURCE_REF={{.SOURCE_REF}} -f catalog/images/oidc-job/Dockerfile -t {{.IMAGE_PREFIX}}/oidc-job:dev catalog/images/oidc-job >/dev/null
       - |
-        if [ -f .dev/managed/.env ] && [ -f .dev/managed/secrets/authelia/users ]; then
+        if [ -f .dev/managed/.env ] && [ -f .dev/managed/secrets/api/setup/session-key ]; then
           sh .dev/managed/setup.sh </dev/null >/dev/null
         else
-          password=$(od -An -tx1 -N12 /dev/urandom | tr -d ' \n')
-          # domain, origin (empty: https://<domain>), admin email, admin user name, admin password
-          printf 'platform.localhost\n\nadmin@platform.localhost\nadmin\n%s\n' "$password" | sh .dev/managed/setup.sh
-          echo "Sign in as admin with the password $password (kept nowhere else; delete .dev/managed to start over)."
+          # domain, origin (empty: https://<domain>); the admin makes the account in the browser
+          printf 'platform.localhost\n\n' | sh .dev/managed/setup.sh
+          echo "Open the setup link from the first admin path with the code in .dev/managed/secrets/api/setup/code (delete .dev/managed to start over)."
         fi
 
   managed:render:

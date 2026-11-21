@@ -268,7 +268,7 @@ func TestRenderPlatformPrerelease(t *testing.T) {
 			builds = append(builds, f.Path)
 		}
 	}
-	want := []string{"build/api/Dockerfile", "build/deployer-docker/Dockerfile", "build/renderer/Dockerfile", "build/web/Dockerfile"}
+	want := []string{"build/api/Dockerfile", "build/deployer-docker/Dockerfile", "build/oidc-job/Dockerfile", "build/renderer/Dockerfile", "build/web/Dockerfile"}
 	if strings.Join(builds, " ") != strings.Join(want, " ") {
 		t.Errorf("build files %v, want %v", builds, want)
 	}

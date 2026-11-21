@@ -32,6 +32,14 @@ func platformResult(t *testing.T) (contract.CheckResult, contract.Catalog, contr
 			catalog.Modules[i].Image = platformImagePrefix + name[:strings.LastIndex(name, ":")] + ":" + testTag
 		}
 	}
+	for i, c := range catalog.Capabilities {
+		if c.Yields == nil {
+			continue
+		}
+		if name, ok := strings.CutPrefix(c.Yields.Job.Image, platformImagePrefix); ok {
+			catalog.Capabilities[i].Yields.Job.Image = platformImagePrefix + name[:strings.LastIndex(name, ":")] + ":" + testTag
+		}
+	}
 	return checkFile(t, "../../deploy/managed/graph.yaml", catalog), catalog, templates
 }
 
@@ -76,7 +84,7 @@ func TestRenderPlatformFolder(t *testing.T) {
 	for _, f := range out.Files {
 		files[f.Path] = string(f.Data)
 	}
-	for _, path := range []string{"docker-compose.yml", "graph.yaml", "setup.sh", ".env.example", "README.md", "config/ingress/Caddyfile", "config/authelia/configuration.yml", "config/postgres/postgresql.conf", "config/postgres/pg_hba.conf", "config/api.env"} {
+	for _, path := range []string{"docker-compose.yml", "graph.yaml", "setup.sh", ".env.example", "README.md", "config/ingress/Caddyfile", "config/postgres/postgresql.conf", "config/postgres/pg_hba.conf", "config/api.env"} {
 		if _, ok := files[path]; !ok {
 			t.Errorf("the folder has no %s", path)
 		}
@@ -121,9 +129,9 @@ func TestRenderPlatformFolder(t *testing.T) {
 		t.Errorf("deployer-docker volumes = %+v, want %s at the same path", compose.Services["deployer-docker"].Volumes, stacks)
 	}
 
-	// spec 0015's questions, in order: domain, origin, admin email, then the users step's two
+	// spec 0015's questions, in order: domain and origin; the identity provider asks nothing (spec 0037)
 	setup := files["setup.sh"]
-	order := []string{"ask MP_INGRESS__DOMAIN ", "ask MP_INGRESS__ORIGIN ", "ask MP_AUTHELIA__ADMIN_EMAIL ", "step_ask 'Admin user name", "step_ask 'Admin password"}
+	order := []string{"ask MP_INGRESS__DOMAIN ", "ask MP_INGRESS__ORIGIN "}
 	last := -1
 	for _, q := range order {
 		at := strings.Index(setup, q)
@@ -148,7 +156,6 @@ func TestRenderPlatformFolder(t *testing.T) {
 		"@api path {$INGRESS_BASE_PATH}/api {$INGRESS_BASE_PATH}/api/*\n",
 		"reverse_proxy https://api.modular-platform.internal:8443 {\n\t\t\t# the event stream reaches the browser as it is written\n\t\t\tflush_interval -1\n",
 		"tls_server_name api.modular-platform.internal\n",
-		"@authelia path {$INGRESS_BASE_PATH}/auth {$INGRESS_BASE_PATH}/auth/*\n",
 		"reverse_proxy {$MP_WEB_UPSTREAM:http://web.modular-platform.internal:8080}\n",
 	} {
 		if !strings.Contains(caddyfile, want) {
@@ -156,7 +163,7 @@ func TestRenderPlatformFolder(t *testing.T) {
 		}
 	}
 	// the site root comes last, so a longer route is never shadowed by it
-	if strings.Index(caddyfile, "@web ") < strings.Index(caddyfile, "@authelia ") {
+	if strings.Index(caddyfile, "@web ") < strings.Index(caddyfile, "@api ") {
 		t.Error("the site root route comes before another route")
 	}
 	for _, m := range catalog.Modules {
@@ -183,7 +190,7 @@ func TestPlatformOnlyFeatures(t *testing.T) {
 	for _, p := range refused.Problems {
 		got = append(got, p.Code+" "+p.Path)
 	}
-	for _, want := range []string{"host_access modules.deployer-docker", "host_access modules.ingress", "setup_required modules.authelia", "setup_required modules.cert-issuer"} {
+	for _, want := range []string{"host_access modules.deployer-docker", "host_access modules.ingress", "setup_required modules.cert-issuer"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("managed refusals %q lack %q", got, want)
 		}

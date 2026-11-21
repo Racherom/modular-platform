@@ -21,7 +21,7 @@ const platformGraph = "../../deploy/managed/graph.yaml"
 func TestPlatformGraph(t *testing.T) {
 	t.Parallel()
 	catalog := testCatalog(t)
-	for _, name := range []string{"api", "authelia", "caddy", "cert-issuer", "deployer-docker", "postgres", "renderer", "web"} {
+	for _, name := range []string{"api", "caddy", "cert-issuer", "deployer-docker", "pocket-id", "postgres", "renderer", "web"} {
 		if !slices.ContainsFunc(catalog.Modules, func(m contract.Module) bool { return m.Name == name }) {
 			t.Errorf("the built in catalog has no module %s", name)
 		}
@@ -50,10 +50,10 @@ func TestPlatformGraph(t *testing.T) {
 	}
 	want := []string{
 		"api.acme cert-issuer.acme", "api.deploy-target deployer-docker.deploy", "api.main-db postgres.server",
-		"api.oidc authelia.oidc", "api.public ingress.public", "api.renderer renderer.renderer",
-		"authelia.db postgres.server", "authelia.public ingress.public",
+		"api.oidc pocket-id.oidc", "api.public ingress.public", "api.renderer renderer.renderer",
 		"deployer-docker.acme cert-issuer.acme", "deployer-docker.ingress ingress.public",
 		"ingress.trust cert-issuer.acme",
+		"pocket-id.db postgres.server", "pocket-id.public ingress.public",
 		"postgres.tls cert-issuer.certs",
 		"renderer.acme cert-issuer.acme", "renderer.ingress ingress.public",
 		"web.public ingress.public",

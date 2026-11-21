@@ -138,7 +138,7 @@ func TestCatalogSorted(t *testing.T) {
 	for _, c := range cat.Capabilities {
 		capabilities = append(capabilities, c.Name)
 	}
-	if !slices.Equal(modules, []string{"api", "authelia", "caddy", "cert-issuer", "deployer-docker", "postgres", "renderer", "web", "whoami"}) {
+	if !slices.Equal(modules, []string{"api", "authelia", "caddy", "cert-issuer", "deployer-docker", "pocket-id", "postgres", "renderer", "web", "whoami"}) {
 		t.Errorf("modules = %q", modules)
 	}
 	if !slices.IsSorted(capabilities) || !slices.Contains(capabilities, "postgresql-provisioner") {
